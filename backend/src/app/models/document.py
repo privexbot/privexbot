@@ -412,6 +412,7 @@ class Document(Base):
     # Storage
     file_path = Column(String(1024), nullable=True)
     content_preview = Column(Text, nullable=True)
+    content_full = Column(Text, nullable=True)  # Store full document content
 
     # Processing status
     status = Column(

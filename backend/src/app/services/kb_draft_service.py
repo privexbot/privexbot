@@ -152,6 +152,131 @@ class KBDraftService:
 
         return len(sources) < original_count
 
+    def add_bulk_web_sources_to_draft(
+        self,
+        draft_id: str,
+        sources: List[Dict[str, Any]],
+        shared_config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Add multiple web URLs to KB draft in one atomic operation.
+
+        WHY: Enable efficient bulk operations for users adding many URLs
+        HOW: Validate all URLs, check duplicates, apply configs, add atomically
+
+        PHASE: 1 (Draft Mode - Redis Only)
+
+        Args:
+            draft_id: KB draft ID
+            sources: List of source configs [
+                {
+                    "url": "https://example.com",
+                    "config": {...}  # Optional per-URL config
+                }
+            ]
+            shared_config: Shared configuration applied to all sources (can be overridden per source)
+
+        Returns:
+            {
+                "sources_added": int,
+                "source_ids": List[str],
+                "duplicates_skipped": int,
+                "invalid_urls": List[dict],
+                "total_sources_after": int
+            }
+
+        Raises:
+            ValueError: If draft not found or critical validation fails
+        """
+
+        # Get draft
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise ValueError("KB draft not found")
+
+        # Get existing sources for duplicate checking
+        data = draft.get("data", {})
+        existing_sources = data.get("sources", [])
+        existing_urls = {source.get("url") for source in existing_sources if source.get("url")}
+
+        # Process each source
+        sources_added = []
+        source_ids = []
+        duplicates_skipped = 0
+        invalid_urls = []
+
+        for idx, source_spec in enumerate(sources):
+            url = source_spec.get("url", "")
+            per_source_config = source_spec.get("config", {})
+
+            # Validate URL
+            if not url:
+                invalid_urls.append({
+                    "index": idx,
+                    "url": url,
+                    "error": "URL is required"
+                })
+                continue
+
+            if not url.startswith(("http://", "https://")):
+                invalid_urls.append({
+                    "index": idx,
+                    "url": url,
+                    "error": "Invalid URL - must start with http:// or https://"
+                })
+                continue
+
+            # Check for duplicates
+            if url in existing_urls:
+                duplicates_skipped += 1
+                continue
+
+            # Merge shared config with per-source config (per-source takes precedence)
+            final_config = {}
+            if shared_config:
+                final_config.update(shared_config)
+            if per_source_config:
+                final_config.update(per_source_config)
+
+            # Create source entry
+            source_id = str(uuid4())
+            source = {
+                "id": source_id,
+                "type": "web_scraping",
+                "url": url,
+                "config": final_config,
+                "added_at": datetime.utcnow().isoformat(),
+                "added_via": "bulk_operation"
+            }
+
+            sources_added.append(source)
+            source_ids.append(source_id)
+            existing_urls.add(url)  # Track for subsequent duplicate checking in this batch
+
+        # If no sources were valid, report the issue
+        if not sources_added and invalid_urls:
+            raise ValueError(f"No valid sources to add. {len(invalid_urls)} invalid URLs found.")
+
+        # Add all valid sources atomically
+        if sources_added:
+            all_sources = existing_sources + sources_added
+            data["sources"] = all_sources
+
+            # Update draft atomically
+            draft_service.update_draft(
+                draft_type=DraftType.KB,
+                draft_id=draft_id,
+                updates={"data": data}
+            )
+
+        return {
+            "sources_added": len(sources_added),
+            "source_ids": source_ids,
+            "duplicates_skipped": duplicates_skipped,
+            "invalid_urls": invalid_urls,
+            "total_sources_after": len(existing_sources) + len(sources_added)
+        }
+
     def update_chunking_config(
         self,
         draft_id: str,

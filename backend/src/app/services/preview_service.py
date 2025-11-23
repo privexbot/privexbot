@@ -81,20 +81,77 @@ class PreviewService:
             scrape_result = await crawl4ai_service.scrape_single_url(url)
 
             # ScrapedPage object - access attributes directly
-            content = scrape_result.content or ""
+            raw_content = scrape_result.content or ""
             metadata = scrape_result.metadata or {}
 
-            if not content:
+            if not raw_content:
                 return {
                     "error": "No content found",
                     "message": "The URL did not return any content"
                 }
 
-            # Step 2: Analyze document structure
-            doc_stats = self._analyze_document(content)
+            # Step 2: Enhanced content processing
+            try:
+                from app.services.content_enhancement_service import content_enhancement_service
+                from app.services.ocr_service import ocr_service
+                from app.services.content_strategy_service import content_strategy_service
 
-            # Step 3: Get strategy recommendation based on URL and content
-            recommendation = self._get_strategy_recommendation(url, doc_stats)
+                # Get intelligent strategy recommendation
+                recommended_preset, content_analysis, reasoning = content_strategy_service.recommend_strategy(
+                    raw_content, url
+                )
+
+                # Apply content enhancement
+                enhanced_content, enhancement_stats = content_enhancement_service.enhance_content(
+                    raw_content,
+                    url,
+                    recommended_preset.content_enhancement
+                )
+
+                # Apply OCR if enabled
+                if recommended_preset.ocr_config.enabled:
+                    enhanced_content, ocr_results = await ocr_service.extract_text_from_images(
+                        enhanced_content,
+                        url,
+                        recommended_preset.ocr_config
+                    )
+                else:
+                    ocr_results = []
+
+                content = enhanced_content
+
+            except Exception as e:
+                # If enhancement fails, use original content with warning
+                print(f"Warning: Content enhancement failed: {e}")
+                content = raw_content
+                content_analysis = None
+                enhancement_stats = None
+                ocr_results = []
+                reasoning = "Content enhancement unavailable"
+
+            # Step 3: Analyze document structure (use enhanced analysis if available)
+            if content_analysis:
+                doc_stats = {
+                    "total_characters": content_analysis.total_characters,
+                    "total_lines": content.count('\n'),
+                    "heading_count": content_analysis.heading_count,
+                    "heading_density": content_analysis.heading_density,
+                    "list_count": content_analysis.list_count,
+                    "list_density": content_analysis.list_density,
+                    "code_block_count": content_analysis.code_block_count,
+                    "avg_paragraph_length": content_analysis.avg_paragraph_length,
+                    "structure_type": content_analysis.content_type.value,
+                    "structure_score": content_analysis.structure_score,
+                    "complexity_score": content_analysis.complexity_score
+                }
+            else:
+                doc_stats = self._analyze_document(content)
+
+            # Step 4: Get strategy recommendation (use intelligent recommendation if available)
+            if content_analysis:
+                recommendation = reasoning
+            else:
+                recommendation = self._get_strategy_recommendation(url, doc_stats)
 
             # Step 4: Apply chunking strategy
             chunks = chunking_service.chunk_document(
@@ -107,7 +164,7 @@ class PreviewService:
             # Step 5: Prepare preview (first N chunks)
             preview_chunks = chunks[:max_preview_chunks]
 
-            # Step 6: Build preview response
+            # Step 6: Build enhanced preview response
             preview_data = {
                 "url": url,
                 "title": metadata.get("title", "Untitled"),
@@ -136,6 +193,49 @@ class PreviewService:
                     "showing_chunks": f"{len(preview_chunks)} of {len(chunks)}"
                 }
             }
+
+            # Add content enhancement information if available
+            if 'enhancement_stats' in locals() and enhancement_stats:
+                preview_data["content_enhancement"] = {
+                    "applied": True,
+                    "original_length": enhancement_stats.original_length,
+                    "enhanced_length": enhancement_stats.cleaned_length,
+                    "emojis_removed": enhancement_stats.emojis_removed,
+                    "links_filtered": enhancement_stats.links_filtered,
+                    "duplicates_removed": enhancement_stats.duplicates_removed,
+                    "improvement_score": enhancement_stats.improvement_score,
+                }
+            else:
+                preview_data["content_enhancement"] = {"applied": False}
+
+            # Add OCR information if available
+            if 'ocr_results' in locals() and ocr_results:
+                preview_data["image_ocr"] = {
+                    "applied": True,
+                    "images_processed": len(ocr_results),
+                    "text_extracted": sum(len(result.extracted_text) for result in ocr_results),
+                    "average_confidence": sum(result.confidence_score for result in ocr_results) / len(ocr_results),
+                    "ocr_results": [
+                        {
+                            "image_url": result.image_url,
+                            "text_length": len(result.extracted_text),
+                            "confidence": result.confidence_score
+                        }
+                        for result in ocr_results
+                    ]
+                }
+            else:
+                preview_data["image_ocr"] = {"applied": False}
+
+            # Add intelligent recommendations if available
+            if 'content_analysis' in locals() and content_analysis:
+                preview_data["intelligent_analysis"] = {
+                    "content_type_detected": content_analysis.content_type.value,
+                    "structure_score": content_analysis.structure_score,
+                    "complexity_score": content_analysis.complexity_score,
+                    "recommended_strategy": getattr(recommended_preset, 'chunking_strategy', strategy),
+                    "reasoning": reasoning
+                }
 
             # Cache result
             self._set_cache(cache_key, preview_data)

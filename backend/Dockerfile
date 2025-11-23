@@ -61,9 +61,6 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy Playwright browsers from builder
-COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
-
 # Install production web server
 RUN pip install --no-cache-dir gunicorn uvicorn[standard]
 
@@ -77,9 +74,18 @@ COPY src/ ./src/
 # Set Python path to include src directory
 ENV PYTHONPATH=/app/src
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+# Create non-root user and set up Playwright browsers
+RUN useradd -m -u 1000 appuser
+
+# Copy Playwright browsers from builder and ensure correct ownership
+COPY --from=builder /root/.cache/ms-playwright /home/appuser/.cache/ms-playwright
+
+# Change ownership of all app files to appuser
+RUN chown -R appuser:appuser /app /home/appuser/.cache
+
+# Set Playwright browsers path for non-root user
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
+
 USER appuser
 
 # Expose port

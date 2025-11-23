@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search
 
 
 @asynccontextmanager
@@ -103,6 +103,17 @@ app.include_router(
 
 app.include_router(
     kb.router,
+    prefix=settings.API_V1_PREFIX
+)
+
+app.include_router(
+    content_enhancement.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["content_enhancement"]
+)
+
+app.include_router(
+    enhanced_search.router,
     prefix=settings.API_V1_PREFIX
 )
 

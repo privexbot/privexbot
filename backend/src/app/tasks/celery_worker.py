@@ -63,19 +63,19 @@ celery_app.conf.update(
     beat_schedule={
         # Clean up expired pipeline tracking data every hour
         "cleanup-expired-pipelines": {
-            "task": "app.tasks.kb_maintenance_tasks.cleanup_expired_pipelines",
+            "task": "cleanup_expired_pipelines",
             "schedule": crontab(minute=0),  # Every hour
         },
 
         # Re-index stale KBs every day at 2 AM
         "reindex-stale-kbs": {
-            "task": "app.tasks.kb_maintenance_tasks.reindex_stale_kbs",
+            "task": "reindex_stale_kbs",
             "schedule": crontab(hour=2, minute=0),  # Daily at 2 AM
         },
 
         # Health check for Qdrant collections every 6 hours
         "health-check-qdrant": {
-            "task": "app.tasks.kb_maintenance_tasks.health_check_qdrant_collections",
+            "task": "health_check_qdrant_collections",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
         },
     },

@@ -366,43 +366,11 @@ def process_web_kb_task(
                             continue
 
                         # ========================================
-                        # STEP 2c: CHUNK CONTENT
-                        # ========================================
-
-                        chunks_data = chunking_service.chunk_document(
-                            text=page_content,
-                            strategy="recursive",  # Use recursive for web content
-                            chunk_size=chunk_size,
-                            chunk_overlap=chunk_overlap
-                        )
-
-                        if not chunks_data:
-                            tracker.add_log("warning", f"No chunks created for page: {page_url}")
-                            continue
-
-                        tracker.update_stats(chunks_created=tracker.stats["chunks_created"] + len(chunks_data))
-
-                        # ========================================
-                        # STEP 2d: GENERATE EMBEDDINGS
-                        # ========================================
-
-                        chunk_texts = [chunk["content"] for chunk in chunks_data]
-
-                        embeddings = loop.run_until_complete(
-                            embedding_service.generate_embeddings(chunk_texts)
-                        )
-
-                        tracker.update_stats(
-                            embeddings_generated=tracker.stats["embeddings_generated"] + len(embeddings)
-                        )
-
-                        # ========================================
-                        # STEP 2e: CREATE DOCUMENT + CHUNKS
+                        # STEP 2c: CREATE DOCUMENT RECORD (BASIC)
                         # ========================================
 
                         print(f"[DEBUG] Creating Document record for page: {page_url}")
-                        # Create Document record
-                        # Serialize metadata to ensure JSON compatibility (datetime → ISO string)
+                        # Create basic Document record first (will be updated with chunking decision later)
                         serialized_metadata = serialize_metadata(scraped_page.metadata) if scraped_page.metadata else {}
 
                         document = Document(
@@ -411,6 +379,7 @@ def process_web_kb_task(
                             name=scraped_page.title or page_url,
                             source_type="web_scraping",
                             source_url=page_url,
+                            content_full=page_content,  # ALWAYS store full content
                             content_preview=page_content[:500] if page_content else None,
                             word_count=len(page_content.split()) if page_content else 0,
                             character_count=len(page_content) if page_content else 0,
@@ -419,55 +388,89 @@ def process_web_kb_task(
                                 "content_length": len(page_content),
                                 "metadata": serialized_metadata
                             },
-                            status="processed",
+                            status="processing",
                             created_by=kb.created_by,
                             created_at=datetime.utcnow()
                         )
                         db.add(document)
                         db.flush()  # Get document.id
 
-                        # Create Chunk records and prepare for Qdrant
-                        qdrant_chunks = []
+                        # ========================================
+                        # STEP 2d: SMART PROCESSING (USER CHOICE FIRST)
+                        # ========================================
 
-                        for chunk_idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
-                            # Create Chunk in PostgreSQL
+                        # Use smart KB service that respects user preferences
+                        from app.services.smart_kb_service import smart_kb_service
+
+                        # Process document with proper storage strategy and user choice respect
+                        processing_result = loop.run_until_complete(
+                            smart_kb_service.process_document_with_proper_storage(
+                                document=document,
+                                content=page_content,
+                                kb=kb,
+                                user_config=config.get("chunking_config")  # User's explicit preferences
+                            )
+                        )
+
+                        if "error" in processing_result:
+                            tracker.add_log("warning", f"Processing failed for page {page_url}: {processing_result['error']}")
+                            continue
+
+                        # Extract results
+                        chunking_decision = processing_result["chunking_decision"]
+                        postgres_chunks = processing_result["postgres_chunks"]
+                        qdrant_chunks = processing_result["qdrant_chunks"]
+
+                        tracker.add_log("info",
+                            f"Processed {page_url}: {len(postgres_chunks)} chunks using {chunking_decision.strategy} strategy. "
+                            f"Reasoning: {chunking_decision.reasoning}"
+                        )
+                        tracker.update_stats(chunks_created=tracker.stats["chunks_created"] + len(postgres_chunks))
+
+                        # ========================================
+                        # STEP 2d: SAVE TO POSTGRESQL (NO REDUNDANT EMBEDDINGS)
+                        # ========================================
+
+                        # Create PostgreSQL Chunk records (NO EMBEDDING FIELD - avoid redundancy)
+                        for postgres_chunk_data in postgres_chunks:
                             chunk = Chunk(
-                                document_id=document.id,
-                                kb_id=UUID(kb_id),
-                                content=chunk_data["content"],
-                                chunk_index=chunk_idx,
-                                position=chunk_idx,  # Order within document
-                                embedding=embedding,  # pgvector
-                                chunk_metadata={
-                                    "token_count": chunk_data.get("token_count", 0),
-                                    "strategy": "recursive",
-                                    "chunk_size": chunk_size,
-                                    "page_url": page_url,
-                                    "page_title": scraped_page.title,
-                                    "workspace_id": str(kb.workspace_id)
-                                },
-                                created_at=datetime.utcnow()
+                                id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
+                                document_id=postgres_chunk_data["document_id"],
+                                kb_id=postgres_chunk_data["kb_id"],
+                                content=postgres_chunk_data["content"],
+                                chunk_index=postgres_chunk_data["chunk_index"],
+                                position=postgres_chunk_data["position"],
+                                # NO embedding field - stored only in Qdrant
+                                chunk_metadata=postgres_chunk_data["chunk_metadata"]
                             )
                             db.add(chunk)
-                            db.flush()  # Get chunk.id
 
-                            # Prepare for Qdrant
-                            qdrant_chunks.append(
-                                QdrantChunk(
-                                    id=str(chunk.id),
-                                    embedding=embedding,
-                                    content=chunk_data["content"],
-                                    metadata={
-                                        "document_id": str(document.id),
-                                        "kb_id": kb_id,
-                                        "workspace_id": str(kb.workspace_id),
-                                        "chunk_index": chunk_idx,
-                                        "page_url": page_url,
-                                        "page_title": scraped_page.title or "",
-                                        "token_count": chunk_data.get("token_count", 0)
-                                    }
-                                )
-                            )
+                        # Update tracking stats
+                        tracker.update_stats(
+                            embeddings_generated=tracker.stats["embeddings_generated"] + processing_result["embeddings_generated"]
+                        )
+
+                        # ========================================
+                        # STEP 2e: UPDATE DOCUMENT WITH CHUNKING DECISION
+                        # ========================================
+
+                        print(f"[DEBUG] Updating Document record with chunking decision: {page_url}")
+                        # Update document with chunking decision metadata
+                        current_metadata = document.source_metadata or {}
+                        current_metadata["chunking_decision"] = {
+                            "strategy": chunking_decision.strategy,
+                            "chunk_size": chunking_decision.chunk_size,
+                            "user_preference": chunking_decision.user_preference,
+                            "reasoning": chunking_decision.reasoning
+                        }
+                        document.source_metadata = current_metadata
+                        document.status = "processed"
+
+                        # Update Qdrant chunks with correct document ID
+                        for qdrant_chunk in qdrant_chunks:
+                            qdrant_chunk.metadata["document_id"] = str(document.id)
+                            qdrant_chunk.metadata["page_url"] = page_url
+                            qdrant_chunk.metadata["page_title"] = scraped_page.title or ""
 
                         db.commit()
                         print(f"[DEBUG] Database commit successful, created {len(qdrant_chunks)} chunks for page: {page_url}")
@@ -477,6 +480,7 @@ def process_web_kb_task(
                         # ========================================
 
                         print(f"[DEBUG] About to upsert {len(qdrant_chunks)} chunks to Qdrant for page: {page_url}")
+
                         try:
                             loop.run_until_complete(
                                 qdrant_service.upsert_chunks(
@@ -488,7 +492,6 @@ def process_web_kb_task(
                         except Exception as qdrant_error:
                             print(f"[ERROR] Qdrant upsert failed: {str(qdrant_error)}")
                             print(f"[ERROR] Qdrant error type: {type(qdrant_error).__name__}")
-                            import traceback
                             print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
                             raise  # Re-raise to be caught by outer exception handler
 
@@ -500,8 +503,8 @@ def process_web_kb_task(
                             "info",
                             f"Processed page: {page_url}",
                             {
-                                "chunks": len(chunks_data),
-                                "embeddings": len(embeddings)
+                                "chunks": len(qdrant_chunks),
+                                "embeddings": processing_result.get("embeddings_generated", 0)
                             }
                         )
 

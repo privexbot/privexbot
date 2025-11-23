@@ -5,13 +5,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including those needed for building packages
+# Install core system dependencies
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     g++ \
     git \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency management
@@ -35,7 +36,7 @@ RUN pip install --no-cache-dir \
 RUN uv sync --system || \
     uv pip install --system -e .
 
-# Install Playwright browsers (required for web scraping)
+# Install Playwright browsers and system dependencies (official best practice)
 RUN python -m playwright install chromium
 RUN python -m playwright install-deps
 

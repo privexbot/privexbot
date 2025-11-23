@@ -123,13 +123,20 @@ class Crawl4AIService:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
-            # Anti-detection flags
+            # Anti-detection flags and SSL handling
             extra_args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-            ] if config.stealth_mode else []
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+                "--ignore-certificate-errors-spki-list",
+                "--disable-web-security",
+            ] if config.stealth_mode else [
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+            ]
         )
 
         # Create crawler
@@ -210,13 +217,20 @@ class Crawl4AIService:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
-            # Anti-detection flags
+            # Anti-detection flags and SSL handling
             extra_args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-            ] if config.stealth_mode else []
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+                "--ignore-certificate-errors-spki-list",
+                "--disable-web-security",
+            ] if config.stealth_mode else [
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+            ]
         )
 
         # Configure crawler run
@@ -301,13 +315,20 @@ class Crawl4AIService:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
-            # Anti-detection flags
+            # Anti-detection flags and SSL handling
             extra_args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-            ] if config.stealth_mode else []
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+                "--ignore-certificate-errors-spki-list",
+                "--disable-web-security",
+            ] if config.stealth_mode else [
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+            ]
         )
 
         # Use crawler as context manager (same pattern as scrape_single_url)

@@ -459,15 +459,48 @@ class ChunkingService:
                 return [self._create_chunk_metadata(paragraphs[0], 0)]
 
             # Generate embeddings for each paragraph
+            import asyncio
             embeddings = []
-            for para in paragraphs:
-                # Generate embedding (this is synchronous in the local service)
-                emb = embedding_service.generate_embeddings([para])
-                if emb and len(emb) > 0:
-                    embeddings.append(np.array(emb[0]))
-                else:
-                    # Fallback: use zero vector if embedding fails
-                    embeddings.append(np.zeros(384))  # all-MiniLM-L6-v2 dimension
+            # Batch process all paragraphs at once to avoid event loop issues
+            try:
+                # Try to detect if we're in an async context
+                try:
+                    current_loop = asyncio.get_running_loop()
+                    # We're in an async context, need to create a new thread
+                    import concurrent.futures
+                    import threading
+
+                    def sync_generate_embeddings():
+                        # Run in a new thread with its own event loop
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            return new_loop.run_until_complete(
+                                embedding_service.generate_embeddings(paragraphs)
+                            )
+                        finally:
+                            new_loop.close()
+
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(sync_generate_embeddings)
+                        emb_results = future.result()
+
+                except RuntimeError:
+                    # No running loop, we can use asyncio.run directly
+                    emb_results = asyncio.run(embedding_service.generate_embeddings(paragraphs))
+
+                # Process results
+                for i, para in enumerate(paragraphs):
+                    if emb_results and i < len(emb_results) and emb_results[i] is not None:
+                        embeddings.append(np.array(emb_results[i]))
+                    else:
+                        # Fallback: use zero vector if embedding fails
+                        embeddings.append(np.zeros(384))  # all-MiniLM-L6-v2 dimension
+
+            except Exception as e:
+                # Final fallback: use zero vectors for all paragraphs
+                print(f"[ChunkingService] Batch embedding generation failed: {e}")
+                embeddings = [np.zeros(384) for _ in paragraphs]
 
             # Calculate similarity between consecutive paragraphs
             similarities = []

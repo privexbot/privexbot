@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, model_validator
 from datetime import datetime
 
 from app.db.session import get_db
@@ -50,26 +50,148 @@ class CreateKBDraftRequest(BaseModel):
 
 
 class AddWebSourceRequest(BaseModel):
-    """Request model for adding web URL to draft"""
-    url: str = Field(..., description="Web URL to scrape/crawl")
+    """
+    Unified request model for adding web URLs to KB draft.
+
+    Supports both single URL and bulk operations with comprehensive configuration options.
+    All advanced options are optional - use what you need.
+    """
+    # Single URL or multiple URLs (unified approach)
+    url: Optional[str] = Field(None, description="Single web URL to scrape/crawl")
+    urls: Optional[List[str]] = Field(None, min_items=1, max_items=50, description="Multiple web URLs for bulk operation")
+
+    # Unified configuration (all options available)
     config: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Crawl configuration"
+        description="Comprehensive crawl configuration - all options available"
     )
+
+    # Per-URL configurations (for bulk operations)
+    per_url_configs: Optional[Dict[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="URL-specific configurations that override the main config"
+    )
+
+    @model_validator(mode='after')
+    def validate_url_input(self):
+        url = self.url
+        urls = self.urls
+
+        if not url and not urls:
+            raise ValueError("Either 'url' or 'urls' must be provided")
+        if url and urls:
+            raise ValueError("Provide either 'url' OR 'urls', not both")
+        return self
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "url": "https://docs.example.com/introduction",
-                "config": {
-                    "method": "crawl",
-                    "max_pages": 50,
-                    "max_depth": 3,
-                    "include_patterns": ["/docs/**", "/guides/**"],
-                    "exclude_patterns": ["/admin/**"],
-                    "stealth_mode": True
+            "examples": [
+                {
+                    "title": "Single URL - Basic",
+                    "summary": "Add single URL with basic configuration",
+                    "value": {
+                        "url": "https://docs.example.com/introduction",
+                        "config": {
+                            "method": "crawl",
+                            "max_pages": 50,
+                            "max_depth": 3,
+                            "stealth_mode": True
+                        }
+                    }
+                },
+                {
+                    "title": "Single URL - Advanced",
+                    "summary": "Add single URL with comprehensive configuration",
+                    "value": {
+                        "url": "https://docs.example.com/introduction",
+                        "config": {
+                            # Core crawling options
+                            "method": "crawl",
+                            "max_pages": 50,
+                            "max_depth": 3,
+
+                            # URL filtering
+                            "include_patterns": ["/docs/**", "/guides/**", "/api/**"],
+                            "exclude_patterns": ["/admin/**", "/auth/**", "*.pdf"],
+                            "allowed_domains": ["docs.example.com", "guides.example.com"],
+                            "follow_redirects": True,
+
+                            # Content filtering
+                            "content_types": ["text/html", "text/markdown", "text/plain"],
+                            "min_content_length": 100,
+                            "max_content_length": 1000000,
+                            "skip_duplicates": True,
+
+                            # Performance & behavior
+                            "stealth_mode": True,
+                            "wait_time": 1000,
+                            "timeout": 30000,
+                            "retries": 3,
+                            "concurrent_requests": 5,
+
+                            # Advanced options
+                            "extract_metadata": True,
+                            "preserve_formatting": True,
+                            "include_images": False,
+                            "include_tables": True,
+                            "remove_nav_elements": True,
+                            "remove_footer_elements": True,
+
+                            # JavaScript handling
+                            "enable_javascript": False,
+                            "wait_for_selector": None,
+                            "custom_headers": {},
+
+                            # Output format
+                            "output_format": "markdown",
+                            "include_raw_html": False
+                        }
+                    }
+                },
+                {
+                    "title": "Bulk URLs - Shared Config",
+                    "summary": "Add multiple URLs with shared configuration",
+                    "value": {
+                        "urls": [
+                            "https://docs.example.com/introduction",
+                            "https://docs.example.com/api",
+                            "https://docs.example.com/guides"
+                        ],
+                        "config": {
+                            "method": "crawl",
+                            "max_pages": 20,
+                            "max_depth": 2,
+                            "stealth_mode": True,
+                            "include_patterns": ["/docs/**", "/api/**", "/guides/**"]
+                        }
+                    }
+                },
+                {
+                    "title": "Bulk URLs - Per-URL Config",
+                    "summary": "Add multiple URLs with individual configurations",
+                    "value": {
+                        "urls": [
+                            "https://docs.example.com/introduction",
+                            "https://api.example.com/reference"
+                        ],
+                        "config": {
+                            "method": "crawl",
+                            "stealth_mode": True
+                        },
+                        "per_url_configs": {
+                            "https://docs.example.com/introduction": {
+                                "max_pages": 50,
+                                "include_patterns": ["/docs/**"]
+                            },
+                            "https://api.example.com/reference": {
+                                "max_pages": 10,
+                                "method": "scrape",
+                                "include_patterns": ["/api/**"]
+                            }
+                        }
+                    }
                 }
-            }
+            ]
         }
 
 
@@ -87,6 +209,62 @@ class UpdateEmbeddingConfigRequest(BaseModel):
     device: str = Field(default="cpu", description="Device (cpu or cuda)")
     batch_size: int = Field(default=32, ge=1, le=128, description="Batch size")
     normalize_embeddings: bool = Field(default=True, description="Normalize embeddings")
+
+
+class UpdateVectorStoreConfigRequest(BaseModel):
+    """Request model for vector store configuration"""
+    provider: str = Field(
+        default="qdrant",
+        description="Vector store provider",
+        pattern="^(qdrant|faiss|weaviate|milvus|pinecone|redis|chroma|elasticsearch)$"
+    )
+    connection_config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Provider-specific connection configuration"
+    )
+    metadata_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "store_full_content": True,
+            "indexed_fields": ["document_id", "page_number", "content_type"],
+            "filterable_fields": ["document_id", "created_at", "workspace_id"]
+        },
+        description="Metadata storage and indexing configuration"
+    )
+    performance_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "cache_enabled": True,
+            "cache_ttl": 3600,
+            "batch_upsert": True,
+            "batch_size": 100
+        },
+        description="Performance optimization settings"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "provider": "qdrant",
+                "connection_config": {
+                    "url": "http://localhost:6333",
+                    "api_key": None,
+                    "collection_name": "kb_{kb_id}",
+                    "timeout": 30
+                },
+                "metadata_config": {
+                    "store_full_content": True,
+                    "indexed_fields": ["document_id", "page_number", "content_type"],
+                    "filterable_fields": ["document_id", "created_at", "workspace_id"]
+                },
+                "performance_config": {
+                    "cache_enabled": True,
+                    "cache_ttl": 3600,
+                    "batch_upsert": True,
+                    "batch_size": 100
+                }
+            }
+        }
+
+
 
 
 # ========================================
@@ -202,15 +380,31 @@ async def add_web_source_to_draft(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Add web URL to KB draft.
+    Add web URL(s) to KB draft - Unified endpoint supporting both single and bulk operations.
 
     PHASE: 1 (Draft Mode - Redis Only)
-    DURATION: <50ms
+    DURATION: <50ms for single URL, <200ms for up to 50 URLs
     DATABASE: No writes to PostgreSQL
 
-    Returns:
+    UNIFIED FUNCTIONALITY:
+    - Single URL: Provide 'url' field with optional 'config'
+    - Bulk URLs: Provide 'urls' field with shared 'config' and optional 'per_url_configs'
+    - All 25+ configuration options available for any operation
+    - Advanced crawl configuration, URL filtering, performance tuning
+    - JavaScript handling, content filtering, output format control
+
+    Returns (Single URL):
         {
             "source_id": str,
+            "message": str
+        }
+
+    Returns (Bulk URLs):
+        {
+            "sources_added": int,
+            "source_ids": List[str],
+            "duplicates_skipped": int,
+            "invalid_urls": List[dict],
             "message": str
         }
     """
@@ -230,18 +424,55 @@ async def add_web_source_to_draft(
             detail="Access denied"
         )
 
-    # Add web source
     try:
-        source_id = kb_draft_service.add_web_source_to_draft(
-            draft_id=draft_id,
-            url=request.url,
-            config=request.config
-        )
+        # Handle single URL operation
+        if request.url:
+            source_id = kb_draft_service.add_web_source_to_draft(
+                draft_id=draft_id,
+                url=request.url,
+                config=request.config
+            )
 
-        return {
-            "source_id": source_id,
-            "message": "Web source added to draft (not saved to database yet)"
-        }
+            return {
+                "source_id": source_id,
+                "message": "Web source added to draft (not saved to database yet)"
+            }
+
+        # Handle bulk URLs operation
+        elif request.urls:
+            # Convert unified request format to bulk format expected by service
+            sources = []
+            for url in request.urls:
+                source_config = request.config.copy() if request.config else {}
+                # Apply per-URL config overrides if provided
+                if request.per_url_configs and url in request.per_url_configs:
+                    source_config.update(request.per_url_configs[url])
+
+                sources.append({
+                    "url": url,
+                    "config": source_config
+                })
+
+            results = kb_draft_service.add_bulk_web_sources_to_draft(
+                draft_id=draft_id,
+                sources=sources,
+                shared_config=request.config
+            )
+
+            return {
+                "sources_added": results["sources_added"],
+                "source_ids": results["source_ids"],
+                "duplicates_skipped": results["duplicates_skipped"],
+                "invalid_urls": results["invalid_urls"],
+                "message": f"Added {results['sources_added']} web sources to draft"
+            }
+
+        else:
+            # This should not happen due to model validation, but just in case
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either 'url' or 'urls' must be provided"
+            )
 
     except ValueError as e:
         raise HTTPException(
@@ -405,6 +636,100 @@ async def update_embedding_config(
         )
 
 
+@router.post("/{draft_id}/vector-store")
+async def update_vector_store_config(
+    draft_id: str,
+    request: UpdateVectorStoreConfigRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update vector store configuration for KB draft.
+
+    PHASE: 1 (Draft Mode - Redis Only)
+    DURATION: <50ms
+
+    Allows users to choose their preferred vector store provider:
+    - qdrant: Self-hosted, excellent filtering (default)
+    - faiss: Local file-based, free, good for small datasets
+    - weaviate: Cloud/self-hosted, good for hybrid search
+    - milvus: Production-scale, cloud/self-hosted
+    - pinecone: Managed cloud, expensive but easy
+    - redis: In-memory with RediSearch
+    - chroma: Simple development-friendly
+    - elasticsearch: Full-text + vector search
+
+    Returns:
+        {
+            "message": str,
+            "provider": str,
+            "validation": dict
+        }
+    """
+
+    # Verify draft exists and user owns it
+    draft = draft_service.get_draft(DraftType.KB, draft_id)
+
+    if not draft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="KB draft not found or expired"
+        )
+
+    if draft["created_by"] != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Validate provider and connection config
+    try:
+        # Basic validation
+        provider = request.provider
+
+        # Provider-specific validation
+        validation_result = _validate_vector_store_config(provider, request.connection_config)
+
+        if not validation_result["is_valid"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid vector store configuration: {validation_result['errors']}"
+            )
+
+        # Update vector store config in draft
+        vector_store_config = {
+            "provider": provider,
+            "connection": request.connection_config,
+            "metadata_config": request.metadata_config,
+            "performance": request.performance_config
+        }
+
+        # Get current draft and update
+        draft["vector_store_config"] = vector_store_config
+        draft["updated_at"] = datetime.utcnow().isoformat()
+
+        # Save back to Redis
+        import json
+        redis_key = f"draft:kb:{draft_id}"
+        draft_service.redis_client.setex(
+            redis_key,
+            draft_service.default_ttl,
+            json.dumps(draft, default=str)
+        )
+
+        return {
+            "message": f"Vector store configuration updated to {provider}",
+            "provider": provider,
+            "validation": validation_result
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+
 @router.get("/{draft_id}/validate")
 async def validate_kb_draft(
     draft_id: str,
@@ -537,7 +862,7 @@ class DraftPreviewRequest(BaseModel):
 @router.post("/{draft_id}/preview")
 async def preview_draft_chunking(
     draft_id: str,
-    request: DraftPreviewRequest,
+    request: DraftPreviewRequest = DraftPreviewRequest(),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -1049,3 +1374,109 @@ async def delete_kb_draft(
     draft_service.delete_draft(DraftType.KB, draft_id)
 
     return {"message": "KB draft deleted"}
+
+
+# ========================================
+# HELPER FUNCTIONS
+# ========================================
+
+def _validate_vector_store_config(provider: str, connection_config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate vector store configuration based on provider.
+
+    Args:
+        provider: Vector store provider name
+        connection_config: Provider-specific connection configuration
+
+    Returns:
+        Dict with validation result: {"is_valid": bool, "errors": List[str], "warnings": List[str]}
+    """
+    errors = []
+    warnings = []
+
+    # Provider-specific validation
+    if provider == "qdrant":
+        # Qdrant validation
+        if not connection_config.get("url"):
+            errors.append("Qdrant URL is required")
+
+        url = connection_config.get("url", "")
+        if url and not (url.startswith("http://") or url.startswith("https://")):
+            errors.append("Qdrant URL must start with http:// or https://")
+
+        # Optional API key validation
+        if connection_config.get("api_key") and len(connection_config["api_key"]) < 10:
+            warnings.append("API key seems too short, make sure it's correct")
+
+    elif provider == "faiss":
+        # FAISS validation (file-based)
+        index_path = connection_config.get("index_path", "")
+        if not index_path:
+            # Use default path
+            connection_config["index_path"] = "/data/kb_{kb_id}/faiss.index"
+            warnings.append("Using default FAISS index path")
+
+    elif provider == "weaviate":
+        # Weaviate validation
+        if not connection_config.get("url"):
+            errors.append("Weaviate URL is required")
+
+        if not connection_config.get("class_name"):
+            connection_config["class_name"] = "KnowledgeChunk"
+            warnings.append("Using default Weaviate class name: KnowledgeChunk")
+
+    elif provider == "milvus":
+        # Milvus validation
+        if not connection_config.get("host"):
+            connection_config["host"] = "localhost"
+            warnings.append("Using default Milvus host: localhost")
+
+        if not connection_config.get("port"):
+            connection_config["port"] = 19530
+            warnings.append("Using default Milvus port: 19530")
+
+    elif provider == "pinecone":
+        # Pinecone validation
+        if not connection_config.get("api_key"):
+            errors.append("Pinecone API key is required")
+
+        if not connection_config.get("environment"):
+            errors.append("Pinecone environment is required")
+
+        if not connection_config.get("index_name"):
+            connection_config["index_name"] = "privexbot-kb-{kb_id}"
+            warnings.append("Using default Pinecone index name pattern")
+
+    elif provider == "redis":
+        # Redis validation
+        if not connection_config.get("url"):
+            connection_config["url"] = "redis://localhost:6379"
+            warnings.append("Using default Redis URL: redis://localhost:6379")
+
+    elif provider == "chroma":
+        # Chroma validation
+        if not connection_config.get("host"):
+            connection_config["host"] = "localhost"
+            warnings.append("Using default Chroma host: localhost")
+
+        if not connection_config.get("port"):
+            connection_config["port"] = 8000
+            warnings.append("Using default Chroma port: 8000")
+
+    elif provider == "elasticsearch":
+        # Elasticsearch validation
+        if not connection_config.get("url"):
+            connection_config["url"] = "http://localhost:9200"
+            warnings.append("Using default Elasticsearch URL: http://localhost:9200")
+
+    else:
+        errors.append(f"Unsupported vector store provider: {provider}")
+
+    return {
+        "is_valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "validated_config": connection_config
+    }
+
+

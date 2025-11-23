@@ -10,7 +10,7 @@
 services:
   backend:
     # REPLACE THIS: Use digest from build-push-cpu.sh output
-    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    image: harystyles/privexbot-backend@sha256:UPDATE_WITH_DIGEST_FROM_BUILD_SCRIPT
     container_name: privexbot-backend-prod
     ports:
       - "8000:8000"
@@ -47,7 +47,7 @@ services:
   # Celery worker for background tasks (KB processing, embeddings, crawling)
   celery-worker:
     # REPLACE THIS: Use same digest from build-push-cpu.sh output
-    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    image: harystyles/privexbot-backend@sha256:UPDATE_WITH_DIGEST_FROM_BUILD_SCRIPT
     container_name: privexbot-celery-prod
     command: celery -A app.tasks.celery_worker worker --loglevel=info --queues=default,high_priority,low_priority --concurrency=2
     env_file:
@@ -79,7 +79,7 @@ services:
   # Celery beat for scheduled tasks (periodic re-indexing, maintenance)
   celery-beat:
     # REPLACE THIS: Use same digest from build-push-cpu.sh output
-    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    image: harystyles/privexbot-backend@sha256:UPDATE_WITH_DIGEST_FROM_BUILD_SCRIPT
     container_name: privexbot-celery-beat-prod
     command: celery -A app.tasks.celery_worker beat --loglevel=info
     env_file:
@@ -100,7 +100,7 @@ services:
   # Flower for Celery monitoring (optional in production)
   flower:
     # REPLACE THIS: Use same digest from build-push-cpu.sh output
-    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    image: harystyles/privexbot-backend@sha256:UPDATE_WITH_DIGEST_FROM_BUILD_SCRIPT
     container_name: privexbot-flower-prod
     command: celery -A app.tasks.celery_worker flower --port=5555 --basic_auth=admin:${FLOWER_PASSWORD}
     ports:

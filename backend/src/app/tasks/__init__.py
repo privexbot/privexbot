@@ -21,3 +21,9 @@ from app.tasks.document_processing_tasks import (  # noqa: F401
     process_document_task,
     reprocess_document_task
 )
+from app.tasks.kb_maintenance_tasks import (  # noqa: F401
+    cleanup_expired_pipelines_task,
+    reindex_stale_kbs_task,
+    health_check_qdrant_collections_task,
+    manual_cleanup_kb_task
+)

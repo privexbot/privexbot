@@ -301,16 +301,16 @@ class QdrantService:
             if filters:
                 qdrant_filter = self._build_filter(filters)
 
-            # Search
-            search_results = self.client.search(
+            # Search using the new Qdrant API
+            search_results = self.client.query_points(
                 collection_name=collection_name,
-                query_vector=query_embedding,
+                query=query_embedding,
                 limit=top_k,
                 score_threshold=score_threshold,
                 query_filter=qdrant_filter,
                 with_payload=True,
                 with_vectors=False  # Don't return vectors (save bandwidth)
-            )
+            ).points
 
             # Convert to SearchResult objects
             results = []
@@ -409,6 +409,54 @@ class QdrantService:
             print(f"[QdrantService] Error deleting chunks from {collection_name}: {e}")
             raise
 
+    async def check_collection_exists(self, kb_id: UUID) -> bool:
+        """
+        Check if a collection exists for a knowledge base.
+
+        Args:
+            kb_id: Knowledge base UUID
+
+        Returns:
+            True if collection exists, False otherwise
+        """
+        collection_name = self._get_collection_name(kb_id)
+
+        try:
+            self.client.get_collection(collection_name=collection_name)
+            return True
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                return False
+            raise
+        except Exception as e:
+            print(f"[QdrantService] Error checking collection {collection_name}: {e}")
+            return False
+
+    async def get_collection_stats(self, kb_id: UUID) -> Dict[str, Any]:
+        """
+        Get statistics about a knowledge base collection.
+
+        Args:
+            kb_id: Knowledge base UUID
+
+        Returns:
+            Dict with collection statistics
+        """
+        collection_name = self._get_collection_name(kb_id)
+
+        try:
+            info = self.client.get_collection(collection_name=collection_name)
+
+            return {
+                "vectors_count": info.points_count,  # Points are the vectors
+                "points_count": info.points_count,
+                "segments_count": info.segments_count,
+                "status": info.status
+            }
+        except Exception as e:
+            print(f"[QdrantService] Error getting collection stats for {collection_name}: {e}")
+            raise
+
     async def get_collection_info(self, kb_id: UUID) -> Optional[Dict[str, Any]]:
         """
         Get information about a knowledge base collection.
@@ -427,7 +475,7 @@ class QdrantService:
 
             return {
                 "name": collection_name,
-                "vectors_count": info.vectors_count,
+                "vectors_count": info.points_count,  # Points are the vectors
                 "points_count": info.points_count,
                 "segments_count": info.segments_count,
                 "status": info.status,
