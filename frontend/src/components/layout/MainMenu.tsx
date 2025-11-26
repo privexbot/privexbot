@@ -80,8 +80,8 @@ const mainMenuItems: MenuItem[] = [
     icon: Workflow,
   },
   {
-    name: "Knowledge Base",
-    href: "/knowledge-base",
+    name: "Knowledge Bases",
+    href: "/knowledge-bases",
     icon: Database,
   },
   {

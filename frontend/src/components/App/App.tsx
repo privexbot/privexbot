@@ -12,7 +12,9 @@ import { OrganizationsPage } from "@/pages/OrganizationsPage";
 import { InvitationAcceptPage } from "@/pages/InvitationAcceptPage";
 import { ChatbotsPage } from "@/pages/ChatbotsPage";
 import { StudioPage } from "@/pages/StudioPage";
-import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage";
+import KnowledgeBasesPage from "@/pages/knowledge-bases/index";
+import CreateKnowledgeBasePage from "@/pages/knowledge-bases/create";
+import KBProcessingPage from "@/pages/knowledge-bases/processing";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { LeadsPage } from "@/pages/LeadsPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
@@ -69,10 +71,26 @@ function App() {
                 }
               />
               <Route
-                path="/knowledge-base"
+                path="/knowledge-bases"
                 element={
                   <ProtectedRoute>
-                    <KnowledgeBasePage />
+                    <KnowledgeBasesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/create"
+                element={
+                  <ProtectedRoute>
+                    <CreateKnowledgeBasePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/processing"
+                element={
+                  <ProtectedRoute>
+                    <KBProcessingPage />
                   </ProtectedRoute>
                 }
               />
