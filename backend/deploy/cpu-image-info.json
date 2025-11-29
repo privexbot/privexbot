@@ -1,11 +1,11 @@
 {
   "image": "harystyles/privexbot-backend",
   "version": "0.0.1",
-  "digest": "sha256:9816d0cd309089ffff1cde924b63e523e49deb7efb94a6f61b16bb125663dba6",
-  "full_image": "harystyles/privexbot-backend@sha256:9816d0cd309089ffff1cde924b63e523e49deb7efb94a6f61b16bb125663dba6",
+  "digest": "sha256:17aa539a2c3a02fd7cf409da7042652b9c3eccb79bcda27bbca2692ffbf165ab",
+  "full_image": "harystyles/privexbot-backend@sha256:17aa539a2c3a02fd7cf409da7042652b9c3eccb79bcda27bbca2692ffbf165ab",
   "cpu_tag": "0.0.1-cpu",
-  "build_date": "2025-11-27T10:16:44Z",
-  "git_sha": "0434fe0465a225f81c618d130d05ebb17bfeee62",
-  "short_sha": "0434fe0",
+  "build_date": "2025-11-29T01:17:13Z",
+  "git_sha": "44f6c3dcb2b59d5ce3c88094b16d5a19390aa66b",
+  "short_sha": "44f6c3d",
   "dockerfile": "Dockerfile.cpu"
 }

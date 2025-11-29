@@ -145,6 +145,21 @@ interface KBStoreActions {
   clearPreview: () => void;
 
   // ========================================
+  // CONTENT EDITING ACTIONS
+  // ========================================
+  updatePageContent: (
+    pageIndex: number,
+    content: string,
+    operations?: any[]
+  ) => Promise<void>;
+  revertPageContent: (pageIndex: number, revisionId?: string) => Promise<void>;
+  exportContent: (
+    pageIndices?: number[],
+    format?: 'markdown' | 'plain_text' | 'html' | 'json'
+  ) => Promise<string>;
+  copyPageContent: (pageIndex: number, format?: 'markdown' | 'plain_text' | 'html') => Promise<string>;
+
+  // ========================================
   // PIPELINE ACTIONS
   // ========================================
   fetchPipelineStatus: (pipelineId: string) => Promise<PipelineStatusResponse>;
@@ -933,6 +948,118 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.formErrors = {};
             state.chunkingConfig = initialChunkingConfig;
           });
+        },
+
+        // ========================================
+        // CONTENT EDITING ACTIONS
+        // ========================================
+        updatePageContent: async (pageIndex, content, operations = []) => {
+          const { currentDraft } = get();
+          if (!currentDraft) {
+            throw new Error("No draft found");
+          }
+
+          try {
+            await kbClient.draft.updatePageContent(currentDraft.draft_id, pageIndex, {
+              page_index: pageIndex,
+              edited_content: content,
+              edit_operations: operations,
+              preserve_original: true,
+            });
+
+            // Update the local state
+            set((state) => {
+              if (!state.previewData?.pages) return;
+
+              const page = state.previewData.pages[pageIndex];
+              if (page) {
+                (page as any).edited_content = content;
+                (page as any).is_edited = true;
+                (page as any).last_edited_at = new Date().toISOString();
+              }
+            });
+          } catch (error) {
+            console.error("Failed to update page content:", error);
+            throw error;
+          }
+        },
+
+        revertPageContent: async (pageIndex, revisionId) => {
+          const { currentDraft } = get();
+          if (!currentDraft) {
+            throw new Error("No draft found");
+          }
+
+          try {
+            await kbClient.draft.revertPageContent(currentDraft.draft_id, pageIndex, {
+              page_index: pageIndex,
+              revision_id: revisionId,
+            });
+
+            // Update the local state
+            set((state) => {
+              if (!state.previewData?.pages) return;
+
+              const page = state.previewData.pages[pageIndex];
+              if (page) {
+                if (revisionId) {
+                  // Reverted to specific revision - keep as edited
+                  (page as any).is_edited = true;
+                } else {
+                  // Reverted to original - clear edited state
+                  delete (page as any).edited_content;
+                  (page as any).is_edited = false;
+                }
+                (page as any).last_edited_at = new Date().toISOString();
+              }
+            });
+          } catch (error) {
+            console.error("Failed to revert page content:", error);
+            throw error;
+          }
+        },
+
+        exportContent: async (pageIndices, format = 'markdown') => {
+          const { currentDraft } = get();
+          if (!currentDraft) {
+            throw new Error("No draft found");
+          }
+
+          try {
+            const response = await kbClient.draft.exportContent(currentDraft.draft_id, {
+              page_indices: pageIndices,
+              format,
+              include_metadata: false,
+              combine_pages: true,
+            });
+
+            return response.content;
+          } catch (error) {
+            console.error("Failed to export content:", error);
+            throw error;
+          }
+        },
+
+        copyPageContent: async (pageIndex, format = 'markdown') => {
+          const { currentDraft } = get();
+          if (!currentDraft) {
+            throw new Error("No draft found");
+          }
+
+          try {
+            const response = await kbClient.draft.copyPageContent(currentDraft.draft_id, pageIndex, {
+              page_index: pageIndex,
+              use_edited: true,
+              format,
+            });
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(response.content);
+            return response.content;
+          } catch (error) {
+            console.error("Failed to copy page content:", error);
+            throw error;
+          }
         },
       }))
     ),

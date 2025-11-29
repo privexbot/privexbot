@@ -564,7 +564,8 @@ class KBDraftService:
                 "kb_id": str(kb.id),
                 "pipeline_id": pipeline_id,
                 "sources": data.get("sources", []),
-                "config": data
+                "config": data,
+                "preview_data": draft.get("preview_data")  # Pass edited content for processing
             },
             queue="default"  # Using default queue (web_scraping queue needs to be configured)
         )
@@ -581,7 +582,6 @@ class KBDraftService:
             "tracking_url": f"/api/v1/pipelines/{pipeline_id}/status",
             "estimated_completion_minutes": validation.get("estimated_duration", 3)
         }
-
 
 # Global instance
 kb_draft_service = KBDraftService()

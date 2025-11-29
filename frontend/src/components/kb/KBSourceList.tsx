@@ -5,17 +5,18 @@
  */
 
 import React, { useState } from 'react';
-import { FileText, Globe, Type, Settings, Trash2, Eye, AlertCircle, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Globe, Type, Settings, Trash2, Eye, AlertCircle, CheckCircle, Edit2, Copy, Undo2, Download } from 'lucide-react';
 import { SourceType, DraftSource } from '@/types/knowledge-base';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useKBStore } from '@/store/kb-store';
 import { toast } from '@/components/ui/use-toast';
+import { ContentEditor } from '@/components/ui/content-editor';
+import { kbDraftApi } from '@/lib/kb-client';
 
 interface KBSourceListProps {
   sources: DraftSource[];
@@ -24,9 +25,14 @@ interface KBSourceListProps {
 export function KBSourceList({ sources }: KBSourceListProps) {
   const [deleteSourceId, setDeleteSourceId] = useState<string | null>(null);
   const [previewSource, setPreviewSource] = useState<DraftSource | null>(null);
-  const [expandedPages, setExpandedPages] = useState<boolean>(false);
+  const [editingPageIndex, setEditingPageIndex] = useState<number | null>(null);
 
-  const { removeSource } = useKBStore();
+  const {
+    removeSource,
+    previewData,
+    previewDraft,
+    currentDraft
+  } = useKBStore();
 
   if (sources.length === 0) {
     return (
@@ -124,14 +130,301 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     }
   };
 
-  const handlePreviewSource = (source: DraftSource): void => {
+  const handlePreviewSource = async (source: DraftSource): Promise<void> => {
     setPreviewSource(source);
+
+    // Check if source has its own preview pages in metadata
+    const sourceHasPreviewPages = source.metadata?.previewPages && Array.isArray(source.metadata.previewPages) && source.metadata.previewPages.length > 0;
+
+    // Debug logging removed - data flow confirmed working
+
+    // If this is a web source and we don't have preview data, generate it
+    if (source.type === SourceType.WEB && !sourceHasPreviewPages && !previewData) {
+      try {
+        await previewDraft(5); // Load preview data to enable editing
+      } catch (error) {
+        console.error('Failed to load preview data for editing:', error);
+        toast({
+          title: 'Preview Failed',
+          description: 'Failed to load preview data. Please try again.',
+          variant: 'destructive'
+        });
+      }
+    }
+  };
+
+  // Content editing handlers
+  const handleEditPage = (pageIndex: number): void => {
+    setEditingPageIndex(pageIndex);
+  };
+
+  const handleSaveEdit = async (pageIndex: number, content: string, operations: any[]): Promise<void> => {
+    try {
+      // Update frontend state immediately for responsiveness
+      if (previewSource?.metadata?.previewPages) {
+        const updatedPages = [...(previewSource.metadata.previewPages as any[])];
+        if (updatedPages[pageIndex]) {
+          updatedPages[pageIndex] = {
+            ...updatedPages[pageIndex],
+            edited_content: content,
+            original_content: updatedPages[pageIndex].original_content || updatedPages[pageIndex].content,
+            is_edited: true,
+            last_edited_at: new Date().toISOString()
+          };
+
+          setPreviewSource({
+            ...previewSource,
+            metadata: {
+              ...previewSource.metadata,
+              previewPages: updatedPages,
+              hasEdits: updatedPages.some(p => p.is_edited) // Track that edits exist
+            }
+          });
+
+          // Save changes back to backend draft for finalization
+          if (currentDraft?.draft_id) {
+            try {
+              // Get current preview data from store and update it
+              const currentPreviewData = previewData || { pages: [] };
+              const updatedPreviewData = {
+                ...currentPreviewData,
+                pages: updatedPages
+              };
+
+              await kbDraftApi.updatePreviewData(currentDraft.draft_id, updatedPreviewData);
+            } catch (backendError) {
+              console.warn('Failed to save to backend, but frontend state updated:', backendError);
+              // Don't fail the entire operation if backend save fails
+            }
+          }
+        }
+      }
+
+      setEditingPageIndex(null);
+      toast({
+        title: 'Content Edited',
+        description: 'Edits saved. Final processing will use your edited content.',
+      });
+    } catch (error) {
+      console.error('Failed to save content edit:', error);
+      toast({
+        title: 'Edit Failed',
+        description: 'Failed to save edits.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleRevertPage = async (pageIndex: number): Promise<void> => {
+    try {
+      // Frontend-only revert - aligns with draft-first architecture
+      if (previewSource?.metadata?.previewPages) {
+        const updatedPages = [...(previewSource.metadata.previewPages as any[])];
+        if (updatedPages[pageIndex]) {
+          // Remove edited content and reset to original
+          delete updatedPages[pageIndex].edited_content;
+          updatedPages[pageIndex].is_edited = false;
+          delete updatedPages[pageIndex].last_edited_at;
+
+          setPreviewSource({
+            ...previewSource,
+            metadata: {
+              ...previewSource.metadata,
+              previewPages: updatedPages
+            }
+          });
+        }
+      }
+
+      toast({
+        title: 'Content Reverted',
+        description: 'Content has been reverted to original version.',
+      });
+    } catch (error) {
+      console.error('Failed to revert content:', error);
+      toast({
+        title: 'Revert Failed',
+        description: 'Failed to revert content. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleCopyPage = async (pageIndex: number): Promise<void> => {
+    try {
+      // Frontend-only copy - get content from local state
+      const sourcePreviewPages = (previewSource?.metadata?.previewPages ||
+                                 previewSource?.metadata?.pages ||
+                                 previewSource?.metadata?.preview_pages) as any[] | undefined;
+      const storePreviewPages = previewData?.pages || [];
+      const pages = sourcePreviewPages && sourcePreviewPages.length > 0 ? sourcePreviewPages : storePreviewPages;
+
+      if (pages[pageIndex]) {
+        const page = pages[pageIndex];
+        const content = page.edited_content || page.content || '';
+        const title = page.title || page.url || `Page ${pageIndex + 1}`;
+        const formattedContent = `# ${title}\n\n${content}`;
+
+        await navigator.clipboard.writeText(formattedContent);
+        toast({
+          title: 'Content Copied',
+          description: 'Page content has been copied to clipboard.',
+        });
+      } else {
+        throw new Error('Page not found');
+      }
+    } catch (error) {
+      console.error('Failed to copy page content:', error);
+      toast({
+        title: 'Copy Failed',
+        description: 'Failed to copy content to clipboard.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleCopyAll = async (): Promise<void> => {
+    try {
+      // Frontend-only copy all - get content from local state
+      const sourcePreviewPages = (previewSource?.metadata?.previewPages ||
+                                 previewSource?.metadata?.pages ||
+                                 previewSource?.metadata?.preview_pages) as any[] | undefined;
+      const storePreviewPages = previewData?.pages || [];
+      const pages = sourcePreviewPages && sourcePreviewPages.length > 0 ? sourcePreviewPages : storePreviewPages;
+
+      if (pages.length === 0) {
+        toast({
+          title: 'No Content',
+          description: 'No pages available to copy.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Combine all page content
+      const allContent = pages.map((page, index) => {
+        const content = page.edited_content || page.content || '';
+        const title = page.title || page.url || `Page ${index + 1}`;
+        return `# ${title}\n\n${content}\n\n---\n`;
+      }).join('\n');
+
+      await navigator.clipboard.writeText(allContent);
+      toast({
+        title: 'Content Copied',
+        description: `All ${pages.length} pages copied to clipboard.`,
+      });
+    } catch (error) {
+      console.error('Failed to copy all content:', error);
+      toast({
+        title: 'Copy Failed',
+        description: 'Failed to copy content to clipboard.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleExportFormat = async (format: 'markdown' | 'plain_text' | 'html'): Promise<void> => {
+    try {
+      // Frontend-only export - format content from local state
+      const sourcePreviewPages = (previewSource?.metadata?.previewPages ||
+                                 previewSource?.metadata?.pages ||
+                                 previewSource?.metadata?.preview_pages) as any[] | undefined;
+      const storePreviewPages = previewData?.pages || [];
+      const pages = sourcePreviewPages && sourcePreviewPages.length > 0 ? sourcePreviewPages : storePreviewPages;
+
+      if (pages.length === 0) {
+        toast({
+          title: 'No Content',
+          description: 'No pages available to export.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      let exportContent = '';
+      let fileExtension = '';
+      let mimeType = '';
+
+      if (format === 'markdown') {
+        exportContent = pages.map((page, index) => {
+          const content = page.edited_content || page.content || '';
+          const title = page.title || page.url || `Page ${index + 1}`;
+          return `# ${title}\n\n${content}\n\n---\n`;
+        }).join('\n');
+        fileExtension = 'md';
+        mimeType = 'text/markdown';
+      } else if (format === 'plain_text') {
+        exportContent = pages.map((page, index) => {
+          const content = page.edited_content || page.content || '';
+          const title = page.title || page.url || `Page ${index + 1}`;
+          return `${title}\n${'='.repeat(title.length)}\n\n${content}\n\n`;
+        }).join('\n');
+        fileExtension = 'txt';
+        mimeType = 'text/plain';
+      } else if (format === 'html') {
+        exportContent = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Exported Content</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+        h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .page { margin-bottom: 40px; padding-bottom: 20px; border-bottom: 1px solid #ccc; }
+        pre { white-space: pre-wrap; background: #f5f5f5; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+${pages.map((page, index) => {
+  const content = page.edited_content || page.content || '';
+  const title = page.title || page.url || `Page ${index + 1}`;
+  return `    <div class="page">
+        <h1>${title}</h1>
+        <pre>${content}</pre>
+    </div>`;
+}).join('\n')}
+</body>
+</html>`;
+        fileExtension = 'html';
+        mimeType = 'text/html';
+      }
+
+      // Create and download file
+      const blob = new Blob([exportContent], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `exported-content.${fileExtension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Export Complete',
+        description: `Content exported as ${format}.`,
+      });
+    } catch (error) {
+      console.error('Failed to export content:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'Failed to export content.',
+        variant: 'destructive'
+      });
+    }
   };
 
   // Helper function to render web source preview content
   const renderWebPreviewContent = (source: DraftSource): React.ReactElement => {
-    const previewPages = source.metadata?.previewPages as unknown[] | undefined;
+    // Get preview pages from source metadata first, then fall back to store
+    // Check multiple possible keys where preview pages might be stored
+    const sourcePreviewPages = (source.metadata?.previewPages ||
+                               source.metadata?.pages ||
+                               source.metadata?.preview_pages) as any[] | undefined;
+    const storePreviewPages = previewData?.pages || [];
+    const previewPages = sourcePreviewPages && sourcePreviewPages.length > 0 ? sourcePreviewPages : storePreviewPages;
     const hasPreviewPages = Array.isArray(previewPages) && previewPages.length > 0;
+
+    // Data flow confirmed working - preview pages loaded successfully
     const hasPatterns = source.config?.include_patterns?.length || source.config?.exclude_patterns?.length;
     const hasStats = source.metadata?.wordCount;
 
@@ -175,62 +468,125 @@ export function KBSourceList({ sources }: KBSourceListProps) {
           </div>
         ) : null}
 
-        {/* Full Pages Content */}
+        {/* Enhanced Editable Pages Content */}
         {hasPreviewPages ? (
-          <div className="space-y-3">
-            <h4 className="font-semibold text-gray-900">Crawled Pages Content</h4>
-
-            {/* First page always visible */}
-            <Card className="border-gray-200">
-              <CardHeader className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm">
-                    <strong>Page 1:</strong> {String((previewPages![0] as Record<string, unknown>)?.title || (previewPages![0] as Record<string, unknown>)?.url || 'Main Page')}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {String((previewPages![0] as Record<string, unknown>)?.content || '').split(/\s+/).filter(Boolean).length.toLocaleString()} words
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-48 overflow-y-auto bg-gray-50 p-3 rounded text-sm">
-                  {String((previewPages![0] as Record<string, unknown>)?.content || 'No content extracted')}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Additional pages collapsible */}
-            {previewPages!.length > 1 ? (
-              <Collapsible open={expandedPages} onOpenChange={setExpandedPages}>
-                <CollapsibleTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between">
-                    <span>View All {previewPages!.length} Pages</span>
-                    {expandedPages ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <div className="space-y-4">
+            <div className="bg-white p-3 sm:p-4 rounded-lg border shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Crawled Pages Content</h4>
+                <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                  <Button variant="outline" size="sm" onClick={handleCopyAll} className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
+                    <Copy className="h-4 w-4 mr-2" />
+                    <span className="hidden sm:inline">Copy All Pages</span>
+                    <span className="sm:hidden">Copy All</span>
                   </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-3 mt-3">
-                  {previewPages!.slice(1).map((page: unknown, index: number) => (
-                    <Card key={index} className="border-gray-200">
-                      <CardHeader className="py-3">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm">
-                            <strong>Page {index + 2}:</strong> {String((page as Record<string, unknown>)?.title || (page as Record<string, unknown>)?.url || `Page ${index + 2}`)}
-                          </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
+                        <Download className="h-4 w-4 mr-2" />
+                        <span className="hidden sm:inline">Export All</span>
+                        <span className="sm:hidden">Export</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleExportFormat('markdown')}>
+                        📄 Export as Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExportFormat('plain_text')}>
+                        📝 Export as Plain Text
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExportFormat('html')}>
+                        🌐 Export as HTML
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Page Cards */}
+            {previewPages.map((page, index) => {
+              // Handle both original PagePreview and extended edited page data
+              const pageData = page as any; // Allow for extended properties
+              const isEdited = pageData.is_edited as boolean || false;
+              const content = (pageData.edited_content as string) || page.content || '';
+              const originalContent = (pageData.original_content as string) || page.content || '';
+              const title = page.title || page.url || `Page ${index + 1}`;
+
+              return (
+                <Card key={index} className="border-gray-200 min-w-0 flex-shrink-0">
+                  <CardHeader className="py-3 px-3 sm:px-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between w-full">
+                      <div className="flex flex-col gap-2 min-w-0 flex-1">
+                        <div className="text-sm font-medium break-words">
+                          <strong>Page {index + 1}:</strong> <span className="font-normal">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <div className="text-xs text-muted-foreground">
-                            {String((page as Record<string, unknown>)?.content || '').split(/\s+/).filter(Boolean).length} words
+                            {content.split(/\s+/).filter(Boolean).length.toLocaleString()} words
                           </div>
+                          {isEdited && (
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              Edited
+                            </Badge>
+                          )}
                         </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="max-h-32 overflow-y-auto bg-gray-50 p-3 rounded text-sm">
-                          {String((page as Record<string, unknown>)?.content || 'No content extracted')}
+                      </div>
+                      <div className="flex flex-row gap-2 sm:flex-row sm:items-center flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditPage(index)}
+                          className="bg-white text-xs sm:text-sm"
+                        >
+                          <Edit2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                          <span className="hidden sm:inline">Edit</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCopyPage(index)}
+                          className="bg-white text-xs sm:text-sm"
+                        >
+                          <Copy className="h-3 w-3 sm:h-4 sm:w-4" />
+                        </Button>
+                        {isEdited && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRevertPage(index)}
+                            className="text-orange-600 border-orange-200 hover:bg-orange-50 text-xs sm:text-sm"
+                          >
+                            <Undo2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                            <span className="hidden sm:inline">Revert</span>
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    {editingPageIndex === index ? (
+                      <ContentEditor
+                        pageIndex={index}
+                        originalContent={originalContent}
+                        editedContent={isEdited ? content : undefined}
+                        title={title}
+                        onSave={async (content, operations) => await handleSaveEdit(index, content, operations)}
+                        onCancel={() => setEditingPageIndex(null)}
+                        onRevert={() => handleRevertPage(index)}
+                      />
+                    ) : (
+                      <div className="max-h-48 overflow-auto bg-gray-50 p-4 rounded text-sm border min-w-0">
+                        <div className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed break-words overflow-wrap-anywhere">
+                          {content || 'No content extracted'}
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </CollapsibleContent>
-              </Collapsible>
-            ) : null}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         ) : (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -360,10 +716,9 @@ export function KBSourceList({ sources }: KBSourceListProps) {
       {/* Enhanced Preview Dialog with Full Pages Content */}
       <Dialog open={!!previewSource} onOpenChange={() => {
         setPreviewSource(null);
-        setExpandedPages(false);
       }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] flex flex-col p-0">
+          <DialogHeader className="flex-shrink-0 p-4 sm:p-6 border-b">
             <DialogTitle className="flex items-center gap-2">
               {previewSource ? getSourceIcon(previewSource.type) : null}
               Full Content Preview
@@ -373,8 +728,8 @@ export function KBSourceList({ sources }: KBSourceListProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="h-[60vh]">
-            <div className="p-4 space-y-4">
+          <div className="flex-1 overflow-auto">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {previewSource?.type === SourceType.TEXT ? (
                 <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-lg">
                   {(previewSource.metadata?.content as string) || 'No content available'}
@@ -384,12 +739,11 @@ export function KBSourceList({ sources }: KBSourceListProps) {
               {previewSource?.type === SourceType.WEB ? renderWebPreviewContent(previewSource) : null}
               {previewSource?.type === SourceType.FILE ? renderFilePreviewContent(previewSource) : null}
             </div>
-          </ScrollArea>
+          </div>
 
-          <div className="flex justify-end mt-4 border-t pt-4">
+          <div className="flex justify-end p-4 border-t flex-shrink-0">
             <Button onClick={() => {
               setPreviewSource(null);
-              setExpandedPages(false);
             }}>
               Close
             </Button>

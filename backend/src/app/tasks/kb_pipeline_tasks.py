@@ -171,7 +171,8 @@ def process_web_kb_task(
     kb_id: str,
     pipeline_id: str,
     sources: List[Dict[str, Any]],
-    config: Dict[str, Any]
+    config: Dict[str, Any],
+    preview_data: Optional[Dict[str, Any]] = None
 ):
     """
     Process web KB: Scrape → Parse → Chunk → Embed → Index.
@@ -300,49 +301,77 @@ def process_web_kb_task(
 
             try:
                 # ========================================
-                # STEP 2a: SCRAPE WEB PAGES
+                # STEP 2a: CHECK FOR EDITED CONTENT OR SCRAPE
                 # ========================================
 
-                tracker.add_log("info", f"Scraping {source_url}")
+                # Check if we have edited content from preview_data
+                scraped_pages = None
+                if preview_data and preview_data.get("pages"):
+                    # Use edited content from preview instead of scraping
+                    preview_pages = preview_data.get("pages", [])
+                    scraped_pages = []
 
-                # Build crawl config
-                crawl_config = CrawlConfig(
-                    max_pages=source_config.get("max_pages", 50),
-                    max_depth=source_config.get("max_depth", 3),
-                    include_patterns=source_config.get("include_patterns", []),
-                    exclude_patterns=source_config.get("exclude_patterns", []),
-                    stealth_mode=source_config.get("stealth_mode", True)
-                )
+                    for page in preview_pages:
+                        # Use edited content if available, otherwise original content
+                        content = page.get("edited_content") or page.get("content", "")
 
-                # Scrape (single or crawl)
-                method = source_config.get("method", "single")
+                        # Create scraped_page format expected by processing logic
+                        scraped_page = {
+                            "url": page.get("url", source_url),
+                            "title": page.get("title", ""),
+                            "content": content,
+                            "markdown": content,  # Assume content is already markdown
+                            "is_edited": page.get("is_edited", False),
+                            "source": "preview_data"  # Flag to indicate this came from preview
+                        }
+                        scraped_pages.append(scraped_page)
 
-                print(f"[DEBUG] About to scrape: {source_url}, method={method}")
-                tracker.add_log("info", f"Starting scrape: {source_url} (method={method})")
+                    tracker.add_log("info", f"Using {len(scraped_pages)} edited pages from preview data for {source_url}")
+                    print(f"[DEBUG] Using {len(scraped_pages)} pages from preview_data (edited content)")
 
-                if method == "crawl":
-                    print(f"[DEBUG] Calling crawl_website for {source_url}")
-                    scraped_pages = loop.run_until_complete(
-                        crawl4ai_service.crawl_website(
-                            start_url=source_url,
-                            config=crawl_config
-                        )
+                if not scraped_pages:
+                    # No preview data available, proceed with normal scraping
+                    tracker.add_log("info", f"Scraping {source_url}")
+
+                    # Build crawl config
+                    crawl_config = CrawlConfig(
+                        max_pages=source_config.get("max_pages", 50),
+                        max_depth=source_config.get("max_depth", 3),
+                        include_patterns=source_config.get("include_patterns", []),
+                        exclude_patterns=source_config.get("exclude_patterns", []),
+                        stealth_mode=source_config.get("stealth_mode", True)
                     )
-                    print(f"[DEBUG] Crawl completed, got {len(scraped_pages)} pages")
-                else:
-                    # Single page scrape
-                    print(f"[DEBUG] Calling scrape_single_url for {source_url}")
-                    scraped_page = loop.run_until_complete(
-                        crawl4ai_service.scrape_single_url(
-                            url=source_url,
-                            config=crawl_config
+
+                    # Scrape (single or crawl)
+                    method = source_config.get("method", "single")
+
+                    print(f"[DEBUG] About to scrape: {source_url}, method={method}")
+                    tracker.add_log("info", f"Starting scrape: {source_url} (method={method})")
+
+                    if method == "crawl":
+                        print(f"[DEBUG] Calling crawl_website for {source_url}")
+                        scraped_pages = loop.run_until_complete(
+                            crawl4ai_service.crawl_website(
+                                start_url=source_url,
+                                config=crawl_config
+                            )
                         )
-                    )
-                    scraped_pages = [scraped_page]
-                    print(f"[DEBUG] Single page scrape completed")
+                        print(f"[DEBUG] Crawl completed, got {len(scraped_pages)} pages")
+                    else:
+                        # Single page scrape
+                        print(f"[DEBUG] Calling scrape_single_url for {source_url}")
+                        scraped_page = loop.run_until_complete(
+                            crawl4ai_service.scrape_single_url(
+                                url=source_url,
+                                config=crawl_config
+                            )
+                        )
+                        scraped_pages = [scraped_page]
+                        print(f"[DEBUG] Single page scrape completed")
 
                 tracker.update_stats(pages_scraped=tracker.stats["pages_scraped"] + len(scraped_pages))
-                tracker.add_log("info", f"Scraped {len(scraped_pages)} pages from {source_url}")
+                pages_source = "preview data with edits" if preview_data and preview_data.get("pages") else "live scraping"
+                tracker.add_log("info", f"Processed {len(scraped_pages)} pages from {source_url} using {pages_source}")
 
                 # ========================================
                 # STEP 2b: PROCESS EACH PAGE

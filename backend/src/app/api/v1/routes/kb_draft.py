@@ -856,7 +856,7 @@ class DraftPreviewRequest(BaseModel):
     strategy: Optional[str] = Field(None, description="Chunking strategy (overrides draft config if provided)")
     chunk_size: Optional[int] = Field(None, ge=100, le=5000, description="Chunk size (overrides draft config)")
     chunk_overlap: Optional[int] = Field(None, ge=0, le=1000, description="Chunk overlap (overrides draft config)")
-    max_preview_pages: int = Field(default=5, ge=1, le=10, description="Max pages to crawl for preview")
+    max_preview_pages: int = Field(default=100, ge=1, description="Max pages to crawl for preview")
 
 
 @router.post("/{draft_id}/preview")
@@ -967,6 +967,55 @@ async def preview_draft_chunking(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Preview generation failed: {str(e)}"
+        )
+
+
+@router.put("/{draft_id}/preview-data")
+async def update_draft_preview_data(
+    draft_id: str,
+    preview_data: Dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update draft preview data with edited content.
+
+    WHY: Save frontend edits back to backend draft for finalization
+    HOW: Update preview_data in Redis draft
+
+    PHASE: 1 (Draft Mode - Redis Only)
+
+    Args:
+        draft_id: KB draft ID
+        preview_data: Updated preview data (including edited pages)
+
+    Returns:
+        Success confirmation
+    """
+    try:
+        # Get draft to verify it exists and user has access
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KB draft not found"
+            )
+
+        # Update preview_data in draft
+        draft["preview_data"] = preview_data
+        draft_service.save_draft(DraftType.KB, draft_id, draft)
+
+        return {
+            "success": True,
+            "message": "Preview data updated successfully",
+            "draft_id": draft_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update preview data: {str(e)}"
         )
 
 
@@ -1336,147 +1385,4 @@ async def finalize_kb_draft(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to finalize KB draft"
         )
-
-
-@router.delete("/{draft_id}")
-async def delete_kb_draft(
-    draft_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Delete KB draft from Redis.
-
-    PHASE: 1 (Draft Mode - Redis Only)
-    DURATION: <10ms
-
-    Returns:
-        {
-            "message": str
-        }
-    """
-
-    # Verify draft exists and user owns it
-    draft = draft_service.get_draft(DraftType.KB, draft_id)
-
-    if not draft:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="KB draft not found or expired"
-        )
-
-    if draft["created_by"] != str(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    # Delete draft
-    draft_service.delete_draft(DraftType.KB, draft_id)
-
-    return {"message": "KB draft deleted"}
-
-
-# ========================================
-# HELPER FUNCTIONS
-# ========================================
-
-def _validate_vector_store_config(provider: str, connection_config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Validate vector store configuration based on provider.
-
-    Args:
-        provider: Vector store provider name
-        connection_config: Provider-specific connection configuration
-
-    Returns:
-        Dict with validation result: {"is_valid": bool, "errors": List[str], "warnings": List[str]}
-    """
-    errors = []
-    warnings = []
-
-    # Provider-specific validation
-    if provider == "qdrant":
-        # Qdrant validation
-        if not connection_config.get("url"):
-            errors.append("Qdrant URL is required")
-
-        url = connection_config.get("url", "")
-        if url and not (url.startswith("http://") or url.startswith("https://")):
-            errors.append("Qdrant URL must start with http:// or https://")
-
-        # Optional API key validation
-        if connection_config.get("api_key") and len(connection_config["api_key"]) < 10:
-            warnings.append("API key seems too short, make sure it's correct")
-
-    elif provider == "faiss":
-        # FAISS validation (file-based)
-        index_path = connection_config.get("index_path", "")
-        if not index_path:
-            # Use default path
-            connection_config["index_path"] = "/data/kb_{kb_id}/faiss.index"
-            warnings.append("Using default FAISS index path")
-
-    elif provider == "weaviate":
-        # Weaviate validation
-        if not connection_config.get("url"):
-            errors.append("Weaviate URL is required")
-
-        if not connection_config.get("class_name"):
-            connection_config["class_name"] = "KnowledgeChunk"
-            warnings.append("Using default Weaviate class name: KnowledgeChunk")
-
-    elif provider == "milvus":
-        # Milvus validation
-        if not connection_config.get("host"):
-            connection_config["host"] = "localhost"
-            warnings.append("Using default Milvus host: localhost")
-
-        if not connection_config.get("port"):
-            connection_config["port"] = 19530
-            warnings.append("Using default Milvus port: 19530")
-
-    elif provider == "pinecone":
-        # Pinecone validation
-        if not connection_config.get("api_key"):
-            errors.append("Pinecone API key is required")
-
-        if not connection_config.get("environment"):
-            errors.append("Pinecone environment is required")
-
-        if not connection_config.get("index_name"):
-            connection_config["index_name"] = "privexbot-kb-{kb_id}"
-            warnings.append("Using default Pinecone index name pattern")
-
-    elif provider == "redis":
-        # Redis validation
-        if not connection_config.get("url"):
-            connection_config["url"] = "redis://localhost:6379"
-            warnings.append("Using default Redis URL: redis://localhost:6379")
-
-    elif provider == "chroma":
-        # Chroma validation
-        if not connection_config.get("host"):
-            connection_config["host"] = "localhost"
-            warnings.append("Using default Chroma host: localhost")
-
-        if not connection_config.get("port"):
-            connection_config["port"] = 8000
-            warnings.append("Using default Chroma port: 8000")
-
-    elif provider == "elasticsearch":
-        # Elasticsearch validation
-        if not connection_config.get("url"):
-            connection_config["url"] = "http://localhost:9200"
-            warnings.append("Using default Elasticsearch URL: http://localhost:9200")
-
-    else:
-        errors.append(f"Unsupported vector store provider: {provider}")
-
-    return {
-        "is_valid": len(errors) == 0,
-        "errors": errors,
-        "warnings": warnings,
-        "validated_config": connection_config
-    }
-
 

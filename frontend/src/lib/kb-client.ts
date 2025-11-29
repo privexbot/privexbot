@@ -277,6 +277,27 @@ export const kbDraftApi = {
     } catch (error) {
       throw new Error(handleApiError(error));
     }
+  },
+
+  /**
+   * Update draft preview data with edited content
+   * PUT /api/v1/kb-drafts/{draft_id}/preview-data
+   */
+  async updatePreviewData(draftId: string, previewData: any): Promise<{
+    success: boolean;
+    message: string;
+    draft_id: string;
+  }> {
+    try {
+      const response = await apiClient.put<{
+        success: boolean;
+        message: string;
+        draft_id: string;
+      }>(`/kb-drafts/${draftId}/preview-data`, previewData);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 };
 
