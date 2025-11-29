@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useKBStore } from '@/store/kb-store';
+import { ChunkingStrategy } from '@/types/knowledge-base';
 
 export function KBChunkingConfig() {
   const { chunkingConfig, updateChunkingConfig, draftSources } = useKBStore();
@@ -30,7 +31,7 @@ export function KBChunkingConfig() {
       description: 'Small chunks for precise retrieval',
       icon: '🎯',
       config: {
-        strategy: 'semantic',
+        strategy: ChunkingStrategy.SEMANTIC,
         chunk_size: 256,
         chunk_overlap: 50,
         min_chunk_size: 50,
@@ -45,7 +46,7 @@ export function KBChunkingConfig() {
       description: 'Good balance of context and precision',
       icon: '⚖️',
       config: {
-        strategy: 'semantic',
+        strategy: ChunkingStrategy.BY_HEADING,
         chunk_size: 512,
         chunk_overlap: 100,
         min_chunk_size: 100,
@@ -60,7 +61,7 @@ export function KBChunkingConfig() {
       description: 'Larger chunks for more context',
       icon: '📚',
       config: {
-        strategy: 'semantic',
+        strategy: ChunkingStrategy.HYBRID,
         chunk_size: 1024,
         chunk_overlap: 200,
         min_chunk_size: 200,
@@ -73,28 +74,52 @@ export function KBChunkingConfig() {
 
   const strategies = [
     {
-      value: 'fixed',
-      name: 'Fixed Size',
-      description: 'Split by character count',
-      icon: '📏'
+      value: ChunkingStrategy.RECURSIVE,
+      name: 'Recursive',
+      description: 'Recursive text splitting with intelligent boundaries',
+      icon: '🔄'
     },
     {
-      value: 'semantic',
+      value: ChunkingStrategy.BY_HEADING,
+      name: 'By Heading',
+      description: 'Split by document headings and structure',
+      icon: '📋'
+    },
+    {
+      value: ChunkingStrategy.SEMANTIC,
       name: 'Semantic',
-      description: 'Split by meaning and context',
+      description: 'Split by meaning and semantic context',
       icon: '🧠'
     },
     {
-      value: 'paragraph',
-      name: 'Paragraph',
+      value: ChunkingStrategy.BY_SECTION,
+      name: 'By Section',
+      description: 'Split by document sections and topics',
+      icon: '📑'
+    },
+    {
+      value: ChunkingStrategy.ADAPTIVE,
+      name: 'Adaptive',
+      description: 'Adaptive chunking based on content type',
+      icon: '🎯'
+    },
+    {
+      value: ChunkingStrategy.SENTENCE_BASED,
+      name: 'Sentence Based',
+      description: 'Split by sentence boundaries',
+      icon: '📝'
+    },
+    {
+      value: ChunkingStrategy.PARAGRAPH_BASED,
+      name: 'Paragraph Based',
       description: 'Split by natural paragraphs',
       icon: '¶'
     },
     {
-      value: 'sentence',
-      name: 'Sentence',
-      description: 'Split by sentence boundaries',
-      icon: '📝'
+      value: ChunkingStrategy.HYBRID,
+      name: 'Hybrid',
+      description: 'Combines multiple strategies intelligently',
+      icon: '⚡'
     }
   ];
 
@@ -103,8 +128,7 @@ export function KBChunkingConfig() {
     if (preset) {
       setActivePreset(presetId);
       updateChunkingConfig({
-        ...preset.config,
-        strategy: preset.config.strategy as any // Cast to ChunkingStrategy
+        ...preset.config
       });
     }
   };
@@ -136,8 +160,11 @@ export function KBChunkingConfig() {
     let score = 70; // Base score
 
     // Strategy bonus
-    if (chunkingConfig.strategy === 'semantic') score += 20;
-    else if (chunkingConfig.strategy === 'paragraph_based') score += 10;
+    if (chunkingConfig.strategy === ChunkingStrategy.SEMANTIC) score += 20;
+    else if (chunkingConfig.strategy === ChunkingStrategy.HYBRID) score += 25;
+    else if (chunkingConfig.strategy === ChunkingStrategy.BY_HEADING) score += 15;
+    else if (chunkingConfig.strategy === ChunkingStrategy.ADAPTIVE) score += 18;
+    else if (chunkingConfig.strategy === ChunkingStrategy.PARAGRAPH_BASED) score += 10;
 
     // Size optimization
     if (chunkingConfig.chunk_size >= 256 && chunkingConfig.chunk_size <= 1024) score += 10;
@@ -218,7 +245,7 @@ export function KBChunkingConfig() {
           <RadioGroup
             value={chunkingConfig.strategy}
             onValueChange={(value) => handleConfigChange('strategy', value)}
-            className="grid grid-cols-2 md:grid-cols-4 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
           >
             {strategies.map((strategy) => (
               <div key={strategy.value} className="space-y-2">

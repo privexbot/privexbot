@@ -99,6 +99,9 @@ interface KBStoreActions {
   // DETAIL ACTIONS
   // ========================================
   fetchKB: (kbId: string) => Promise<void>;
+  getKB: (kbId: string) => Promise<KnowledgeBase>;
+  getKBDocuments: (kbId: string) => Promise<any[]>;
+  getKBChunks: (kbId: string) => Promise<any[]>;
   updateKB: (kbId: string, updates: Partial<KnowledgeBase>) => Promise<void>;
   deleteKB: (kbId: string) => Promise<void>;
   clearCurrentKB: () => void;
@@ -114,7 +117,8 @@ interface KBStoreActions {
   addWebSource: (
     urlOrUrls: string | string[],
     config?: Partial<WebSourceConfig>,
-    perUrlConfigs?: Record<string, Partial<WebSourceConfig>>
+    perUrlConfigs?: Record<string, Partial<WebSourceConfig>>,
+    metadata?: Record<string, unknown>
   ) => Promise<DraftSource[]>;
   addFileSource: (
     file: File,
@@ -173,7 +177,7 @@ const initialFormData = {
   name: "",
   description: "",
   workspace_id: "",
-  context: KBContext.BOTH,
+  context: KBContext.BOTH, // Default to both for maximum flexibility
 };
 
 const initialChunkingConfig: ChunkingConfig = {
@@ -287,6 +291,21 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           }
         },
 
+        getKB: async (kbId) => {
+          const kb = await kbClient.kb.get(kbId);
+          return kb;
+        },
+
+        getKBDocuments: async (kbId) => {
+          const response = await kbClient.kb.getDocuments(kbId);
+          return Array.isArray(response) ? response : (response as any)?.documents || [];
+        },
+
+        getKBChunks: async (kbId) => {
+          const response = await kbClient.kb.getChunks(kbId);
+          return Array.isArray(response) ? response : (response as any)?.chunks || [];
+        },
+
         updateKB: async (kbId, updates) => {
           try {
             const updatedKB = await kbClient.kb.update(kbId, updates);
@@ -375,7 +394,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           });
         },
 
-        addWebSource: async (urlOrUrls, config = {}, perUrlConfigs = {}) => {
+        addWebSource: async (urlOrUrls, config = {}, perUrlConfigs = {}, metadata = {}) => {
           const { currentDraft } = get();
           if (!currentDraft) throw new Error("No draft available");
 
@@ -452,6 +471,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 config: { ...defaultConfig, ...urlConfig },
                 status: "pending",
                 created_at: new Date().toISOString(),
+                metadata: metadata || {},
               });
             }
             else {
@@ -727,9 +747,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
             const result = await kbClient.preview.quickPreview({
               url,
-              chunking_config: options.strategy
-                ? { strategy: options.strategy }
-                : undefined,
+              ...(options.strategy && { chunking_config: { strategy: options.strategy } })
             });
 
             set((state) => {

@@ -52,6 +52,16 @@ else
     echo "✅ Migration completed successfully"
 fi
 
+echo "🎭 Checking Playwright browsers..."
+# Ensure Playwright browsers are installed (handles volume mount issues)
+if [ ! -d "/root/.cache/ms-playwright/chromium-"* ] 2>/dev/null; then
+    echo "🔧 Installing Playwright browsers (missing from runtime)..."
+    python -m playwright install chromium
+    echo "✅ Playwright browsers installed successfully"
+else
+    echo "✅ Playwright browsers already available"
+fi
+
 echo "🚀 Starting uvicorn server..."
 cd /app
 exec uvicorn app.main:app \

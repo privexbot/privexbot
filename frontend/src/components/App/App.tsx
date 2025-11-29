@@ -14,7 +14,14 @@ import { ChatbotsPage } from "@/pages/ChatbotsPage";
 import { StudioPage } from "@/pages/StudioPage";
 import KnowledgeBasesPage from "@/pages/knowledge-bases/index";
 import CreateKnowledgeBasePage from "@/pages/knowledge-bases/create";
+import KBDetailPage from "@/pages/knowledge-bases/detail";
 import KBProcessingPage from "@/pages/knowledge-bases/processing";
+import KBEditPage from "@/pages/knowledge-bases/edit";
+import KBRechunkPage from "@/pages/knowledge-bases/rechunk";
+import KBDocumentsPage from "@/pages/knowledge-bases/documents";
+import KBDocumentViewPage from "@/pages/knowledge-bases/document-view";
+import KBDocumentEditPage from "@/pages/knowledge-bases/document-edit";
+import KBAnalyticsPage from "@/pages/knowledge-bases/analytics";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { LeadsPage } from "@/pages/LeadsPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
@@ -87,10 +94,66 @@ function App() {
                 }
               />
               <Route
+                path="/knowledge-bases/:kbId"
+                element={
+                  <ProtectedRoute>
+                    <KBDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/knowledge-bases/:kbId/processing"
                 element={
                   <ProtectedRoute>
                     <KBProcessingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/edit"
+                element={
+                  <ProtectedRoute>
+                    <KBEditPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/rechunk"
+                element={
+                  <ProtectedRoute>
+                    <KBRechunkPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/documents"
+                element={
+                  <ProtectedRoute>
+                    <KBDocumentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/documents/:docId"
+                element={
+                  <ProtectedRoute>
+                    <KBDocumentViewPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/documents/:docId/edit"
+                element={
+                  <ProtectedRoute>
+                    <KBDocumentEditPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/analytics"
+                element={
+                  <ProtectedRoute>
+                    <KBAnalyticsPage />
                   </ProtectedRoute>
                 }
               />

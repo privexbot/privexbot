@@ -38,6 +38,7 @@ export function KBPreviewModal({ open, onOpenChange }: KBPreviewModalProps) {
     previewError
   } = useKBStore();
 
+
   useEffect(() => {
     if (open && !storePreviewData && draftSources.length > 0) {
       generatePreview();
@@ -54,31 +55,28 @@ export function KBPreviewModal({ open, onOpenChange }: KBPreviewModalProps) {
 
   // Remove the mock content function and use real API data
 
-  const getSourceName = (source: any) => {
-    switch (source.type) {
-      case 'web':
-        return source.url || 'Web Source';
-      case 'file':
-        return source.filename || 'File Source';
-      case 'text':
-        return source.title || 'Text Source';
-      default:
-        return 'Unknown Source';
-    }
-  };
 
   // Extract all chunks from all pages for filtering
-  const allChunks = storePreviewData?.pages.flatMap((page, pageIndex) =>
-    page.chunks.map((chunk, chunkIndex) => ({
+  // Backend returns: page.preview_chunks (array) and page.chunks (number)
+  const allChunks = storePreviewData?.pages?.flatMap((page, pageIndex) => {
+    // Use preview_chunks array instead of chunks number
+    const chunks = page.preview_chunks || [];
+    if (!Array.isArray(chunks)) {
+      console.warn('Expected preview_chunks to be array, got:', typeof chunks, chunks);
+      return [];
+    }
+    return chunks.map((chunk, chunkIndex) => ({
       ...chunk,
       id: `${pageIndex}_${chunkIndex}`,
       source_id: page.url,
       source_name: page.title,
-      chunk_index: chunkIndex,
+      chunk_index: chunk.index || chunkIndex, // Use backend index if available
       page_title: page.title,
-      page_url: page.url
-    }))
-  ) || [];
+      page_url: page.url,
+      word_count: chunk.token_count || 0, // Backend uses token_count
+      char_count: chunk.full_length || chunk.content?.length || 0
+    }));
+  }) || [];
 
   const filteredChunks = allChunks.filter(chunk => {
     const matchesSearch = !searchQuery || chunk.content.toLowerCase().includes(searchQuery.toLowerCase());
@@ -154,14 +152,14 @@ export function KBPreviewModal({ open, onOpenChange }: KBPreviewModalProps) {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold">{storePreviewData.total_chunks}</div>
-                  <div className="text-sm text-muted-foreground">Total Chunks</div>
+                  <div className="text-2xl font-bold">{allChunks.length}</div>
+                  <div className="text-sm text-muted-foreground">Chunks Shown</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
                   <div className="text-2xl font-bold">
-                    {allChunks.length > 0 ? Math.round(allChunks.reduce((sum, chunk) => sum + chunk.char_count, 0) / allChunks.length) : 0}
+                    {allChunks.length > 0 ? Math.round(allChunks.reduce((sum, chunk) => sum + (chunk.char_count || 0), 0) / allChunks.length) : 0}
                   </div>
                   <div className="text-sm text-muted-foreground">Avg Chars</div>
                 </CardContent>
@@ -174,16 +172,40 @@ export function KBPreviewModal({ open, onOpenChange }: KBPreviewModalProps) {
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold">{storePreviewData.pages.length}</div>
+                  <div className="text-2xl font-bold">{storePreviewData.pages?.length || 0}</div>
                   <div className="text-sm text-muted-foreground">Sources</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold">{storePreviewData.estimated_total_chunks}</div>
-                  <div className="text-sm text-muted-foreground">Est. Total</div>
+                  <div className="text-2xl font-bold">{storePreviewData.total_chunks || storePreviewData.estimated_total_chunks}</div>
+                  <div className="text-sm text-muted-foreground">Total Chunks</div>
                 </CardContent>
               </Card>
+            </div>
+
+            {/* Full Content Preview Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium">Full Page Content Preview</h3>
+                <Badge variant="outline">{storePreviewData.strategy} strategy</Badge>
+              </div>
+              {storePreviewData.pages?.[0]?.content && (
+                <Card className="p-4">
+                  <div className="bg-gray-50 p-3 rounded-lg max-h-64 overflow-y-auto">
+                    <pre className="text-xs whitespace-pre-wrap font-mono">
+                      {storePreviewData.pages[0].content.length > 2000
+                        ? storePreviewData.pages[0].content.substring(0, 2000) + '\n\n... (content truncated for preview)'
+                        : storePreviewData.pages[0].content}
+                    </pre>
+                  </div>
+                  <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
+                    <span><strong>URL:</strong> {storePreviewData.pages[0].url}</span>
+                    <span><strong>Title:</strong> {storePreviewData.pages[0].title || 'Untitled'}</span>
+                    <span><strong>Content Length:</strong> {storePreviewData.pages[0].content.length.toLocaleString()} chars</span>
+                  </div>
+                </Card>
+              )}
             </div>
 
             {/* Controls */}
@@ -249,10 +271,10 @@ export function KBPreviewModal({ open, onOpenChange }: KBPreviewModalProps) {
                         </pre>
                       </div>
 
-                      {chunk.overlap_with_previous > 0 && (
+                      {(chunk.overlap_with_previous || 0) > 0 && (
                         <div className="mt-2">
                           <Badge variant="outline" className="text-xs">
-                            {chunk.overlap_with_previous} chars overlap
+                            {chunk.overlap_with_previous || 0} chars overlap
                           </Badge>
                         </div>
                       )}

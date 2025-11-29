@@ -40,10 +40,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install runtime dependencies including Playwright requirements
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
+    # Playwright browser dependencies
+    libglib2.0-0 \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libatspi2.0-0 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libxkbcommon0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
@@ -52,6 +72,13 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install production web server
 RUN pip install --no-cache-dir gunicorn uvicorn[standard]
+
+# Install Playwright and chromium browser
+# Do this as root before switching to appuser
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
+RUN python -m playwright install chromium --with-deps && \
+    mkdir -p /home/appuser/.cache && \
+    mv /root/.cache/ms-playwright /home/appuser/.cache/ || true
 
 # Copy entrypoint script
 COPY scripts/docker/entrypoint-prod.sh /app/scripts/
@@ -63,9 +90,10 @@ COPY src/ ./src/
 # Set Python path to include src directory
 ENV PYTHONPATH=/app/src
 
-# Create non-root user
+# Create non-root user and fix browser permissions
 RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /home/appuser/.cache || true
 USER appuser
 
 # Expose port

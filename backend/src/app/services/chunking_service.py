@@ -112,23 +112,45 @@ class ChunkingService:
         1. Double newline (paragraphs)
         2. Single newline (lines)
         3. Space (words)
+        4. Empty string (character level) - handled specially
         """
 
         if separators is None:
             separators = ["\n\n", "\n", " ", ""]
 
+        # Filter out empty separators except the last one (for character splitting)
+        valid_separators = [sep for sep in separators if sep]
+
+        # If we've exhausted all separators or only have empty separators, do character-level splitting
+        if not valid_separators:
+            chunks = []
+            chunk_index = 0
+            for i in range(0, len(text), chunk_size - chunk_overlap):
+                chunk_text = text[i:i + chunk_size]
+                if chunk_text.strip():  # Only add non-empty chunks
+                    chunks.append(self._create_chunk_metadata(chunk_text, chunk_index))
+                    chunk_index += 1
+            return chunks
+
+        # Use the first valid separator
+        current_separator = valid_separators[0]
+        remaining_separators = valid_separators[1:] + [""]  # Add empty string at the end for final character splitting
+
         chunks = []
         current_chunk = ""
         chunk_index = 0
 
-        # Split by first separator
-        splits = text.split(separators[0]) if separators else [text]
+        # Split by current separator
+        splits = text.split(current_separator)
 
         for split in splits:
+            # Calculate size with separator
+            separator_size = len(current_separator) if current_chunk else 0
+
             # If split fits in current chunk
-            if len(current_chunk) + len(split) + len(separators[0]) <= chunk_size:
+            if len(current_chunk) + len(split) + separator_size <= chunk_size:
                 if current_chunk:
-                    current_chunk += separators[0] + split
+                    current_chunk += current_separator + split
                 else:
                     current_chunk = split
 
@@ -144,25 +166,24 @@ class ChunkingService:
                     current_chunk = ""
 
                 # Recursively chunk the large split
-                if len(separators) > 1:
+                if remaining_separators:
                     sub_chunks = self._recursive_chunk(
                         split,
                         chunk_size,
                         chunk_overlap,
-                        separators[1:]
+                        remaining_separators
                     )
                     for sub_chunk in sub_chunks:
                         sub_chunk["index"] = chunk_index
                         chunks.append(sub_chunk)
                         chunk_index += 1
                 else:
-                    # Force split at character level
+                    # Force split at character level (fallback)
                     for i in range(0, len(split), chunk_size - chunk_overlap):
-                        chunks.append(self._create_chunk_metadata(
-                            split[i:i + chunk_size],
-                            chunk_index
-                        ))
-                        chunk_index += 1
+                        chunk_text = split[i:i + chunk_size]
+                        if chunk_text.strip():
+                            chunks.append(self._create_chunk_metadata(chunk_text, chunk_index))
+                            chunk_index += 1
 
             # Start new chunk
             else:
@@ -174,11 +195,14 @@ class ChunkingService:
                     chunk_index += 1
 
                 # Start with overlap from previous chunk
-                overlap_start = max(0, len(current_chunk) - chunk_overlap)
-                current_chunk = current_chunk[overlap_start:] + separators[0] + split if current_chunk else split
+                if current_chunk and chunk_overlap > 0:
+                    overlap_start = max(0, len(current_chunk) - chunk_overlap)
+                    current_chunk = current_chunk[overlap_start:] + current_separator + split
+                else:
+                    current_chunk = split
 
         # Save final chunk
-        if current_chunk:
+        if current_chunk and current_chunk.strip():
             chunks.append(self._create_chunk_metadata(
                 current_chunk,
                 chunk_index

@@ -143,11 +143,18 @@ export default function KBProcessingPage() {
   };
 
   // Format time duration
-  const formatDuration = (start: string, end?: string) => {
+  const formatDuration = (start?: string, end?: string) => {
+    if (!start) return '--';
+
     const startTime = new Date(start).getTime();
+    if (isNaN(startTime)) return '--';
+
     const endTime = end ? new Date(end).getTime() : Date.now();
+    if (isNaN(endTime)) return '--';
+
     const duration = Math.floor((endTime - startTime) / 1000);
 
+    if (duration < 0) return '--';
     if (duration < 60) return `${duration}s`;
     if (duration < 3600)
       return `${Math.floor(duration / 60)}m ${duration % 60}s`;
@@ -280,7 +287,12 @@ export default function KBProcessingPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Started</p>
                 <p className="font-medium">
-                  {new Date(pipelineStatus.started_at).toLocaleTimeString()}
+                  {pipelineStatus.started_at
+                    ? (new Date(pipelineStatus.started_at).getTime()
+                      ? new Date(pipelineStatus.started_at).toLocaleTimeString()
+                      : '--')
+                    : '--'
+                  }
                 </p>
               </div>
               <div>
@@ -296,7 +308,10 @@ export default function KBProcessingPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Completed</p>
                   <p className="font-medium">
-                    {new Date(pipelineStatus.completed_at).toLocaleTimeString()}
+                    {new Date(pipelineStatus.completed_at).getTime()
+                      ? new Date(pipelineStatus.completed_at).toLocaleTimeString()
+                      : '--'
+                    }
                   </p>
                 </div>
               )}

@@ -228,14 +228,37 @@ export const kbDraftApi = {
    * Multi-page realistic preview
    * POST /api/v1/kb-drafts/{draft_id}/preview
    */
-  async preview(draftId: string, maxPages: number = 5): Promise<PreviewResponse> {
+  async preview(draftId: string, maxPages: number = 5, retryCount: number = 0): Promise<PreviewResponse> {
+    const maxRetries = 2;
+    const timeoutMs = 300000; // 5 minutes
+
     try {
+      console.log(`🔄 Preview attempt ${retryCount + 1}/${maxRetries + 1} (timeout: ${timeoutMs/1000}s)`);
+
       const response = await apiClient.post<PreviewResponse>(
         `/kb-drafts/${draftId}/preview`,
-        { max_pages: maxPages }
+        { max_pages: maxPages },
+        { timeout: timeoutMs }
       );
+
+      console.log('✅ Preview completed successfully');
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
+      const isTimeoutError = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+
+      if (isTimeoutError && retryCount < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
+        console.log(`⏰ Preview timeout, retrying in ${delay/1000}s... (attempt ${retryCount + 2}/${maxRetries + 1})`);
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.preview(draftId, maxPages, retryCount + 1);
+      }
+
+      // If all retries failed or non-timeout error
+      if (isTimeoutError) {
+        throw new Error('Preview operation timed out after multiple attempts. The URLs may be taking too long to crawl or the websites are blocking automated access.');
+      }
+
       throw new Error(handleApiError(error));
     }
   },
@@ -264,11 +287,11 @@ export const kbDraftApi = {
 export const previewApi = {
   /**
    * Quick preview chunking for a URL (no draft needed)
-   * POST /api/v1/preview
+   * POST /api/v1/kb-drafts/preview
    */
   async quickPreview(request: PreviewRequest): Promise<QuickPreviewResponse> {
     try {
-      const response = await apiClient.post<QuickPreviewResponse>('/preview', request);
+      const response = await apiClient.post<QuickPreviewResponse>('/kb-drafts/preview', request);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

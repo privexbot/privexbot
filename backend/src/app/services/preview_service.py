@@ -514,9 +514,10 @@ class PreviewService:
             final_chunk_size = chunk_size or chunking_config.get("chunk_size", 1000)
             final_chunk_overlap = chunk_overlap or chunking_config.get("chunk_overlap", 200)
 
-            # Step 3: Crawl up to max_preview_pages pages
+            # Step 3: Collect all web sources to crawl
+            # Process ALL sources, not limited by max_preview_pages (that's for crawl depth)
             pages_to_crawl = []
-            for source in sources[:max_preview_pages]:
+            for source in sources:
                 if source.get("type") == "web_scraping":
                     url = source.get("url")
                     config = source.get("config", {})
@@ -531,29 +532,118 @@ class PreviewService:
                     "message": "No web scraping sources found in draft"
                 }
 
-            # Step 4: Scrape pages and generate previews
+            # Step 4: Scrape or crawl ALL sources based on their individual configuration
+            # max_preview_pages limits crawl depth per URL, not number of URLs
             pages_preview = []
             total_chunks = 0
 
-            for page_info in pages_to_crawl[:max_preview_pages]:
+            for page_info in pages_to_crawl:
                 url = page_info["url"]
+                crawl_config = page_info["config"]
 
                 try:
-                    # Scrape page (raises exception on failure)
-                    scrape_result = await crawl4ai_service.scrape_single_url(url)
+                    # Check if we should use crawl or single scraping
+                    method = crawl_config.get("method", "single")
 
-                    # ScrapedPage object - access attributes directly
-                    content = scrape_result.content or ""
-                    metadata = scrape_result.metadata or {}
+                    if method == "crawl":
+                        # Use crawl_website with proper configuration
+                        from app.services.crawl4ai_service import CrawlConfig
 
-                    if not content:
+                        # Use URL-specific configuration, max_preview_pages only limits pages per URL
+                        config = CrawlConfig(
+                            method="crawl",
+                            max_pages=min(crawl_config.get("max_pages", 10), max_preview_pages),
+                            max_depth=crawl_config.get("max_depth", 2),
+                            include_patterns=crawl_config.get("include_patterns", []),
+                            exclude_patterns=crawl_config.get("exclude_patterns", []),
+                            stealth_mode=True,
+                            delay_between_requests=1.5,
+                            extract_links=True,
+                            preserve_code_blocks=True
+                        )
+
+                        # Crawl multiple pages
+                        scraped_pages = await crawl4ai_service.crawl_website(url, config)
+
+                        # Process each crawled page
+                        for scrape_result in scraped_pages:
+                            content = scrape_result.content or ""
+                            if not content:
+                                continue
+
+                            # Generate title with fallback
+                            title = scrape_result.title or self._extract_title_fallback(content, scrape_result.url)
+
+                            # Generate chunks for this page
+                            chunks = chunking_service.chunk_document(
+                                text=content,
+                                strategy=final_strategy,
+                                chunk_size=final_chunk_size,
+                                chunk_overlap=final_chunk_overlap
+                            )
+
+                            # Add page to preview
+                            pages_preview.append({
+                                "url": scrape_result.url,
+                                "title": title,
+                                "content": content,  # Store FULL content, no truncation
+                                "content_preview": content[:500] + "..." if len(content) > 500 else content,
+                                "chunks": len(chunks),
+                                "preview_chunks": [
+                                    {
+                                        "index": chunk["index"],
+                                        "content": chunk["content"][:300] + "..." if len(chunk["content"]) > 300 else chunk["content"],
+                                        "full_length": len(chunk["content"]),
+                                        "token_count": chunk.get("token_count", 0)
+                                    }
+                                    for chunk in chunks[:3]  # Show first 3 chunks per page
+                                ],
+                                "metadata": scrape_result.metadata,
+                                "word_count": scrape_result.metadata.get("word_count", 0)
+                            })
+
+                            total_chunks += len(chunks)
+                    else:
+                        # Single page scraping (original logic)
+                        scrape_result = await crawl4ai_service.scrape_single_url(url)
+                        content = scrape_result.content or ""
+
+                        if not content:
+                            continue
+
+                        # Generate title with fallback
+                        title = scrape_result.title or self._extract_title_fallback(content, scrape_result.url)
+
+                        # Generate chunks for this page
+                        chunks = chunking_service.chunk_document(
+                            text=content,
+                            strategy=final_strategy,
+                            chunk_size=final_chunk_size,
+                            chunk_overlap=final_chunk_overlap
+                        )
+
+                        # Add page to preview
                         pages_preview.append({
-                            "url": url,
-                            "error": "No content found",
-                            "chunks": 0,
-                            "preview_chunks": []
+                            "url": scrape_result.url,
+                            "title": title,
+                            "content": content,  # Store FULL content, no truncation
+                            "content_preview": content[:500] + "..." if len(content) > 500 else content,
+                            "chunks": len(chunks),
+                            "preview_chunks": [
+                                {
+                                    "index": chunk["index"],
+                                    "content": chunk["content"][:300] + "..." if len(chunk["content"]) > 300 else chunk["content"],
+                                    "full_length": len(chunk["content"]),
+                                    "token_count": chunk.get("token_count", 0)
+                                }
+                                for chunk in chunks[:3]  # Show first 3 chunks per page
+                            ],
+                            "metadata": scrape_result.metadata or {},
+                            "word_count": scrape_result.metadata.get("word_count", 0) if scrape_result.metadata else 0
                         })
-                        continue
+
+                        total_chunks += len(chunks)
+
                 except Exception as e:
                     pages_preview.append({
                         "url": url,
@@ -562,35 +652,6 @@ class PreviewService:
                         "preview_chunks": []
                     })
                     continue
-
-                # Apply chunking strategy
-                chunks = chunking_service.chunk_document(
-                    text=content,
-                    strategy=final_strategy,
-                    chunk_size=final_chunk_size,
-                    chunk_overlap=final_chunk_overlap
-                )
-
-                # Get first 3 chunks as preview
-                preview_chunks = chunks[:3]
-
-                pages_preview.append({
-                    "url": url,
-                    "title": metadata.get("title", "Untitled"),
-                    "content": content,  # Store full webpage content for pages endpoints
-                    "chunks": len(chunks),
-                    "preview_chunks": [
-                        {
-                            "index": chunk["index"],
-                            "content": chunk["content"][:300] + "..." if len(chunk["content"]) > 300 else chunk["content"],
-                            "full_length": len(chunk["content"]),
-                            "token_count": chunk.get("token_count", 0)
-                        }
-                        for chunk in preview_chunks
-                    ]
-                })
-
-                total_chunks += len(chunks)
 
             # Step 5: Estimate total chunks for all sources
             total_sources = len(sources)
@@ -860,6 +921,71 @@ class PreviewService:
             )
         except Exception as e:
             print(f"Cache write error: {e}")
+
+    def _extract_title_fallback(self, content: str, url: str) -> str:
+        """
+        Extract page title with fallbacks when metadata title is empty.
+
+        WHY: Many pages don't have proper title metadata, but have titles in content
+        HOW: Try multiple fallback strategies for title extraction
+        """
+        if not content:
+            return self._generate_title_from_url(url)
+
+        # Strategy 1: Look for markdown # heading at start
+        lines = content.split('\n')
+        for line in lines[:10]:  # Check first 10 lines
+            line = line.strip()
+            if line.startswith('# ') and len(line) > 2:
+                title = line[2:].strip()
+                if len(title) > 5 and len(title) < 100:  # Reasonable title length
+                    return title
+
+        # Strategy 2: Look for <h1> tags in content
+        import re
+        h1_match = re.search(r'<h1[^>]*>(.*?)</h1>', content, re.IGNORECASE | re.DOTALL)
+        if h1_match:
+            title = re.sub(r'<[^>]+>', '', h1_match.group(1)).strip()
+            if len(title) > 5 and len(title) < 100:
+                return title
+
+        # Strategy 3: Look for first substantial text paragraph
+        for line in lines[:20]:  # Check first 20 lines
+            line = line.strip()
+            if (len(line) > 10 and len(line) < 80 and
+                not line.startswith(('#', '-', '*', '```', 'http')) and
+                not line.startswith('[') and
+                line.count(' ') >= 2):  # At least 3 words
+                return line
+
+        # Strategy 4: Generate from URL
+        return self._generate_title_from_url(url)
+
+    def _generate_title_from_url(self, url: str) -> str:
+        """Generate a reasonable title from URL when all else fails"""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+
+            # Get path and clean it up
+            path = parsed.path.strip('/')
+            if path:
+                # Convert path to title
+                parts = path.split('/')
+                # Take the last meaningful part
+                for part in reversed(parts):
+                    if part and part not in ('index', 'home', 'readme'):
+                        # Convert hyphens/underscores to spaces and title case
+                        title = part.replace('-', ' ').replace('_', ' ').title()
+                        if len(title) > 3:
+                            return title
+
+            # Fallback to domain name
+            domain = parsed.netloc.replace('www.', '')
+            return domain.split('.')[0].title() if domain else "Untitled"
+
+        except Exception:
+            return "Untitled"
 
 
 # Global instance

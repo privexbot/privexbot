@@ -49,14 +49,11 @@ export const SourceType = {
 export type SourceType = typeof SourceType[keyof typeof SourceType]
 
 /**
- * Crawl Methods for web sources (matches backend exactly)
+ * Crawl Methods for web sources (matches Crawl4AI backend exactly)
  */
 export const CrawlMethod = {
-  SCRAPE: 'scrape',     // Single page scraping
-  CRAWL: 'crawl',       // Crawl linked pages
-  MAP: 'map',           // Sitemap-based crawling
-  SEARCH: 'search',     // Search and extract
-  EXTRACT: 'extract'    // Extract structured data
+  SCRAPE: 'single',     // Single page scraping (maps to scrape_single_url)
+  CRAWL: 'crawl',       // Crawl linked pages (maps to crawl_website)
 } as const;
 
 export type CrawlMethod = typeof CrawlMethod[keyof typeof CrawlMethod]
@@ -223,11 +220,14 @@ export interface DraftValidationResponse {
 
 /**
  * Preview Request (for quick preview without draft)
+ * Matches backend ChunkingPreviewRequest
  */
 export interface PreviewRequest {
   url: string;
-  chunking_config?: Partial<ChunkingConfig>;
-  max_pages?: number;
+  strategy?: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
+  max_preview_chunks?: number;
 }
 
 /**
@@ -235,10 +235,20 @@ export interface PreviewRequest {
  */
 export interface QuickPreviewResponse {
   url: string;
-  pages_found: number;
-  chunks: PreviewChunk[];
-  strategy_used: ChunkingStrategy;
+  title?: string;
+  pages_found?: number;
+  chunks?: PreviewChunk[]; // Legacy field, may be deprecated
+  preview_chunks: PreviewChunk[]; // Current field used by backend
+  strategy?: string; // Backend returns strategy as string
+  strategy_used?: ChunkingStrategy;
+  total_chunks_estimated?: number;
   recommendation?: string;
+  strategy_recommendation?: string;
+  content_enhancement?: any;
+  document_stats?: any;
+  intelligent_analysis?: any;
+  metadata?: any;
+  optimized_for?: string;
 }
 
 /**
@@ -262,21 +272,26 @@ export interface PreviewResponse {
 export interface PagePreview {
   url: string;
   title: string;
-  content_length: number;
-  chunks_created: number;
-  processing_time_ms: number;
-  chunks: PreviewChunk[];
+  content: string;              // Full scraped content
+  content_length?: number;
+  chunks: number;              // Number of chunks (not array)
+  chunks_created?: number;
+  processing_time_ms?: number;
+  preview_chunks: PreviewChunk[]; // Actual chunk objects array
 }
 
 /**
  * Preview Chunk
  */
 export interface PreviewChunk {
+  index: number;                   // Backend provides index
   content: string;
-  word_count: number;
-  char_count: number;
-  overlap_with_previous: number;
-  metadata: Record<string, unknown>;
+  full_length: number;             // Backend uses full_length instead of char_count
+  token_count: number;             // Backend uses token_count instead of word_count
+  word_count?: number;             // Keep for backwards compatibility
+  char_count?: number;             // Keep for backwards compatibility
+  overlap_with_previous?: number;
+  metadata?: Record<string, unknown>;
 }
 
 /**

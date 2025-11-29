@@ -196,6 +196,20 @@ print(script.get_current_head())
     echo "✅ Database migrations completed successfully"
 fi
 
+echo "🎭 Checking Playwright browsers..."
+# Ensure Playwright browsers are installed (handles volume mount issues)
+PLAYWRIGHT_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/home/appuser/.cache/ms-playwright}"
+if [ ! -d "$PLAYWRIGHT_PATH/chromium-"* ] 2>/dev/null; then
+    echo "🔧 Installing Playwright browsers (missing from runtime)..."
+    python -m playwright install chromium || {
+        echo "⚠️  Warning: Could not install Playwright browsers"
+        echo "   Web scraping features may not work properly"
+        echo "   To fix: Rebuild image with: ./scripts/docker/build-push-cpu.sh --no-cache"
+    }
+else
+    echo "✅ Playwright browsers already available"
+fi
+
 echo "🚀 Starting production server with gunicorn..."
 cd /app
 exec gunicorn src.app.main:app \

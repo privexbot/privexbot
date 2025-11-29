@@ -16,6 +16,8 @@ services:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
+      # Persist Playwright browsers to avoid repeated downloads
+      - playwright-browsers:/root/.cache/ms-playwright
     env_file:
       - .env.dev
     environment:
@@ -185,3 +187,4 @@ volumes:
   postgres_data_dev:
   redis_data_dev:
   qdrant_data_dev:
+  playwright-browsers:  # Persistent browser cache to avoid repeated downloads

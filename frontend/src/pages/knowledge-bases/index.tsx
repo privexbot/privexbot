@@ -40,11 +40,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { KBStatsCard } from '@/components/kb/KBStatsCard';
 import { KBProcessingStatus } from '@/components/kb/KBProcessingStatus';
-import { ComingSoonBadge } from '@/components/ui/coming-soon-badge';
 
 export default function KnowledgeBasesPage() {
   const navigate = useNavigate();
-  const { currentWorkspace } = useApp();
+  const { currentWorkspace, hasPermission } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedContext, setSelectedContext] = useState<string>('all');
@@ -385,7 +384,6 @@ export default function KnowledgeBasesPage() {
                                 <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/analytics`)}>
                                   <TrendingUp className="h-4 w-4 mr-2" />
                                   Analytics
-                                  <ComingSoonBadge className="ml-2" />
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -403,6 +401,13 @@ export default function KnowledgeBasesPage() {
                     </Card>
                   ))}
                 </div>
+              ) : !hasPermission('kb:view') ? (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    You do not have permission to view knowledge bases in this workspace.
+                  </AlertDescription>
+                </Alert>
               ) : (
                 <Card>
                   <CardContent className="text-center py-12">
@@ -495,7 +500,6 @@ export default function KnowledgeBasesPage() {
                                 <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/analytics`)}>
                                   <TrendingUp className="h-4 w-4 mr-2" />
                                   Analytics
-                                  <ComingSoonBadge className="ml-2" />
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem

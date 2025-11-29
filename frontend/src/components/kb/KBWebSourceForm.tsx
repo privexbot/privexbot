@@ -5,8 +5,9 @@
  */
 
 import { useState } from 'react';
-import { Globe, Settings, Plus } from 'lucide-react';
-import { CrawlMethod, WebSourceConfig } from '@/types/knowledge-base';
+import { Globe, Settings, Plus, Eye, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { useApp } from '@/contexts/AppContext';
+import { CrawlMethod, WebSourceConfig, KBContext } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,9 +22,11 @@ import kbClient from '@/lib/kb-client';
 interface KBWebSourceFormProps {
   onAdd: (sourceData: any) => void;
   onCancel: () => void;
+  context?: KBContext; // Add context prop
 }
 
-export function KBWebSourceForm({ onAdd, onCancel }: KBWebSourceFormProps) {
+export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext }: KBWebSourceFormProps) {
+  const { currentWorkspace } = useApp();
   const [url, setUrl] = useState('');
   const [bulkUrls, setBulkUrls] = useState('');
   const [bulkMode, setBulkMode] = useState(false);
@@ -31,7 +34,6 @@ export function KBWebSourceForm({ onAdd, onCancel }: KBWebSourceFormProps) {
     method: CrawlMethod.CRAWL as CrawlMethod,
     max_pages: 50,
     max_depth: 3,
-    include_subdomains: false,
     include_patterns: [] as string[],
     exclude_patterns: [] as string[],
   });
@@ -43,32 +45,102 @@ export function KBWebSourceForm({ onAdd, onCancel }: KBWebSourceFormProps) {
   const [bulkValidationResults, setBulkValidationResults] = useState<Array<{url: string, valid: boolean, error?: string}>>([]);
   const [bulkConfigs, setBulkConfigs] = useState<Record<string, Partial<WebSourceConfig>>>({});
   const [selectedBulkUrl, setSelectedBulkUrl] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<{
+    url: string,
+    title: string,
+    content: string,
+    wordCount: number,
+    chunks?: any[],
+    fullPages?: any[],
+    draftId?: string,
+    sourceId?: string,
+    configuration?: any
+  } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState<string>('');
+  const [canCancelPreview, setCanCancelPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Cleanup function to delete temporary preview draft
+  const cleanupPreviewDraft = async (draftId: string) => {
+    try {
+      await kbClient.draft.delete(draftId);
+      console.log('Cleaned up preview draft:', draftId);
+    } catch (error) {
+      console.error('Failed to cleanup preview draft:', error);
+    }
+  };
+
+  // Handle approve preview - add to main draft
+  const handleApprovePreview = async () => {
+    if (!previewData) return;
+
+    try {
+      // Call the original onAdd function with the configuration, URL, and full pages data
+      onAdd({
+        url: previewData.url,
+        config: previewData.configuration,
+        previewPages: previewData.fullPages, // Pass full pages for later preview
+        metadata: {
+          title: previewData.title,
+          wordCount: previewData.wordCount,
+          pageCount: previewData.fullPages?.length || 0,
+          crawledAt: new Date().toISOString()
+        }
+      });
+
+      // Clean up temporary preview draft
+      if (previewData.draftId) {
+        await cleanupPreviewDraft(previewData.draftId);
+      }
+
+      // Close preview
+      setShowPreview(false);
+      setPreviewData(null);
+
+      toast({
+        title: 'Source Added',
+        description: `Added ${previewData.url} to your knowledge base`,
+      });
+    } catch (error) {
+      console.error('Failed to approve preview:', error);
+      toast({
+        title: 'Error Adding Source',
+        description: 'Failed to add the source to your knowledge base',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Handle reject preview - cleanup and close
+  const handleRejectPreview = async () => {
+    if (!previewData) return;
+
+    // Clean up temporary preview draft
+    if (previewData.draftId) {
+      await cleanupPreviewDraft(previewData.draftId);
+    }
+
+    // Close preview
+    setShowPreview(false);
+    setPreviewData(null);
+
+    toast({
+      title: 'Preview Rejected',
+      description: 'The content preview has been discarded',
+    });
+  };
 
   const crawlMethodOptions = [
     {
       value: CrawlMethod.SCRAPE,
       label: 'Single Page',
-      description: 'Scrape only the specified page'
+      description: 'Scrape content from a single page only'
     },
     {
       value: CrawlMethod.CRAWL,
-      label: 'Crawl',
-      description: 'Crawl linked pages within the domain'
-    },
-    {
-      value: CrawlMethod.MAP,
-      label: 'Sitemap',
-      description: 'Use sitemap for efficient crawling'
-    },
-    {
-      value: CrawlMethod.SEARCH,
-      label: 'Search & Extract',
-      description: 'Search and extract specific content'
-    },
-    {
-      value: CrawlMethod.EXTRACT,
-      label: 'Structured Extract',
-      description: 'Extract structured data from the page'
+      label: 'Crawl Website',
+      description: 'Crawl multiple linked pages within the domain'
     }
   ];
 
@@ -132,6 +204,320 @@ export function KBWebSourceForm({ onAdd, onCancel }: KBWebSourceFormProps) {
     }
   };
 
+  const handlePreviewContent = async () => {
+    // In bulk mode, preview ALL validated URLs, not just selected one
+    const urlsToPreview = bulkMode
+      ? bulkValidationResults.filter(r => r.valid).map(r => r.url)
+      : [url];
+
+    if (urlsToPreview.length === 0) {
+      toast({
+        title: 'No URLs to Preview',
+        description: bulkMode ? 'Please validate URLs first' : 'Please enter a valid URL',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsLoadingPreview(true);
+    setPreviewData(null);
+
+    try {
+      // Step 1: Create temporary preview draft if needed
+      let previewDraft;
+      try {
+        const previewName = bulkMode && urlsToPreview.length > 1
+          ? `Preview ${urlsToPreview.length} URLs`
+          : `Preview ${urlsToPreview[0].substring(0, 50)}...`;
+
+        previewDraft = await kbClient.draft.create({
+          name: previewName,
+          description: bulkMode && urlsToPreview.length > 1
+            ? `Previewing ${urlsToPreview.length} URLs: ${urlsToPreview.map((u: string) => u.split('/')[2]).join(', ')}`
+            : `Temporary draft for previewing ${urlsToPreview[0]}`,
+          workspace_id: currentWorkspace?.id || 'default_workspace',
+          context: context // Use dynamic context from props
+        });
+        console.log('Created preview draft:', previewDraft.draft_id);
+      } catch (draftError) {
+        console.error('Failed to create preview draft:', draftError);
+        throw new Error('Unable to create preview draft. Please try again.');
+      }
+
+      // Step 2: Add ALL web sources to draft based on mode
+      let sourceResponse;
+      try {
+        if (bulkMode && urlsToPreview.length > 1) {
+          // Bulk mode: Add all URLs with their specific configurations
+          for (const urlToAdd of urlsToPreview) {
+            const sourceConfig = {
+              method: config.method || CrawlMethod.CRAWL,
+              max_pages: bulkConfigs[urlToAdd]?.max_pages || config.max_pages || 10,
+              max_depth: bulkConfigs[urlToAdd]?.max_depth || config.max_depth || 3,
+              // Use URL-specific patterns if available, otherwise empty array
+              include_patterns: bulkConfigs[urlToAdd]?.include_patterns || [],
+              exclude_patterns: bulkConfigs[urlToAdd]?.exclude_patterns || [],
+              include_subdomains: config.include_subdomains || false,
+              wait_time: config.wait_time || 0,
+              headers: config.headers || {}
+            };
+
+            console.log(`Adding source ${urlToAdd} with config:`, sourceConfig);
+
+            await kbClient.draft.addWebSources(previewDraft.draft_id, {
+              url: urlToAdd,
+              config: sourceConfig
+            });
+          }
+          console.log(`Added ${urlsToPreview.length} sources to preview draft`);
+          sourceResponse = { message: `Added ${urlsToPreview.length} sources` };
+        } else {
+          // Single URL mode
+          const sourceConfig = {
+            method: config.method || CrawlMethod.CRAWL,
+            max_pages: config.max_pages || 10,
+            max_depth: config.max_depth || 3,
+            include_patterns: config.include_patterns || [],
+            exclude_patterns: config.exclude_patterns || [],
+            include_subdomains: config.include_subdomains || false,
+            wait_time: config.wait_time || 0,
+            headers: config.headers || {}
+          };
+
+        console.log('Preview configuration being sent:', {
+          url: urlsToPreview[0],
+          config: sourceConfig,
+          draftId: previewDraft.draft_id
+        });
+
+        console.log('Current UI config state:', config);
+        console.log('CrawlMethod values:', {
+          CRAWL: CrawlMethod.CRAWL,
+          SCRAPE: CrawlMethod.SCRAPE,
+          currentMethod: config.method
+        });
+
+        sourceResponse = await kbClient.draft.addWebSources(previewDraft.draft_id, {
+          url: urlsToPreview[0],
+          config: sourceConfig
+        });
+        console.log('Added web source for preview:', sourceResponse);
+        }
+      } catch (sourceError) {
+        console.error('Failed to add web source:', sourceError);
+        // Clean up draft
+        await kbClient.draft.delete(previewDraft.draft_id).catch(console.error);
+        throw new Error('Unable to process URL. Please check the URL and try again.');
+      }
+
+      // Step 3: Run preview to crawl content with progress feedback
+      console.log('🔥 CRITICAL FIX: Running preview to crawl content (missing step identified)...');
+      setPreviewProgress('Starting crawl operation...');
+      setCanCancelPreview(true);
+
+      try {
+        const previewResponse = await kbClient.draft.preview(previewDraft.draft_id, 5);
+        console.log('✅ Preview triggered successfully:', previewResponse);
+        setPreviewProgress('Crawl completed, processing results...');
+      } catch (previewError) {
+        console.error('❌ Preview failed:', previewError);
+        setPreviewProgress('Preview failed, cleaning up...');
+        await kbClient.draft.delete(previewDraft.draft_id).catch(console.error);
+        throw new Error('Failed to crawl content. The website may be blocking automated access or your configuration needs adjustment.');
+      }
+
+      // Step 4: Wait for preview processing to complete
+      // Multi-URL crawling can take 1-2 minutes, especially with multiple pages per URL
+      const waitTime = bulkMode && urlsToPreview.length > 1 ? 15000 :
+                       config.method === CrawlMethod.CRAWL ? 10000 : 6000;
+      console.log(`⏳ Waiting ${waitTime}ms for preview processing to complete...`);
+      console.log(`📊 Processing ${urlsToPreview.length} URL(s) with crawl method - this may take 1-2 minutes`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+
+      let fullPages;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      // Store sourceConfig reference for later comparison
+      const sentConfig = {
+        method: config.method || CrawlMethod.CRAWL,
+        max_pages: config.max_pages || 50,
+        max_depth: config.max_depth || 3,
+        include_patterns: config.include_patterns || [],
+        exclude_patterns: config.exclude_patterns || [],
+        include_subdomains: config.include_subdomains || false,
+        wait_time: config.wait_time || 0,
+        headers: config.headers || {}
+      };
+
+      // Step 5: Get pages from preview data (should now have content!)
+      while (retryCount < maxRetries) {
+        try {
+          // First check draft and source status
+          const draftDetails = await kbClient.draft.get(previewDraft.draft_id);
+          console.log(`Draft details (attempt ${retryCount + 1}) - FULL RESPONSE:`, JSON.stringify(draftDetails, null, 2));
+
+          // Check for sources in the correct location (data.sources)
+          let source = null;
+          if ((draftDetails as any)?.data?.sources && Array.isArray((draftDetails as any).data.sources)) {
+            const sources = (draftDetails as any).data.sources;
+
+            if (bulkMode && urlsToPreview.length > 1) {
+              // In bulk mode, check if all sources are present
+              console.log(`🔍 BULK MODE: Checking for ${urlsToPreview.length} sources in data.sources array:`, sources);
+              const foundSources = sources.filter((s: any) => urlsToPreview.includes(s.url));
+              console.log(`Found ${foundSources.length}/${urlsToPreview.length} sources for bulk preview`);
+              if (foundSources.length > 0) {
+                source = foundSources[0]; // Use first source for preview purposes
+                console.log('Using first source for bulk preview:', source);
+              }
+            } else if (sourceResponse?.source_id) {
+              // Single mode: look for specific source_id
+              source = sources.find((s: any) => s.id === sourceResponse.source_id);
+              if (source) {
+                console.log(`Source found in data.sources:`, source);
+                console.log('🔍 CONFIG COMPARISON:');
+                console.log('  Frontend sent:', sentConfig);
+                console.log('  Backend stored:', source.config);
+                console.log('  Config matches:', JSON.stringify(sentConfig) === JSON.stringify(source.config));
+              } else {
+                console.log(`Source with ID ${sourceResponse.source_id} not found in data.sources array:`, sources);
+              }
+            } else {
+              // Single mode but no source_id available, try to find by URL
+              source = sources.find((s: any) => s.url === urlsToPreview[0]);
+              if (source) {
+                console.log(`Source found by URL match:`, source);
+              } else {
+                console.log(`No source found for URL ${urlsToPreview[0]} in data.sources array:`, sources);
+              }
+            }
+          } else if (draftDetails && Array.isArray(draftDetails.sources)) {
+            // Fallback: check direct sources array (original expected structure)
+            if (sourceResponse?.source_id) {
+              source = draftDetails.sources.find((s: any) => s.source_id === sourceResponse.source_id);
+              if (source) {
+                console.log(`Source found in direct sources array:`, source);
+              }
+            }
+          } else {
+            console.log('Sources not found. Checking data.sources:', !!(draftDetails as any)?.data?.sources);
+          }
+
+          fullPages = await kbClient.draft.getPages(previewDraft.draft_id, 1, 10);
+          console.log(`📄 Retrieved pages (attempt ${retryCount + 1}):`, fullPages);
+
+          if (fullPages && fullPages.length > 0) {
+            console.log('✅ SUCCESS: Pages found after preview!');
+            break; // Success, exit retry loop
+          }
+
+          // Since backend doesn't provide source status, we rely on pages being available
+          // If no pages but source exists, assume still processing and retry
+          if (retryCount < maxRetries - 1) {
+            console.log(`No pages found yet, retrying in 3 seconds... (attempt ${retryCount + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+
+        } catch (pagesError) {
+          console.error(`Failed to get pages (attempt ${retryCount + 1}):`, pagesError);
+
+          if (retryCount === maxRetries - 1) {
+            // Clean up draft on final failure
+            await kbClient.draft.delete(previewDraft.draft_id).catch(console.error);
+            throw new Error('Content extraction is taking longer than expected. This may be due to the website being slow to respond or your crawl configuration. Please try again or adjust your settings.');
+          }
+
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        retryCount++;
+      }
+
+      if (!fullPages || fullPages.length === 0) {
+        // Clean up draft and provide helpful error message
+        await kbClient.draft.delete(previewDraft.draft_id).catch(console.error);
+        const methodType = config.method === CrawlMethod.CRAWL ? 'crawling multiple pages' : 'scraping single page';
+        throw new Error(`No content could be extracted from this URL using ${methodType}. This could be due to:\n• The website blocks automated access\n• Your include/exclude patterns are too restrictive\n• The website requires JavaScript rendering\n• Try adjusting your crawl configuration or use a different URL.`);
+      }
+
+      // Step 4: Process and display full content preview
+      const totalPages = fullPages.length;
+      const totalContent = fullPages.map(page => page.content || '').join('\n\n');
+      const totalWords = totalContent.split(/\s+/).filter(word => word.length > 0).length;
+      const firstPageContent = fullPages[0]?.content || 'No content extracted';
+
+      // In bulk mode, aggregate data from all URLs
+      let aggregatedTitle = fullPages[0]?.title || new URL(urlsToPreview[0]).hostname;
+      let aggregatedConfigs: Record<string, Partial<WebSourceConfig>> = {};
+
+      if (bulkMode && urlsToPreview.length > 1) {
+        aggregatedTitle = `${urlsToPreview.length} URLs from ${urlsToPreview.map(u => new URL(u).hostname).filter((v, i, a) => a.indexOf(v) === i).join(', ')}`;
+
+        // Store configurations for each URL that was processed
+        urlsToPreview.forEach(url => {
+          aggregatedConfigs[url] = {
+            ...config,
+            ...bulkConfigs[url],
+            max_pages: bulkConfigs[url]?.max_pages || config.max_pages || 10,
+            max_depth: bulkConfigs[url]?.max_depth || config.max_depth || 3,
+            include_patterns: bulkConfigs[url]?.include_patterns || [],
+            exclude_patterns: bulkConfigs[url]?.exclude_patterns || []
+          };
+        });
+      }
+
+      const realPreviewData = {
+        url: bulkMode && urlsToPreview.length > 1 ? urlsToPreview.join(', ') : urlsToPreview[0],
+        urls: bulkMode ? urlsToPreview : undefined, // Store all URLs for bulk mode
+        title: aggregatedTitle,
+        content: firstPageContent,
+        wordCount: totalWords,
+        chunks: [], // No chunks in full content preview
+        fullPages: fullPages,
+        draftId: previewDraft.draft_id, // Store draft ID for cleanup
+        sourceId: sourceResponse?.source_id || `preview_${previewDraft.draft_id}`, // Handle bulk mode where source_id may be undefined
+        configuration: config,
+        perUrlConfigs: bulkMode ? aggregatedConfigs : undefined // Store per-URL configs for bulk
+      };
+
+      setPreviewData(realPreviewData);
+      setShowPreview(true);
+
+      toast({
+        title: 'Content Preview Ready',
+        description: `Extracted ${totalPages} page${totalPages !== 1 ? 's' : ''} with ${totalWords} words total`,
+      });
+
+    } catch (error: unknown) {
+      console.error('Content preview failed:', error);
+
+      let errorMessage = 'Unable to preview content. Please check the URL and try again.';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        const errorObj = error as any;
+        if (errorObj.response?.data?.detail) {
+          errorMessage = errorObj.response.data.detail;
+        } else if (errorObj.response?.data?.message) {
+          errorMessage = errorObj.response.data.message;
+        } else if (errorObj.message) {
+          errorMessage = errorObj.message;
+        }
+      }
+
+      toast({
+        title: 'Preview Failed',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingPreview(false);
+      setPreviewProgress('');
+      setCanCancelPreview(false);
+    }
+  };
+
   const handleAddPattern = (type: 'include' | 'exclude') => {
     const pattern = type === 'include' ? includePattern : excludePattern;
     if (!pattern.trim()) return;
@@ -187,7 +573,19 @@ export function KBWebSourceForm({ onAdd, onCancel }: KBWebSourceFormProps) {
         return;
       }
 
-      onAdd({ urls, config, bulk: true, urlConfigs: bulkConfigs });
+      // Merge global config with per-URL configs including patterns
+      const finalUrlConfigs: Record<string, Partial<WebSourceConfig>> = {};
+      for (const url of urls) {
+        finalUrlConfigs[url] = {
+          ...config,
+          ...bulkConfigs[url],
+          // Override with URL-specific patterns if they exist
+          include_patterns: bulkConfigs[url]?.include_patterns || config.include_patterns || [],
+          exclude_patterns: bulkConfigs[url]?.exclude_patterns || config.exclude_patterns || []
+        };
+      }
+
+      onAdd({ urls, config, bulk: true, urlConfigs: finalUrlConfigs });
 
       // Reset form
       setBulkUrls('');
@@ -226,7 +624,6 @@ export function KBWebSourceForm({ onAdd, onCancel }: KBWebSourceFormProps) {
       method: CrawlMethod.CRAWL,
       max_pages: 50,
       max_depth: 3,
-      include_subdomains: false,
       include_patterns: [],
       exclude_patterns: [],
     });
@@ -408,7 +805,9 @@ https://docs.example.com
                         </div>
 
                         {selectedBulkUrl === result.url && (
-                          <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t">
+                          <div className="space-y-3 mt-3 pt-3 border-t">
+                            {/* Max Pages and Max Depth */}
+                            <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">
                               <Label className="text-xs">Max Pages (default: {config.max_pages || 50})</Label>
                               <Input
@@ -467,24 +866,167 @@ https://docs.example.com
                                 placeholder={`Default: ${config.max_depth || 3}`}
                               />
                             </div>
-                            <div className="col-span-2">
-                              <div className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`subdomains-${result.url}`}
-                                  checked={bulkConfigs[result.url]?.include_subdomains ?? config.include_subdomains ?? false}
-                                  onCheckedChange={(checked) => {
-                                    setBulkConfigs(prev => ({
-                                      ...prev,
-                                      [result.url]: {
-                                        ...prev[result.url],
-                                        include_subdomains: checked === true
-                                      }
-                                    }));
-                                  }}
-                                />
-                                <Label htmlFor={`subdomains-${result.url}`} className="text-xs">
-                                  Include Subdomains
-                                </Label>
+                            </div>
+
+                            {/* URL-Specific Include Patterns */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">Include Patterns (for this URL)</Label>
+
+                              {/* Pattern Suggestions */}
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                <Label className="text-xs text-muted-foreground">Suggestions:</Label>
+                                {(() => {
+                                  const url = result.url;
+                                  const path = new URL(url).pathname;
+                                  const pathSegments = path.split('/').filter(Boolean);
+
+                                  const suggestions = [];
+                                  // Current path and all sub-paths
+                                  if (path !== '/') {
+                                    suggestions.push(`${path}/**`);
+                                  }
+                                  // Parent directory
+                                  if (pathSegments.length > 1) {
+                                    const parentPath = '/' + pathSegments.slice(0, -1).join('/');
+                                    suggestions.push(`${parentPath}/**`);
+                                  }
+                                  // Common patterns based on URL
+                                  if (path.includes('/docs')) suggestions.push('/**/docs/**');
+                                  if (path.includes('/api')) suggestions.push('/**/api/**');
+                                  if (path.includes('/concepts')) suggestions.push('/**/concepts/**');
+                                  if (path.includes('/guide')) suggestions.push('/**/guide/**');
+                                  if (path.includes('/sdk')) suggestions.push('/**/sdk/**');
+
+                                  return suggestions.slice(0, 3).map((suggestion, idx) => (
+                                    <Button
+                                      key={idx}
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 text-xs"
+                                      onClick={() => {
+                                        setBulkConfigs(prev => {
+                                          const current = prev[result.url] || {};
+                                          const currentPatterns = current.include_patterns || [];
+                                          if (!currentPatterns.includes(suggestion)) {
+                                            return {
+                                              ...prev,
+                                              [result.url]: {
+                                                ...current,
+                                                include_patterns: [...currentPatterns, suggestion]
+                                              }
+                                            };
+                                          }
+                                          return prev;
+                                        });
+                                      }}
+                                    >
+                                      {suggestion}
+                                    </Button>
+                                  ));
+                                })()}
+                              </div>
+
+                              <Input
+                                placeholder="e.g., /docs/**, /api/**"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const input = e.currentTarget;
+                                    const pattern = input.value.trim();
+                                    if (pattern) {
+                                      setBulkConfigs(prev => {
+                                        const current = prev[result.url] || {};
+                                        const currentPatterns = current.include_patterns || [];
+                                        return {
+                                          ...prev,
+                                          [result.url]: {
+                                            ...current,
+                                            include_patterns: [...currentPatterns, pattern]
+                                          }
+                                        };
+                                      });
+                                      input.value = '';
+                                    }
+                                  }
+                                }}
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                {bulkConfigs[result.url]?.include_patterns?.map((pattern: string, index: number) => (
+                                  <Badge
+                                    key={index}
+                                    variant="secondary"
+                                    className="cursor-pointer"
+                                    onClick={() => {
+                                      setBulkConfigs(prev => {
+                                        const current = prev[result.url] || {};
+                                        const patterns = current.include_patterns || [];
+                                        return {
+                                          ...prev,
+                                          [result.url]: {
+                                            ...current,
+                                            include_patterns: patterns.filter((_, i) => i !== index)
+                                          }
+                                        };
+                                      });
+                                    }}
+                                  >
+                                    {pattern} ×
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* URL-Specific Exclude Patterns */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">Exclude Patterns (for this URL)</Label>
+                              <Input
+                                placeholder="e.g., /admin/**, *.pdf"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const input = e.currentTarget;
+                                    const pattern = input.value.trim();
+                                    if (pattern) {
+                                      setBulkConfigs(prev => {
+                                        const current = prev[result.url] || {};
+                                        const currentPatterns = current.exclude_patterns || [];
+                                        return {
+                                          ...prev,
+                                          [result.url]: {
+                                            ...current,
+                                            exclude_patterns: [...currentPatterns, pattern]
+                                          }
+                                        };
+                                      });
+                                      input.value = '';
+                                    }
+                                  }
+                                }}
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                {bulkConfigs[result.url]?.exclude_patterns?.map((pattern: string, index: number) => (
+                                  <Badge
+                                    key={index}
+                                    variant="outline"
+                                    className="cursor-pointer"
+                                    onClick={() => {
+                                      setBulkConfigs(prev => {
+                                        const current = prev[result.url] || {};
+                                        const patterns = current.exclude_patterns || [];
+                                        return {
+                                          ...prev,
+                                          [result.url]: {
+                                            ...current,
+                                            exclude_patterns: patterns.filter((_, i) => i !== index)
+                                          }
+                                        };
+                                      });
+                                    }}
+                                  >
+                                    {pattern} ×
+                                  </Badge>
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -523,18 +1065,6 @@ https://docs.example.com
               </Select>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="subdomains"
-                checked={config.include_subdomains}
-                onCheckedChange={(checked) =>
-                  setConfig({ ...config, include_subdomains: !!checked })
-                }
-              />
-              <Label htmlFor="subdomains" className="text-sm">
-                Include subdomains
-              </Label>
-            </div>
           </div>
 
           {/* Advanced Options */}
@@ -665,11 +1195,193 @@ https://docs.example.com
             </CollapsibleContent>
           </Collapsible>
 
+          {/* Enhanced Content Preview with Approval Workflow */}
+          {showPreview && previewData && (
+            <Card className="border-blue-200 bg-blue-50/50">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Eye className="h-5 w-5" />
+                    Full Content Preview
+                  </CardTitle>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRejectPreview}
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+                <CardDescription>
+                  Preview of extracted content from {previewData.url} based on your configuration
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Content Statistics */}
+                  <div className="flex gap-6 text-sm text-muted-foreground">
+                    <span><strong>Total Pages:</strong> {previewData.fullPages?.length || 0}</span>
+                    <span><strong>Total Words:</strong> {previewData.wordCount.toLocaleString()}</span>
+                    <span><strong>Title:</strong> {previewData.title}</span>
+                  </div>
+
+                  {/* Configuration Summary */}
+                  <div className="bg-white border rounded p-3">
+                    <h4 className="font-medium mb-2 text-sm">Configuration Used:</h4>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <span><strong>Method:</strong> {previewData.configuration?.method || 'Single Page'}</span>
+                      <span><strong>Max Pages:</strong> {previewData.configuration?.max_pages || 'Not set'}</span>
+                      <span><strong>Max Depth:</strong> {previewData.configuration?.max_depth || 'Not set'}</span>
+                      <span><strong>Patterns:</strong> {(previewData.configuration?.include_patterns?.length || 0) + (previewData.configuration?.exclude_patterns?.length || 0)} rules</span>
+                    </div>
+                  </div>
+
+                  {/* First Page Content Preview */}
+                  <div>
+                    <h4 className="font-medium mb-2">First Page Content:</h4>
+                    <div className="bg-white border rounded p-3 max-h-48 overflow-y-auto text-sm">
+                      {previewData.content || 'No content could be extracted from the first page.'}
+                    </div>
+                  </div>
+
+                  {/* All Pages Preview */}
+                  {previewData.fullPages && previewData.fullPages.length > 1 && (
+                    <Collapsible>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          View All {previewData.fullPages.length} Pages
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3 space-y-3">
+                        {previewData.fullPages.slice(1).map((page, index) => (
+                          <div key={index} className="bg-white border rounded p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-xs text-muted-foreground">
+                                Page {index + 2}: {page.title || page.url}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {page.content?.split(/\s+/).length || 0} words
+                              </div>
+                            </div>
+                            <div className="text-sm max-h-32 overflow-y-auto bg-gray-50 p-2 rounded">
+                              {page.content || 'No content extracted from this page.'}
+                            </div>
+                          </div>
+                        ))}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
+
+                  {/* Decision Alert */}
+                  <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-medium text-amber-800 mb-1">Content Preview Complete</h4>
+                      <p className="text-sm text-amber-700 mb-3">
+                        This is the full content that would be extracted and added to your knowledge base.
+                        Review the content quality and coverage before deciding.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Approval Actions */}
+                  <div className="flex justify-between items-center pt-4 border-t">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRejectPreview}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Reject & Discard
+                    </Button>
+
+                    <div className="text-xs text-muted-foreground">
+                      Preview based on your crawl configuration
+                    </div>
+
+                    <Button
+                      type="button"
+                      onClick={handleApprovePreview}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Approve & Add Source
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3">
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel
             </Button>
+
+            {/* Preview Button - Fixed nested button issue */}
+            {isLoadingPreview ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center px-4 py-2 border rounded-md bg-muted">
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <div className="flex flex-col">
+                    <span className="text-sm">
+                      {bulkMode && bulkValidationResults.filter(r => r.valid).length > 1
+                        ? `Crawling ${bulkValidationResults.filter(r => r.valid).length} URLs... (up to 5 min)`
+                        : config.method === CrawlMethod.CRAWL ? 'Crawling...' : 'Extracting...'}
+                    </span>
+                    {previewProgress && (
+                      <div className="text-xs text-muted-foreground">
+                        {previewProgress}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {canCancelPreview && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setIsLoadingPreview(false);
+                      setPreviewProgress('');
+                      setCanCancelPreview(false);
+                      toast({
+                        title: 'Preview Cancelled',
+                        description: 'Preview operation was cancelled by user'
+                      });
+                    }}
+                    className="text-xs h-8"
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreviewContent}
+                disabled={bulkMode ?
+                           bulkValidationResults.filter(r => r.valid).length === 0 :
+                           !url.trim() || (validationResult && !validationResult.valid)
+                         }
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                Preview Content
+              </Button>
+            )}
+
             <Button
               type="submit"
               disabled={isValidating ||

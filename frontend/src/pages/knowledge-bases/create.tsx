@@ -124,9 +124,24 @@ export default function CreateKnowledgeBasePage() {
       switch (sourceType) {
         case SourceType.WEB:
           if (sourceData.bulk && Array.isArray(sourceData.urls)) {
-            await addWebSource(sourceData.urls as string[], sourceData.config as Record<string, unknown>);
+            // For bulk sources, pass per-URL configs and metadata
+            await addWebSource(
+              sourceData.urls as string[],
+              sourceData.config as Record<string, unknown>,
+              sourceData.perUrlConfigs as Record<string, Record<string, unknown>> | undefined,
+              sourceData.metadata as Record<string, unknown> | undefined
+            );
           } else if (typeof sourceData.url === 'string') {
-            await addWebSource(sourceData.url, sourceData.config as Record<string, unknown>);
+            // For single source, pass preview pages if available
+            await addWebSource(
+              sourceData.url,
+              sourceData.config as Record<string, unknown>,
+              undefined,
+              {
+                previewPages: sourceData.previewPages,
+                ...(sourceData.metadata || {})
+              }
+            );
           } else {
             throw new Error("No valid URL provided for web source");
           }
@@ -497,6 +512,7 @@ export default function CreateKnowledgeBasePage() {
                     handleAddSource(SourceType.WEB, sourceData)
                   }
                   onCancel={() => setActiveSourceType(null)}
+                  context={formData.context as KBContext}
                 />
               )}
 
