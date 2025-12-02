@@ -5,6 +5,9 @@ import { AppProvider } from "@/contexts/AppContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Toaster } from "@/components/ui/toaster";
 import { LandingPage } from "@/pages/LandingPage";
+import { PrivacyPage } from "@/pages/PrivacyPage";
+import { FAQPage } from "@/pages/FAQPage";
+import { PricingPage } from "@/pages/PricingPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SignupPage } from "@/pages/SignupPage";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -41,6 +44,9 @@ function App() {
             <Routes>
               {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/faqs" element={<FAQPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/invitations/accept" element={<InvitationAcceptPage />} />

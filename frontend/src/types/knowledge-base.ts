@@ -155,6 +155,7 @@ export interface FaissConfig {
 export interface VectorStoreConfig {
   provider: VectorStoreProvider;
   settings: QdrantConfig | FaissConfig | Record<string, any>;
+  distance_metric?: string;
 }
 
 /**

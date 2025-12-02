@@ -194,13 +194,13 @@ export function Pricing() {
         <div className="mt-12 text-center">
           <p className="text-muted-foreground">
             Questions about pricing?{" "}
-            <a href="#" className="text-primary hover:underline">
+            <Link to="/faqs" className="text-primary hover:underline">
               View FAQ
-            </a>{" "}
+            </Link>{" "}
             or{" "}
-            <a href="#" className="text-primary hover:underline">
+            <Link to="/contact" className="text-primary hover:underline">
               contact sales
-            </a>
+            </Link>
           </p>
         </div>
       </Container>

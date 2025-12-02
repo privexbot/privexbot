@@ -465,9 +465,9 @@ export default function KBDocumentsPage() {
                             Added {new Date(document.created_at).toLocaleDateString()}
                           </span>
                         </div>
-                        {(document.url || document.source_url) && (
+                        {document.url && (
                           <div className="mt-2 text-sm text-muted-foreground">
-                            Source: {document.url || document.source_url}
+                            Source: {document.url}
                           </div>
                         )}
                       </div>
@@ -499,7 +499,7 @@ export default function KBDocumentsPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-red-600"
-                            onClick={() => handleDeleteClick(document.id, document.name || document.title)}
+                            onClick={() => handleDeleteClick(document.id, document.name || document.title || 'Untitled Document')}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete

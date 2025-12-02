@@ -161,7 +161,7 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     }
 
     // Success - source has its own preview data with any edits preserved
-    console.log('✅ Loading source preview with', currentSource.metadata?.previewPages?.length, 'pages');
+    console.log('✅ Loading source preview with', Array.isArray(currentSource.metadata?.previewPages) ? currentSource.metadata.previewPages.length : 0, 'pages');
     if (currentSource.metadata?.hasEdits) {
       console.log('📝 Source contains edited content');
     }

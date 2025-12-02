@@ -1269,14 +1269,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           }
 
           try {
-            await kbClient.draft.updatePageContent(currentDraft.draft_id, pageIndex, {
-              page_index: pageIndex,
-              edited_content: content,
-              edit_operations: operations,
-              preserve_original: true,
-            });
-
-            // Update the local state
+            // Update the local state only (no backend API call needed)
             set((state) => {
               if (!state.previewData?.pages) return;
 
@@ -1300,12 +1293,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           }
 
           try {
-            await kbClient.draft.revertPageContent(currentDraft.draft_id, pageIndex, {
-              page_index: pageIndex,
-              revision_id: revisionId,
-            });
-
-            // Update the local state
+            // Update the local state only (no backend API call needed)
             set((state) => {
               if (!state.previewData?.pages) return;
 
@@ -1335,14 +1323,22 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           }
 
           try {
-            const response = await kbClient.draft.exportContent(currentDraft.draft_id, {
-              page_indices: pageIndices,
-              format,
-              include_metadata: false,
-              combine_pages: true,
-            });
+            // Export content locally (no backend API call needed)
+            const { previewData } = get();
+            if (!previewData?.pages) {
+              throw new Error("No preview data available");
+            }
 
-            return response.content;
+            const pagesToExport = pageIndices ?
+              pageIndices.map(i => previewData.pages[i]).filter(Boolean) :
+              previewData.pages;
+
+            const content = pagesToExport.map(page => {
+              const text = (page as any).edited_content || (page as any).content || '';
+              return text;
+            }).join('\n\n---\n\n');
+
+            return content;
           } catch (error) {
             console.error("Failed to export content:", error);
             throw error;
@@ -1356,15 +1352,22 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           }
 
           try {
-            const response = await kbClient.draft.copyPageContent(currentDraft.draft_id, pageIndex, {
-              page_index: pageIndex,
-              use_edited: true,
-              format,
-            });
+            // Copy page content locally (no backend API call needed)
+            const { previewData } = get();
+            if (!previewData?.pages) {
+              throw new Error("No preview data available");
+            }
+
+            const page = previewData.pages[pageIndex];
+            if (!page) {
+              throw new Error("Page not found");
+            }
+
+            const content = (page as any).edited_content || (page as any).content || '';
 
             // Copy to clipboard
-            await navigator.clipboard.writeText(response.content);
-            return response.content;
+            await navigator.clipboard.writeText(content);
+            return content;
           } catch (error) {
             console.error("Failed to copy page content:", error);
             throw error;

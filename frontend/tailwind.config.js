@@ -150,6 +150,7 @@ export default {
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["Fira Code", "ui-monospace", "SFMono-Regular", "monospace"],
+        manrope: ["Manrope", "ui-sans-serif", "system-ui", "sans-serif"],
       },
     },
   },

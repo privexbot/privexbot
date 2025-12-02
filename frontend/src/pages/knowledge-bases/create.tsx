@@ -65,7 +65,7 @@ export default function CreateKnowledgeBasePage() {
   // Stepper state for multi-phase architecture
   const [stepperState, setStepperState] = useState<StepperState>({
     currentStep: KBCreationStep.BASIC_INFO,
-    completedSteps: new Set<number>(),
+    completedSteps: new Set<KBCreationStep>(),
     approvedSources: [],
     chunkingConfig: null,
     modelConfig: null,

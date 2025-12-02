@@ -43,7 +43,7 @@ export const KBContentPreviewModal: React.FC<KBContentPreviewModalProps> = ({
 
   // Get the actual content to display (edited or original)
   const displayContent = page.edited_content || page.content || '';
-  const wordCount = displayContent.split(/\s+/).filter(word => word.length > 0).length;
+  const wordCount = displayContent.split(/\s+/).filter((word: string) => word.length > 0).length;
   const charCount = displayContent.length;
 
   return (
