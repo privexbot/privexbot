@@ -304,10 +304,36 @@ def process_web_kb_task(
                 # STEP 2a: CHECK FOR EDITED CONTENT OR SCRAPE
                 # ========================================
 
-                # Check if we have edited content from preview_data
+                # Check if this is an approved source with content (Phase 1C architecture)
                 scraped_pages = None
-                if preview_data and preview_data.get("pages"):
-                    # Use edited content from preview instead of scraping
+                if source.get("type") == "approved_content" and source.get("status") == "approved":
+                    # Use approved content from sources (Phase 1C)
+                    approved_pages = source.get("approved_pages", [])
+                    scraped_pages = []
+
+                    for page in approved_pages:
+                        # Use final approved content (edited or original)
+                        content = page.get("content", "")
+
+                        # Create scraped_page format expected by processing logic
+                        scraped_page = {
+                            "url": page.get("url", source_url),
+                            "title": page.get("title", ""),
+                            "content": content,
+                            "markdown": content,  # Content is already processed
+                            "is_edited": page.get("is_edited", False),
+                            "source": "approved_content",  # Flag to indicate this came from approved sources
+                            "approved_at": page.get("approved_at"),
+                            "original_content": page.get("original_content", ""),
+                            "metadata": page.get("metadata", {})
+                        }
+                        scraped_pages.append(scraped_page)
+
+                    tracker.add_log("info", f"Using {len(scraped_pages)} approved pages from source: {source.get('name')}")
+                    print(f"[DEBUG] Using {len(scraped_pages)} approved pages from source (no scraping needed)")
+
+                elif preview_data and preview_data.get("pages"):
+                    # Fallback: Use preview_data if no approved sources (legacy support)
                     preview_pages = preview_data.get("pages", [])
                     scraped_pages = []
 
@@ -315,19 +341,19 @@ def process_web_kb_task(
                         # Use edited content if available, otherwise original content
                         content = page.get("edited_content") or page.get("content", "")
 
-                        # Create scraped_page format expected by processing logic
                         scraped_page = {
                             "url": page.get("url", source_url),
                             "title": page.get("title", ""),
                             "content": content,
-                            "markdown": content,  # Assume content is already markdown
+                            "markdown": content,
                             "is_edited": page.get("is_edited", False),
-                            "source": "preview_data"  # Flag to indicate this came from preview
+                            "source": "preview_data",
+                            "metadata": page.get("metadata", {})
                         }
                         scraped_pages.append(scraped_page)
 
-                    tracker.add_log("info", f"Using {len(scraped_pages)} edited pages from preview data for {source_url}")
-                    print(f"[DEBUG] Using {len(scraped_pages)} pages from preview_data (edited content)")
+                    tracker.add_log("info", f"Using {len(scraped_pages)} pages from preview data (fallback mode)")
+                    print(f"[DEBUG] Using {len(scraped_pages)} pages from preview_data (fallback)")
 
                 if not scraped_pages:
                     # No preview data available, proceed with normal scraping
@@ -386,8 +412,8 @@ def process_web_kb_task(
                             if pipeline_status.get("status") == "cancelled":
                                 raise Exception("Pipeline cancelled by user")
 
-                        page_url = scraped_page.url
-                        page_content = scraped_page.content
+                        page_url = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
+                        page_content = scraped_page.get("content") if isinstance(scraped_page, dict) else scraped_page.content
 
                         # Skip if no content
                         if not page_content or len(page_content.strip()) < 50:
@@ -400,7 +426,8 @@ def process_web_kb_task(
 
                         print(f"[DEBUG] Creating Document record for page: {page_url}")
                         # Create basic Document record first (will be updated with chunking decision later)
-                        serialized_metadata = serialize_metadata(scraped_page.metadata) if scraped_page.metadata else {}
+                        page_metadata = scraped_page.get("metadata") if isinstance(scraped_page, dict) else scraped_page.metadata
+                        serialized_metadata = serialize_metadata(page_metadata) if page_metadata else {}
 
                         document = Document(
                             kb_id=UUID(kb_id),
@@ -542,13 +569,14 @@ def process_web_kb_task(
 
                     except Exception as page_error:
                         tracker.update_stats(pages_failed=tracker.stats["pages_failed"] + 1)
+                        page_url_for_error = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
                         tracker.add_log(
                             "error",
-                            f"Failed to process page: {scraped_page.url}",
+                            f"Failed to process page: {page_url_for_error}",
                             {"error": str(page_error)}
                         )
                         # Also print to stdout for debugging
-                        print(f"[ERROR] Failed to process page: {scraped_page.url}")
+                        print(f"[ERROR] Failed to process page: {page_url_for_error}")
                         print(f"[ERROR] Error: {str(page_error)}")
                         print(f"[ERROR] Error type: {type(page_error).__name__}")
                         print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
@@ -672,24 +700,26 @@ def process_web_kb_task(
 
 
 @shared_task(bind=True, name="reindex_kb")
-def reindex_kb_task(self, kb_id: str):
+def reindex_kb_task(self, kb_id: str, new_config: dict = None):
     """
-    Re-index an existing KB (refresh embeddings and Qdrant vectors).
+    Re-index an existing KB (refresh embeddings and Qdrant vectors) with optional configuration updates.
 
     QUEUE: high_priority
     DURATION: Variable (depends on KB size)
 
-    WHY: Keep embeddings fresh for frequently changing websites
-    HOW: Re-fetch sources, regenerate embeddings, update Qdrant
+    WHY: Keep embeddings fresh for frequently changing websites OR apply new chunking configuration
+    HOW: Re-fetch sources, regenerate embeddings with new config, update Qdrant
 
     Args:
         kb_id: Knowledge base UUID
+        new_config: Optional dict containing chunking_config, embedding_config, vector_store_config
 
     Returns:
         {
             "kb_id": str,
             "status": str,
-            "stats": dict
+            "stats": dict,
+            "configuration_applied": bool
         }
     """
 
@@ -705,6 +735,25 @@ def reindex_kb_task(self, kb_id: str):
 
         if not kb:
             raise ValueError(f"KB not found: {kb_id}")
+
+        # Determine chunking configuration to use
+        configuration_applied = bool(new_config)
+
+        if new_config and new_config.get('chunking_config'):
+            # Use new chunking configuration
+            chunking_config = new_config['chunking_config']
+        else:
+            # Use existing KB chunking configuration or defaults
+            chunking_config = kb.chunking_config or {
+                "strategy": "recursive",
+                "chunk_size": 1000,
+                "chunk_overlap": 200
+            }
+
+        # Extract chunking parameters
+        strategy = chunking_config.get('strategy', 'recursive')
+        chunk_size = chunking_config.get('chunk_size', 1000)
+        chunk_overlap = chunking_config.get('chunk_overlap', 200)
 
         # Update KB status
         kb.status = "reindexing"
@@ -740,12 +789,12 @@ def reindex_kb_task(self, kb_id: str):
             if not document.content:
                 continue
 
-            # Chunk content
+            # Chunk content using determined configuration
             chunks_data = chunking_service.chunk_document(
                 text=document.content,
-                strategy="recursive",
-                chunk_size=1000,
-                chunk_overlap=200
+                strategy=strategy,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap
             )
 
             # Generate embeddings
@@ -768,7 +817,9 @@ def reindex_kb_task(self, kb_id: str):
                     embedding=embedding,
                     chunk_metadata={
                         "token_count": chunk_data.get("token_count", 0),
-                        "strategy": "recursive",
+                        "strategy": strategy,
+                        "chunk_size": chunk_size,
+                        "chunk_overlap": chunk_overlap,
                         "reindexed_at": datetime.utcnow().isoformat()
                     },
                     created_at=datetime.utcnow()
@@ -824,10 +875,16 @@ def reindex_kb_task(self, kb_id: str):
         return {
             "kb_id": kb_id,
             "status": "completed",
+            "configuration_applied": configuration_applied,
             "stats": {
                 "documents": len(documents),
                 "chunks": total_chunks,
-                "vectors": total_vectors
+                "vectors": total_vectors,
+                "chunking_config": {
+                    "strategy": strategy,
+                    "chunk_size": chunk_size,
+                    "chunk_overlap": chunk_overlap
+                }
             }
         }
 

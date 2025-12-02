@@ -74,8 +74,8 @@ export default function KBDocumentEditPage() {
       setKb(kbData);
       setDocument(documentData);
       setFormData({
-        title: documentData.title,
-        content: (documentData.metadata?.content as string) || ''
+        title: documentData.name,
+        content: documentData.content || documentData.content_preview || ''
       });
     } catch (error) {
       console.error('Failed to load document:', error);
@@ -136,7 +136,7 @@ export default function KBDocumentEditPage() {
     setIsSaving(true);
     try {
       const updates = {
-        title: formData.title.trim(),
+        name: formData.title.trim(),
         content: formData.content.trim()
       };
 
@@ -265,7 +265,7 @@ export default function KBDocumentEditPage() {
             <div className="border-t pt-4 text-sm text-muted-foreground">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <strong>Content Type:</strong> {document.content_type}
+                  <strong>Content Type:</strong> {document.source_type}
                 </div>
                 <div>
                   <strong>Created:</strong> {new Date(document.created_at).toLocaleDateString()}

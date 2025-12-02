@@ -225,6 +225,26 @@ export const kbDraftApi = {
   },
 
   /**
+   * Preview chunks with different strategies (live preview)
+   * POST /api/v1/kb-drafts/{draft_id}/preview-chunks-live
+   */
+  async previewChunks(draftId: string, params: {
+    source_id?: string;
+    content: string;
+    strategy: string;
+    chunk_size: number;
+    chunk_overlap: number;
+    include_metrics?: boolean;
+  }): Promise<any> {
+    try {
+      const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
    * Multi-page realistic preview
    * POST /api/v1/kb-drafts/{draft_id}/preview
    */
@@ -294,6 +314,244 @@ export const kbDraftApi = {
         message: string;
         draft_id: string;
       }>(`/kb-drafts/${draftId}/preview-data`, previewData);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Approve content and add to sources (Phase 1C)
+   * POST /api/v1/kb-drafts/{draft_id}/approve-content
+   */
+  async approveContent(draftId: string, request: {
+    page_indices: number[];
+    source_name?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    source_id: string;
+    source_name: string;
+    summary: {
+      total_pages_approved: number;
+      edited_pages: number;
+      unedited_pages: number;
+      total_content_size: number;
+      average_page_size: number;
+    };
+  }> {
+    // Legacy method - now delegates to source-centric approach
+    return await this.approveContentLegacy(draftId, request);
+  },
+
+  // Source-centric approval API (modern approach)
+  async approveSources(draftId: string, sourceApprovals: Array<{
+    source_id: string;
+    approved_page_indices: number[];
+    page_updates: Array<{
+      page_index: number;
+      edited_content?: string;
+      is_edited: boolean;
+    }>;
+  }>): Promise<{
+    success: boolean;
+    message: string;
+    summary: {
+      total_sources_updated: number;
+      total_pages_approved: number;
+      total_edited_pages: number;
+      duplicate_prevention_triggered?: boolean;
+      sources: Array<{
+        source_id: string;
+        source_name: string;
+        approved_pages: number;
+        total_pages: number;
+      }>;
+    };
+  }> {
+    try {
+      const response = await apiClient.post<{
+        success: boolean;
+        message: string;
+        summary: {
+          total_sources_updated: number;
+          total_pages_approved: number;
+          total_edited_pages: number;
+          duplicate_prevention_triggered?: boolean;
+          sources: Array<{
+            source_id: string;
+            source_name: string;
+            approved_pages: number;
+            total_pages: number;
+          }>;
+        };
+      }>(`/kb-drafts/${draftId}/approve-sources`, sourceApprovals);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  // Legacy approve content method (kept for compatibility)
+  async approveContentLegacy(draftId: string, request: {
+    page_indices: number[];
+    source_name?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    source_id: string;
+    source_name: string;
+    summary: {
+      total_pages_approved: number;
+      edited_pages: number;
+      unedited_pages: number;
+      total_content_size: number;
+      average_page_size: number;
+    };
+  }> {
+    try {
+      const response = await apiClient.post<{
+        success: boolean;
+        message: string;
+        source_id: string;
+        source_name: string;
+        summary: {
+          total_pages_approved: number;
+          edited_pages: number;
+          unedited_pages: number;
+          total_content_size: number;
+          average_page_size: number;
+        };
+      }>(`/kb-drafts/${draftId}/approve-content`, request);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Preview chunking on approved content (Phase 1D)
+   * POST /api/v1/kb-drafts/{draft_id}/chunking-preview
+   */
+  async previewChunking(draftId: string, request: {
+    strategy?: string;
+    chunk_size?: number;
+    chunk_overlap?: number;
+    preserve_code_blocks?: boolean;
+    source_id?: string;
+    max_chunks_preview?: number;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    config: {
+      strategy: string;
+      chunk_size: number;
+      chunk_overlap: number;
+      preserve_code_blocks: boolean;
+    };
+    preview_chunks: Array<{
+      chunk_index: number;
+      content: string;
+      size: number;
+      word_count: number;
+      source_metadata: {
+        source_id: string;
+        source_name: string;
+        page_title: string;
+        page_url: string;
+        page_index: number;
+        is_edited: boolean;
+        word_count: number;
+        char_count: number;
+      };
+      chunk_position_in_page: number;
+      total_chunks_in_page: number;
+    }>;
+    statistics: {
+      total_sources: number;
+      total_pages: number;
+      total_content_size: number;
+      total_chunks: number;
+      preview_chunks_shown: number;
+      average_chunk_size: number;
+      size_distribution: {
+        small: number;
+        medium: number;
+        large: number;
+      };
+      chunks_per_page: number;
+    };
+    source_breakdown: Array<{
+      source_id: string;
+      source_name: string;
+      pages: number;
+      total_content_size: number;
+    }>;
+  }> {
+    try {
+      const response = await apiClient.post(`/kb-drafts/${draftId}/chunking-preview`, request);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Configure embedding model, vector store, and retrieval settings (Phase 1E)
+   * POST /api/v1/kb-drafts/{draft_id}/model-config
+   */
+  async configureModels(draftId: string, request: {
+    embedding_config?: {
+      model?: string;
+      device?: string;
+      batch_size?: number;
+      normalize_embeddings?: boolean;
+    };
+    vector_store_config?: {
+      provider?: string;
+      collection_name_prefix?: string;
+      distance_metric?: string;
+      enable_hybrid_search?: boolean;
+    };
+    retrieval_config?: {
+      strategy?: string;
+      top_k?: number;
+      score_threshold?: number;
+      rerank_enabled?: boolean;
+    };
+    metadata_config?: {
+      store_full_content?: boolean;
+      indexed_fields?: string[];
+      filterable_fields?: string[];
+      include_source_tracking?: boolean;
+    };
+  }): Promise<{
+    success: boolean;
+    message: string;
+    configuration: {
+      embedding: Record<string, any>;
+      vector_store: Record<string, any>;
+      retrieval: Record<string, any>;
+      metadata: Record<string, any>;
+    };
+    estimates: {
+      total_approved_pages: number;
+      total_content_size: number;
+      estimated_chunks: number;
+      embedding_dimensions: number;
+      estimated_vector_storage_mb: number;
+      estimated_processing_time_minutes: number;
+    };
+    compatibility: {
+      embedding_model_available: boolean;
+      vector_store_available: boolean;
+      gpu_acceleration: boolean;
+    };
+  }> {
+    try {
+      const response = await apiClient.post(`/kb-drafts/${draftId}/model-config`, request);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
@@ -470,12 +728,19 @@ export const kbApi = {
   },
 
   /**
-   * Reindex KB
+   * Reindex KB with optional configuration updates
    * POST /api/v1/kbs/{kb_id}/reindex
    */
-  async reindex(kbId: string): Promise<{ message: string; task_id: string }> {
+  async reindex(kbId: string, config?: {
+    chunking_config?: any;
+    embedding_config?: any;
+    vector_store_config?: any;
+  }): Promise<{ message: string; task_id: string; configuration_updated?: boolean }> {
     try {
-      const response = await apiClient.post<{ message: string; task_id: string }>(`/kbs/${kbId}/reindex`);
+      const response = await apiClient.post<{ message: string; task_id: string; configuration_updated?: boolean }>(
+        `/kbs/${kbId}/reindex`,
+        config || {}
+      );
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
@@ -534,8 +799,15 @@ export const kbApi = {
    */
   async getDocuments(kbId: string): Promise<KBDocument[]> {
     try {
-      const response = await apiClient.get<KBDocument[]>(`/kbs/${kbId}/documents`);
-      return response.data;
+      const response = await apiClient.get<{
+        kb_id: string;
+        total_documents: number;
+        documents: KBDocument[];
+        page: number;
+        limit: number;
+        total_pages: number;
+      }>(`/kbs/${kbId}/documents`);
+      return response.data.documents || [];
     } catch (error) {
       throw new Error(handleApiError(error));
     }
@@ -583,13 +855,47 @@ export const kbApi = {
    * List KB chunks
    * GET /api/v1/kbs/{kb_id}/chunks
    */
-  async getChunks(kbId: string, page?: number, limit?: number): Promise<any> {
+  async getChunks(kbId: string, page?: number, limit?: number): Promise<any[]> {
     try {
       const params = new URLSearchParams();
       if (page) params.append('page', String(page));
       if (limit) params.append('limit', String(limit));
 
-      const response = await apiClient.get<any>(`/kbs/${kbId}/chunks?${params}`);
+      const response = await apiClient.get<{
+        kb_id: string;
+        total_chunks: number;
+        chunks: any[];
+        page: number;
+        limit: number;
+        total_pages: number;
+      }>(`/kbs/${kbId}/chunks?${params}`);
+      return response.data.chunks || [];
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Retry failed KB processing
+   * POST /api/v1/kbs/{kb_id}/retry-processing
+   */
+  async retryProcessing(kbId: string): Promise<{
+    pipeline_id: string;
+    kb_id: string;
+    task_id: string;
+    status: string;
+    message: string;
+    note: string;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        pipeline_id: string;
+        kb_id: string;
+        task_id: string;
+        status: string;
+        message: string;
+        note: string;
+      }>(`/kbs/${kbId}/retry-processing`);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

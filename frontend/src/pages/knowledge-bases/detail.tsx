@@ -225,9 +225,9 @@ export default function KBDetailPage() {
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span>Created {new Date(kb.created_at).toLocaleDateString()}</span>
                 <span>•</span>
-                <span>{documents.length} documents</span>
+                <span>{Array.isArray(documents) ? documents.length : 0} documents</span>
                 <span>•</span>
-                <span>{chunks.length} chunks</span>
+                <span>{Array.isArray(chunks) ? chunks.length : 0} chunks</span>
               </div>
             </div>
 
@@ -266,7 +266,7 @@ export default function KBDetailPage() {
             <CardContent>
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-blue-500" />
-                <span className="text-2xl font-bold">{documents.length}</span>
+                <span className="text-2xl font-bold">{Array.isArray(documents) ? documents.length : 0}</span>
               </div>
             </CardContent>
           </Card>
@@ -280,7 +280,7 @@ export default function KBDetailPage() {
             <CardContent>
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-green-500" />
-                <span className="text-2xl font-bold">{chunks.length}</span>
+                <span className="text-2xl font-bold">{Array.isArray(chunks) ? chunks.length : 0}</span>
               </div>
             </CardContent>
           </Card>
@@ -295,7 +295,9 @@ export default function KBDetailPage() {
               <div className="flex items-center gap-2">
                 <BookOpen className="h-4 w-4 text-purple-500" />
                 <span className="text-2xl font-bold">
-                  {documents.reduce((acc, doc) => acc + ((doc as any).word_count || 0), 0).toLocaleString()}
+                  {Array.isArray(documents)
+                    ? documents.reduce((acc, doc) => acc + ((doc as any).word_count || 0), 0).toLocaleString()
+                    : '0'}
                 </span>
               </div>
             </CardContent>
@@ -311,7 +313,7 @@ export default function KBDetailPage() {
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-orange-500" />
                 <span className="text-2xl font-bold">
-                  {chunks.length > 0
+                  {Array.isArray(chunks) && chunks.length > 0
                     ? Math.round(chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0) / chunks.length)
                     : 0
                   }
@@ -366,13 +368,13 @@ export default function KBDetailPage() {
           <TabsContent value="documents">
             <Card>
               <CardHeader>
-                <CardTitle>Documents ({documents.length})</CardTitle>
+                <CardTitle>Documents ({Array.isArray(documents) ? documents.length : 0})</CardTitle>
                 <CardDescription>
                   All documents in this knowledge base
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {documents.length === 0 ? (
+                {!Array.isArray(documents) || documents.length === 0 ? (
                   <div className="text-center py-8">
                     <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <h3 className="text-lg font-medium mb-2">No documents yet</h3>
@@ -382,7 +384,7 @@ export default function KBDetailPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {documents.map((doc) => (
+                    {Array.isArray(documents) && documents.map((doc) => (
                       <div key={doc.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -448,13 +450,13 @@ export default function KBDetailPage() {
           <TabsContent value="chunks">
             <Card>
               <CardHeader>
-                <CardTitle>Chunks ({chunks.length})</CardTitle>
+                <CardTitle>Chunks ({Array.isArray(chunks) ? chunks.length : 0})</CardTitle>
                 <CardDescription>
                   Text chunks used for search and retrieval
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {chunks.length === 0 ? (
+                {!Array.isArray(chunks) || chunks.length === 0 ? (
                   <div className="text-center py-8">
                     <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <h3 className="text-lg font-medium mb-2">No chunks yet</h3>
@@ -464,7 +466,7 @@ export default function KBDetailPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {chunks.slice(0, 20).map((chunk, index) => (
+                    {Array.isArray(chunks) && chunks.slice(0, 20).map((chunk, index) => (
                       <div key={chunk.id} className="border rounded-lg p-4">
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex items-center gap-2">
@@ -485,10 +487,10 @@ export default function KBDetailPage() {
                         </p>
                       </div>
                     ))}
-                    {chunks.length > 20 && (
+                    {Array.isArray(chunks) && chunks.length > 20 && (
                       <div className="text-center py-4">
                         <p className="text-muted-foreground">
-                          Showing first 20 chunks of {chunks.length} total
+                          Showing first 20 chunks of {Array.isArray(chunks) ? chunks.length : 0} total
                         </p>
                       </div>
                     )}

@@ -20,6 +20,10 @@ import {
   DraftSource,
   ChunkingConfig,
   ChunkingStrategy,
+  ModelConfig,
+  VectorStoreProvider,
+  DistanceMetric,
+  IndexType,
   WebSourceConfig,
   AddWebSourceRequest,
   PipelineStatusResponse,
@@ -27,6 +31,8 @@ import {
   PreviewResponse,
   QuickPreviewResponse,
   DraftValidationResponse,
+  ApprovedSource,
+  FinalizeRequest,
 } from "@/types/knowledge-base";
 import kbClient from "@/lib/kb-client";
 
@@ -56,6 +62,7 @@ interface KBStoreState {
   currentDraft: KBDraft | null;
   draftSources: DraftSource[];
   chunkingConfig: ChunkingConfig;
+  modelConfig: ModelConfig;
   isDraftDirty: boolean;
   isCreatingDraft: boolean;
   draftError: string | null;
@@ -128,6 +135,7 @@ interface KBStoreActions {
   updateSource: (sourceId: string, updates: Partial<DraftSource>) => void;
   removeSource: (sourceId: string) => void;
   updateChunkingConfig: (config: Partial<ChunkingConfig>) => void;
+  updateModelConfig: (config: Partial<ModelConfig>) => void;
   validateDraft: () => Promise<DraftValidationResponse>;
   finalizeDraft: () => Promise<{ kbId: string; pipelineId: string }>;
   clearDraft: () => void;
@@ -143,6 +151,7 @@ interface KBStoreActions {
   ) => Promise<void>;
   previewDraft: (maxPages?: number) => Promise<void>;
   clearPreview: () => void;
+  approveContent: (pageIndices: number[], allPages: any[]) => Promise<ApprovedSource>;
 
   // ========================================
   // CONTENT EDITING ACTIONS
@@ -201,6 +210,35 @@ const initialChunkingConfig: ChunkingConfig = {
   chunk_overlap: 200,
 };
 
+const initialModelConfig: ModelConfig = {
+  embedding: {
+    provider: 'openai',
+    model: 'text-embedding-ada-002',
+    dimensions: 1536,
+    batch_size: 100,
+  },
+  vector_store: {
+    provider: VectorStoreProvider.QDRANT,
+    settings: {
+      collection_naming: 'kb_{kb_id}',
+      distance_metric: DistanceMetric.COSINE,
+      index_type: IndexType.HNSW,
+      vector_size: 1536,
+      hnsw_config: {
+        m: 16,
+        ef_construct: 100,
+      },
+      batch_size: 100,
+      indexing_threshold: 10000,
+    },
+  },
+  performance: {
+    indexing_strategy: 'immediate',
+    search_timeout: 30000,
+    max_results: 10,
+  },
+};
+
 // ========================================
 // ZUSTAND STORE
 // ========================================
@@ -224,6 +262,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
         currentDraft: null,
         draftSources: [],
         chunkingConfig: initialChunkingConfig,
+        modelConfig: initialModelConfig,
         isDraftDirty: false,
         isCreatingDraft: false,
         draftError: null,
@@ -420,6 +459,141 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
               max_depth: 3,
             };
 
+            // Check if preview pages are provided in metadata (from extraction)
+            const previewPages = (metadata as any)?.previewPages;
+
+            if (previewPages && previewPages.length > 0) {
+              // CRITICAL FIX: Transfer extracted content to main draft AND add sources to backend
+              console.log("🔄 Transferring extracted content to main draft for approval...");
+
+              try {
+                // STEP 1: Add sources to backend draft (required for approval API)
+                const request: AddWebSourceRequest = {
+                  config: { ...defaultConfig, ...config },
+                };
+
+                // Handle both single URL and bulk URLs
+                if (Array.isArray(urlOrUrls)) {
+                  request.urls = urlOrUrls;
+                  if (Object.keys(perUrlConfigs).length > 0) {
+                    request.per_url_configs = perUrlConfigs as Record<string, WebSourceConfig>;
+                  }
+                } else {
+                  request.url = urlOrUrls;
+                }
+
+                console.log("🔄 Adding sources to backend draft...");
+                const backendResult = await kbClient.draft.addWebSources(
+                  currentDraft.draft_id,
+                  request
+                );
+
+                // STEP 2: Create preview data structure with proper source IDs
+                // CRITICAL: Clear approval flags - this is "add to draft", not "approve for KB"
+                console.log("🧹 CLEARING approval state: Converting preview approval to draft content (requires fresh approval)");
+                const previewDataForBackend = {
+                  pages: previewPages.map((page: any, index: number) => ({
+                    ...page,
+                    word_count: page.content ? page.content.split(/\s+/).length : 0,
+                    char_count: page.content ? page.content.length : 0,
+                    // Map to backend source IDs
+                    source_id: backendResult.source_id || backendResult.source_ids?.[0] || `source_${index}`,
+                    // CLEAR APPROVAL STATE: Adding to draft ≠ approving for KB
+                    is_approved: false,
+                    approved_at: undefined,
+                    approved_by: undefined
+                  })),
+                  pages_previewed: previewPages.length,
+                  total_chunks: 0,
+                  strategy: ChunkingStrategy.BY_HEADING,
+                  generated_at: new Date().toISOString(),
+                  config: { ...defaultConfig, ...config }
+                };
+
+                // STEP 3: Transfer preview data to main draft
+                await kbClient.draft.updatePreviewData(currentDraft.draft_id, previewDataForBackend);
+                console.log("✅ Successfully transferred content and sources to main draft");
+
+                // STEP 4: Update frontend state
+                const newSources: DraftSource[] = [];
+                const urls = Array.isArray(urlOrUrls) ? urlOrUrls : [urlOrUrls];
+
+                if (backendResult.source_ids && Array.isArray(backendResult.source_ids)) {
+                  // Bulk response
+                  backendResult.source_ids.forEach((sourceId, index) => {
+                    const url = urls[index];
+                    if (url && sourceId) {
+                      newSources.push({
+                        source_id: sourceId,
+                        type: SourceType.WEB,
+                        url,
+                        config: { ...defaultConfig, ...perUrlConfigs[url] || config },
+                        status: "completed",
+                        created_at: new Date().toISOString(),
+                        metadata: {
+                          ...metadata,
+                          hasPreviewData: true,
+                          // CLEAN PREVIEW PAGES: Remove any preview approval states
+                          previewPages: previewPages.map((page: any) => ({
+                            ...page,
+                            is_approved: false,
+                            approved_at: undefined,
+                            approved_by: undefined
+                          }))
+                        }
+                      });
+                    }
+                  });
+                } else if (backendResult.source_id) {
+                  // Single response
+                  newSources.push({
+                    source_id: backendResult.source_id,
+                    type: SourceType.WEB,
+                    url: urls[0],
+                    config: { ...defaultConfig, ...config },
+                    status: "completed",
+                    created_at: new Date().toISOString(),
+                    metadata: {
+                      ...metadata,
+                      hasPreviewData: true,
+                      // CLEAN PREVIEW PAGES: Remove any preview approval states
+                      previewPages: previewPages.map((page: any) => ({
+                        ...page,
+                        is_approved: false,
+                        approved_at: undefined,
+                        approved_by: undefined
+                      }))
+                    }
+                  });
+                }
+
+                set((state) => {
+                  state.previewData = {
+                    draft_id: currentDraft.draft_id,
+                    pages_previewed: previewPages.length,
+                    total_chunks: 0,
+                    strategy: ChunkingStrategy.BY_HEADING,
+                    pages: previewPages.map((page: any) => ({
+                      ...page,
+                      is_approved: false,
+                      approved_at: undefined,
+                      approved_by: undefined
+                    })),
+                    estimated_total_chunks: 0
+                  };
+
+                  state.draftSources.push(...newSources);
+                  state.isDraftDirty = true;
+                });
+
+                get().saveDraftToLocalStorage();
+                return newSources;
+              } catch (error) {
+                console.error("❌ Failed to transfer content to main draft:", error);
+                throw error;
+              }
+            }
+
             const request: AddWebSourceRequest = {
               config: { ...defaultConfig, ...config },
             };
@@ -463,6 +637,10 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                     config: { ...defaultConfig, ...urlConfig },
                     status: "pending",
                     created_at: new Date().toISOString(),
+                    metadata: {
+                      ...metadata,
+                      hasPreviewData: !!previewPages
+                    }
                   });
                 }
               });
@@ -486,7 +664,10 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 config: { ...defaultConfig, ...urlConfig },
                 status: "pending",
                 created_at: new Date().toISOString(),
-                metadata: metadata || {},
+                metadata: {
+                  ...metadata,
+                  hasPreviewData: !!previewPages
+                }
               });
             }
             else {
@@ -511,71 +692,21 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         addFileSource: async (file: File, _config?: Record<string, unknown>) => {
-          const { currentDraft } = get();
-          if (!currentDraft) throw new Error("No draft available");
-
-          try {
-            // TODO: Implement file upload to backend
-            // const result = await kbClient.draft.addFileSource(currentDraft.draft_id, file, _config);
-            // Note: _config parameter will be used when backend implementation is complete
-
-            const newSource: DraftSource = {
-              source_id: `file_${Date.now()}`, // Temporary ID
-              type: SourceType.FILE,
-              status: 'pending',
-              created_at: new Date().toISOString(),
-              metadata: {
-                file_name: file.name,
-                file_size: file.size,
-                file_type: file.type,
-              },
-            };
-
-            set((state) => {
-              state.draftSources.push(newSource);
-              state.isDraftDirty = true;
-            });
-
-            get().saveDraftToLocalStorage();
-          } catch (error: unknown) {
-            set((state) => {
-              state.draftError = kbClient.errors.getUserMessage(error);
-            });
-            throw error;
-          }
+          // File upload feature is not yet implemented
+          const error = new Error("📄 File Upload - Coming Soon!\n\nFile upload functionality is currently under development. Please use web URLs for now, or check back soon for file upload support.");
+          set((state) => {
+            state.draftError = "File upload feature is coming soon! Please use web URLs for now.";
+          });
+          throw error;
         },
 
         addTextSource: async (content: string, title?: string) => {
-          const { currentDraft } = get();
-          if (!currentDraft) throw new Error("No draft available");
-
-          try {
-            // TODO: Implement text source addition to backend
-            // const result = await kbClient.draft.addTextSource(currentDraft.draft_id, { content, title });
-
-            const newSource: DraftSource = {
-              source_id: `text_${Date.now()}`, // Temporary ID
-              type: SourceType.TEXT,
-              status: 'pending',
-              created_at: new Date().toISOString(),
-              metadata: {
-                content,
-                title: title || "Pasted Text",
-              },
-            };
-
-            set((state) => {
-              state.draftSources.push(newSource);
-              state.isDraftDirty = true;
-            });
-
-            get().saveDraftToLocalStorage();
-          } catch (error: unknown) {
-            set((state) => {
-              state.draftError = kbClient.errors.getUserMessage(error);
-            });
-            throw error;
-          }
+          // Text source feature is not yet implemented
+          const error = new Error("📝 Text Sources - Coming Soon!\n\nDirect text input functionality is currently under development. Please use web URLs for now, or check back soon for text paste support.");
+          set((state) => {
+            state.draftError = "Text sources feature is coming soon! Please use web URLs for now.";
+          });
+          throw error;
         },
 
         updateSource: (sourceId: string, updates: Partial<DraftSource>) => {
@@ -632,6 +763,46 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           get().saveDraftToLocalStorage();
         },
 
+        updateModelConfig: (config) => {
+          set((state) => {
+            state.modelConfig = { ...state.modelConfig, ...config };
+            state.isDraftDirty = true;
+          });
+
+          const { currentDraft } = get();
+          if (currentDraft) {
+            // Call backend API to save model configuration
+            const modelConfig = get().modelConfig;
+            const apiRequest = {
+              embedding_config: {
+                model: modelConfig.embedding.model,
+                device: 'cpu',
+                batch_size: modelConfig.embedding.batch_size,
+                normalize_embeddings: true,
+              },
+              vector_store_config: {
+                provider: modelConfig.vector_store.provider,
+                collection_name_prefix: 'kb_',
+                distance_metric: (modelConfig.vector_store.settings as any).distance_metric,
+              },
+              retrieval_config: {
+                strategy: 'hybrid_search',
+                top_k: modelConfig.performance.max_results,
+                score_threshold: 0.7,
+                rerank_enabled: false,
+              }
+            };
+
+            kbClient.draft.configureModels(currentDraft.draft_id, apiRequest)
+              .catch(error => {
+                console.error('Failed to save model configuration to backend:', error);
+                // Don't throw - this is a background operation
+              });
+          }
+
+          get().saveDraftToLocalStorage();
+        },
+
         validateDraft: async () => {
           const { currentDraft } = get();
           if (!currentDraft) throw new Error("No draft to validate");
@@ -650,7 +821,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
         },
 
         finalizeDraft: async () => {
-          const { currentDraft } = get();
+          const { currentDraft, chunkingConfig, modelConfig } = get();
           if (!currentDraft) throw new Error("No draft to finalize");
 
           set((state) => {
@@ -658,7 +829,31 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           });
 
           try {
-            const result = await kbClient.draft.finalize(currentDraft.draft_id);
+            // Pass all configurations during finalization
+            const finalizeRequest: FinalizeRequest = {
+              chunking_config: {
+                strategy: chunkingConfig.strategy,
+                chunk_size: chunkingConfig.chunk_size,
+                chunk_overlap: chunkingConfig.chunk_overlap,
+                preserve_headings: chunkingConfig.preserve_headings,
+                min_chunk_size: chunkingConfig.min_chunk_size,
+                max_chunk_size: chunkingConfig.max_chunk_size
+              },
+              embedding_config: {
+                model: modelConfig.embedding.model,
+                batch_size: modelConfig.embedding.batch_size,
+                device: "cpu",
+                normalize: true
+              },
+              vector_store_config: {
+                provider: modelConfig.vector_store.provider,
+                settings: modelConfig.vector_store.settings
+              },
+              priority: "normal"
+            };
+
+            console.log('📤 Finalizing with configurations:', finalizeRequest);
+            const result = await kbClient.draft.finalize(currentDraft.draft_id, finalizeRequest);
 
             set((state) => {
               state.isSubmitting = false;
@@ -689,6 +884,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.currentDraft = null;
             state.draftSources = [];
             state.chunkingConfig = initialChunkingConfig;
+            state.modelConfig = initialModelConfig;
             state.formData = initialFormData;
             state.isDraftDirty = false;
             state.draftError = null;
@@ -709,6 +905,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             draft: state.currentDraft,
             sources: state.draftSources,
             chunkingConfig: state.chunkingConfig,
+            modelConfig: state.modelConfig,
             formData: state.formData,
             timestamp: Date.now(),
           };
@@ -721,7 +918,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             const stored = localStorage.getItem("kb_draft_state");
             if (!stored) return false;
 
-            const { draft, sources, chunkingConfig, formData, timestamp } =
+            const { draft, sources, chunkingConfig, modelConfig, formData, timestamp } =
               JSON.parse(stored);
 
             // Check if expired (24 hours)
@@ -733,7 +930,8 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             set((state) => {
               state.currentDraft = draft;
               state.draftSources = sources;
-              state.chunkingConfig = chunkingConfig;
+              state.chunkingConfig = chunkingConfig || initialChunkingConfig;
+              state.modelConfig = modelConfig || initialModelConfig;
               state.formData = formData;
               state.isDraftDirty = true;
             });
@@ -811,6 +1009,116 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.quickPreviewData = null;
             state.previewError = null;
           });
+        },
+
+        approveContent: async (pageIndices: number[], allPages: any[]) => {
+          const { currentDraft } = get();
+          if (!currentDraft) throw new Error("No draft available");
+
+          try {
+            // Group selected pages by source_id for source-centric approval
+            const sourceGroups = new Map<string, {
+              source_id: string;
+              approved_page_indices: number[];
+              page_updates: Array<{
+                page_index: number;
+                edited_content?: string;
+                is_edited: boolean;
+              }>;
+            }>();
+
+            // Process each selected page and group by source
+            pageIndices.forEach(globalIndex => {
+              const page = allPages[globalIndex];
+              if (!page?.sourceId) return;
+
+              if (!sourceGroups.has(page.sourceId)) {
+                sourceGroups.set(page.sourceId, {
+                  source_id: page.sourceId,
+                  approved_page_indices: [],
+                  page_updates: []
+                });
+              }
+
+              const group = sourceGroups.get(page.sourceId)!;
+
+              // Find the page index within this specific source
+              const sourcePages = allPages.filter(p => p.sourceId === page.sourceId);
+              const sourcePageIndex = sourcePages.findIndex(p => p.originalIndex === page.originalIndex);
+
+              if (sourcePageIndex !== -1) {
+                group.approved_page_indices.push(sourcePageIndex);
+
+                // Include page update if content was edited OR needs re-approval
+                if ((page.is_edited || page.needs_reapproval) && page.edited_content) {
+                  console.log(`🔄 APPROVAL REQUEST: Page ${sourcePageIndex} in source ${page.sourceId} - including edit updates (is_edited: ${page.is_edited}, needs_reapproval: ${page.needs_reapproval})`);
+                  group.page_updates.push({
+                    page_index: sourcePageIndex,
+                    edited_content: page.edited_content,
+                    is_edited: true
+                  });
+                } else if (page.needs_reapproval) {
+                  // Even without edited_content, if needs_reapproval is true, include it as an edit
+                  console.log(`🔄 APPROVAL REQUEST: Page ${sourcePageIndex} needs re-approval but no edited_content - marking as edited`);
+                  group.page_updates.push({
+                    page_index: sourcePageIndex,
+                    is_edited: true
+                  });
+                } else {
+                  console.log(`✅ APPROVAL REQUEST: Page ${sourcePageIndex} in source ${page.sourceId} - no edit updates needed (is_edited: ${page.is_edited}, already_approved: ${page.is_approved})`);
+                }
+              }
+            });
+
+            // Convert map to array for API call
+            const sourceApprovals = Array.from(sourceGroups.values());
+
+            // Call the new source-centric API
+            const result = await kbClient.draft.approveSources(
+              currentDraft.draft_id,
+              sourceApprovals
+            );
+
+            // Handle backend duplicate prevention
+            if (!result.success) {
+              if (result.summary?.duplicate_prevention_triggered) {
+                // All pages were already approved
+                throw new Error("All selected pages have already been approved previously. Please select different pages or navigate to see the current approval status.");
+              } else {
+                // Other failure
+                throw new Error(result.message || "Failed to approve content");
+              }
+            }
+
+            set((state) => {
+              state.isDraftDirty = true;
+            });
+
+            get().saveDraftToLocalStorage();
+
+            // Return compatible ApprovedSource format
+            return {
+              id: `approved_${Date.now()}`,
+              type: 'approved_content' as const,
+              name: `Approved Content (${result.summary.total_pages_approved} pages)`,
+              status: 'approved' as const,
+              approved_pages: [], // Backend handles the full structure
+              metadata: {
+                total_pages: result.summary.total_pages_approved,
+                total_content_size: 0, // Will be calculated by backend
+                edited_pages: result.summary.total_edited_pages,
+                original_url: '',
+                approval_source: 'content_review'
+              },
+              added_at: new Date().toISOString(),
+              added_by: ''
+            };
+          } catch (error: unknown) {
+            set((state) => {
+              state.draftError = kbClient.errors.getUserMessage(error);
+            });
+            throw error;
+          }
         },
 
         // ========================================
@@ -947,6 +1255,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.formData = initialFormData;
             state.formErrors = {};
             state.chunkingConfig = initialChunkingConfig;
+            state.modelConfig = initialModelConfig;
           });
         },
 

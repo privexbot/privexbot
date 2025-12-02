@@ -184,6 +184,9 @@ class UnifiedDraftService:
         if "preview" in updates:
             draft["preview"] = updates["preview"]
 
+        if "preview_data" in updates:
+            draft["preview_data"] = updates["preview_data"]
+
         # Update timestamps
         draft["updated_at"] = datetime.utcnow().isoformat()
         draft["last_auto_save"] = datetime.utcnow().isoformat()

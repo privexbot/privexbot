@@ -127,7 +127,7 @@ update_compose_file() {
     echo -e "${YELLOW}🔄 Updating $description ($file)...${NC}"
 
     # Count placeholders before replacement
-    local placeholder_count=$(grep -c "$DIGEST_PLACEHOLDER" "$file" 2>/dev/null || echo "0")
+    local placeholder_count=$(grep -c "$DIGEST_PLACEHOLDER" "$file" 2>/dev/null | tr -d '\n' || echo "0")
 
     if [ "$placeholder_count" -eq 0 ]; then
         echo -e "${YELLOW}⚠️  No digest placeholders found in $file${NC}"
@@ -143,7 +143,7 @@ update_compose_file() {
     sed -i.tmp "s|$DIGEST_PLACEHOLDER|$DIGEST|g" "$file" && rm "${file}.tmp"
 
     # Verify replacement
-    local remaining_placeholders=$(grep -c "$DIGEST_PLACEHOLDER" "$file" 2>/dev/null || echo "0")
+    local remaining_placeholders=$(grep -c "$DIGEST_PLACEHOLDER" "$file" 2>/dev/null | tr -d '\n' || echo "0")
 
     if [ "$remaining_placeholders" -eq 0 ]; then
         echo -e "${GREEN}✅ Updated $placeholder_count digest placeholders in $file${NC}"

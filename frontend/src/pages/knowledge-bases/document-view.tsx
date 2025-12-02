@@ -158,7 +158,7 @@ export default function KBDocumentViewPage() {
 
       toast({
         title: 'Success',
-        description: `Document "${document.title}" has been deleted`,
+        description: `Document "${document.name}" has been deleted`,
       });
 
       navigate(`/knowledge-bases/${kbId}/documents`);
@@ -216,7 +216,7 @@ export default function KBDocumentViewPage() {
             <div>
               <h1 className="text-2xl font-semibold flex items-center gap-2">
                 <FileText className="h-6 w-6" />
-                {document.title}
+                {document.name}
               </h1>
               <p className="text-muted-foreground">{kb?.name}</p>
             </div>
@@ -254,7 +254,7 @@ export default function KBDocumentViewPage() {
                 <div className="prose prose-sm max-w-none">
                   <div className="bg-muted p-4 rounded-lg">
                     <pre className="whitespace-pre-wrap text-sm">
-                      {(document.metadata?.content as string) || 'Content not available - use API endpoint that returns full document content'}
+                      {document.content || document.content_preview || (document.metadata?.content as string) || 'Content not available'}
                     </pre>
                   </div>
                 </div>
@@ -287,7 +287,7 @@ export default function KBDocumentViewPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-muted-foreground">Content Type</div>
-                  <div className="text-sm">{document.content_type}</div>
+                  <div className="text-sm">{document.source_type}</div>
                 </div>
 
                 {document.size_bytes && (
@@ -327,19 +327,19 @@ export default function KBDocumentViewPage() {
                   </div>
                 </div>
 
-                {document.source_url && (
+                {document.url && (
                   <>
                     <Separator />
                     <div className="space-y-2">
                       <div className="text-sm font-medium text-muted-foreground">Source URL</div>
                       <div className="text-sm break-all">
                         <a
-                          href={document.source_url}
+                          href={document.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
                         >
-                          {document.source_url}
+                          {document.url}
                         </a>
                       </div>
                     </div>
@@ -356,7 +356,7 @@ export default function KBDocumentViewPage() {
             <DialogHeader>
               <DialogTitle>Delete Document</DialogTitle>
               <DialogDescription>
-                Are you sure you want to delete "{document?.title}"? This action cannot be undone
+                Are you sure you want to delete "{document?.name}"? This action cannot be undone
                 and will permanently remove the document from the knowledge base.
               </DialogDescription>
             </DialogHeader>

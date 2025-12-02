@@ -29,6 +29,8 @@ export function KBSourceList({ sources }: KBSourceListProps) {
 
   const {
     removeSource,
+    updateSource,
+    draftSources,
     previewData,
     previewDraft,
     currentDraft
@@ -38,10 +40,16 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     return (
       <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border-2 border-dashed">
         <AlertCircle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No Sources Added</h3>
-        <p className="text-gray-500 mb-4">
-          Add content sources above to build your knowledge base
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Sources Added Yet</h3>
+        <p className="text-gray-500 mb-2">
+          Use the source types above to add content
         </p>
+        <div className="text-sm text-gray-400 space-y-1">
+          <p>1. Select a source type (Website, File, Text)</p>
+          <p>2. Configure and preview the content</p>
+          <p>3. Approve & add the source</p>
+          <p>4. Continue to approval step</p>
+        </div>
       </div>
     );
   }
@@ -131,25 +139,31 @@ export function KBSourceList({ sources }: KBSourceListProps) {
   };
 
   const handlePreviewSource = async (source: DraftSource): Promise<void> => {
-    setPreviewSource(source);
+    // CRITICAL: Always use source-specific data (single source of truth)
+    // Find the latest source data from the store to ensure we have current edits
+    const currentSource = draftSources.find(s => s.source_id === source.source_id) || source;
+
+    setPreviewSource(currentSource);
 
     // Check if source has its own preview pages in metadata
-    const sourceHasPreviewPages = source.metadata?.previewPages && Array.isArray(source.metadata.previewPages) && source.metadata.previewPages.length > 0;
+    const sourceHasPreviewPages = currentSource.metadata?.previewPages &&
+                                   Array.isArray(currentSource.metadata.previewPages) &&
+                                   currentSource.metadata.previewPages.length > 0;
 
-    // Debug logging removed - data flow confirmed working
+    // For approved sources, we should always have preview data in metadata
+    if (!sourceHasPreviewPages) {
+      toast({
+        title: 'Preview Unavailable',
+        description: 'This source does not have preview data available. This may happen with older sources or if content extraction failed.',
+        variant: 'destructive'
+      });
+      return;
+    }
 
-    // If this is a web source and we don't have preview data, generate it
-    if (source.type === SourceType.WEB && !sourceHasPreviewPages && !previewData) {
-      try {
-        await previewDraft(5); // Load preview data to enable editing
-      } catch (error) {
-        console.error('Failed to load preview data for editing:', error);
-        toast({
-          title: 'Preview Failed',
-          description: 'Failed to load preview data. Please try again.',
-          variant: 'destructive'
-        });
-      }
+    // Success - source has its own preview data with any edits preserved
+    console.log('✅ Loading source preview with', currentSource.metadata?.previewPages?.length, 'pages');
+    if (currentSource.metadata?.hasEdits) {
+      console.log('📝 Source contains edited content');
     }
   };
 
@@ -160,45 +174,44 @@ export function KBSourceList({ sources }: KBSourceListProps) {
 
   const handleSaveEdit = async (pageIndex: number, content: string, operations: any[]): Promise<void> => {
     try {
-      // Update frontend state immediately for responsiveness
-      if (previewSource?.metadata?.previewPages) {
-        const updatedPages = [...(previewSource.metadata.previewPages as any[])];
-        if (updatedPages[pageIndex]) {
-          updatedPages[pageIndex] = {
-            ...updatedPages[pageIndex],
-            edited_content: content,
-            original_content: updatedPages[pageIndex].original_content || updatedPages[pageIndex].content,
-            is_edited: true,
-            last_edited_at: new Date().toISOString()
-          };
-
-          setPreviewSource({
-            ...previewSource,
-            metadata: {
-              ...previewSource.metadata,
-              previewPages: updatedPages,
-              hasEdits: updatedPages.some(p => p.is_edited) // Track that edits exist
-            }
-          });
-
-          // Save changes back to backend draft for finalization
-          if (currentDraft?.draft_id) {
-            try {
-              // Get current preview data from store and update it
-              const currentPreviewData = previewData || { pages: [] };
-              const updatedPreviewData = {
-                ...currentPreviewData,
-                pages: updatedPages
-              };
-
-              await kbDraftApi.updatePreviewData(currentDraft.draft_id, updatedPreviewData);
-            } catch (backendError) {
-              console.warn('Failed to save to backend, but frontend state updated:', backendError);
-              // Don't fail the entire operation if backend save fails
-            }
-          }
-        }
+      if (!previewSource?.source_id) {
+        throw new Error('No source ID available for editing');
       }
+
+      // Update preview pages with edits
+      const currentPreviewPages = (previewSource.metadata?.previewPages as any[]) || [];
+      if (!currentPreviewPages[pageIndex]) {
+        throw new Error(`Page ${pageIndex} not found`);
+      }
+
+      const updatedPages = [...currentPreviewPages];
+      updatedPages[pageIndex] = {
+        ...updatedPages[pageIndex],
+        edited_content: content,
+        original_content: updatedPages[pageIndex].original_content || updatedPages[pageIndex].content,
+        is_edited: true,
+        last_edited_at: new Date().toISOString()
+      };
+
+      // CRITICAL: Update the store's draftSources (single source of truth)
+      updateSource(previewSource.source_id, {
+        metadata: {
+          ...previewSource.metadata,
+          previewPages: updatedPages,
+          hasEdits: updatedPages.some(p => p.is_edited),
+          lastEditedAt: new Date().toISOString()
+        }
+      });
+
+      // Update local component state for immediate UI feedback
+      setPreviewSource({
+        ...previewSource,
+        metadata: {
+          ...previewSource.metadata,
+          previewPages: updatedPages,
+          hasEdits: updatedPages.some(p => p.is_edited)
+        }
+      });
 
       setEditingPageIndex(null);
       toast({
@@ -217,24 +230,41 @@ export function KBSourceList({ sources }: KBSourceListProps) {
 
   const handleRevertPage = async (pageIndex: number): Promise<void> => {
     try {
-      // Frontend-only revert - aligns with draft-first architecture
-      if (previewSource?.metadata?.previewPages) {
-        const updatedPages = [...(previewSource.metadata.previewPages as any[])];
-        if (updatedPages[pageIndex]) {
-          // Remove edited content and reset to original
-          delete updatedPages[pageIndex].edited_content;
-          updatedPages[pageIndex].is_edited = false;
-          delete updatedPages[pageIndex].last_edited_at;
-
-          setPreviewSource({
-            ...previewSource,
-            metadata: {
-              ...previewSource.metadata,
-              previewPages: updatedPages
-            }
-          });
-        }
+      if (!previewSource?.source_id) {
+        throw new Error('No source ID available for reverting');
       }
+
+      // Revert the page to original content
+      const currentPreviewPages = (previewSource.metadata?.previewPages as any[]) || [];
+      if (!currentPreviewPages[pageIndex]) {
+        throw new Error(`Page ${pageIndex} not found`);
+      }
+
+      const updatedPages = [...currentPreviewPages];
+      // Remove edited content and reset to original
+      delete updatedPages[pageIndex].edited_content;
+      updatedPages[pageIndex].is_edited = false;
+      delete updatedPages[pageIndex].last_edited_at;
+
+      // CRITICAL: Update the store's draftSources (single source of truth)
+      updateSource(previewSource.source_id, {
+        metadata: {
+          ...previewSource.metadata,
+          previewPages: updatedPages,
+          hasEdits: updatedPages.some(p => p.is_edited),
+          lastEditedAt: new Date().toISOString()
+        }
+      });
+
+      // Update local component state for immediate UI feedback
+      setPreviewSource({
+        ...previewSource,
+        metadata: {
+          ...previewSource.metadata,
+          previewPages: updatedPages,
+          hasEdits: updatedPages.some(p => p.is_edited)
+        }
+      });
 
       toast({
         title: 'Content Reverted',

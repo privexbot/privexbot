@@ -22,6 +22,7 @@ import KBDocumentsPage from "@/pages/knowledge-bases/documents";
 import KBDocumentViewPage from "@/pages/knowledge-bases/document-view";
 import KBDocumentEditPage from "@/pages/knowledge-bases/document-edit";
 import KBAnalyticsPage from "@/pages/knowledge-bases/analytics";
+import KBPipelineMonitorPage from "@/pages/knowledge-bases/pipeline-monitor";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { LeadsPage } from "@/pages/LeadsPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
@@ -154,6 +155,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <KBAnalyticsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-bases/:kbId/pipeline-monitor"
+                element={
+                  <ProtectedRoute>
+                    <KBPipelineMonitorPage />
                   </ProtectedRoute>
                 }
               />

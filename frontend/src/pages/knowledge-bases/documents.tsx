@@ -177,9 +177,9 @@ export default function KBDocumentsPage() {
     setIsUploading(true);
     try {
       const documentData = {
-        title: textDocumentData.title.trim(),
+        name: textDocumentData.title.trim(),
         content: textDocumentData.content.trim(),
-        content_type: 'text/plain'
+        source_type: 'text_input'
       };
 
       const newDocument = await kbClient.kb.createDocument(kbId, documentData);
@@ -234,8 +234,8 @@ export default function KBDocumentsPage() {
 
   const filteredDocuments = Array.isArray(documents)
     ? documents.filter(doc =>
-        doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.content_type.toLowerCase().includes(searchQuery.toLowerCase())
+        (doc.name || doc.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (doc.source_type || doc.content_type || '').toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
 
@@ -452,9 +452,9 @@ export default function KBDocumentsPage() {
                     <div className="flex items-start space-x-3">
                       {getStatusIcon((document.metadata?.status as string) || 'unknown')}
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-medium text-lg">{document.title}</h3>
+                        <h3 className="font-medium text-lg">{document.name || document.title}</h3>
                         <div className="flex items-center space-x-4 mt-1 text-sm text-muted-foreground">
-                          <span>{document.content_type}</span>
+                          <span>{document.source_type || document.content_type}</span>
                           {document.size_bytes && (
                             <span>{formatFileSize(document.size_bytes)}</span>
                           )}
@@ -465,9 +465,9 @@ export default function KBDocumentsPage() {
                             Added {new Date(document.created_at).toLocaleDateString()}
                           </span>
                         </div>
-                        {document.source_url && (
+                        {(document.url || document.source_url) && (
                           <div className="mt-2 text-sm text-muted-foreground">
-                            Source: {document.source_url}
+                            Source: {document.url || document.source_url}
                           </div>
                         )}
                       </div>
@@ -499,7 +499,7 @@ export default function KBDocumentsPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-red-600"
-                            onClick={() => handleDeleteClick(document.id, document.title)}
+                            onClick={() => handleDeleteClick(document.id, document.name || document.title)}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete

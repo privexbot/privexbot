@@ -13,92 +13,194 @@
  * KB Status - Lifecycle states
  */
 export const KBStatus = {
-  DRAFT: 'draft',
-  PROCESSING: 'processing',
-  READY: 'ready',
-  FAILED: 'failed',
-  REINDEXING: 'reindexing'
+  DRAFT: "draft",
+  PROCESSING: "processing",
+  READY: "ready",
+  FAILED: "failed",
+  REINDEXING: "reindexing",
 } as const;
 
-export type KBStatus = typeof KBStatus[keyof typeof KBStatus]
+export type KBStatus = (typeof KBStatus)[keyof typeof KBStatus];
 
 /**
  * KB Context - Where KB can be used
  */
 export const KBContext = {
-  CHATBOT: 'chatbot',
-  CHATFLOW: 'chatflow',
-  BOTH: 'both'
+  CHATBOT: "chatbot",
+  CHATFLOW: "chatflow",
+  BOTH: "both",
 } as const;
 
-export type KBContext = typeof KBContext[keyof typeof KBContext]
+export type KBContext = (typeof KBContext)[keyof typeof KBContext];
 
 /**
  * Source Types - Different ways to add content
  */
 export const SourceType = {
-  WEB: 'web',
-  FILE: 'file',
-  TEXT: 'text',
-  COMBINE: 'combine',
-  GOOGLE_DOCS: 'google_docs',
-  GOOGLE_SHEETS: 'google_sheets',
-  NOTION: 'notion'
+  WEB: "web",
+  FILE: "file",
+  TEXT: "text",
+  COMBINE: "combine",
+  GOOGLE_DOCS: "google_docs",
+  GOOGLE_SHEETS: "google_sheets",
+  NOTION: "notion",
 } as const;
 
-export type SourceType = typeof SourceType[keyof typeof SourceType]
+export type SourceType = (typeof SourceType)[keyof typeof SourceType];
 
 /**
  * Crawl Methods for web sources (matches Crawl4AI backend exactly)
  */
 export const CrawlMethod = {
-  SCRAPE: 'single',     // Single page scraping (maps to scrape_single_url)
-  CRAWL: 'crawl',       // Crawl linked pages (maps to crawl_website)
+  SCRAPE: "single", // Single page scraping (maps to scrape_single_url)
+  CRAWL: "crawl", // Crawl linked pages (maps to crawl_website)
 } as const;
 
-export type CrawlMethod = typeof CrawlMethod[keyof typeof CrawlMethod]
+export type CrawlMethod = (typeof CrawlMethod)[keyof typeof CrawlMethod];
 
 /**
  * Chunking Strategies
  */
 export const ChunkingStrategy = {
-  RECURSIVE: 'recursive',
-  BY_HEADING: 'by_heading',
-  SEMANTIC: 'semantic',
-  BY_SECTION: 'by_section',
-  ADAPTIVE: 'adaptive',
-  SENTENCE_BASED: 'sentence_based',
-  PARAGRAPH_BASED: 'paragraph_based',
-  HYBRID: 'hybrid'
+  RECURSIVE: "recursive",
+  BY_HEADING: "by_heading",
+  SEMANTIC: "semantic",
+  BY_SECTION: "by_section",
+  ADAPTIVE: "adaptive",
+  SENTENCE_BASED: "sentence_based",
+  PARAGRAPH_BASED: "paragraph_based",
+  HYBRID: "hybrid",
+  FULL_CONTENT: "full_content", // No chunking - index full content as single document
 } as const;
 
-export type ChunkingStrategy = typeof ChunkingStrategy[keyof typeof ChunkingStrategy]
+export type ChunkingStrategy =
+  (typeof ChunkingStrategy)[keyof typeof ChunkingStrategy];
+
+/**
+ * Vector Store Providers
+ */
+export const VectorStoreProvider = {
+  QDRANT: "qdrant",
+  FAISS: "faiss",
+  WEAVIATE: "weaviate",
+  PINECONE: "pinecone",
+  CHROMA: "chroma",
+} as const;
+
+export type VectorStoreProvider =
+  (typeof VectorStoreProvider)[keyof typeof VectorStoreProvider];
+
+/**
+ * Distance Metrics
+ */
+export const DistanceMetric = {
+  COSINE: "cosine",
+  EUCLIDEAN: "euclidean",
+  DOT_PRODUCT: "dot",
+  MANHATTAN: "manhattan",
+} as const;
+
+export type DistanceMetric =
+  (typeof DistanceMetric)[keyof typeof DistanceMetric];
+
+/**
+ * Index Types
+ */
+export const IndexType = {
+  HNSW: "hnsw",
+  FLAT: "flat",
+  IVF: "ivf",
+} as const;
+
+export type IndexType = (typeof IndexType)[keyof typeof IndexType];
+
+// ========================================
+// MODEL & VECTOR STORE CONFIGURATION
+// ========================================
+
+/**
+ * HNSW Index Configuration
+ */
+export interface HNSWConfig {
+  m: number; // Number of connections per node (16 default)
+  ef_construct: number; // Construction accuracy (100 default)
+  ef_search?: number; // Search accuracy (auto-calculated)
+}
+
+/**
+ * Qdrant-specific configuration
+ */
+export interface QdrantConfig {
+  collection_naming: string; // Pattern: kb_{kb_id}
+  distance_metric: DistanceMetric;
+  index_type: IndexType;
+  vector_size: number; // Embedding dimension (384 default)
+  hnsw_config: HNSWConfig;
+  batch_size: number; // Upsert batch size (100 default)
+  indexing_threshold: number; // Start indexing after N vectors (10000 default)
+}
+
+/**
+ * FAISS-specific configuration (for future use)
+ */
+export interface FaissConfig {
+  index_factory: string; // "IVF100,PQ8" etc.
+  metric_type: DistanceMetric;
+  nlist?: number; // Number of clusters for IVF
+}
+
+/**
+ * Generic Vector Store Configuration
+ */
+export interface VectorStoreConfig {
+  provider: VectorStoreProvider;
+  settings: QdrantConfig | FaissConfig | Record<string, any>;
+}
+
+/**
+ * Model Configuration (Embedding + Vector Store)
+ */
+export interface ModelConfig {
+  embedding: {
+    provider: "openai" | "local" | "huggingface";
+    model: string; // e.g., 'text-embedding-ada-002', 'all-MiniLM-L6-v2'
+    dimensions: number; // Embedding vector dimensions
+    batch_size: number; // Embedding batch size
+  };
+  vector_store: VectorStoreConfig;
+  performance: {
+    indexing_strategy: "immediate" | "batch" | "background";
+    search_timeout: number; // Search timeout in milliseconds
+    max_results: number; // Maximum search results to return
+  };
+}
 
 /**
  * Pipeline Status
  */
 export const PipelineStatus = {
-  QUEUED: 'queued',
-  RUNNING: 'running',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  CANCELLED: 'cancelled'
+  QUEUED: "queued",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  CANCELLED: "cancelled",
 } as const;
 
-export type PipelineStatus = typeof PipelineStatus[keyof typeof PipelineStatus]
+export type PipelineStatus =
+  (typeof PipelineStatus)[keyof typeof PipelineStatus];
 
 /**
  * Pipeline Stages
  */
 export const PipelineStage = {
-  SCRAPING: 'scraping',
-  PARSING: 'parsing',
-  CHUNKING: 'chunking',
-  EMBEDDING: 'embedding',
-  INDEXING: 'indexing'
+  SCRAPING: "scraping",
+  PARSING: "parsing",
+  CHUNKING: "chunking",
+  EMBEDDING: "embedding",
+  INDEXING: "indexing",
 } as const;
 
-export type PipelineStage = typeof PipelineStage[keyof typeof PipelineStage]
+export type PipelineStage = (typeof PipelineStage)[keyof typeof PipelineStage];
 
 // ========================================
 // PHASE 1: DRAFT TYPES
@@ -140,7 +242,7 @@ export interface DraftSource {
   type: SourceType;
   url?: string;
   config?: WebSourceConfig;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: "pending" | "processing" | "completed" | "failed";
   created_at: string;
   metadata?: Record<string, unknown>;
 }
@@ -175,7 +277,10 @@ export interface TextSourceFormData {
   title: string;
 }
 
-export type SourceFormData = WebSourceFormData | FileSourceFormData | TextSourceFormData;
+export type SourceFormData =
+  | WebSourceFormData
+  | FileSourceFormData
+  | TextSourceFormData;
 
 /**
  * Update Chunking Configuration Request
@@ -272,24 +377,30 @@ export interface PreviewResponse {
 export interface PagePreview {
   url: string;
   title: string;
-  content: string;              // Full scraped content
+  content: string; // Full scraped content
   content_length?: number;
-  chunks: number;              // Number of chunks (not array)
+  chunks: number; // Number of chunks (not array)
   chunks_created?: number;
   processing_time_ms?: number;
   preview_chunks: PreviewChunk[]; // Actual chunk objects array
+
+  // Content editing fields
+  edited_content?: string; // Edited version of content
+  is_edited?: boolean; // Whether content has been edited
+  word_count?: number; // Word count for display
+  char_count?: number; // Character count for display
 }
 
 /**
  * Preview Chunk
  */
 export interface PreviewChunk {
-  index: number;                   // Backend provides index
+  index: number; // Backend provides index
   content: string;
-  full_length: number;             // Backend uses full_length instead of char_count
-  token_count: number;             // Backend uses token_count instead of word_count
-  word_count?: number;             // Keep for backwards compatibility
-  char_count?: number;             // Keep for backwards compatibility
+  full_length: number; // Backend uses full_length instead of char_count
+  token_count: number; // Backend uses token_count instead of word_count
+  word_count?: number; // Keep for backwards compatibility
+  char_count?: number; // Keep for backwards compatibility
   overlap_with_previous?: number;
   metadata?: Record<string, unknown>;
 }
@@ -301,7 +412,7 @@ export interface FinalizeRequest {
   chunking_config?: Partial<ChunkingConfig>;
   embedding_config?: Partial<EmbeddingConfig>;
   vector_store_config?: Partial<VectorStoreConfig>;
-  priority?: 'low' | 'normal' | 'high';
+  priority?: "low" | "normal" | "high";
 }
 
 /**
@@ -359,7 +470,7 @@ export interface PipelineStatusResponse {
  */
 export interface PipelineLogEntry {
   timestamp: string;
-  level: 'info' | 'warning' | 'error';
+  level: "info" | "warning" | "error";
   stage: PipelineStage;
   message: string;
   details?: Record<string, unknown>;
@@ -374,12 +485,12 @@ export interface PipelineLogEntry {
  */
 export interface WebSourceConfig {
   method: CrawlMethod;
-  max_pages?: number;        // Default: 50
-  max_depth?: number;        // Default: 3
+  max_pages?: number; // Default: 50
+  max_depth?: number; // Default: 3
   include_patterns?: string[]; // e.g., ['/docs/**', '/api/**']
   exclude_patterns?: string[]; // e.g., ['/admin/**', '/auth/**']
   include_subdomains?: boolean;
-  wait_time?: number;        // Seconds to wait for JS rendering
+  wait_time?: number; // Seconds to wait for JS rendering
   headers?: Record<string, string>; // Custom headers
 }
 
@@ -388,15 +499,15 @@ export interface WebSourceConfig {
  */
 export interface ChunkingConfig {
   strategy: ChunkingStrategy;
-  chunk_size: number;        // Characters per chunk (100-5000)
-  chunk_overlap: number;     // Overlap between chunks (0-1000)
+  chunk_size: number; // Characters per chunk (100-5000)
+  chunk_overlap: number; // Overlap between chunks (0-1000)
   preserve_formatting?: boolean;
   split_by_heading_level?: number; // For by_heading strategy
-  semantic_threshold?: number;     // For semantic strategy (0-1)
+  semantic_threshold?: number; // For semantic strategy (0-1)
 
   // Additional configuration options
-  min_chunk_size?: number;   // Minimum chunk size (50-500)
-  max_chunk_size?: number;   // Maximum chunk size (500-10000)
+  min_chunk_size?: number; // Minimum chunk size (50-500)
+  max_chunk_size?: number; // Maximum chunk size (500-10000)
   preserve_headings?: boolean;
   remove_duplicates?: boolean;
   smart_splitting?: boolean;
@@ -406,19 +517,10 @@ export interface ChunkingConfig {
  * Embedding Configuration
  */
 export interface EmbeddingConfig {
-  model: string;            // e.g., 'all-MiniLM-L6-v2'
-  device: 'cpu' | 'gpu';
+  model: string; // e.g., 'all-MiniLM-L6-v2'
+  device: "cpu" | "gpu";
   batch_size?: number;
   normalize?: boolean;
-}
-
-/**
- * Vector Store Configuration
- */
-export interface VectorStoreConfig {
-  provider: 'qdrant' | 'faiss' | 'weaviate' | 'milvus' | 'pinecone';
-  collection_name?: string;
-  distance_metric?: 'cosine' | 'euclidean' | 'dot_product';
 }
 
 // ========================================
@@ -566,12 +668,29 @@ export interface KnowledgeBase extends KBSummary {
 export interface KBDocument {
   id: string;
   kb_id: string;
-  title: string;
-  source_url?: string;
-  content_type: string;
-  size_bytes: number;
+  name: string;
+  url?: string;
+  source_type: string;
+  source_metadata?: Record<string, unknown>;
+  content?: string;
+  content_preview?: string;
+  status: string;
+  processing_metadata?: Record<string, unknown>;
+  word_count: number;
+  character_count: number;
   chunk_count: number;
+  custom_metadata?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+  is_enabled: boolean;
+  is_archived: boolean;
   created_at: string;
+  updated_at: string;
+  created_by: string;
+
+  // Legacy fields for backward compatibility (will be deprecated)
+  title?: string;
+  content_type?: string;
+  size_bytes?: number;
   processed_at?: string;
   metadata?: Record<string, unknown>;
 }
@@ -603,8 +722,6 @@ export interface ReindexResponse {
   estimated_completion_minutes: number;
 }
 
-
-
 // ========================================
 // UTILITY TYPES
 // ========================================
@@ -625,8 +742,8 @@ export interface PaginatedResponse<T> {
  * Sort Options
  */
 export interface SortOptions {
-  field: 'name' | 'created_at' | 'updated_at' | 'status';
-  direction: 'asc' | 'desc';
+  field: "name" | "created_at" | "updated_at" | "status";
+  direction: "asc" | "desc";
 }
 
 /**
@@ -636,6 +753,205 @@ export interface Workspace {
   id: string;
   name: string;
   organization_id: string;
+}
+
+// ========================================
+// NEW ARCHITECTURAL PHASE TYPES
+// ========================================
+
+/**
+ * KB Creation Steps - Multi-phase creation workflow
+ */
+export const KBCreationStep = {
+  BASIC_INFO: 1, // Phase 1A: Basic information & URL addition
+  CONTENT_REVIEW: 2, // Phase 1B: Content review & editing
+  CONTENT_APPROVAL: 3, // Phase 1C: Content approval & source addition
+  CHUNKING_CONFIG: 4, // Phase 1D: Chunking configuration with live preview
+  MODEL_CONFIG: 5, // Phase 1E: Model & vector store configuration
+  FINALIZATION: 6, // Phase 2: Final review & creation
+} as const;
+
+export type KBCreationStep =
+  (typeof KBCreationStep)[keyof typeof KBCreationStep];
+
+/**
+ * Phase 1C: Content Approval Request
+ */
+export interface ApproveContentRequest {
+  page_indices: number[];
+  source_name?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ApproveContentResponse {
+  success: boolean;
+  message: string;
+  source_id: string;
+  source_name: string;
+  summary: {
+    total_pages_approved: number;
+    edited_pages: number;
+    unedited_pages: number;
+    total_content_size: number;
+    average_page_size: number;
+  };
+}
+
+/**
+ * Phase 1D: Chunking Configuration with Live Preview
+ */
+export interface ChunkingPreviewRequest {
+  strategy?: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
+  preserve_code_blocks?: boolean;
+  source_id?: string;
+  max_chunks_preview?: number;
+}
+
+export interface ChunkingPreviewResponse {
+  success: boolean;
+  message: string;
+  config: {
+    strategy: string;
+    chunk_size: number;
+    chunk_overlap: number;
+    preserve_code_blocks: boolean;
+  };
+  preview_chunks: Array<{
+    chunk_index: number;
+    content: string;
+    size: number;
+    word_count: number;
+    source_metadata: {
+      source_id: string;
+      source_name: string;
+      page_title: string;
+      page_url: string;
+      page_index: number;
+      is_edited: boolean;
+      word_count: number;
+      char_count: number;
+    };
+    chunk_position_in_page: number;
+    total_chunks_in_page: number;
+  }>;
+  statistics: {
+    total_sources: number;
+    total_pages: number;
+    total_content_size: number;
+    total_chunks: number;
+    preview_chunks_shown: number;
+    average_chunk_size: number;
+    size_distribution: {
+      small: number;
+      medium: number;
+      large: number;
+    };
+    chunks_per_page: number;
+  };
+  source_breakdown: Array<{
+    source_id: string;
+    source_name: string;
+    pages: number;
+    total_content_size: number;
+  }>;
+}
+
+/**
+ * Phase 1E: Model & Vector Store Configuration
+ */
+export interface ModelConfigRequest {
+  embedding_config?: {
+    model?: string;
+    device?: string;
+    batch_size?: number;
+    normalize_embeddings?: boolean;
+  };
+  vector_store_config?: {
+    provider?: string;
+    collection_name_prefix?: string;
+    distance_metric?: string;
+    enable_hybrid_search?: boolean;
+  };
+  retrieval_config?: {
+    strategy?: string;
+    top_k?: number;
+    score_threshold?: number;
+    rerank_enabled?: boolean;
+  };
+  metadata_config?: {
+    store_full_content?: boolean;
+    indexed_fields?: string[];
+    filterable_fields?: string[];
+    include_source_tracking?: boolean;
+  };
+}
+
+export interface ModelConfigResponse {
+  success: boolean;
+  message: string;
+  configuration: {
+    embedding: Record<string, any>;
+    vector_store: Record<string, any>;
+    retrieval: Record<string, any>;
+    metadata: Record<string, any>;
+  };
+  estimates: {
+    total_approved_pages: number;
+    total_content_size: number;
+    estimated_chunks: number;
+    embedding_dimensions: number;
+    estimated_vector_storage_mb: number;
+    estimated_processing_time_minutes: number;
+  };
+  compatibility: {
+    embedding_model_available: boolean;
+    vector_store_available: boolean;
+    gpu_acceleration: boolean;
+  };
+}
+
+/**
+ * Approved Source (Phase 1C output)
+ */
+export interface ApprovedSource {
+  id: string;
+  type: "approved_content";
+  name: string;
+  status: "approved";
+  approved_pages: Array<{
+    index: number;
+    url: string;
+    title: string;
+    content: string;
+    original_content: string;
+    is_edited: boolean;
+    word_count: number;
+    char_count: number;
+    approved_at: string;
+    approved_by: string;
+  }>;
+  metadata: {
+    total_pages: number;
+    total_content_size: number;
+    edited_pages: number;
+    original_url: string;
+    approval_source: string;
+  };
+  added_at: string;
+  added_by: string;
+}
+
+/**
+ * Stepper Navigation State
+ */
+export interface StepperState {
+  currentStep: KBCreationStep;
+  completedSteps: Set<KBCreationStep>;
+  approvedSources: ApprovedSource[];
+  chunkingConfig: ChunkingPreviewRequest | null;
+  modelConfig: ModelConfigRequest | null;
 }
 
 // ========================================
@@ -667,5 +983,9 @@ export function isTextSource(source: AnySource): source is TextSource {
  * Type guard for KB Error Response
  */
 export function isKBError(response: unknown): response is KBErrorResponse {
-  return response !== null && typeof response === 'object' && 'error_code' in response;
+  return (
+    response !== null &&
+    typeof response === "object" &&
+    "error_code" in response
+  );
 }

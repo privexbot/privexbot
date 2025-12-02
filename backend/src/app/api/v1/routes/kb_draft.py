@@ -481,6 +481,52 @@ async def add_web_source_to_draft(
         )
 
 
+@router.delete("/{draft_id}")
+async def delete_draft(
+    draft_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete KB draft from Redis.
+
+    PHASE: 1 (Draft Mode - Redis Only)
+    DURATION: <10ms
+
+    Permanently removes the draft and all its data.
+    """
+    try:
+        # Get draft to verify it exists and user owns it
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KB draft not found or expired"
+            )
+
+        if draft["created_by"] != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
+        # Delete the draft
+        draft_service.delete_draft(DraftType.KB, draft_id)
+
+        return {
+            "success": True,
+            "message": "Draft deleted successfully",
+            "draft_id": draft_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete draft: {str(e)}"
+        )
+
+
 @router.delete("/{draft_id}/sources/{source_id}")
 async def remove_source_from_draft(
     draft_id: str,
@@ -534,6 +580,152 @@ async def remove_source_from_draft(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.post("/{draft_id}/preview-chunks-live")
+async def preview_chunks_live(
+    draft_id: str,
+    request: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Live preview of chunking for approved content.
+
+    WHY: Users need to see exactly how their content will be chunked
+    HOW: Apply chunking strategy to specific source content
+
+    Request:
+    {
+        "source_id": "uuid",
+        "content": "approved content text",
+        "strategy": "by_heading",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+        "include_metrics": true
+    }
+
+    Returns:
+    {
+        "chunks": [...],
+        "metrics": {...}
+    }
+    """
+    from app.services.chunking_service import chunking_service
+
+    # Validate draft exists
+    draft = draft_service.get_draft(DraftType.KB, draft_id)
+    if not draft:
+        raise HTTPException(
+            status_code=404,
+            detail="KB draft not found"
+        )
+
+    # Extract parameters
+    content = request.get("content", "")
+    strategy = request.get("strategy", "by_heading")
+    chunk_size = request.get("chunk_size", 1000)
+    chunk_overlap = request.get("chunk_overlap", 200)
+    include_metrics = request.get("include_metrics", False)
+
+    # Special handling for "full_content" (no chunking)
+    if strategy == "full_content":
+        # Return content as single chunk
+        chunks = [{
+            "content": content,
+            "index": 0,
+            "token_count": len(content) // 4,  # Rough estimate
+            "char_count": len(content),
+            "has_overlap": False
+        }]
+
+        metrics = {
+            "total_chunks": 1,
+            "avg_chunk_size": len(content),
+            "min_chunk_size": len(content),
+            "max_chunk_size": len(content),
+            "total_tokens": len(content) // 4,
+            "overlap_percentage": 0,
+            "estimated_cost": (len(content) // 4) * 0.0001,  # Rough cost estimate
+            "retrieval_speed": "fast" if len(content) < 2000 else "moderate",
+            "context_quality": "high"  # Full context always high
+        }
+    else:
+        # Apply chunking strategy
+        chunks_raw = chunking_service.chunk_document(
+            text=content,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+
+        # Format chunks for frontend
+        chunks = []
+        for i, chunk in enumerate(chunks_raw):
+            has_overlap = i > 0 and chunk_overlap > 0
+            overlap_content = None
+
+            if has_overlap and i > 0:
+                # Extract overlap portion from previous chunk
+                prev_chunk = chunks_raw[i-1]["content"]
+                overlap_start = max(0, len(prev_chunk) - chunk_overlap)
+                overlap_content = prev_chunk[overlap_start:][:50] + "..."  # Show first 50 chars
+
+            chunks.append({
+                "content": chunk["content"],
+                "index": i,
+                "token_count": chunk.get("token_count", len(chunk["content"]) // 4),
+                "char_count": len(chunk["content"]),
+                "has_overlap": has_overlap,
+                "overlap_content": overlap_content
+            })
+
+        # Calculate metrics
+        if include_metrics and chunks:
+            chunk_sizes = [c["char_count"] for c in chunks]
+            total_tokens = sum(c["token_count"] for c in chunks)
+
+            # Calculate overlap percentage
+            total_content_len = len(content)
+            total_chunk_len = sum(chunk_sizes)
+            overlap_pct = ((total_chunk_len - total_content_len) / total_content_len * 100) if total_content_len > 0 else 0
+
+            # Determine retrieval speed based on chunk count
+            if len(chunks) < 10:
+                retrieval_speed = "fast"
+            elif len(chunks) < 50:
+                retrieval_speed = "moderate"
+            else:
+                retrieval_speed = "slow"
+
+            # Determine context quality based on chunk size
+            avg_size = sum(chunk_sizes) / len(chunk_sizes)
+            if avg_size < 300:
+                context_quality = "low"
+            elif avg_size < 800:
+                context_quality = "medium"
+            else:
+                context_quality = "high"
+
+            metrics = {
+                "total_chunks": len(chunks),
+                "avg_chunk_size": avg_size,
+                "min_chunk_size": min(chunk_sizes),
+                "max_chunk_size": max(chunk_sizes),
+                "total_tokens": total_tokens,
+                "overlap_percentage": max(0, min(100, overlap_pct)),
+                "estimated_cost": total_tokens * 0.0001,  # Rough embedding cost estimate
+                "retrieval_speed": retrieval_speed,
+                "context_quality": context_quality
+            }
+        else:
+            metrics = {}
+
+    return {
+        "chunks": chunks[:20],  # Limit preview to 20 chunks
+        "metrics": metrics,
+        "total_chunks": len(chunks),
+        "preview_limited": len(chunks) > 20
+    }
 
 
 @router.post("/{draft_id}/chunking")
@@ -1000,9 +1192,81 @@ async def update_draft_preview_data(
                 detail="KB draft not found"
             )
 
+        # DEBUG: Log what we're receiving and storing
+        pages_count = len(preview_data.get("pages", []))
+        approved_count = len([p for p in preview_data.get("pages", []) if p.get("is_approved", False)])
+        print(f"🔄 UPDATE_PREVIEW_DATA: draft={draft_id}, pages={pages_count}, approved={approved_count}")
+
         # Update preview_data in draft
-        draft["preview_data"] = preview_data
-        draft_service.save_draft(DraftType.KB, draft_id, draft)
+        draft_service.update_draft(
+            draft_type=DraftType.KB,
+            draft_id=draft_id,
+            updates={"preview_data": preview_data}
+        )
+
+        # CRITICAL FIX: Distribute pages from global preview_data to source-specific metadata
+        # WHY: Approval endpoint expects pages in source.metadata.previewPages, not global preview_data.pages
+        updated_draft = draft_service.get_draft(DraftType.KB, draft_id)
+        sources = updated_draft.get("data", {}).get("sources", [])
+        pages = preview_data.get("pages", [])
+
+        # DEBUG: Log distribution prerequisites
+        print(f"🔍 DISTRIBUTION_CHECK: sources_count={len(sources)}, pages_count={len(pages)}")
+        if sources:
+            for i, source in enumerate(sources):
+                print(f"  Source {i}: id={source.get('id')}, type={source.get('type')}")
+        if pages:
+            for i, page in enumerate(pages[:2]):  # Show first 2 pages
+                print(f"  Page {i}: source_id={page.get('source_id')}, title={page.get('title', 'No title')[:50]}")
+
+        if sources and pages:
+            print(f"📥 DISTRIBUTING PAGES: {len(pages)} pages to {len(sources)} sources")
+
+            # Group pages by source_id
+            pages_by_source = {}
+            for page in pages:
+                source_id = page.get("source_id")
+                if source_id:
+                    if source_id not in pages_by_source:
+                        pages_by_source[source_id] = []
+                    pages_by_source[source_id].append(page)
+
+            # Update each source's metadata with its pages
+            sources_updated = False
+            for i, source in enumerate(sources):
+                source_id = source.get("id")
+                if source_id in pages_by_source:
+                    source_pages = pages_by_source[source_id]
+
+                    # Ensure metadata exists
+                    if "metadata" not in source:
+                        source["metadata"] = {}
+
+                    # Store pages in source metadata for approval endpoint
+                    source["metadata"]["previewPages"] = source_pages
+                    source["metadata"]["pageCount"] = len(source_pages)
+                    source["metadata"]["lastUpdatedAt"] = datetime.utcnow().isoformat()
+
+                    sources[i] = source
+                    sources_updated = True
+                    print(f"  ✅ Source {source_id}: distributed {len(source_pages)} pages")
+
+            # Save updated sources back to draft
+            if sources_updated:
+                draft_data = updated_draft.get("data", {})
+                draft_data["sources"] = sources
+                draft_service.update_draft(
+                    draft_type=DraftType.KB,
+                    draft_id=draft_id,
+                    updates={"data": draft_data}
+                )
+                print(f"💾 SOURCES UPDATED: Pages now available for approval in source metadata")
+
+        # DEBUG: Verify what was actually stored
+        updated_draft = draft_service.get_draft(DraftType.KB, draft_id)
+        stored_pages = updated_draft.get("preview_data", {}).get("pages", [])
+        stored_approved = len([p for p in stored_pages if p.get("is_approved", False)])
+        print(f"✅ STORED_VERIFICATION: draft={draft_id}, stored_pages={len(stored_pages)}, stored_approved={stored_approved}")
 
         return {
             "success": True,
@@ -1016,6 +1280,737 @@ async def update_draft_preview_data(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update preview data: {str(e)}"
+        )
+
+
+class ApproveContentRequest(BaseModel):
+    """Request model for approving scraped content (legacy)"""
+    page_indices: List[int] = Field(..., description="Page indices to approve and add to sources")
+    source_name: Optional[str] = Field(None, description="Custom name for the approved source")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the source")
+
+
+class SourceApprovalRequest(BaseModel):
+    """Request model for source-centric approval (modern approach)"""
+    source_approvals: List[Dict[str, Any]] = Field(
+        ...,
+        description="List of source approval data with page indices and content updates"
+    )
+
+
+class PageUpdate(BaseModel):
+    """Single page content update"""
+    page_index: int = Field(..., description="Index of page within source")
+    edited_content: Optional[str] = Field(None, description="User-edited content")
+    is_edited: bool = Field(default=False, description="Whether page has been edited")
+
+
+class SourceApproval(BaseModel):
+    """Approval data for a single source"""
+    source_id: str = Field(..., description="Source ID to approve")
+    approved_page_indices: List[int] = Field(..., description="Page indices to approve within this source")
+    page_updates: List[PageUpdate] = Field(default_factory=list, description="Content updates for pages")
+
+
+@router.post("/{draft_id}/approve-content")
+async def approve_and_add_to_sources(
+    draft_id: str,
+    request: ApproveContentRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Move approved pages from preview_data to sources.
+
+    WHY: User approval step before chunking configuration
+    HOW: Copy approved pages (edited + unedited) to sources array with final content
+
+    PHASE: 1C (Content Approval)
+
+    FLOW:
+    1. Get approved pages from preview_data
+    2. Create new source with approved content
+    3. Add to draft sources array
+    4. Keep original preview_data for reference
+
+    Args:
+        draft_id: KB draft ID
+        request: Pages to approve and source metadata
+
+    Returns:
+        New source details and approval summary
+    """
+    try:
+        # Get draft to verify it exists and user has access
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KB draft not found"
+            )
+
+        # Get preview pages
+        preview_data = draft.get("preview_data", {})
+        pages = preview_data.get("pages", [])
+
+        # DEBUG: Log what approval API is seeing
+        total_pages = len(pages)
+        already_approved = len([p for p in pages if p.get("is_approved", False)])
+        print(f"🔍 APPROVE_SOURCES_DEBUG: draft={draft_id}, total_pages={total_pages}, already_approved={already_approved}")
+
+        if already_approved > 0:
+            approved_pages_details = [(i, p.get("title", "No title")[:50]) for i, p in enumerate(pages) if p.get("is_approved", False)]
+            print(f"⚠️  ALREADY_APPROVED_PAGES: {approved_pages_details}")
+
+        if not pages:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No preview pages found. Run preview first."
+            )
+
+        # Validate page indices
+        invalid_indices = [idx for idx in request.page_indices if idx < 0 or idx >= len(pages)]
+        if invalid_indices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid page indices: {invalid_indices}. Valid range: 0-{len(pages)-1}"
+            )
+
+        # Collect approved pages with their final content (edited or original)
+        approved_pages = []
+        total_content_size = 0
+        edited_count = 0
+
+        for idx in request.page_indices:
+            page = pages[idx]
+            final_content = page.get("edited_content") or page.get("content", "")
+
+            approved_page = {
+                "index": idx,
+                "url": page.get("url", ""),
+                "title": page.get("title", f"Page {idx + 1}"),
+                "content": final_content,
+                "original_content": page.get("content", ""),
+                "is_edited": page.get("is_edited", False),
+                "word_count": len(final_content.split()),
+                "char_count": len(final_content),
+                "approved_at": datetime.utcnow().isoformat(),
+                "approved_by": str(current_user.id)
+            }
+
+            approved_pages.append(approved_page)
+            total_content_size += len(final_content)
+            if page.get("is_edited"):
+                edited_count += 1
+
+        # Create new source with approved content
+        source_id = str(uuid4())
+        source_name = request.source_name or f"Approved Content ({len(approved_pages)} pages)"
+
+        approved_source = {
+            "id": source_id,
+            "type": "approved_content",
+            "name": source_name,
+            "status": "approved",
+            "approved_pages": approved_pages,
+            "metadata": {
+                **request.metadata,
+                "total_pages": len(approved_pages),
+                "total_content_size": total_content_size,
+                "edited_pages": edited_count,
+                "original_url": pages[0].get("url", "") if pages else "",
+                "approval_source": "content_review"
+            },
+            "added_at": datetime.utcnow().isoformat(),
+            "added_by": str(current_user.id)
+        }
+
+        # Add approved source to draft sources
+        data = draft.get("data", {})
+        sources = data.get("sources", [])
+        sources.append(approved_source)
+        data["sources"] = sources
+
+        # Update draft
+        draft_service.update_draft(
+            draft_type=DraftType.KB,
+            draft_id=draft_id,
+            updates={"data": data}
+        )
+
+        return {
+            "success": True,
+            "message": f"Successfully approved and added {len(approved_pages)} pages to sources",
+            "source_id": source_id,
+            "source_name": source_name,
+            "summary": {
+                "total_pages_approved": len(approved_pages),
+                "edited_pages": edited_count,
+                "unedited_pages": len(approved_pages) - edited_count,
+                "total_content_size": total_content_size,
+                "average_page_size": total_content_size // len(approved_pages) if approved_pages else 0
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to approve content: {str(e)}"
+        )
+
+
+@router.post("/{draft_id}/approve-sources")
+async def approve_sources_with_edits(
+    draft_id: str,
+    source_approvals: List[Dict[str, Any]] = Body(..., description="Source approval data"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Modern source-centric approval endpoint.
+
+    WHY: Preserves source structure and user edits within their original context
+    HOW: Updates each source's metadata with approved pages and edits
+
+    PHASE: 1C (Content Approval)
+
+    BENEFITS:
+    - Preserves source-specific edits
+    - Maintains user intent (which edit belongs to which source)
+    - Scalable for multiple sources
+    - Clean data flow
+
+    Args:
+        draft_id: KB draft ID
+        source_approvals: List of source approval data with edits
+
+    Returns:
+        Summary of approved sources and pages
+    """
+    try:
+        # DEBUG: Log what frontend is sending
+        print(f"🔄 APPROVE_SOURCES_REQUEST: draft={draft_id}, sources_count={len(source_approvals)}")
+        for i, approval in enumerate(source_approvals):
+            source_id = approval.get("source_id", "unknown")
+            page_indices = approval.get("approved_page_indices", [])
+            page_updates = approval.get("page_updates", [])
+            print(f"  Source {i}: id={source_id}, approving_pages={page_indices}, updates_count={len(page_updates)}")
+
+        # Get draft data
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Draft not found"
+            )
+
+        data = draft.get("data", {})
+        sources = data.get("sources", [])
+
+        if not sources:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No sources found in draft"
+            )
+
+        # Process each source approval
+        total_approved_pages = 0
+        total_edited_pages = 0
+        updated_sources = []
+
+        for approval_data in source_approvals:
+            source_id = approval_data.get("source_id")
+            approved_page_indices = approval_data.get("approved_page_indices", [])
+            page_updates = approval_data.get("page_updates", [])
+
+            # Find the source
+            source_index = next((i for i, s in enumerate(sources) if s.get("id") == source_id), None)
+            if source_index is None:
+                continue  # Skip if source not found
+
+            source = sources[source_index]
+
+            # Get source preview pages
+            source_metadata = source.get("metadata", {})
+            preview_pages = source_metadata.get("previewPages", [])
+
+            # DEBUG: Log approval state for this source
+            total_pages_in_source = len(preview_pages)
+            already_approved_in_source = len([p for p in preview_pages if p.get("is_approved", False)])
+            print(f"🔍 APPROVE_SOURCES_DEBUG: source={source_id}, total_pages={total_pages_in_source}, already_approved={already_approved_in_source}")
+            if already_approved_in_source > 0:
+                approved_pages_details = [(i, p.get("title", "No title")[:50], p.get("approved_at")) for i, p in enumerate(preview_pages) if p.get("is_approved", False)]
+                print(f"⚠️  ALREADY_APPROVED_PAGES_IN_SOURCE: {approved_pages_details}")
+
+            if not preview_pages:
+                continue  # Skip if no preview pages
+
+            # Update pages with edits and approval status
+            for page_idx in approved_page_indices:
+                if page_idx < len(preview_pages):
+                    page = preview_pages[page_idx]
+
+                    # SMART DUPLICATE PREVENTION: Trust frontend edit detection
+                    page_is_approved = page.get("is_approved", False)
+                    has_page_updates = any(pu.get("page_index") == page_idx for pu in page_updates)
+
+                    # Logic: If frontend is sending updates for this page, allow re-approval
+                    if page_is_approved and has_page_updates:
+                        print(f"✅ EDIT DETECTED: Page {page_idx} has updates from frontend - allowing re-approval")
+                        # Clear approval status to allow re-approval
+                        page["is_approved"] = False
+                        page["approved_at"] = None
+                        page["approved_by"] = None
+                    elif page_is_approved:
+                        print(f"⚠️  DUPLICATE APPROVAL PREVENTED: Page {page_idx} already approved with no new edits")
+                        continue  # Skip this page entirely
+
+                    # Apply edits if provided
+                    page_update = next((pu for pu in page_updates if pu.get("page_index") == page_idx), None)
+                    if page_update:
+                        if page_update.get("edited_content"):
+                            page["edited_content"] = page_update["edited_content"]
+                            page["original_content"] = page.get("content", "")
+                            page["is_edited"] = True
+                            total_edited_pages += 1
+                        else:
+                            page["is_edited"] = False
+
+                    # Mark as approved (only if not already approved)
+                    page["is_approved"] = True
+                    page["approved_at"] = datetime.utcnow().isoformat()
+                    page["approved_by"] = str(current_user.id)
+
+                    total_approved_pages += 1
+
+            # Update source metadata
+            source_metadata["hasApprovedPages"] = True
+            source_metadata["approvedPageCount"] = len([p for p in preview_pages if p.get("is_approved")])
+            source_metadata["lastApprovalAt"] = datetime.utcnow().isoformat()
+
+            source["metadata"] = source_metadata
+            sources[source_index] = source
+            updated_sources.append({
+                "source_id": source_id,
+                "source_name": source.get("url", f"Source {source_index + 1}"),
+                "approved_pages": len([p for p in preview_pages if p.get("is_approved")]),
+                "total_pages": len(preview_pages)
+            })
+
+        # Check if any pages were actually approved (not all duplicates)
+        if total_approved_pages == 0:
+            return {
+                "success": False,
+                "message": "No pages were approved - all selected pages were already approved previously",
+                "summary": {
+                    "total_sources_updated": 0,
+                    "total_pages_approved": 0,
+                    "total_edited_pages": 0,
+                    "sources": [],
+                    "duplicate_prevention_triggered": True
+                }
+            }
+
+        # Update draft with modified sources
+        data["sources"] = sources
+        draft_service.update_draft(
+            draft_type=DraftType.KB,
+            draft_id=draft_id,
+            updates={"data": data}
+        )
+
+        return {
+            "success": True,
+            "message": f"Successfully approved {total_approved_pages} pages from {len(updated_sources)} sources",
+            "summary": {
+                "total_sources_updated": len(updated_sources),
+                "total_pages_approved": total_approved_pages,
+                "total_edited_pages": total_edited_pages,
+                "sources": updated_sources
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to approve sources: {str(e)}"
+        )
+
+
+class ChunkingConfigRequest(BaseModel):
+    """Request model for chunking configuration with live preview"""
+    strategy: str = Field(default="by_heading", description="Chunking strategy")
+    chunk_size: int = Field(default=1000, ge=100, le=5000, description="Chunk size")
+    chunk_overlap: int = Field(default=200, ge=0, le=1000, description="Chunk overlap")
+    preserve_code_blocks: bool = Field(default=True, description="Preserve code blocks")
+    source_id: Optional[str] = Field(None, description="Specific source to preview (None = all approved sources)")
+    max_chunks_preview: int = Field(default=10, ge=1, le=50, description="Max chunks to show in preview")
+
+
+@router.post("/{draft_id}/chunking-preview")
+async def preview_chunking_on_approved_content(
+    draft_id: str,
+    request: ChunkingConfigRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Show chunking preview using approved content from sources.
+
+    WHY: User needs to see how their final approved content will be chunked
+    HOW: Apply chunking strategy to approved content from sources, return preview
+
+    PHASE: 1D (Chunking Configuration)
+
+    FLOW:
+    1. Get approved sources from draft
+    2. Apply chunking strategy to approved content
+    3. Return chunk preview with statistics
+    4. Save chunking config to draft
+
+    Args:
+        draft_id: KB draft ID
+        request: Chunking configuration and preview settings
+
+    Returns:
+        Chunk preview with statistics and configuration
+    """
+    try:
+        # Import chunking service here to avoid circular imports
+        from app.services.chunking_service import chunking_service
+
+        # Get draft to verify it exists and user has access
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KB draft not found"
+            )
+
+        # Get approved sources
+        data = draft.get("data", {})
+        sources = data.get("sources", [])
+
+        # Filter for approved sources only
+        approved_sources = [s for s in sources if s.get("status") == "approved" and s.get("type") == "approved_content"]
+
+        if not approved_sources:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No approved content sources found. Please approve content first."
+            )
+
+        # Filter by specific source if requested
+        if request.source_id:
+            approved_sources = [s for s in approved_sources if s.get("id") == request.source_id]
+            if not approved_sources:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Approved source {request.source_id} not found"
+                )
+
+        # Prepare content for chunking
+        all_content = []
+        total_pages = 0
+
+        for source in approved_sources:
+            approved_pages = source.get("approved_pages", [])
+            for page in approved_pages:
+                content = page.get("content", "")
+                if content.strip():
+                    all_content.append({
+                        "content": content,
+                        "metadata": {
+                            "source_id": source.get("id"),
+                            "source_name": source.get("name"),
+                            "page_title": page.get("title"),
+                            "page_url": page.get("url"),
+                            "page_index": page.get("index"),
+                            "is_edited": page.get("is_edited", False),
+                            "word_count": page.get("word_count", len(content.split())),
+                            "char_count": page.get("char_count", len(content))
+                        }
+                    })
+                    total_pages += 1
+
+        if not all_content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No content found in approved sources"
+            )
+
+        # Apply chunking strategy
+        chunk_config = {
+            "strategy": request.strategy,
+            "chunk_size": request.chunk_size,
+            "chunk_overlap": request.chunk_overlap,
+            "preserve_code_blocks": request.preserve_code_blocks
+        }
+
+        all_chunks = []
+        total_content_size = 0
+
+        for content_item in all_content:
+            content = content_item["content"]
+            metadata = content_item["metadata"]
+            total_content_size += len(content)
+
+            # Apply chunking
+            chunks = chunking_service.chunk_content(
+                content=content,
+                strategy=request.strategy,
+                chunk_size=request.chunk_size,
+                chunk_overlap=request.chunk_overlap,
+                preserve_code_blocks=request.preserve_code_blocks
+            )
+
+            # Add metadata to each chunk
+            for i, chunk in enumerate(chunks):
+                chunk_with_metadata = {
+                    "chunk_index": len(all_chunks) + i,
+                    "content": chunk,
+                    "size": len(chunk),
+                    "word_count": len(chunk.split()),
+                    "source_metadata": metadata,
+                    "chunk_position_in_page": i,
+                    "total_chunks_in_page": len(chunks)
+                }
+                all_chunks.append(chunk_with_metadata)
+
+        # Limit chunks for preview
+        preview_chunks = all_chunks[:request.max_chunks_preview]
+
+        # Calculate statistics
+        avg_chunk_size = sum(chunk["size"] for chunk in all_chunks) // len(all_chunks) if all_chunks else 0
+        size_distribution = {
+            "small": len([c for c in all_chunks if c["size"] < request.chunk_size * 0.7]),
+            "medium": len([c for c in all_chunks if request.chunk_size * 0.7 <= c["size"] <= request.chunk_size * 1.3]),
+            "large": len([c for c in all_chunks if c["size"] > request.chunk_size * 1.3])
+        }
+
+        # Save chunking config to draft
+        data["chunking_config"] = chunk_config
+        draft_service.update_draft(
+            draft_type=DraftType.KB,
+            draft_id=draft_id,
+            updates={"data": data}
+        )
+
+        return {
+            "success": True,
+            "message": "Chunking preview generated successfully",
+            "config": chunk_config,
+            "preview_chunks": preview_chunks,
+            "statistics": {
+                "total_sources": len(approved_sources),
+                "total_pages": total_pages,
+                "total_content_size": total_content_size,
+                "total_chunks": len(all_chunks),
+                "preview_chunks_shown": len(preview_chunks),
+                "average_chunk_size": avg_chunk_size,
+                "size_distribution": size_distribution,
+                "chunks_per_page": len(all_chunks) / total_pages if total_pages > 0 else 0
+            },
+            "source_breakdown": [
+                {
+                    "source_id": source.get("id"),
+                    "source_name": source.get("name"),
+                    "pages": len(source.get("approved_pages", [])),
+                    "total_content_size": source.get("metadata", {}).get("total_content_size", 0)
+                }
+                for source in approved_sources
+            ]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate chunking preview: {str(e)}"
+        )
+
+
+class ModelConfigRequest(BaseModel):
+    """Request model for embedding model and vector store configuration"""
+    embedding_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "model": "all-MiniLM-L6-v2",
+            "device": "cpu",
+            "batch_size": 32,
+            "normalize_embeddings": True
+        },
+        description="Embedding model configuration"
+    )
+    vector_store_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "provider": "qdrant",
+            "collection_name_prefix": "kb",
+            "distance_metric": "cosine",
+            "enable_hybrid_search": False
+        },
+        description="Vector store configuration"
+    )
+    retrieval_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "strategy": "semantic_search",
+            "top_k": 5,
+            "score_threshold": 0.7,
+            "rerank_enabled": False
+        },
+        description="Retrieval configuration"
+    )
+    metadata_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "store_full_content": True,
+            "indexed_fields": ["document_id", "page_number", "content_type"],
+            "filterable_fields": ["document_id", "created_at", "workspace_id"],
+            "include_source_tracking": True
+        },
+        description="Metadata storage and indexing configuration"
+    )
+
+
+@router.post("/{draft_id}/model-config")
+async def configure_models_and_retrieval(
+    draft_id: str,
+    request: ModelConfigRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Configure embedding model, vector store, and retrieval settings.
+
+    WHY: User needs to select embedding model, vector store, and retrieval options
+    HOW: Save all model and retrieval configurations to draft for finalization
+
+    PHASE: 1E (Model & Vector Store Configuration)
+
+    FLOW:
+    1. Validate configuration options
+    2. Save embedding config to draft
+    3. Save vector store config to draft
+    4. Save retrieval config to draft
+    5. Save metadata config to draft
+    6. Return confirmation with configuration summary
+
+    Args:
+        draft_id: KB draft ID
+        request: Complete model and retrieval configuration
+
+    Returns:
+        Configuration summary and validation results
+    """
+    try:
+        # Get draft to verify it exists and user has access
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KB draft not found"
+            )
+
+        # Validate embedding model options
+        supported_embedding_models = [
+            "all-MiniLM-L6-v2",
+            "all-mpnet-base-v2",
+            "sentence-transformers/all-MiniLM-L12-v2",
+            "sentence-transformers/all-distilroberta-v1",
+            "text-embedding-ada-002"  # OpenAI (if configured)
+        ]
+
+        embedding_model = request.embedding_config.get("model")
+        if embedding_model not in supported_embedding_models:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported embedding model: {embedding_model}. Supported models: {supported_embedding_models}"
+            )
+
+        # Validate vector store options
+        supported_vector_stores = ["qdrant", "faiss", "weaviate", "milvus", "pinecone", "redis", "chroma", "elasticsearch"]
+
+        vector_provider = request.vector_store_config.get("provider")
+        if vector_provider not in supported_vector_stores:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported vector store: {vector_provider}. Supported providers: {supported_vector_stores}"
+            )
+
+        # Validate retrieval strategy
+        supported_strategies = ["semantic_search", "hybrid_search", "keyword_search", "mmr", "similarity_score_threshold"]
+
+        retrieval_strategy = request.retrieval_config.get("strategy")
+        if retrieval_strategy not in supported_strategies:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported retrieval strategy: {retrieval_strategy}. Supported strategies: {supported_strategies}"
+            )
+
+        # Calculate estimated configuration metrics
+        data = draft.get("data", {})
+        sources = data.get("sources", [])
+        approved_sources = [s for s in sources if s.get("status") == "approved"]
+
+        total_pages = sum(len(source.get("approved_pages", [])) for source in approved_sources)
+        total_content_size = sum(source.get("metadata", {}).get("total_content_size", 0) for source in approved_sources)
+
+        # Estimate embedding dimensions based on model
+        embedding_dimensions = {
+            "all-MiniLM-L6-v2": 384,
+            "all-mpnet-base-v2": 768,
+            "sentence-transformers/all-MiniLM-L12-v2": 384,
+            "sentence-transformers/all-distilroberta-v1": 768,
+            "text-embedding-ada-002": 1536
+        }
+
+        estimated_dimensions = embedding_dimensions.get(embedding_model, 384)
+        chunking_config = data.get("chunking_config", {})
+        estimated_chunks = total_content_size // chunking_config.get("chunk_size", 1000) if total_content_size > 0 else 0
+        estimated_vector_storage_mb = (estimated_chunks * estimated_dimensions * 4) / (1024 * 1024)  # 4 bytes per float32
+
+        # Save configurations to draft
+        data["embedding_config"] = request.embedding_config
+        data["vector_store_config"] = request.vector_store_config
+        data["retrieval_config"] = request.retrieval_config
+        data["metadata_config"] = request.metadata_config
+
+        # Update draft
+        draft_service.update_draft(
+            draft_type=DraftType.KB,
+            draft_id=draft_id,
+            updates={"data": data}
+        )
+
+        return {
+            "success": True,
+            "message": "Model and retrieval configuration saved successfully",
+            "configuration": {
+                "embedding": request.embedding_config,
+                "vector_store": request.vector_store_config,
+                "retrieval": request.retrieval_config,
+                "metadata": request.metadata_config
+            },
+            "estimates": {
+                "total_approved_pages": total_pages,
+                "total_content_size": total_content_size,
+                "estimated_chunks": estimated_chunks,
+                "embedding_dimensions": estimated_dimensions,
+                "estimated_vector_storage_mb": round(estimated_vector_storage_mb, 2),
+                "estimated_processing_time_minutes": max(1, int(estimated_chunks * 0.1))  # ~0.1 min per chunk
+            },
+            "compatibility": {
+                "embedding_model_available": True,  # Would check actual availability
+                "vector_store_available": True,     # Would check actual availability
+                "gpu_acceleration": request.embedding_config.get("device") == "cuda"
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to configure models: {str(e)}"
         )
 
 

@@ -18,9 +18,13 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useKBStore } from '@/store/kb-store';
-import { ChunkingStrategy } from '@/types/knowledge-base';
+import { ChunkingStrategy, ChunkingConfig } from '@/types/knowledge-base';
 
-export function KBChunkingConfig() {
+interface KBChunkingConfigProps {
+  onConfigChange?: (config: ChunkingConfig) => void;
+}
+
+export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
   const { chunkingConfig, updateChunkingConfig, draftSources } = useKBStore();
   const [activePreset, setActivePreset] = useState('balanced');
 
@@ -73,6 +77,13 @@ export function KBChunkingConfig() {
   ];
 
   const strategies = [
+    {
+      value: ChunkingStrategy.FULL_CONTENT,
+      name: 'No Chunking',
+      description: 'Index full content as single document (best for small content)',
+      icon: '📄',
+      recommended: 'For content < 2000 characters'
+    },
     {
       value: ChunkingStrategy.RECURSIVE,
       name: 'Recursive',
@@ -127,33 +138,56 @@ export function KBChunkingConfig() {
     const preset = presets.find(p => p.id === presetId);
     if (preset) {
       setActivePreset(presetId);
-      updateChunkingConfig({
-        ...preset.config
-      });
+      const newConfig = { ...chunkingConfig, ...preset.config };
+      updateChunkingConfig(preset.config);
+      // Notify parent component to update stepper state
+      onConfigChange?.(newConfig);
     }
   };
 
   const handleConfigChange = (field: string, value: any) => {
+    const newConfig = { ...chunkingConfig, [field]: value };
     updateChunkingConfig({ [field]: value });
     setActivePreset('custom');
+    // Notify parent component to update stepper state
+    onConfigChange?.(newConfig);
   };
 
   const getEstimatedChunks = () => {
     if (draftSources.length === 0) return 0;
 
-    // Rough estimation based on source content
+    // For FULL_CONTENT strategy, each source becomes one chunk
+    if (chunkingConfig.strategy === ChunkingStrategy.FULL_CONTENT) {
+      return draftSources.length;
+    }
+
+    // Calculate actual content from preview pages for accurate estimation
     let totalContent = 0;
     draftSources.forEach(source => {
-      if (source.type === 'text') {
-        totalContent += (source as any).content?.length || 0;
-      } else if (source.type === 'web') {
-        totalContent += 5000; // Estimated average page size
-      } else if (source.type === 'file') {
-        totalContent += (source as any).file_size ? (source as any).file_size / 2 : 10000; // Rough text extraction estimate
+      const pages = (source as any).metadata?.previewPages || [];
+      if (pages.length > 0) {
+        // Use actual page content from previews
+        pages.forEach((page: any) => {
+          const content = page.edited_content || page.content || '';
+          totalContent += content.length;
+        });
+      } else {
+        // Fallback estimates when no preview data available
+        if (source.type === 'text') {
+          totalContent += (source as any).content?.length || 0;
+        } else if (source.type === 'web') {
+          totalContent += 5000; // Estimated average page size
+        } else if (source.type === 'file') {
+          totalContent += (source as any).file_size ? (source as any).file_size / 2 : 10000; // Rough text extraction estimate
+        }
       }
     });
 
-    return Math.ceil(totalContent / chunkingConfig.chunk_size);
+    if (totalContent === 0) return 0;
+
+    // Calculate chunks based on strategy and size
+    const avgChunkSize = chunkingConfig.chunk_size - chunkingConfig.chunk_overlap;
+    return Math.max(1, Math.ceil(totalContent / avgChunkSize));
   };
 
   const getQualityScore = () => {
