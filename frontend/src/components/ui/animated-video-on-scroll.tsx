@@ -98,7 +98,7 @@ export const ContainerAnimated = React.forwardRef<
     return (
       <motion.div
         ref={ref}
-        className={cn("", className)}
+        className={cn("relative", className)}
         variants={variants}
         initial="hidden"
         whileInView={"visible"}
@@ -204,7 +204,7 @@ export const ContainerInset = React.forwardRef<
       <motion.div
         ref={ref}
         className={cn(
-          "relateive pointer-events-none overflow-hidden",
+          "relative pointer-events-none overflow-hidden",
           className
         )}
         style={{

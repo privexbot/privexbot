@@ -34,16 +34,26 @@ import { MarketplacePage } from "@/pages/MarketplacePage";
 import { ReferralsPage } from "@/pages/ReferralsPage";
 import { DocumentationPage } from "@/pages/DocumentationPage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import { AboutPage } from "@/pages/AboutPage";
+import { HelpPage } from "@/pages/HelpPage";
+import { NotFoundPage } from "@/pages/NotFoundPage";
 
 function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <AppProvider>
-          <Router>
+          <Router
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true,
+            }}
+          >
             <Routes>
               {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/help" element={<HelpPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/faqs" element={<FAQPage />} />
               <Route path="/pricing" element={<PricingPage />} />
@@ -236,6 +246,9 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+              {/* 404 Catch-all Route */}
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Router>
           <Toaster />
