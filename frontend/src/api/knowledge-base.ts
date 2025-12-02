@@ -16,6 +16,7 @@ import {
   UpdateChunkingRequest,
   PreviewRequest,
   PreviewResponse,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   QuickPreviewResponse,
   FinalizeResponse,
   DraftValidation,
@@ -24,7 +25,9 @@ import {
   ReindexResponse,
   KBListFilters,
   PaginatedResponse,
-  KBErrorResponse
+  KBErrorResponse,
+  UpdateEmbeddingRequest,
+  UpdateVectorStoreRequest
 } from '@/types/knowledge-base';
 
 // ========================================
@@ -79,14 +82,18 @@ export const kbDraftApi = {
 
   /**
    * POST /api/v1/kb-drafts/{draft_id}/embedding
+   * TODO: Replace any with proper type when backend endpoint is implemented
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async updateEmbedding(draftId: string, request: any): Promise<void> {
     await apiClient.post(`/api/v1/kb-drafts/${draftId}/embedding`, request);
   },
 
   /**
    * POST /api/v1/kb-drafts/{draft_id}/vector-store
+   * TODO: Replace any with proper type when backend endpoint is implemented
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async updateVectorStore(draftId: string, request: any): Promise<void> {
     await apiClient.post(`/api/v1/kb-drafts/${draftId}/vector-store`, request);
   },

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Menu, X, Sun, Moon, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Container } from "@/components/shared/Container";
 import { useTheme } from "@/contexts/ThemeContext";
 
 export function Header() {
@@ -10,23 +9,31 @@ export function Header() {
   const { theme, actualTheme, setTheme } = useTheme();
 
   const navLinks = [
-    { name: "Features", href: "#features" },
     { name: "Pricing", href: "/pricing" },
-    { name: "Case Studies", href: "#case-studies" },
-    { name: "Docs", href: "#docs" },
+    { name: "FAQs", href: "/faqs" },
+    { name: "Blog", href: "#blog" },
   ];
 
-  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    e.preventDefault();
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
-      setMobileMenuOpen(false);
+  const handleLinkClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    href: string
+  ) => {
+    if (href.startsWith("#")) {
+      e.preventDefault();
+      const element = document.querySelector(href);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth" });
+      }
     }
+    setMobileMenuOpen(false);
   };
 
   const cycleTheme = () => {
-    const themes: Array<"light" | "dark" | "system"> = ["light", "dark", "system"];
+    const themes: Array<"light" | "dark" | "system"> = [
+      "light",
+      "dark",
+      "system",
+    ];
     const currentIndex = themes.indexOf(theme);
     const nextIndex = (currentIndex + 1) % themes.length;
     setTheme(themes[nextIndex]);
@@ -44,33 +51,42 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <Container>
-        <nav className="flex h-16 items-center justify-between">
-          {/* Logo - Red in dark mode, Black in light mode */}
-          <Link to="/" className="flex items-center space-x-2">
-            <div className="flex items-center">
+    <header className="sticky top-0 z-50 w-full pt-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <nav className="flex h-14 items-center justify-between bg-black rounded-full px-6">
+          {/* Logo */}
+          <div className="flex items-center">
+            <Link to="/" className="flex items-center space-x-2">
               <img
-                src={actualTheme === "dark" ? "/privexbot-logo-red.png" : "/privexbot-logo-black.png"}
-                alt="PrivexBot"
-                className="h-8 w-auto transition-all duration-300"
+                src="/privexbot-logo-icon.png"
+                alt="Privexbot"
+                className="h-6 w-6 filter brightness-0 invert"
               />
-              <span className="ml-2 text-xl font-bold">PrivexBot</span>
-            </div>
-          </Link>
+              <span className="text-lg font-semibold font-manrope text-white">
+                Privexbot
+              </span>
+            </Link>
+            <span className="text-gray-500 text-sm mx-4">|</span>
+          </div>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex md:items-center md:space-x-6">
-            {navLinks.map((link) => (
-              <a
-                key={link.name}
-                href={link.href}
-                onClick={(e) => scrollToSection(e, link.href)}
-                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {link.name}
-              </a>
-            ))}
+          {/* Desktop Navigation - Centered */}
+          <div className="hidden md:flex md:items-center md:justify-center absolute left-1/2 transform -translate-x-1/2">
+            <div className="flex items-center">
+              {navLinks.map((link, index) => (
+                <div key={link.name} className="flex items-center">
+                  <Link
+                    to={link.href.startsWith("#") ? "/" : link.href}
+                    onClick={(e) => handleLinkClick(e, link.href)}
+                    className="text-sm font-medium font-manrope text-white hover:text-gray-300 transition-colors duration-200 px-4"
+                  >
+                    {link.name}
+                  </Link>
+                  {index < navLinks.length - 1 && (
+                    <span className="text-gray-500 text-sm">|</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Desktop Auth Buttons */}
@@ -80,20 +96,29 @@ export function Header() {
               size="icon"
               onClick={cycleTheme}
               title={`Theme: ${theme}`}
+              className="text-white hover:text-gray-300 bg-transparent hover:bg-gray-800"
             >
               {getThemeIcon()}
             </Button>
+            <span className="text-gray-500 text-sm">|</span>
             <Link to="/login">
-              <Button variant="ghost">Sign In</Button>
+              <Button
+                variant="ghost"
+                className="font-manrope text-white hover:text-gray-300 bg-transparent hover:bg-transparent px-4"
+              >
+                Login
+              </Button>
             </Link>
             <Link to="/signup">
-              <Button>Sign Up</Button>
+              <Button className="font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2">
+                Start for free
+              </Button>
             </Link>
           </div>
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden"
+            className="md:hidden text-white"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? (
@@ -106,40 +131,47 @@ export function Header() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t py-4">
-            <div className="flex flex-col space-y-4">
-              {navLinks.map((link) => (
-                <a
-                  key={link.name}
-                  href={link.href}
-                  onClick={(e) => scrollToSection(e, link.href)}
-                  className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {link.name}
-                </a>
-              ))}
-              <div className="flex flex-col space-y-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={cycleTheme}
-                  className="w-full justify-start"
-                >
-                  {getThemeIcon()}
-                  <span className="ml-2 capitalize">Theme: {theme}</span>
-                </Button>
-                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="ghost" className="w-full">
-                    Sign In
+          <div className="md:hidden mt-4">
+            <div className="bg-black rounded-2xl px-6 py-4 border-t border-gray-700">
+              <div className="flex flex-col space-y-4">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.name}
+                    to={link.href.startsWith("#") ? "/" : link.href}
+                    onClick={(e) => handleLinkClick(e, link.href)}
+                    className="text-sm font-medium font-manrope text-white hover:text-gray-300 transition-colors"
+                  >
+                    {link.name}
+                  </Link>
+                ))}
+                <div className="flex flex-col space-y-2 pt-4 border-t border-gray-700">
+                  <Button
+                    variant="outline"
+                    onClick={cycleTheme}
+                    className="w-full justify-start font-manrope bg-transparent border-gray-600 text-white hover:bg-gray-800"
+                  >
+                    {getThemeIcon()}
+                    <span className="ml-2 capitalize">Theme: {theme}</span>
                   </Button>
-                </Link>
-                <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
-                  <Button className="w-full">Sign Up</Button>
-                </Link>
+                  <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                    <Button
+                      variant="ghost"
+                      className="w-full font-manrope text-white hover:text-gray-300 bg-transparent hover:bg-gray-800"
+                    >
+                      Login
+                    </Button>
+                  </Link>
+                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
+                    <Button className="w-full font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-full">
+                      Start for free
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
         )}
-      </Container>
+      </div>
     </header>
   );
 }

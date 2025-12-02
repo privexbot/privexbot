@@ -10,6 +10,7 @@
  * - GET /dashboard/activities - Get recent activities
  */
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { apiClient } from "@/lib/api-client";
 import type {
   DashboardData,
@@ -27,9 +28,9 @@ class DashboardApiClient {
    * MOCK: Returns mock data until backend is implemented
    */
   async getDashboardData(
-    organizationId: string,
-    workspaceId: string,
-    filters?: DashboardFilters
+    _organizationId: string,
+    _workspaceId: string,
+    _filters?: DashboardFilters
   ): Promise<DashboardData> {
     // TODO: Replace with actual API call when backend is ready
     // return apiClient.get(`/orgs/${organizationId}/workspaces/${workspaceId}/dashboard`, { params: filters }).then(res => res.data);
@@ -233,7 +234,7 @@ class DashboardApiClient {
   async getActivities(
     organizationId: string,
     workspaceId: string,
-    limit: number = 10
+    limit = 10
   ): Promise<Activity[]> {
     const data = await this.getDashboardData(organizationId, workspaceId);
     return data.recent_activities.slice(0, limit);
