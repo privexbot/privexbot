@@ -53,7 +53,12 @@ from app.schemas.token import (
     LinkWalletRequest,
     CosmosLinkWalletRequest,
     Token,
-    WalletChallengeResponse
+    WalletChallengeResponse,
+    PasswordResetRequestSchema,
+    PasswordResetValidateSchema,
+    PasswordResetConfirmSchema,
+    PasswordResetResponseSchema,
+    SimpleMessageResponseSchema
 )
 from app.schemas.user import UserProfile, AuthMethodInfo
 from app.auth.strategies import email, evm, solana, cosmos
@@ -359,6 +364,153 @@ async def change_password(
     )
 
     return {"message": "Password changed successfully"}
+
+
+# ============================================================
+# PASSWORD RESET
+# ============================================================
+
+@router.post("/password-reset/request", response_model=PasswordResetResponseSchema)
+async def request_password_reset(
+    request: PasswordResetRequestSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Request password reset email.
+
+    WHY: Allow users to reset forgotten passwords securely
+    HOW: Generate secure token, store in Redis, send email
+
+    Flow:
+    1. Validate email address
+    2. Generate secure reset token
+    3. Store token in Redis (1 hour expiration)
+    4. Send email with reset link (TODO: implement email sending)
+    5. Always return success (prevents user enumeration)
+
+    Args:
+        request: PasswordResetRequestSchema with email
+        db: Database session (injected)
+
+    Returns:
+        Success message (always, even if email doesn't exist)
+
+    Security:
+    - Always returns success to prevent user enumeration
+    - Token expires in 1 hour
+    - Rate limited to prevent spam
+    - Secure token generation with 256 bits entropy
+
+    Example:
+        POST /auth/password-reset/request
+        Body: {"email": "alice@example.com"}
+        Response: {"message": "Password reset email sent successfully"}
+    """
+    # Call email strategy and get enhanced response
+    response_data = await email.request_password_reset(
+        email=request.email,
+        db=db
+    )
+
+    # Return enhanced response with email sending status
+    return PasswordResetResponseSchema(**response_data)
+
+
+@router.post("/password-reset/validate", response_model=SimpleMessageResponseSchema)
+async def validate_reset_token(
+    request: PasswordResetValidateSchema
+):
+    """
+    Validate password reset token.
+
+    WHY: Check if reset token is valid before allowing password change
+    HOW: Verify token exists in Redis and hasn't expired
+
+    Flow:
+    1. Check if token exists in Redis
+    2. Verify token format and expiration
+    3. Return validation result
+
+    Args:
+        request: PasswordResetValidateSchema with token
+
+    Returns:
+        Success message if token is valid
+
+    Raises:
+        HTTPException(400): Invalid or expired token
+
+    Example:
+        POST /auth/password-reset/validate
+        Body: {"token": "abc123def456..."}
+        Response: {"message": "Reset token is valid"}
+    """
+    # Validate token
+    user_id = await email.validate_reset_token(request.token)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token"
+        )
+
+    return SimpleMessageResponseSchema(
+        message="Reset token is valid"
+    )
+
+
+@router.post("/password-reset/confirm", response_model=SimpleMessageResponseSchema)
+async def confirm_password_reset(
+    request: PasswordResetConfirmSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password with valid token.
+
+    WHY: Allow users to set new password using reset token
+    HOW: Validate token, update password hash, consume token
+
+    Flow:
+    1. Validate reset token
+    2. Validate new password strength
+    3. Update user's password hash
+    4. Consume token (one-time use)
+    5. Return success
+
+    Args:
+        request: PasswordResetConfirmSchema with token and new password
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Invalid token or weak password
+        HTTPException(404): User not found
+
+    Security:
+    - Token is consumed after use (one-time only)
+    - Password strength validation
+    - Secure password hashing with bcrypt
+
+    Example:
+        POST /auth/password-reset/confirm
+        Body: {
+            "token": "abc123def456...",
+            "new_password": "NewSecurePass456!"
+        }
+        Response: {"message": "Password reset successfully"}
+    """
+    # Call email strategy
+    await email.reset_password_with_token(
+        token=request.token,
+        new_password=request.new_password,
+        db=db
+    )
+
+    return SimpleMessageResponseSchema(
+        message="Password reset successfully"
+    )
 
 
 # ============================================================

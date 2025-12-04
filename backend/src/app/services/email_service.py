@@ -123,8 +123,8 @@ def _send_email(
         html_part = MIMEText(html_content, "html")
         message.attach(html_part)
 
-        # Send via SMTP
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        # Send via SMTP with timeout
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5) as server:
             server.starttls()  # Enable TLS
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(message)
@@ -372,6 +372,87 @@ def send_member_removed_email(
     html_content = _create_html_template(
         subject=subject,
         heading="Access Removed",
+        body_html=body_html
+    )
+
+    return _send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        settings=settings
+    )
+
+
+def send_password_reset_email(
+    to_email: str,
+    reset_url: str
+) -> bool:
+    """
+    Send password reset email to user.
+
+    WHY: Allow users to securely reset forgotten passwords
+    HOW: Email with unique reset link that expires in 1 hour
+
+    Args:
+        to_email: User's email address
+        reset_url: Full URL to reset password (includes token)
+
+    Returns:
+        True if email sent successfully, False otherwise
+
+    Security Notes:
+        - Token expires in 1 hour
+        - One-time use only
+        - Secure random token generation
+    """
+    settings = _get_settings()
+
+    subject = "Reset your PrivexBot password"
+
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            We received a request to reset the password for your PrivexBot account associated with this email address.
+        </p>
+        <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Click the button below to reset your password. This link will expire in <strong>1 hour</strong>.
+        </p>
+        <table role="presentation" style="margin: 0 0 24px 0;">
+            <tr>
+                <td>
+                    <a href="{reset_url}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                        Reset Password
+                    </a>
+                </td>
+            </tr>
+        </table>
+        <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px; line-height: 1.5;">
+            Or copy and paste this link into your browser:
+        </p>
+        <p style="margin: 0 0 24px 0; color: #3b82f6; font-size: 14px; word-break: break-all;">
+            {reset_url}
+        </p>
+        <div style="padding: 16px; background-color: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #92400e; font-size: 14px; font-weight: 600;">
+                ⚠️ Security Notice
+            </p>
+            <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.5;">
+                If you didn't request this password reset, please ignore this email and your password will remain unchanged.
+                Someone may have entered your email address by mistake.
+            </p>
+        </div>
+        <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; line-height: 1.5;">
+            For security reasons:
+        </p>
+        <ul style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 12px; line-height: 1.5;">
+            <li>This link expires in 1 hour</li>
+            <li>This link can only be used once</li>
+            <li>We will never ask for your password via email</li>
+        </ul>
+    """
+
+    html_content = _create_html_template(
+        subject=subject,
+        heading="Password Reset Request",
         body_html=body_html
     )
 

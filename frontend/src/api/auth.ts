@@ -151,6 +151,44 @@ class AuthApiClient {
     const response = await this.client.get<UserProfile>("/auth/me");
     return response.data;
   }
+
+  // ============================================================
+  // PASSWORD RESET
+  // ============================================================
+
+  /**
+   * Request password reset email
+   */
+  async requestPasswordReset(email: string): Promise<{
+    message: string;
+    email_sent: boolean;
+    reset_link?: string;
+  }> {
+    const response = await this.client.post("/auth/password-reset/request", { email });
+    return response.data;
+  }
+
+  /**
+   * Validate password reset token
+   */
+  async validateResetToken(token: string): Promise<boolean> {
+    try {
+      await this.client.post("/auth/password-reset/validate", { token });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Reset password with token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await this.client.post("/auth/password-reset/confirm", {
+      token,
+      new_password: newPassword,
+    });
+  }
 }
 
 export const authApi = new AuthApiClient();

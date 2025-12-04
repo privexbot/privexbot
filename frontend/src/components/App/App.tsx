@@ -10,6 +10,11 @@ import { FAQPage } from "@/pages/FAQPage";
 import { PricingPage } from "@/pages/PricingPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SignupPage } from "@/pages/SignupPage";
+import { NewLoginPage } from "@/pages/NewLoginPage";
+import { NewSignupPage } from "@/pages/NewSignupPage";
+import { PasswordResetPage } from "@/pages/PasswordResetPage";
+import { AuthTestPage } from "@/pages/AuthTestPage";
+import { SigninPage } from "@/pages/SigninPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { OrganizationsPage } from "@/pages/OrganizationsPage";
 import { InvitationAcceptPage } from "@/pages/InvitationAcceptPage";
@@ -57,8 +62,15 @@ function App() {
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/faqs" element={<FAQPage />} />
               <Route path="/pricing" element={<PricingPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/signup" element={<SignupPage />} />
+              <Route path="/signin" element={<SigninPage />} />
+              <Route path="/login" element={<SigninPage />} />
+              <Route path="/signup" element={<NewSignupPage />} />
+              <Route path="/password-reset" element={<PasswordResetPage />} />
+              <Route path="/auth/test" element={<AuthTestPage />} />
+
+              {/* Legacy auth routes for backward compatibility */}
+              <Route path="/auth/login" element={<LoginPage />} />
+              <Route path="/auth/signup" element={<SignupPage />} />
               <Route path="/invitations/accept" element={<InvitationAcceptPage />} />
 
               {/* Protected Routes */}

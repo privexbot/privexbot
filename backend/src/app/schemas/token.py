@@ -469,3 +469,135 @@ class TokenPayload(BaseModel):
     email: Optional[str] = Field(None, description="User's email if available")
     exp: int = Field(..., description="Expiration timestamp")
     iat: int = Field(..., description="Issued at timestamp")
+
+
+class PasswordResetRequestSchema(BaseModel):
+    """
+    Request schema for requesting password reset.
+
+    WHY: Validate email for password reset request
+    HOW: Used in POST /auth/password-reset/request
+
+    Security:
+    - Always returns success even if email doesn't exist (prevents enumeration)
+    - Rate limited to prevent spam
+
+    Example:
+        {
+            "email": "alice@example.com"
+        }
+    """
+    email: EmailStr = Field(
+        ...,
+        description="Email address to send reset link to",
+        examples=["alice@example.com"]
+    )
+
+
+class PasswordResetValidateSchema(BaseModel):
+    """
+    Request schema for validating reset token.
+
+    WHY: Validate reset token before allowing password change
+    HOW: Used in POST /auth/password-reset/validate
+
+    Example:
+        {
+            "token": "abc123def456..."
+        }
+    """
+    token: str = Field(
+        ...,
+        description="Password reset token",
+        min_length=32,
+        max_length=128,
+        examples=["abc123def456789"]
+    )
+
+
+class PasswordResetConfirmSchema(BaseModel):
+    """
+    Request schema for confirming password reset.
+
+    WHY: Reset password with valid token
+    HOW: Used in POST /auth/password-reset/confirm
+
+    Example:
+        {
+            "token": "abc123def456...",
+            "new_password": "NewSecurePass456!"
+        }
+    """
+    token: str = Field(
+        ...,
+        description="Password reset token",
+        min_length=32,
+        max_length=128
+    )
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="New password (validated for strength in endpoint)",
+        examples=["NewSecurePass456!"]
+    )
+
+
+class PasswordResetResponseSchema(BaseModel):
+    """
+    Response schema for password reset operations.
+
+    WHY: Provide clear feedback about email delivery status
+    HOW: Returned from reset endpoints
+
+    Example:
+        {
+            "message": "Password reset email sent successfully",
+            "email_sent": true,
+            "reset_link": null
+        }
+    """
+    message: str = Field(
+        ...,
+        description="Success or status message",
+        examples=[
+            "Password reset email sent successfully",
+            "Password reset link created (email delivery failed)",
+            "Password reset successfully"
+        ]
+    )
+    email_sent: bool = Field(
+        ...,
+        description="Whether the email was successfully sent",
+        examples=[True, False]
+    )
+    reset_link: Optional[str] = Field(
+        None,
+        description="Reset link for development/testing (only when email_sent is False)",
+        examples=[
+            None,
+            "http://localhost:5174/password-reset?token=abc123..."
+        ]
+    )
+
+
+class SimpleMessageResponseSchema(BaseModel):
+    """
+    Response schema for simple message responses.
+
+    WHY: Provide simple success messages for validate/confirm operations
+    HOW: Returned from validate and confirm endpoints
+
+    Example:
+        {
+            "message": "Reset token is valid"
+        }
+    """
+    message: str = Field(
+        ...,
+        description="Success message",
+        examples=[
+            "Reset token is valid",
+            "Password reset successfully"
+        ]
+    )
