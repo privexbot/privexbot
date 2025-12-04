@@ -211,12 +211,20 @@ class AuthApiClient {
   /**
    * Validate password reset token
    */
-  async validateResetToken(token: string): Promise<boolean> {
+  async validateResetToken(token: string): Promise<{
+    valid: boolean;
+    error?: string;
+  }> {
     try {
       await this.client.post("/auth/password-reset/validate", { token });
-      return true;
-    } catch (error) {
-      return false;
+      return { valid: true };
+    } catch (error: any) {
+      console.error('Token validation failed:', error);
+      const errorMessage = error.response?.data?.detail || "Reset token is invalid or expired";
+      return {
+        valid: false,
+        error: errorMessage
+      };
     }
   }
 

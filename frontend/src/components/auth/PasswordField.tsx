@@ -52,17 +52,17 @@ export function PasswordField({
   const getStrengthColor = (score: number): string => {
     switch (score) {
       case 0:
-        return "text-gray-500";
+        return "text-gray-500 dark:text-gray-400";
       case 1:
-        return "text-red-500";
+        return "text-red-600 dark:text-red-400";
       case 2:
-        return "text-orange-500";
+        return "text-orange-600 dark:text-orange-400";
       case 3:
-        return "text-yellow-500";
+        return "text-yellow-600 dark:text-yellow-400";
       case 4:
-        return "text-green-500";
+        return "text-green-600 dark:text-green-400";
       default:
-        return "text-gray-500";
+        return "text-gray-500 dark:text-gray-400";
     }
   };
 
@@ -85,7 +85,7 @@ export function PasswordField({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{label}</Label>
       <div className="relative">
         <Input
           id={id}
@@ -97,9 +97,9 @@ export function PasswordField({
           minLength={minLength}
           disabled={disabled}
           className={cn(
-            "pr-10",
-            error && "border-red-500 focus-visible:ring-red-500",
-            strength.isValid && value.length > 0 && "border-green-500"
+            "pr-10 h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors",
+            error && "border-red-500 focus-visible:ring-red-500 dark:border-red-400 dark:focus-visible:ring-red-400",
+            strength.isValid && value.length > 0 && "border-green-500 dark:border-green-400"
           )}
         />
         <Button
@@ -112,9 +112,9 @@ export function PasswordField({
           tabIndex={-1}
         >
           {showPassword ? (
-            <EyeOff className="h-4 w-4 text-muted-foreground" />
+            <EyeOff className="h-4 w-4 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" />
           ) : (
-            <Eye className="h-4 w-4 text-muted-foreground" />
+            <Eye className="h-4 w-4 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" />
           )}
         </Button>
       </div>
@@ -132,9 +132,9 @@ export function PasswordField({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             {strength.isValid ? (
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
             ) : (
-              <Info className="h-4 w-4 text-muted-foreground" />
+              <Info className="h-4 w-4 text-gray-500 dark:text-gray-400" />
             )}
             <span className={cn("text-sm font-medium", getStrengthColor(strength.score))}>
               {getStrengthText(strength.score)}
@@ -150,12 +150,12 @@ export function PasswordField({
                   "h-1 rounded-full flex-1 transition-colors",
                   level <= strength.score
                     ? strength.score === 1
-                      ? "bg-red-500"
+                      ? "bg-red-600 dark:bg-red-400"
                       : strength.score === 2
-                      ? "bg-orange-500"
+                      ? "bg-orange-600 dark:bg-orange-400"
                       : strength.score === 3
-                      ? "bg-yellow-500"
-                      : "bg-green-500"
+                      ? "bg-yellow-600 dark:bg-yellow-400"
+                      : "bg-green-600 dark:bg-green-400"
                     : "bg-gray-200 dark:bg-gray-700"
                 )}
               />
@@ -164,7 +164,7 @@ export function PasswordField({
 
           {/* Feedback */}
           {strength.feedback.length > 0 && (
-            <ul className="text-xs text-muted-foreground space-y-1">
+            <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
               {strength.feedback.map((feedback, index) => (
                 <li key={index} className="flex items-center gap-2">
                   <span className="w-1 h-1 bg-current rounded-full" />

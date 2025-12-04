@@ -86,15 +86,15 @@ export function PasswordResetPage() {
 
     try {
       setIsLoading(true);
-      const isValid = await authApi.validateResetToken(token);
-      setTokenValid(isValid);
+      const result = await authApi.validateResetToken(token);
+      setTokenValid(result.valid);
 
-      if (!isValid) {
-        setError("This reset link has expired or is invalid. Please request a new one.");
+      if (!result.valid) {
+        setError(result.error || "This reset link has expired or is invalid. Please request a new one.");
       }
     } catch (err: any) {
       console.error("Token validation failed:", err);
-      setError("This reset link has expired or is invalid. Please request a new one.");
+      setError("Unable to validate reset link. Please try again.");
       setTokenValid(false);
     } finally {
       setIsLoading(false);
@@ -192,16 +192,16 @@ export function PasswordResetPage() {
         {/* Main Content */}
         <div className="flex-1 flex items-center justify-center px-4 pb-8">
           <div className="w-full max-w-md">
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20">
+            <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20 dark:border-gray-700/20">
               <div className="text-center space-y-6">
-                <div className="w-16 h-16 mx-auto bg-blue-100 rounded-full flex items-center justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <div className="w-16 h-16 mx-auto bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-semibold text-gray-900 font-manrope mb-2">
+                  <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 font-manrope mb-2">
                     Validating Reset Link
                   </h2>
-                  <p className="text-gray-600 font-manrope">Please wait while we verify your password reset link...</p>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope">Please wait while we verify your password reset link...</p>
                 </div>
               </div>
             </div>
@@ -235,7 +235,7 @@ export function PasswordResetPage() {
         {/* Main Content */}
         <div className="flex-1 flex items-center justify-center px-4 pb-8">
           <div className="w-full max-w-md">
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20">
+            <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20 dark:border-gray-700/20">
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -247,10 +247,10 @@ export function PasswordResetPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <h1 className="text-2xl font-bold text-gray-900 font-manrope">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 font-manrope">
                     Password Reset Successful!
                   </h1>
-                  <p className="text-gray-600 font-manrope">
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope">
                     Your password has been updated. Redirecting to login...
                   </p>
                 </div>
@@ -285,7 +285,7 @@ export function PasswordResetPage() {
 
           <Link
             to="/signin"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors font-manrope"
+            className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors font-manrope"
           >
             Back to <span className="font-medium text-blue-600">Sign in</span>
           </Link>
@@ -295,7 +295,7 @@ export function PasswordResetPage() {
       {/* Main Content - Centered Layout with Grid Background */}
       <div className="flex-1 flex items-center justify-center px-4 pb-8">
         <div className="w-full max-w-md">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20">
+          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20 dark:border-gray-700/20">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -304,12 +304,12 @@ export function PasswordResetPage() {
             >
               {/* Header */}
               <div className="text-center space-y-4">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
-                  <KeyRound className="w-8 h-8 text-blue-600" />
+                <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center mx-auto">
+                  <KeyRound className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900 font-manrope mb-2">Reset your password</h1>
-                  <p className="text-gray-600 font-manrope text-sm">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 font-manrope mb-2">Reset your password</h1>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope text-sm">
                     {tokenValid
                       ? "Choose a strong new password for your account."
                       : "There was a problem with your reset link."}
@@ -319,25 +319,25 @@ export function PasswordResetPage() {
 
               {/* Error Alert */}
               {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+                  <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  <AlertDescription className="text-red-700 dark:text-red-300">{error}</AlertDescription>
                 </Alert>
               )}
 
               {/* Invalid Token */}
               {tokenValid === false && (
                 <div className="space-y-6">
-                  <div className="p-6 bg-red-50 border border-red-200 rounded-lg text-center">
-                    <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-red-900 font-manrope mb-2">
+                  <div className="p-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg text-center">
+                    <AlertCircle className="h-12 w-12 text-red-600 dark:text-red-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 font-manrope mb-2">
                       Invalid Reset Link
                     </h3>
-                    <p className="text-red-700 text-sm font-manrope mb-4">
+                    <p className="text-red-700 dark:text-red-300 text-sm font-manrope mb-4">
                       This password reset link has expired or is invalid. Please request a new one.
                     </p>
                     <Link to="/signin">
-                      <Button variant="outline" className="w-full h-12 font-manrope">
+                      <Button variant="outline" className="w-full h-12 font-manrope bg-white dark:bg-gray-800/70 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50 hover:border-red-400 dark:hover:border-red-600 active:bg-red-100 dark:active:bg-red-950/70 transition-all duration-200">
                         Request New Reset
                       </Button>
                     </Link>
@@ -376,7 +376,7 @@ export function PasswordResetPage() {
 
                   <Button
                     type="submit"
-                    className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-manrope font-medium"
+                    className="w-full h-12 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 active:bg-blue-800 dark:active:bg-blue-700 text-white rounded-lg font-manrope font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
                     disabled={isLoading}
                   >
                     {isLoading ? (
@@ -393,14 +393,14 @@ export function PasswordResetPage() {
                   </Button>
 
                   {/* Security Notice */}
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                     <div className="flex gap-3">
-                      <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                      <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-blue-900 font-manrope">
+                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100 font-manrope">
                           Security Tip
                         </p>
-                        <p className="text-xs text-blue-700 font-manrope">
+                        <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope">
                           Use a unique password that you don't use anywhere else. Consider using a password manager.
                         </p>
                       </div>

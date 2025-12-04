@@ -514,7 +514,7 @@ export function SigninPage() {
       {/* Main Content - Centered Layout with Grid Background */}
       <div className="flex-1 flex items-center justify-center px-4 pb-8">
         <div className="w-full max-w-5xl">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-8 lg:p-12 shadow-xl border border-white/20">
+          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-8 lg:p-12 shadow-xl border border-white/20 dark:border-gray-700/20">
             <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 lg:divide-x lg:divide-border">
 
               {/* Left Column - Wallet & Social Authentication */}
@@ -529,8 +529,8 @@ export function SigninPage() {
                     className={cn(
                       "flex-shrink-0 w-16 h-16 rounded-xl transition-all duration-200",
                       rightColumnContent === 'email-form'
-                        ? "bg-blue-100 ring-2 ring-blue-500"
-                        : "bg-gray-100 hover:bg-gray-200"
+                        ? "bg-blue-100 dark:bg-blue-900/50 ring-2 ring-blue-500 dark:ring-blue-400"
+                        : "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 hover:scale-105 cursor-pointer"
                     )}
                   >
                     <div className="w-full h-full flex items-center justify-center">
@@ -545,7 +545,7 @@ export function SigninPage() {
                       onClick={() => handleWalletConnect(wallet)}
                       disabled={connectingWallet === wallet.id || isLoading}
                       className={cn(
-                        "flex-shrink-0 w-16 h-16 rounded-xl bg-gray-100 hover:bg-gray-200 transition-all duration-200 p-2",
+                        "flex-shrink-0 w-16 h-16 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-200 p-2",
                         "disabled:opacity-50 disabled:cursor-not-allowed",
                         selectedWallet?.wallet.id === wallet.id && "ring-2 ring-orange-500"
                       )}
@@ -583,17 +583,17 @@ export function SigninPage() {
                 <motion.button
                   onClick={() => setRightColumnContent('email-form')}
                   className={cn(
-                    "w-full rounded-lg p-4 transition-all duration-200",
+                    "w-full rounded-lg p-4 transition-all duration-200 cursor-pointer",
                     rightColumnContent === 'email-form'
-                      ? "bg-blue-50"
-                      : "bg-gray-100 hover:bg-gray-200"
+                      ? "bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-200 dark:border-blue-700"
+                      : "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600"
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <AtSign className="w-4 h-4 text-blue-600" />
+                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center">
+                      <AtSign className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     </div>
-                    <h2 className="text-lg font-semibold font-manrope text-gray-900 text-left">
+                    <h2 className="text-lg font-semibold font-manrope text-gray-900 dark:text-gray-100 text-left">
                       Social Login
                     </h2>
                   </div>
@@ -610,14 +610,16 @@ export function SigninPage() {
                     onClick={() => handleWalletConnect(wallet)}
                     disabled={connectingWallet === wallet.id || isLoading}
                     className={cn(
-                      "w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200",
-                      "hover:border-gray-300 hover:bg-gray-50 transition-all duration-200",
+                      "w-full flex items-center gap-4 p-4 rounded-lg border",
+                      "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50",
+                      "hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20",
+                      "active:bg-blue-100 dark:active:bg-blue-900/30 transition-all duration-200",
                       "disabled:opacity-50 disabled:cursor-not-allowed",
                       connectingWallet === wallet.id && "opacity-75 cursor-not-allowed",
-                      selectedWallet?.wallet.id === wallet.id && "bg-orange-50 border-orange-200"
+                      selectedWallet?.wallet.id === wallet.id && "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-700"
                     )}
                   >
-                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
+                    <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center overflow-hidden">
                       {wallet.iconPath ? (
                         <img
                           src={wallet.iconPath}
@@ -629,13 +631,13 @@ export function SigninPage() {
                       )}
                     </div>
                     <div className="flex-1 text-left">
-                      <p className="font-medium font-manrope text-gray-900">{wallet.name}</p>
+                      <p className="font-medium font-manrope text-gray-900 dark:text-gray-100">{wallet.name}</p>
                       {wallet.detected && (
-                        <p className="text-xs text-green-600 font-manrope">Detected</p>
+                        <p className="text-xs text-green-600 dark:text-green-400 font-manrope">Detected</p>
                       )}
                     </div>
                     {connectingWallet === wallet.id && (
-                      <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                     )}
                   </motion.button>
                 ))}
@@ -648,16 +650,18 @@ export function SigninPage() {
                   onClick={handleAllWalletsClick}
                   className={cn(
                     "w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200",
-                    "hover:border-blue-300 hover:bg-blue-50 transition-all duration-200",
-                    rightColumnContent === 'wallet-search' && "bg-blue-50 border-blue-200"
+                    "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50",
+                    "hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20",
+                    "active:bg-blue-100 dark:active:bg-blue-900/30 transition-all duration-200",
+                    rightColumnContent === 'wallet-search' && "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700"
                   )}
                 >
-                  <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <Wallet className="w-6 h-6 text-blue-600" />
+                  <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                    <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="flex-1 text-left">
-                    <p className="font-medium font-manrope text-gray-900">All Wallets</p>
-                    <p className="text-xs text-gray-600 font-manrope">{walletCount} supported</p>
+                    <p className="font-medium font-manrope text-gray-900 dark:text-gray-100">All Wallets</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">{walletCount} supported</p>
                   </div>
                 </motion.button>
               </div>
@@ -688,10 +692,10 @@ export function SigninPage() {
                       className="flex items-center justify-center h-96"
                     >
                     <div className="text-center">
-                      <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                        <Wallet className="w-8 h-8 text-gray-400" />
+                      <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+                        <Wallet className="w-8 h-8 text-gray-400 dark:text-gray-500" />
                       </div>
-                      <p className="text-gray-500 font-manrope">
+                      <p className="text-gray-500 dark:text-gray-400 font-manrope">
                         Select a login method to continue
                       </p>
                     </div>
@@ -729,7 +733,7 @@ export function SigninPage() {
                           required
                           disabled={isLoading}
                           autoComplete="email"
-                          className="h-12 bg-gray-100 border-0 rounded-lg font-manrope"
+                          className="h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                         />
                       </div>
 
@@ -753,38 +757,38 @@ export function SigninPage() {
                               {forgotPasswordSent && resetResponse ? (
                                 <div className="space-y-4">
                                   {resetResponse.email_sent ? (
-                                    <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                                      <CheckCircle className="h-5 w-5 text-green-600" />
+                                    <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                                      <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                                       <div>
-                                        <p className="text-sm font-medium text-green-900 font-manrope">
+                                        <p className="text-sm font-medium text-green-900 dark:text-green-100 font-manrope">
                                           Reset link sent!
                                         </p>
-                                        <p className="text-xs text-green-700 font-manrope">
+                                        <p className="text-xs text-green-700 dark:text-green-300 font-manrope">
                                           Check your email for further instructions.
                                         </p>
                                       </div>
                                     </div>
                                   ) : (
                                     <div className="space-y-3">
-                                      <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                        <div className="text-blue-600 mt-0.5">ℹ️</div>
+                                      <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                        <div className="text-blue-600 dark:text-blue-400 mt-0.5">ℹ️</div>
                                         <div>
-                                          <p className="text-sm font-medium text-blue-900 font-manrope">
+                                          <p className="text-sm font-medium text-blue-900 dark:text-blue-100 font-manrope">
                                             Reset link sent
                                           </p>
-                                          <p className="text-xs text-blue-700 font-manrope">
+                                          <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope">
                                             If this email address is registered with us, you will receive a password reset link shortly.
                                           </p>
                                         </div>
                                       </div>
                                       {resetResponse.reset_link && (
-                                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                                          <p className="text-xs text-amber-700 font-medium font-manrope mb-2">
+                                        <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                          <p className="text-xs text-amber-700 dark:text-amber-300 font-medium font-manrope mb-2">
                                             Development Mode: Direct reset link (email not delivered)
                                           </p>
                                           <a
                                             href={resetResponse.reset_link}
-                                            className="text-xs text-amber-600 hover:text-amber-800 underline break-all font-mono"
+                                            className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 underline break-all font-mono"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                           >
@@ -806,7 +810,7 @@ export function SigninPage() {
                                       value={forgotEmail}
                                       onChange={(e) => setForgotEmail(e.target.value)}
                                       required
-                                      className="font-manrope"
+                                      className="font-manrope bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                                     />
                                   </div>
 
@@ -840,7 +844,7 @@ export function SigninPage() {
                             minLength={8}
                             disabled={isLoading}
                             autoComplete="current-password"
-                            className="h-12 bg-gray-100 border-0 rounded-lg pr-12 font-manrope"
+                            className="h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg pr-12 font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                           />
                           <Button
                             type="button"
@@ -852,9 +856,9 @@ export function SigninPage() {
                             tabIndex={-1}
                           >
                             {showPassword ? (
-                              <EyeOff className="h-4 w-4 text-gray-400" />
+                              <EyeOff className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                             ) : (
-                              <Eye className="h-4 w-4 text-gray-400" />
+                              <Eye className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                             )}
                           </Button>
                         </div>
@@ -862,7 +866,7 @@ export function SigninPage() {
 
                       <Button
                         type="submit"
-                        className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-manrope font-medium"
+                        className="w-full h-12 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 active:bg-blue-800 dark:active:bg-blue-700 text-white rounded-lg font-manrope font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
                         disabled={isLoading}
                       >
                         {isLoading ? (
@@ -898,10 +902,10 @@ export function SigninPage() {
 
                     <div className="space-y-4">
                       <div className="text-center">
-                        <h3 className="text-lg font-semibold text-gray-900 font-manrope">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
                           Create New Account
                         </h3>
-                        <p className="text-sm text-gray-600 font-manrope">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
                           This email is not registered. Create an account to continue.
                         </p>
                       </div>
@@ -917,7 +921,7 @@ export function SigninPage() {
                           required
                           disabled={verificationLoading}
                           autoComplete="email"
-                          className="h-12 bg-gray-100 border-0 rounded-lg font-manrope"
+                          className="h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                         />
                       </div>
 
@@ -934,7 +938,7 @@ export function SigninPage() {
                             minLength={8}
                             disabled={verificationLoading}
                             autoComplete="new-password"
-                            className="h-12 bg-gray-100 border-0 rounded-lg pr-12 font-manrope"
+                            className="h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg pr-12 font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                           />
                           <Button
                             type="button"
@@ -946,9 +950,9 @@ export function SigninPage() {
                             tabIndex={-1}
                           >
                             {showPassword ? (
-                              <EyeOff className="h-4 w-4 text-gray-400" />
+                              <EyeOff className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                             ) : (
-                              <Eye className="h-4 w-4 text-gray-400" />
+                              <Eye className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                             )}
                           </Button>
                         </div>
@@ -964,14 +968,14 @@ export function SigninPage() {
                           onChange={(e) => setUsername(e.target.value)}
                           required
                           disabled={verificationLoading}
-                          className="h-12 bg-gray-100 border-0 rounded-lg font-manrope"
+                          className="h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                         />
                       </div>
 
                       <div className="flex space-x-3">
                         <Button
                           onClick={handleSignupConfirmation}
-                          className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-manrope font-medium"
+                          className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 active:bg-blue-800 dark:active:bg-blue-700 text-white rounded-lg font-manrope font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
                           disabled={verificationLoading}
                         >
                           {verificationLoading ? (
@@ -986,7 +990,7 @@ export function SigninPage() {
                         <Button
                           onClick={resetSignupFlow}
                           variant="outline"
-                          className="flex-1 h-12 rounded-lg font-manrope"
+                          className="flex-1 h-12 rounded-lg font-manrope border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-all duration-200"
                           disabled={verificationLoading}
                         >
                           Back to Login
@@ -1016,10 +1020,10 @@ export function SigninPage() {
 
                     <div className="space-y-4">
                       <div className="text-center">
-                        <h3 className="text-lg font-semibold text-gray-900 font-manrope">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
                           Verify Your Email
                         </h3>
-                        <p className="text-sm text-gray-600 font-manrope">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
                           We've sent a 6-digit verification code to {newUserEmail}
                         </p>
                       </div>
@@ -1036,11 +1040,11 @@ export function SigninPage() {
                             required
                             maxLength={6}
                             disabled={signupLoading}
-                            className="h-12 bg-gray-100 border-0 rounded-lg font-manrope text-center text-lg tracking-widest"
+                            className="h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope text-center text-lg tracking-widest placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                           />
                         </div>
 
-                        <div className="text-center text-xs text-gray-500 font-manrope">
+                        <div className="text-center text-xs text-gray-500 dark:text-gray-400 font-manrope">
                           Code expires in 5 minutes
                         </div>
 
@@ -1093,7 +1097,7 @@ export function SigninPage() {
                       >
                         <ArrowLeft className="h-4 w-4" />
                       </Button>
-                      <h2 className="text-xl font-semibold font-manrope text-gray-900">Select Wallet</h2>
+                      <h2 className="text-xl font-semibold font-manrope text-gray-900 dark:text-gray-100">Select Wallet</h2>
                     </div>
 
                     {/* Search Input */}
@@ -1103,7 +1107,7 @@ export function SigninPage() {
                         placeholder="Search Wallet"
                         value={walletSearchTerm}
                         onChange={(e) => setWalletSearchTerm(e.target.value)}
-                        className="pl-10 h-12 bg-gray-100 border-0 rounded-lg font-manrope"
+                        className="pl-10 h-12 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 hover:bg-white dark:hover:bg-gray-700/70 transition-colors"
                       />
                     </div>
 
@@ -1118,13 +1122,15 @@ export function SigninPage() {
                           onClick={() => handleWalletSearchSelect(wallet)}
                           disabled={connectingWallet === wallet.id}
                           className={cn(
-                            "w-full flex items-center gap-4 p-3 rounded-lg border border-gray-200",
-                            "hover:border-gray-300 hover:bg-gray-50 transition-all duration-200",
+                            "w-full flex items-center gap-4 p-3 rounded-lg border",
+                            "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50",
+                            "hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20",
+                            "active:bg-blue-100 dark:active:bg-blue-900/30 transition-all duration-200",
                             "disabled:opacity-50 disabled:cursor-not-allowed",
-                            connectingWallet === wallet.id && "opacity-75 cursor-not-allowed"
+                            connectingWallet === wallet.id && "opacity-75 cursor-not-allowed bg-gray-100 dark:bg-gray-900/50"
                           )}
                         >
-                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
+                          <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center overflow-hidden">
                             {wallet.iconPath ? (
                               <img
                                 src={wallet.iconPath}
@@ -1136,19 +1142,19 @@ export function SigninPage() {
                             )}
                           </div>
                           <div className="flex-1 text-left">
-                            <p className="font-medium font-manrope text-gray-900">{wallet.name}</p>
+                            <p className="font-medium font-manrope text-gray-900 dark:text-gray-100">{wallet.name}</p>
                             {wallet.detected && (
-                              <p className="text-xs text-green-600 font-manrope">Detected</p>
+                              <p className="text-xs text-green-600 dark:text-green-400 font-manrope">Detected</p>
                             )}
                           </div>
                           {connectingWallet === wallet.id && (
-                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                           )}
                         </motion.button>
                       ))}
 
                       {filteredWallets.length === 0 && walletSearchTerm && (
-                        <div className="text-center py-8 text-gray-500 font-manrope">
+                        <div className="text-center py-8 text-gray-500 dark:text-gray-400 font-manrope">
                           No wallets found for "{walletSearchTerm}"
                         </div>
                       )}
@@ -1176,7 +1182,7 @@ export function SigninPage() {
                       >
                         <ArrowLeft className="h-4 w-4" />
                       </Button>
-                      <h2 className="text-xl font-semibold font-manrope text-gray-900">
+                      <h2 className="text-xl font-semibold font-manrope text-gray-900 dark:text-gray-100">
                         {selectedWallet.wallet.name}
                       </h2>
                     </div>
@@ -1186,10 +1192,10 @@ export function SigninPage() {
                       {/* Chrome Extension */}
                       <Button
                         variant="outline"
-                        className="w-full h-14 justify-start gap-4 font-manrope"
+                        className="w-full h-14 justify-start gap-4 font-manrope border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:border-gray-300 dark:hover:border-gray-600 active:bg-gray-100 dark:active:bg-gray-800 transition-all duration-200"
                         onClick={() => window.open(selectedWallet.wallet.installUrl, '_blank')}
                       >
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                           <span className="text-lg">🌐</span>
                         </div>
                         <span>Download Chrome Extension</span>
@@ -1199,7 +1205,7 @@ export function SigninPage() {
                       {/* App Store */}
                       <Button
                         variant="outline"
-                        className="w-full h-14 justify-start gap-4 font-manrope"
+                        className="w-full h-14 justify-start gap-4 font-manrope border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:border-gray-300 dark:hover:border-gray-600 active:bg-gray-100 dark:active:bg-gray-800 transition-all duration-200"
                         onClick={() => window.open("https://apps.apple.com/", '_blank')}
                       >
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
@@ -1216,10 +1222,10 @@ export function SigninPage() {
                       {/* Google Play */}
                       <Button
                         variant="outline"
-                        className="w-full h-14 justify-start gap-4 font-manrope"
+                        className="w-full h-14 justify-start gap-4 font-manrope border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:border-gray-300 dark:hover:border-gray-600 active:bg-gray-100 dark:active:bg-gray-800 transition-all duration-200"
                         onClick={() => window.open("https://play.google.com/", '_blank')}
                       >
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                           <span className="text-lg">📱</span>
                         </div>
                         <span>Download on Google PlayStore</span>
@@ -1228,8 +1234,8 @@ export function SigninPage() {
                     </div>
 
                     {/* Instructions */}
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-blue-700 font-manrope">
+                    <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                      <p className="text-sm text-blue-700 dark:text-blue-300 font-manrope">
                         After installing {selectedWallet.wallet.name}, refresh this page and try connecting again.
                       </p>
                     </div>
@@ -1247,13 +1253,13 @@ export function SigninPage() {
                     className="flex items-center justify-center h-96"
                   >
                     <div className="text-center">
-                      <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-lg flex items-center justify-center text-3xl">
+                      <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center text-3xl">
                         {selectedWallet.wallet.icon}
                       </div>
-                      <h3 className="text-lg font-semibold font-manrope text-gray-900 mb-2">
+                      <h3 className="text-lg font-semibold font-manrope text-gray-900 dark:text-gray-100 mb-2">
                         Connecting to {selectedWallet.wallet.name}
                       </h3>
-                      <p className="text-sm text-gray-600 font-manrope mb-4">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-4">
                         Please approve the connection in your wallet
                       </p>
                       <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
