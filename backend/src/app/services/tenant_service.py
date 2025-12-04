@@ -369,7 +369,8 @@ def create_organization(
     db: Session,
     name: str,
     billing_email: str,
-    creator_id: UUID
+    creator_id: UUID,
+    is_default: bool = False
 ) -> Organization:
     """
     Create a new organization with creator as owner.
@@ -395,7 +396,8 @@ def create_organization(
         billing_email=billing_email,
         subscription_tier="free",
         subscription_status="trial",
-        created_by=creator_id
+        created_by=creator_id,
+        is_default=is_default
     )
     org.set_trial_period(days=30)  # 30-day trial
 

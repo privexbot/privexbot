@@ -84,5 +84,21 @@ class User(Base):
         cascade="all, delete-orphan"
     )
 
+    # Organization and Workspace memberships
+    # These need explicit cascade to properly delete when user is deleted
+    organization_memberships = relationship(
+        "OrganizationMember",
+        foreign_keys="OrganizationMember.user_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
+
+    workspace_memberships = relationship(
+        "WorkspaceMember",
+        foreign_keys="WorkspaceMember.user_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
+
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username})>"

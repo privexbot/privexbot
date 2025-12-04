@@ -57,7 +57,7 @@ EXAMPLE:
         .all()
 """
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
@@ -113,6 +113,9 @@ class Organization(Base):
     #     "defaults": {"default_model": "secret-ai-v1", "default_temperature": 0.7},
     #     "features": {"analytics_enabled": true}
     # }
+
+    # Default organization flag (user's personal organization created at signup)
+    is_default = Column(Boolean, nullable=False, default=False)
 
     # Creator tracking
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

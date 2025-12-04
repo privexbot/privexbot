@@ -141,25 +141,19 @@ interface MainMenuProps {
 
 export function MainMenu({ onOpenSettings }: MainMenuProps) {
   const location = useLocation();
-  const { organizations, currentOrganization, workspaces, currentWorkspace } =
-    useApp();
+  const { currentOrganization, currentWorkspace } = useApp();
 
   /**
-   * Check if user is in default context (Personal org + default workspace)
+   * Check if user is in personal organization and default workspace
+   *
+   * WHY: Profile menu should only be visible in user's personal context
+   * HOW: Use database flags that survive renames, deletions, and reorganization
    */
-  const isInDefaultContext = React.useMemo(() => {
-    // First organization is Personal org (created on signup)
-    const isDefaultOrganization =
-      organizations?.[0]?.id === currentOrganization?.id;
-
-    // Default workspace: name matches org name OR is_default flag OR first workspace
-    const isDefaultWorkspace =
-      currentWorkspace?.is_default ||
-      currentWorkspace?.name === currentOrganization?.name ||
-      workspaces?.[0]?.id === currentWorkspace?.id;
-
-    return isDefaultOrganization && isDefaultWorkspace;
-  }, [organizations, currentOrganization, workspaces, currentWorkspace]);
+  const isInPersonalContext = React.useMemo(() => {
+    // Both organization and workspace must be marked as default/personal
+    // This is set by the backend during user signup and is permanent
+    return currentOrganization?.is_default && currentWorkspace?.is_default;
+  }, [currentOrganization?.is_default, currentWorkspace?.is_default]);
 
   /**
    * Filter menu items based on context only
@@ -168,7 +162,7 @@ export function MainMenu({ onOpenSettings }: MainMenuProps) {
   const filterMenuItems = (items: MenuItem[]): MenuItem[] => {
     return items.filter((item) => {
       // Only check workspace context requirement (Profile page)
-      if (item.requiresDefaultWorkspace && !isInDefaultContext) {
+      if (item.requiresDefaultWorkspace && !isInPersonalContext) {
         return false;
       }
 

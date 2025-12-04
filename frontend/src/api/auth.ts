@@ -237,6 +237,26 @@ class AuthApiClient {
       new_password: newPassword,
     });
   }
+
+  // ============================================================
+  // PROFILE MANAGEMENT
+  // ============================================================
+
+  /**
+   * Update current user's profile
+   */
+  async updateProfile(data: { username?: string }): Promise<UserProfile> {
+    const response = await this.client.put("/auth/me", data);
+    return response.data;
+  }
+
+  /**
+   * Delete current user's account
+   */
+  async deleteAccount(): Promise<{ message: string; deleted_at: string }> {
+    const response = await this.client.delete("/auth/me");
+    return response.data;
+  }
 }
 
 export const authApi = new AuthApiClient();

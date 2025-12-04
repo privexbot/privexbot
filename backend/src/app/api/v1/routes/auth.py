@@ -64,7 +64,7 @@ from app.schemas.token import (
     EmailVerificationResponseSchema,
     VerifyEmailCodeRequestSchema
 )
-from app.schemas.user import UserProfile, AuthMethodInfo
+from app.schemas.user import UserProfile, AuthMethodInfo, UserUpdate
 from app.auth.strategies import email, evm, solana, cosmos
 from app.services.tenant_service import create_organization, list_user_organizations
 
@@ -196,7 +196,8 @@ async def email_signup(
         db=db,
         name=f"{user.username}'s Organization",
         billing_email=request.email,
-        creator_id=user.id
+        creator_id=user.id,
+        is_default=True  # Mark as personal organization
     )
 
     # Step 3: Get the default workspace that was just created
@@ -283,7 +284,8 @@ async def email_login(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=billing_email,
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
 
         # Get the default workspace that was automatically created
@@ -808,7 +810,8 @@ async def evm_verify(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=f"{user.username}@wallet.user",  # Placeholder email
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
         user_orgs = [(org, "owner")]
 
@@ -975,7 +978,8 @@ async def solana_verify(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=f"{user.username}@wallet.user",  # Placeholder email
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
         user_orgs = [(org, "owner")]
 
@@ -1148,7 +1152,8 @@ async def cosmos_verify(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=f"{user.username}@wallet.user",  # Placeholder email
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
         user_orgs = [(org, "owner")]
 
@@ -1223,3 +1228,210 @@ async def cosmos_link(
     )
 
     return {"message": "Wallet linked successfully"}
+
+
+# ============================================================
+# PROFILE MANAGEMENT
+# ============================================================
+
+@router.put("/me", response_model=UserProfile)
+async def update_profile(
+    profile_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current user's profile information.
+
+    WHY: Allow users to update their profile details
+    HOW: Validate input, check uniqueness, update user record
+
+    Flow:
+    1. Validate input data (username uniqueness if provided)
+    2. Update user record with provided fields
+    3. Return updated UserProfile
+
+    Args:
+        profile_update: UserUpdate schema with optional fields to update
+        current_user: Authenticated user (from JWT token)
+        db: Database session
+
+    Returns:
+        UserProfile with updated user data and auth methods
+
+    Raises:
+        HTTPException(400): Username already taken
+        HTTPException(400): Invalid input data
+        HTTPException(401): Invalid or missing JWT token
+
+    Security:
+    - Only authenticated users can update their own profile
+    - Username uniqueness enforced at database level
+    - No sensitive data exposed in response
+
+    Example Request:
+        PUT /auth/me
+        {
+            "username": "new_username"
+        }
+
+    Example Response:
+        {
+            "id": "123e4567-e89b-12d3-a456-426614174000",
+            "username": "new_username",
+            "is_active": true,
+            "created_at": "2024-01-15T10:30:00Z",
+            "updated_at": "2024-01-15T14:45:00Z",
+            "auth_methods": [...]
+        }
+    """
+    from app.models.auth_identity import AuthIdentity
+    from sqlalchemy.exc import IntegrityError
+
+    # Check if username is being updated and if it's unique
+    if profile_update.username:
+        existing_user = db.query(User).filter(
+            User.username == profile_update.username,
+            User.id != current_user.id
+        ).first()
+
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Username already taken"
+            )
+
+    # Update user fields
+    if profile_update.username:
+        current_user.username = profile_update.username
+
+    # Update timestamp
+    from datetime import datetime
+    current_user.updated_at = datetime.utcnow()
+
+    try:
+        db.commit()
+        db.refresh(current_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Username already taken"
+        )
+
+    # Get user's auth identities for response
+    auth_identities = db.query(AuthIdentity).filter(
+        AuthIdentity.user_id == current_user.id
+    ).all()
+
+    # Convert to AuthMethodInfo schemas
+    auth_methods = [
+        AuthMethodInfo(
+            provider=auth.provider,
+            provider_id=auth.provider_id,
+            linked_at=auth.created_at
+        )
+        for auth in auth_identities
+    ]
+
+    # Return updated UserProfile
+    return UserProfile(
+        id=current_user.id,
+        username=current_user.username,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
+        auth_methods=auth_methods
+    )
+
+
+@router.delete("/me", response_model=dict)
+async def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete current user's account permanently.
+
+    WHY: Allow users to delete their account and all associated data
+    HOW: Hard delete user record, cascade deletes handle all related data
+
+    Flow:
+    1. Verify user is authenticated
+    2. Delete user record from database (hard delete)
+    3. Database cascade deletes will automatically handle:
+       - AuthIdentity records (all login methods deleted)
+       - OrganizationMember records (removed from all orgs)
+       - WorkspaceMember records (removed from all workspaces)
+       - Created resources may be reassigned or marked as orphaned
+    4. Return success message
+
+    Args:
+        current_user: Authenticated user (from JWT token)
+        db: Database session
+
+    Returns:
+        Success message confirming account deletion
+
+    Raises:
+        HTTPException(401): Invalid or missing JWT token
+        HTTPException(500): Database error during deletion
+
+    Security:
+    - Only authenticated users can delete their own account
+    - Hard delete allows user to sign up again with same credentials
+    - JWT token becomes invalid immediately
+    - Database cascade deletes handle all foreign key relationships
+
+    WARNING: This action is irreversible. User will lose access to:
+    - All organizations they created or belong to
+    - All workspaces they created or have access to
+    - All chatbots, chatflows, and knowledge bases they created
+    - All authentication methods linked to their account
+    - User can sign up again fresh as a new user
+
+    Example Response:
+        {
+            "message": "Account deleted successfully",
+            "deleted_at": "2024-01-15T14:45:00Z"
+        }
+    """
+    from datetime import datetime
+
+    try:
+        # Record deletion time before deleting user
+        deletion_time = datetime.utcnow()
+
+        # Explicitly delete memberships first to avoid foreign key issues
+        # Delete organization memberships
+        from app.models.organization_member import OrganizationMember
+        from app.models.workspace_member import WorkspaceMember
+
+        db.query(OrganizationMember).filter(
+            OrganizationMember.user_id == current_user.id
+        ).delete(synchronize_session=False)
+
+        # Delete workspace memberships
+        db.query(WorkspaceMember).filter(
+            WorkspaceMember.user_id == current_user.id
+        ).delete(synchronize_session=False)
+
+        # Now delete the user record - cascade will handle auth_identities and other relations
+        db.delete(current_user)
+        db.commit()
+
+        return {
+            "message": "Account deleted successfully",
+            "deleted_at": deletion_time.isoformat() + "Z"
+        }
+
+    except Exception as e:
+        db.rollback()
+        print(f"Account deletion error: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete account: {str(e)}"
+        )
