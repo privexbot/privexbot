@@ -109,7 +109,7 @@ export function Header() {
                 Login
               </Button>
             </Link>
-            <Link to="/signup">
+            <Link to="/signin">
               <Button className="font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2">
                 Start for free
               </Button>
@@ -161,7 +161,7 @@ export function Header() {
                       Login
                     </Button>
                   </Link>
-                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
+                  <Link to="/signin" onClick={() => setMobileMenuOpen(false)}>
                     <Button className="w-full font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-full">
                       Start for free
                     </Button>

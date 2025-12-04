@@ -508,12 +508,6 @@ export function SigninPage() {
             <span className="text-xl font-bold font-manrope text-blue-600">Privexbot</span>
           </Link>
 
-          <Link
-            to="/signup"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors font-manrope"
-          >
-            New user? <span className="font-medium text-blue-600">Sign up</span>
-          </Link>
         </div>
       </div>
 

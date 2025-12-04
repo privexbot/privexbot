@@ -164,7 +164,7 @@ export function Pricing() {
                 </div>
 
                 {/* CTA */}
-                <Link to={tier.name === "Enterprise" ? "/contact" : "/signup"}>
+                <Link to={tier.name === "Enterprise" ? "/contact" : "/signin"}>
                   <Button
                     variant={tier.ctaVariant}
                     className="w-full"

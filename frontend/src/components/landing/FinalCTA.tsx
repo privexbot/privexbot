@@ -65,7 +65,7 @@ export function FinalCTA() {
             {/* CTA Buttons with exact specifications */}
             <div className="space-y-4 lg:space-y-0 lg:flex lg:items-center lg:justify-center lg:gap-6">
               {/* Get started button - exact specs: width 125, height 44, border-radius 12px */}
-              <Link to="/signup" className="block lg:inline-block">
+              <Link to="/signin" className="block lg:inline-block">
                 <Button
                   className="font-manrope w-full lg:w-[125px] h-[44px] bg-white hover:bg-gray-100 text-black font-semibold text-sm px-6 py-2 rounded-xl border-b-[3px] border-gray-300 hover:border-gray-400 transition-all duration-200 hover:scale-105 shadow-lg gap-1"
                 >
