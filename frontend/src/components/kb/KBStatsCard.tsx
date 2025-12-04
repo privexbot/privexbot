@@ -44,11 +44,11 @@ export function KBStatsCard({
   const getTrendColor = () => {
     switch (trendDirection) {
       case 'up':
-        return 'text-green-600';
+        return 'text-green-600 dark:text-green-400';
       case 'down':
-        return 'text-red-600';
+        return 'text-red-600 dark:text-red-400';
       default:
-        return 'text-gray-500';
+        return 'text-gray-500 dark:text-gray-400';
     }
   };
 
@@ -56,27 +56,27 @@ export function KBStatsCard({
     switch (variant) {
       case 'success':
         return {
-          card: 'border-green-200 bg-green-50',
-          icon: 'text-green-600',
-          value: 'text-green-900'
+          card: 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20',
+          icon: 'text-green-600 dark:text-green-400',
+          value: 'text-green-900 dark:text-green-100'
         };
       case 'warning':
         return {
-          card: 'border-yellow-200 bg-yellow-50',
-          icon: 'text-yellow-600',
-          value: 'text-yellow-900'
+          card: 'border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/20',
+          icon: 'text-yellow-600 dark:text-yellow-400',
+          value: 'text-yellow-900 dark:text-yellow-100'
         };
       case 'error':
         return {
-          card: 'border-red-200 bg-red-50',
-          icon: 'text-red-600',
-          value: 'text-red-900'
+          card: 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20',
+          icon: 'text-red-600 dark:text-red-400',
+          value: 'text-red-900 dark:text-red-100'
         };
       default:
         return {
-          card: 'border-gray-200 bg-white hover:bg-gray-50',
-          icon: 'text-gray-600',
-          value: 'text-gray-900'
+          card: 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/70',
+          icon: 'text-blue-600 dark:text-blue-400',
+          value: 'text-gray-900 dark:text-gray-100'
         };
     }
   };
@@ -102,11 +102,11 @@ export function KBStatsCard({
         <CardContent className="p-6">
           <div className="animate-pulse">
             <div className="flex items-center space-x-3 mb-2">
-              <div className="w-5 h-5 bg-gray-200 rounded"></div>
-              <div className="h-4 bg-gray-200 rounded w-20"></div>
+              <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded"></div>
+              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-20"></div>
             </div>
-            <div className="h-8 bg-gray-200 rounded w-16 mb-2"></div>
-            <div className="h-3 bg-gray-200 rounded w-24"></div>
+            <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-16 mb-2"></div>
+            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-24"></div>
           </div>
         </CardContent>
       </Card>
@@ -121,7 +121,7 @@ export function KBStatsCard({
             <div className={styles.icon}>
               {icon}
             </div>
-            <p className="text-sm font-medium text-gray-600">
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400 font-manrope">
               {title}
             </p>
           </div>
@@ -155,7 +155,7 @@ export function KBStatsCard({
               )}
 
               {subtitle && (
-                <p className="text-xs text-gray-500 ml-auto">
+                <p className="text-xs text-gray-500 dark:text-gray-400 ml-auto font-manrope">
                   {subtitle}
                 </p>
               )}

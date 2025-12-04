@@ -130,14 +130,14 @@ export default function KnowledgeBasesPage() {
   const getStatusIcon = (status: KBStatus) => {
     switch (status) {
       case KBStatus.READY:
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />;
       case KBStatus.PROCESSING:
       case KBStatus.REINDEXING:
-        return <Clock className="h-4 w-4 text-blue-500" />;
+        return <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />;
       case KBStatus.FAILED:
-        return <XCircle className="h-4 w-4 text-red-500" />;
+        return <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />;
       default:
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+        return <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />;
     }
   };
 
@@ -160,14 +160,14 @@ export default function KnowledgeBasesPage() {
   if (listError) {
     return (
       <div className="max-w-7xl mx-auto py-8 px-4">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+        <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+          <AlertDescription className="text-red-700 dark:text-red-300 font-manrope">
             {listError}
           </AlertDescription>
         </Alert>
         <div className="mt-4">
-          <Button onClick={() => { clearListError(); fetchKBs(); }}>
+          <Button onClick={() => { clearListError(); fetchKBs(); }} className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white">
             Try Again
           </Button>
         </div>
@@ -181,17 +181,17 @@ export default function KnowledgeBasesPage() {
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Knowledge Bases</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage AI knowledge sources in <span className="font-medium">{currentWorkspace?.name || 'your workspace'}</span>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100 font-manrope">Knowledge Bases</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1 font-manrope">
+            Manage AI knowledge sources in <span className="font-medium text-gray-900 dark:text-gray-100">{currentWorkspace?.name || 'your workspace'}</span>
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" onClick={() => fetchKBs()}>
+          <Button variant="outline" onClick={() => fetchKBs()} className="font-manrope">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Button onClick={handleCreateKB}>
+          <Button onClick={handleCreateKB} className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white">
             <Plus className="h-4 w-4 mr-2" />
             Create Knowledge Base
           </Button>
@@ -229,13 +229,13 @@ export default function KnowledgeBasesPage() {
 
       {/* Processing Status */}
       {processingKBs.length > 0 && (
-        <Card>
+        <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 font-manrope">
+              <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               Processing Status
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
               Knowledge bases currently being processed
             </CardDescription>
           </CardHeader>
@@ -254,36 +254,36 @@ export default function KnowledgeBasesPage() {
       )}
 
       {/* Filters and Search */}
-      <Card>
+      <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
         <CardHeader>
-          <CardTitle>Knowledge Base Management</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-gray-900 dark:text-gray-100 font-manrope">Knowledge Base Management</CardTitle>
+          <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
             View, edit, and manage your knowledge bases
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="all" className="space-y-4">
             <div className="flex flex-col lg:flex-row gap-4 justify-between">
-              <TabsList>
-                <TabsTrigger value="all">All KBs ({stats.total})</TabsTrigger>
-                <TabsTrigger value="ready">Ready ({stats.ready})</TabsTrigger>
-                <TabsTrigger value="processing">Processing ({stats.processing})</TabsTrigger>
-                <TabsTrigger value="failed">Failed ({stats.failed})</TabsTrigger>
+              <TabsList className="bg-gray-100 dark:bg-gray-700/50">
+                <TabsTrigger value="all" className="font-manrope data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100">All KBs ({stats.total})</TabsTrigger>
+                <TabsTrigger value="ready" className="font-manrope data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100">Ready ({stats.ready})</TabsTrigger>
+                <TabsTrigger value="processing" className="font-manrope data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100">Processing ({stats.processing})</TabsTrigger>
+                <TabsTrigger value="failed" className="font-manrope data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100">Failed ({stats.failed})</TabsTrigger>
               </TabsList>
 
               <div className="flex gap-3">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 dark:text-gray-400" />
                   <Input
                     placeholder="Search knowledge bases..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 w-64"
+                    className="pl-9 w-64 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                   />
                 </div>
 
                 <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className="w-32 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 font-manrope">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -296,7 +296,7 @@ export default function KnowledgeBasesPage() {
                 </Select>
 
                 <Select value={selectedContext} onValueChange={setSelectedContext}>
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className="w-32 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 font-manrope">
                     <SelectValue placeholder="Context" />
                   </SelectTrigger>
                   <SelectContent>
@@ -317,29 +317,29 @@ export default function KnowledgeBasesPage() {
               ) : filteredKBs.length > 0 ? (
                 <div className="grid gap-4">
                   {filteredKBs.map((kb) => (
-                    <Card key={kb.id} className="transition-colors hover:bg-accent/50">
+                    <Card key={kb.id} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/70">
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <BookOpen className="h-5 w-5 text-muted-foreground" />
-                              <h3 className="font-semibold text-lg">{kb.name}</h3>
+                              <BookOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                              <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 font-manrope">{kb.name}</h3>
                               {getStatusBadge(kb.status)}
                             </div>
 
                             {kb.description && (
-                              <p className="text-sm text-muted-foreground mb-3">
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-manrope">
                                 {kb.description}
                               </p>
                             )}
 
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 font-manrope">
                               <span className="flex items-center gap-1">
-                                <FileText className="h-4 w-4" />
+                                <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.documents || 0} documents
                               </span>
                               <span className="flex items-center gap-1">
-                                <Activity className="h-4 w-4" />
+                                <Activity className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.chunks || 0} chunks
                               </span>
                               <span className="flex items-center gap-1">
@@ -357,6 +357,7 @@ export default function KnowledgeBasesPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => handleViewKB(kb.id)}
+                              className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               View
@@ -364,31 +365,31 @@ export default function KnowledgeBasesPage() {
 
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)}>
+                              <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <Settings className="h-4 w-4 mr-2" />
                                   Edit Settings
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleRechunkKB(kb.id)}>
+                                <DropdownMenuItem onClick={() => handleRechunkKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <RefreshCw className="h-4 w-4 mr-2" />
                                   Re-chunk
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/documents`)}>
+                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/documents`)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <FileText className="h-4 w-4 mr-2" />
                                   Manage Documents
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/analytics`)}>
+                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/analytics`)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <TrendingUp className="h-4 w-4 mr-2" />
                                   Analytics
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
+                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
                                 <DropdownMenuItem
                                   onClick={() => setDeleteKBId(kb.id)}
-                                  className="text-red-600"
+                                  className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Delete
@@ -402,21 +403,21 @@ export default function KnowledgeBasesPage() {
                   ))}
                 </div>
               ) : !hasPermission('kb:view') ? (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
+                <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800">
+                  <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                  <AlertDescription className="text-yellow-700 dark:text-yellow-300 font-manrope">
                     You do not have permission to view knowledge bases in this workspace.
                   </AlertDescription>
                 </Alert>
               ) : (
-                <Card>
+                <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
                   <CardContent className="text-center py-12">
-                    <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">No Knowledge Bases Yet</h3>
-                    <p className="text-muted-foreground mb-4">
+                    <BookOpen className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100 font-manrope">No Knowledge Bases Yet</h3>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4 font-manrope">
                       Create your first knowledge base to start building intelligent chatbots
                     </p>
-                    <Button onClick={handleCreateKB}>
+                    <Button onClick={handleCreateKB} className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white">
                       <Plus className="h-4 w-4 mr-2" />
                       Create Knowledge Base
                     </Button>
@@ -433,29 +434,29 @@ export default function KnowledgeBasesPage() {
               ) : kbs.filter(kb => kb.status === KBStatus.READY).length > 0 ? (
                 <div className="grid gap-4">
                   {kbs.filter(kb => kb.status === KBStatus.READY).map((kb) => (
-                    <Card key={kb.id} className="transition-colors hover:bg-accent/50">
+                    <Card key={kb.id} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/70">
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <BookOpen className="h-5 w-5 text-muted-foreground" />
-                              <h3 className="font-semibold text-lg">{kb.name}</h3>
+                              <BookOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                              <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 font-manrope">{kb.name}</h3>
                               {getStatusBadge(kb.status)}
                             </div>
 
                             {kb.description && (
-                              <p className="text-sm text-muted-foreground mb-3">
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-manrope">
                                 {kb.description}
                               </p>
                             )}
 
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 font-manrope">
                               <span className="flex items-center gap-1">
-                                <FileText className="h-4 w-4" />
+                                <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.documents || 0} documents
                               </span>
                               <span className="flex items-center gap-1">
-                                <Activity className="h-4 w-4" />
+                                <Activity className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.chunks || 0} chunks
                               </span>
                               <span className="flex items-center gap-1">
@@ -473,6 +474,7 @@ export default function KnowledgeBasesPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => handleViewKB(kb.id)}
+                              className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               View
@@ -480,31 +482,31 @@ export default function KnowledgeBasesPage() {
 
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)}>
+                              <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <Settings className="h-4 w-4 mr-2" />
                                   Edit Settings
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleRechunkKB(kb.id)}>
+                                <DropdownMenuItem onClick={() => handleRechunkKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <RefreshCw className="h-4 w-4 mr-2" />
                                   Re-chunk
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/documents`)}>
+                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/documents`)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <FileText className="h-4 w-4 mr-2" />
                                   Manage Documents
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/analytics`)}>
+                                <DropdownMenuItem onClick={() => navigate(`/knowledge-bases/${kb.id}/analytics`)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <TrendingUp className="h-4 w-4 mr-2" />
                                   Analytics
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
+                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
                                 <DropdownMenuItem
                                   onClick={() => setDeleteKBId(kb.id)}
-                                  className="text-red-600"
+                                  className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Delete
@@ -519,7 +521,7 @@ export default function KnowledgeBasesPage() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-muted-foreground">No ready knowledge bases found</p>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope">No ready knowledge bases found</p>
                 </div>
               )}
             </TabsContent>
@@ -532,29 +534,29 @@ export default function KnowledgeBasesPage() {
               ) : processingKBs.length > 0 ? (
                 <div className="grid gap-4">
                   {processingKBs.map((kb) => (
-                    <Card key={kb.id} className="transition-colors hover:bg-accent/50">
+                    <Card key={kb.id} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/70">
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <BookOpen className="h-5 w-5 text-muted-foreground" />
-                              <h3 className="font-semibold text-lg">{kb.name}</h3>
+                              <BookOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                              <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 font-manrope">{kb.name}</h3>
                               {getStatusBadge(kb.status)}
                             </div>
 
                             {kb.description && (
-                              <p className="text-sm text-muted-foreground mb-3">
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-manrope">
                                 {kb.description}
                               </p>
                             )}
 
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 font-manrope">
                               <span className="flex items-center gap-1">
-                                <FileText className="h-4 w-4" />
+                                <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.documents || 0} documents
                               </span>
                               <span className="flex items-center gap-1">
-                                <Activity className="h-4 w-4" />
+                                <Activity className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.chunks || 0} chunks
                               </span>
                               <span className="flex items-center gap-1">
@@ -579,19 +581,19 @@ export default function KnowledgeBasesPage() {
 
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)}>
+                              <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <Settings className="h-4 w-4 mr-2" />
                                   Edit Settings
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
+                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
                                 <DropdownMenuItem
                                   onClick={() => setDeleteKBId(kb.id)}
-                                  className="text-red-600"
+                                  className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Delete
@@ -606,7 +608,7 @@ export default function KnowledgeBasesPage() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-muted-foreground">No processing knowledge bases found</p>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope">No processing knowledge bases found</p>
                 </div>
               )}
             </TabsContent>
@@ -619,29 +621,29 @@ export default function KnowledgeBasesPage() {
               ) : kbs.filter(kb => kb.status === KBStatus.FAILED).length > 0 ? (
                 <div className="grid gap-4">
                   {kbs.filter(kb => kb.status === KBStatus.FAILED).map((kb) => (
-                    <Card key={kb.id} className="transition-colors hover:bg-accent/50">
+                    <Card key={kb.id} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/70">
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <BookOpen className="h-5 w-5 text-muted-foreground" />
-                              <h3 className="font-semibold text-lg">{kb.name}</h3>
+                              <BookOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                              <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 font-manrope">{kb.name}</h3>
                               {getStatusBadge(kb.status)}
                             </div>
 
                             {kb.description && (
-                              <p className="text-sm text-muted-foreground mb-3">
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-manrope">
                                 {kb.description}
                               </p>
                             )}
 
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 font-manrope">
                               <span className="flex items-center gap-1">
-                                <FileText className="h-4 w-4" />
+                                <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.documents || 0} documents
                               </span>
                               <span className="flex items-center gap-1">
-                                <Activity className="h-4 w-4" />
+                                <Activity className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                                 {kb.stats?.chunks || 0} chunks
                               </span>
                               <span className="flex items-center gap-1">
@@ -666,23 +668,23 @@ export default function KnowledgeBasesPage() {
 
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)}>
+                              <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <DropdownMenuItem onClick={() => handleEditKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <Settings className="h-4 w-4 mr-2" />
                                   Edit Settings
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleRechunkKB(kb.id)}>
+                                <DropdownMenuItem onClick={() => handleRechunkKB(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <RefreshCw className="h-4 w-4 mr-2" />
                                   Retry Processing
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
+                                <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
                                 <DropdownMenuItem
                                   onClick={() => setDeleteKBId(kb.id)}
-                                  className="text-red-600"
+                                  className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Delete
@@ -697,7 +699,7 @@ export default function KnowledgeBasesPage() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-muted-foreground">No failed knowledge bases found</p>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope">No failed knowledge bases found</p>
                 </div>
               )}
             </TabsContent>
@@ -707,21 +709,22 @@ export default function KnowledgeBasesPage() {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteKBId} onOpenChange={() => setDeleteKBId(null)}>
-        <DialogContent>
+        <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <DialogHeader>
-            <DialogTitle>Delete Knowledge Base?</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope">Delete Knowledge Base?</DialogTitle>
+            <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
               This action cannot be undone. This will permanently delete the knowledge base
               and all its associated documents and chunks.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-3 mt-4">
-            <Button variant="outline" onClick={() => setDeleteKBId(null)}>
+            <Button variant="outline" onClick={() => setDeleteKBId(null)} className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={() => deleteKBId && handleDeleteKB(deleteKBId)}
+              className="font-manrope bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 text-white"
             >
               Delete Knowledge Base
             </Button>
