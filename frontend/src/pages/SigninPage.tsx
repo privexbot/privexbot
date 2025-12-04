@@ -122,6 +122,16 @@ export function SigninPage() {
     reset_link?: string;
   } | null>(null);
 
+  // Email verification signup state
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [signupLoading, setSignupLoading] = useState(false);
+
   // Check for redirect reason
   const redirectReason = searchParams.get("reason");
 
@@ -171,11 +181,145 @@ export function SigninPage() {
     }
 
     try {
-      await emailLogin({ email: email.trim(), password });
-      navigate("/dashboard");
+      // Use enhanced login to detect new users
+      const result = await authApi.enhancedEmailLogin({
+        email: email.trim(),
+        password
+      });
+
+      if (result.status === "success" && result.token) {
+        // Successful login - handle token and navigate
+        const { access_token, expires_in } = result.token;
+        localStorage.setItem("access_token", access_token);
+        localStorage.setItem("token_expires_at", (Date.now() + expires_in * 1000).toString());
+
+        // Trigger auth context refresh
+        await emailLogin({ email: email.trim(), password });
+        navigate("/dashboard");
+
+      } else if (result.status === "invalid_credentials") {
+        // Wrong password for existing user
+        setLocalError("Invalid credentials");
+
+      } else if (result.status === "email_not_found") {
+        // New user - trigger signup flow
+        setNewUserEmail(result.email || email.trim());
+        setNewUserPassword(password);
+        setShowSignupPrompt(true);
+      }
     } catch (err: any) {
       console.error("Login failed:", err);
+
+      // Handle API errors
+      if (err.response?.data?.detail) {
+        setLocalError(err.response.data.detail);
+      } else {
+        setLocalError("Login failed. Please try again.");
+      }
     }
+  };
+
+  /**
+   * Handle signup confirmation - send verification code
+   */
+  const handleSignupConfirmation = async () => {
+    if (!username.trim()) {
+      setLocalError("Username is required");
+      return;
+    }
+
+    setVerificationLoading(true);
+    setLocalError(null);
+
+    try {
+      const result = await authApi.sendEmailVerification({
+        email: newUserEmail,
+        password: newUserPassword,
+        username: username.trim()
+      });
+
+      setVerificationSent(true);
+      setShowSignupPrompt(false);
+
+      if (!result.code_sent) {
+        // Email failed but verification code was created
+        setLocalError("Verification code generated but email delivery failed. Check console for code.");
+      }
+    } catch (err: any) {
+      console.error("Verification code sending failed:", err);
+
+      if (err.response?.status === 409) {
+        setLocalError("Email already registered. Please log in instead.");
+        setShowSignupPrompt(false);
+      } else if (err.response?.status === 400 && err.response?.data?.detail?.includes("Username already taken")) {
+        setLocalError("Username already taken. Please choose a different username.");
+      } else if (err.response?.data?.detail) {
+        setLocalError(err.response.data.detail);
+      } else {
+        setLocalError("Failed to send verification code. Please try again.");
+      }
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  /**
+   * Handle email verification and complete signup
+   */
+  const handleEmailVerification = async (e: FormEvent) => {
+    e.preventDefault();
+    setSignupLoading(true);
+    setLocalError(null);
+
+    if (!verificationCode.trim() || verificationCode.length !== 6) {
+      setLocalError("Please enter the 6-digit verification code");
+      setSignupLoading(false);
+      return;
+    }
+
+    try {
+      const tokenData = await authApi.verifyEmailAndSignup({
+        email: newUserEmail,
+        code: verificationCode.trim()
+      });
+
+      // Store token and trigger auth context refresh
+      const { access_token, expires_in } = tokenData;
+      localStorage.setItem("access_token", access_token);
+      localStorage.setItem("token_expires_at", (Date.now() + expires_in * 1000).toString());
+
+      // Trigger auth context refresh and navigate
+      await emailLogin({ email: newUserEmail, password: newUserPassword });
+      navigate("/dashboard");
+
+    } catch (err: any) {
+      console.error("Email verification failed:", err);
+
+      if (err.response?.status === 400) {
+        setLocalError("Invalid or expired verification code");
+      } else if (err.response?.status === 409) {
+        setLocalError("Email already registered. Please log in instead.");
+      } else if (err.response?.data?.detail) {
+        setLocalError(err.response.data.detail);
+      } else {
+        setLocalError("Verification failed. Please try again.");
+      }
+    } finally {
+      setSignupLoading(false);
+    }
+  };
+
+  /**
+   * Reset signup flow
+   */
+  const resetSignupFlow = () => {
+    setShowSignupPrompt(false);
+    setVerificationSent(false);
+    setUsername("");
+    setVerificationCode("");
+    setNewUserEmail("");
+    setNewUserPassword("");
+    setLocalError(null);
   };
 
   /**
@@ -560,8 +704,8 @@ export function SigninPage() {
                   </motion.div>
                 )}
 
-                {/* Email Login Form */}
-                {rightColumnContent === 'email-form' && (
+                {/* Email Login Form - Hidden when signup prompt or verification is shown */}
+                {rightColumnContent === 'email-form' && !showSignupPrompt && !verificationSent && (
                   <motion.div
                     key="email-form"
                     initial={{ opacity: 0, x: 20 }}
@@ -737,6 +881,201 @@ export function SigninPage() {
                         )}
                       </Button>
                     </form>
+                  </motion.div>
+                )}
+
+                {/* Create New Account Form - Replaces email form when shown */}
+                {showSignupPrompt && rightColumnContent === 'email-form' && !verificationSent && (
+                  <motion.div
+                    key="create-account-form"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3 }}
+                    className="space-y-6"
+                  >
+                    {/* Error Alert */}
+                    {displayError && (
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>{displayError}</AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <h3 className="text-lg font-semibold text-gray-900 font-manrope">
+                          Create New Account
+                        </h3>
+                        <p className="text-sm text-gray-600 font-manrope">
+                          This email is not registered. Create an account to continue.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="signup-email" className="font-manrope">Email Address</Label>
+                        <Input
+                          id="signup-email"
+                          type="email"
+                          placeholder="Enter email address"
+                          value={newUserEmail}
+                          onChange={(e) => setNewUserEmail(e.target.value)}
+                          required
+                          disabled={verificationLoading}
+                          autoComplete="email"
+                          className="h-12 bg-gray-100 border-0 rounded-lg font-manrope"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="signup-password" className="font-manrope">Password</Label>
+                        <div className="relative">
+                          <Input
+                            id="signup-password"
+                            type={showPassword ? "text" : "password"}
+                            placeholder="Enter password"
+                            value={newUserPassword}
+                            onChange={(e) => setNewUserPassword(e.target.value)}
+                            required
+                            minLength={8}
+                            disabled={verificationLoading}
+                            autoComplete="new-password"
+                            className="h-12 bg-gray-100 border-0 rounded-lg pr-12 font-manrope"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                            onClick={() => setShowPassword(!showPassword)}
+                            disabled={verificationLoading}
+                            tabIndex={-1}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4 text-gray-400" />
+                            ) : (
+                              <Eye className="h-4 w-4 text-gray-400" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="signup-username" className="font-manrope">Username</Label>
+                        <Input
+                          id="signup-username"
+                          type="text"
+                          placeholder="Choose a username"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          required
+                          disabled={verificationLoading}
+                          className="h-12 bg-gray-100 border-0 rounded-lg font-manrope"
+                        />
+                      </div>
+
+                      <div className="flex space-x-3">
+                        <Button
+                          onClick={handleSignupConfirmation}
+                          className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-manrope font-medium"
+                          disabled={verificationLoading}
+                        >
+                          {verificationLoading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Creating Account...
+                            </>
+                          ) : (
+                            "Create Account"
+                          )}
+                        </Button>
+                        <Button
+                          onClick={resetSignupFlow}
+                          variant="outline"
+                          className="flex-1 h-12 rounded-lg font-manrope"
+                          disabled={verificationLoading}
+                        >
+                          Back to Login
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Email Verification - Replaces all other forms when shown */}
+                {verificationSent && rightColumnContent === 'email-form' && (
+                  <motion.div
+                    key="email-verification"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3 }}
+                    className="space-y-6"
+                  >
+                    {/* Error Alert */}
+                    {displayError && (
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>{displayError}</AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <h3 className="text-lg font-semibold text-gray-900 font-manrope">
+                          Verify Your Email
+                        </h3>
+                        <p className="text-sm text-gray-600 font-manrope">
+                          We've sent a 6-digit verification code to {newUserEmail}
+                        </p>
+                      </div>
+
+                      <form onSubmit={handleEmailVerification} className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="verification-code" className="font-manrope">Verification Code</Label>
+                          <Input
+                            id="verification-code"
+                            type="text"
+                            placeholder="Enter 6-digit code"
+                            value={verificationCode}
+                            onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            required
+                            maxLength={6}
+                            disabled={signupLoading}
+                            className="h-12 bg-gray-100 border-0 rounded-lg font-manrope text-center text-lg tracking-widest"
+                          />
+                        </div>
+
+                        <div className="text-center text-xs text-gray-500 font-manrope">
+                          Code expires in 5 minutes
+                        </div>
+
+                        <div className="flex space-x-3">
+                          <Button
+                            type="submit"
+                            className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-manrope font-medium"
+                            disabled={signupLoading || verificationCode.length !== 6}
+                          >
+                            {signupLoading ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Verifying...
+                              </>
+                            ) : (
+                              "Verify & Complete Signup"
+                            )}
+                          </Button>
+                          <Button
+                            onClick={resetSignupFlow}
+                            variant="outline"
+                            className="flex-1 h-12 rounded-lg font-manrope"
+                            disabled={signupLoading}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    </div>
                   </motion.div>
                 )}
 

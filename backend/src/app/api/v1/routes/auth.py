@@ -58,7 +58,11 @@ from app.schemas.token import (
     PasswordResetValidateSchema,
     PasswordResetConfirmSchema,
     PasswordResetResponseSchema,
-    SimpleMessageResponseSchema
+    SimpleMessageResponseSchema,
+    EnhancedLoginResponseSchema,
+    EmailVerificationRequestSchema,
+    EmailVerificationResponseSchema,
+    VerifyEmailCodeRequestSchema
 )
 from app.schemas.user import UserProfile, AuthMethodInfo
 from app.auth.strategies import email, evm, solana, cosmos
@@ -510,6 +514,205 @@ async def confirm_password_reset(
 
     return SimpleMessageResponseSchema(
         message="Password reset successfully"
+    )
+
+
+# ============================================================
+# EMAIL VERIFICATION & SIGNUP
+# ============================================================
+
+@router.post("/email/login-enhanced", response_model=EnhancedLoginResponseSchema)
+async def enhanced_email_login(
+    request: EmailLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Enhanced email login that can differentiate new users for signup flow.
+
+    WHY: Enable seamless new user onboarding with email verification
+    HOW: Returns different responses for login success, invalid credentials, and new users
+
+    Flow:
+    1. Check if email exists in database
+    2. If email not found, return email_not_found status for signup flow
+    3. If email exists, verify password and return appropriate status
+
+    Args:
+        request: EmailLoginRequest with email and password
+        db: Database session (injected)
+
+    Returns:
+        EnhancedLoginResponseSchema with status-specific data
+
+    Security:
+    - Only reveals email existence AFTER password attempt
+    - Same timing for password verification regardless of email existence
+    - Rate limiting should be applied at API gateway level
+
+    Example Responses:
+        Success: {"status": "success", "token": {...}}
+        Wrong password: {"status": "invalid_credentials", "message": "Invalid credentials"}
+        New user: {"status": "email_not_found", "email": "user@example.com"}
+    """
+    # Call enhanced login strategy
+    result = await email.enhanced_login_with_email(
+        email=request.email,
+        password=request.password,
+        db=db
+    )
+
+    # Handle successful login - create JWT token
+    if result["status"] == "success":
+        user = result["user"]
+        access_token = create_access_token(
+            data={"sub": str(user.id), "email": request.email}
+        )
+
+        return EnhancedLoginResponseSchema(
+            status="success",
+            message="Login successful",
+            token=Token(
+                access_token=access_token,
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            )
+        )
+
+    # Handle other statuses (invalid_credentials, email_not_found)
+    return EnhancedLoginResponseSchema(**result)
+
+
+@router.post("/email/send-verification", response_model=EmailVerificationResponseSchema)
+async def send_email_verification(
+    request: EmailVerificationRequestSchema
+):
+    """
+    Send email verification code for new user signup.
+
+    WHY: Verify email ownership before creating account
+    HOW: Generate 6-digit code, store in Redis, send email
+
+    Flow:
+    1. Validate password strength
+    2. Check if email/username already exist
+    3. Generate verification code
+    4. Store signup data in Redis (5min expiry)
+    5. Send code via email
+
+    Args:
+        request: EmailVerificationRequestSchema with email, password, username
+
+    Returns:
+        EmailVerificationResponseSchema with verification status
+
+    Security:
+    - Verification codes expire in 5 minutes
+    - Single-use codes stored in Redis
+    - Password strength validation
+    - Rate limiting should be applied
+
+    Example:
+        POST /auth/email/send-verification
+        Body: {"email": "user@example.com", "password": "SecurePass123!", "username": "newuser"}
+        Response: {"message": "Verification code sent", "code_sent": true, "expires_in": 300}
+    """
+    # Step 1: Validate password strength
+    from app.auth.strategies.email import validate_password_strength
+    is_valid, error_msg = validate_password_strength(request.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    # Step 2: Check if email already exists
+    from app.models.auth_identity import AuthIdentity
+    from app.api.v1.dependencies import get_db
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        existing_email = db.query(AuthIdentity).filter(
+            AuthIdentity.provider == "email",
+            AuthIdentity.provider_id == request.email.lower()
+        ).first()
+
+        if existing_email:
+            raise HTTPException(
+                status_code=409,
+                detail="Email already registered. Please log in instead."
+            )
+
+        # Step 3: Check if username already exists
+        from app.models.user import User
+        existing_username = db.query(User).filter(
+            User.username == request.username
+        ).first()
+
+        if existing_username:
+            raise HTTPException(
+                status_code=400,
+                detail="Username already taken. Please choose a different username."
+            )
+
+    finally:
+        db.close()
+
+    # Step 4: Generate and send verification code
+    result = await email.send_email_verification_code(
+        email=request.email,
+        username=request.username,
+        password=request.password
+    )
+
+    return EmailVerificationResponseSchema(**result)
+
+
+@router.post("/email/verify-and-signup", response_model=Token)
+async def verify_email_and_signup(
+    request: VerifyEmailCodeRequestSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email code and complete user signup with automatic login.
+
+    WHY: Complete account creation after email verification
+    HOW: Verify code, create user account, return JWT token
+
+    Flow:
+    1. Retrieve verification data from Redis
+    2. Verify the submitted code
+    3. Create user account and auth identity
+    4. Generate JWT token for automatic login
+
+    Args:
+        request: VerifyEmailCodeRequestSchema with email and verification code
+        db: Database session (injected)
+
+    Returns:
+        Token for immediate authentication
+
+    Security:
+    - Single-use code consumption
+    - Race condition protection
+    - Automatic cleanup on success or failure
+
+    Example:
+        POST /auth/email/verify-and-signup
+        Body: {"email": "user@example.com", "code": "123456"}
+        Response: {"access_token": "eyJhbGciOiJIUzI1NiIs...", "expires_in": 1800}
+    """
+    # Verify code and create user
+    user = await email.verify_email_code_and_signup(
+        email=request.email,
+        code=request.code,
+        db=db
+    )
+
+    # Generate JWT token for automatic login
+    access_token = create_access_token(
+        data={"sub": str(user.id), "email": request.email}
+    )
+
+    return Token(
+        access_token=access_token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
 

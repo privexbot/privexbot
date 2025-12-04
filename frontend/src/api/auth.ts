@@ -92,6 +92,46 @@ class AuthApiClient {
   }
 
   /**
+   * Enhanced login that can detect new users for signup flow
+   */
+  async enhancedEmailLogin(data: EmailLoginRequest): Promise<{
+    status: "success" | "invalid_credentials" | "email_not_found";
+    message?: string;
+    token?: Token;
+    email?: string;
+  }> {
+    const response = await this.client.post("/auth/email/login-enhanced", data);
+    return response.data;
+  }
+
+  /**
+   * Send email verification code for new user signup
+   */
+  async sendEmailVerification(data: {
+    email: string;
+    password: string;
+    username: string;
+  }): Promise<{
+    message: string;
+    code_sent: boolean;
+    expires_in: number;
+  }> {
+    const response = await this.client.post("/auth/email/send-verification", data);
+    return response.data;
+  }
+
+  /**
+   * Verify email code and complete signup
+   */
+  async verifyEmailAndSignup(data: {
+    email: string;
+    code: string;
+  }): Promise<Token> {
+    const response = await this.client.post("/auth/email/verify-and-signup", data);
+    return response.data;
+  }
+
+  /**
    * Change password (requires authentication)
    */
   async changePassword(oldPassword: string, newPassword: string): Promise<void> {

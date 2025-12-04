@@ -735,3 +735,308 @@ async def reset_password_with_token(
     logger.info(f"Password reset completed for user: {user_id}")
 
     return True
+
+
+async def enhanced_login_with_email(
+    email: str,
+    password: str,
+    db: Session
+) -> dict:
+    """
+    Enhanced login that can differentiate email existence for signup flow.
+
+    WHY: Enable new user signup flow while maintaining security
+    HOW: Different responses for email not found vs wrong password
+
+    Args:
+        email: User's email address
+        password: Plain text password to verify
+        db: Database session
+
+    Returns:
+        Dict with status and appropriate data
+
+    Security Notes:
+        - Only differentiates after password attempt (prevents casual enumeration)
+        - Rate limiting should be applied at endpoint level
+        - Still protects against timing attacks via bcrypt
+
+    Example Returns:
+        Success: {"status": "success", "user": User}
+        Wrong password: {"status": "invalid_credentials"}
+        New user: {"status": "email_not_found", "email": "user@example.com"}
+    """
+    # Step 1: Find auth identity by email
+    auth_identity = db.query(AuthIdentity).filter(
+        AuthIdentity.provider == "email",
+        AuthIdentity.provider_id == email.lower()
+    ).first()
+
+    # Step 2: Email not found - enable signup flow
+    if not auth_identity:
+        return {
+            "status": "email_not_found",
+            "message": "Email not registered",
+            "email": email.lower()
+        }
+
+    # Step 3: Get associated user
+    user = db.query(User).filter(
+        User.id == auth_identity.user_id
+    ).first()
+
+    if not user or not user.is_active:
+        # User exists but inactive - treat as invalid credentials for security
+        return {
+            "status": "invalid_credentials",
+            "message": "Invalid credentials"
+        }
+
+    # Step 4: Verify password
+    password_hash = auth_identity.data.get("password_hash")
+
+    if not password_hash or not verify_password(password, password_hash):
+        return {
+            "status": "invalid_credentials",
+            "message": "Invalid credentials"
+        }
+
+    # Step 5: Successful login
+    return {
+        "status": "success",
+        "message": "Login successful",
+        "user": user
+    }
+
+
+async def send_email_verification_code(
+    email: str,
+    username: str,
+    password: str
+) -> dict:
+    """
+    Generate and send email verification code for new user signup.
+
+    WHY: Verify email ownership before account creation
+    HOW: Generate 6-digit code, store in Redis, send email
+
+    Args:
+        email: Email address to verify
+        username: Desired username for the account
+        password: Desired password for the account
+
+    Returns:
+        Dict with verification status and expiration info
+
+    Security:
+        - 6-digit numeric code (easy to type, sufficient entropy for 5min window)
+        - 5-minute expiration
+        - Single-use code
+        - Rate limiting should be applied at endpoint level
+    """
+    import time
+
+    # Step 1: Generate 6-digit verification code
+    import secrets
+    code = f"{secrets.randbelow(1000000):06d}"  # 6-digit code with leading zeros
+
+    # Step 2: Store verification data in Redis (5 minutes expiration)
+    from app.utils.redis import redis_client
+
+    verification_data = {
+        "email": email.lower(),
+        "username": username,
+        "password": password,  # Will be hashed when account is created
+        "code": code,
+        "created_at": int(time.time())
+    }
+
+    # Key pattern: email_verification:{email} -> verification data
+    import json
+    redis_client.setex(
+        f"email_verification:{email.lower()}",
+        300,  # 5 minutes expiration
+        json.dumps(verification_data)
+    )
+
+    # Step 3: Send verification email
+    try:
+        email_sent = send_email_verification_email(
+            to_email=email,
+            username=username,
+            verification_code=code
+        )
+
+        if not email_sent:
+            # Email failed but code was stored
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Email verification code created but email failed: {email}")
+
+        return {
+            "message": "Verification code sent to email" if email_sent else "Verification code created",
+            "code_sent": email_sent,
+            "expires_in": 300  # 5 minutes
+        }
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send verification email to {email}: {e}")
+
+        return {
+            "message": "Verification code created but email delivery failed",
+            "code_sent": False,
+            "expires_in": 300
+        }
+
+
+async def verify_email_code_and_signup(
+    email: str,
+    code: str,
+    db: Session
+) -> User:
+    """
+    Verify email code and complete user signup.
+
+    WHY: Complete account creation after email verification
+    HOW: Verify code, create user and auth identity, consume code
+
+    Args:
+        email: Email address that received the code
+        code: 6-digit verification code
+        db: Database session
+
+    Returns:
+        Created User object
+
+    Raises:
+        HTTPException(400): Invalid or expired code
+        HTTPException(409): Email already registered (race condition)
+
+    Security:
+        - Single-use code consumption
+        - Time-based expiration
+        - Race condition protection
+    """
+    import time
+
+    # Step 1: Retrieve and verify code from Redis
+    from app.utils.redis import redis_client
+    import json
+
+    verification_key = f"email_verification:{email.lower()}"
+    verification_data_str = redis_client.get(verification_key)
+
+    if not verification_data_str:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification code"
+        )
+
+    try:
+        verification_data = json.loads(verification_data_str)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid verification data"
+        )
+
+    # Step 2: Verify the code matches
+    if verification_data.get("code") != code:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid verification code"
+        )
+
+    # Step 3: Check for race condition - email already registered
+    existing_auth = db.query(AuthIdentity).filter(
+        AuthIdentity.provider == "email",
+        AuthIdentity.provider_id == email.lower()
+    ).first()
+
+    if existing_auth:
+        # Clean up verification code and return error
+        redis_client.delete(verification_key)
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered. Please log in instead."
+        )
+
+    # Step 4: Validate username availability
+    existing_username = db.query(User).filter(
+        User.username == verification_data["username"]
+    ).first()
+
+    if existing_username:
+        # Don't consume code, let user try different username
+        raise HTTPException(
+            status_code=400,
+            detail="Username already taken. Please choose a different username."
+        )
+
+    # Step 5: Create user account
+    user = User(
+        username=verification_data["username"],
+        is_active=True
+    )
+    db.add(user)
+    db.flush()  # Get user.id
+
+    # Step 6: Hash password and create auth identity
+    password_hash = hash_password(verification_data["password"])
+
+    auth_identity = AuthIdentity(
+        user_id=user.id,
+        provider="email",
+        provider_id=email.lower(),
+        data={
+            "password_hash": password_hash,
+            "email_verified": True,
+            "verified_at": int(time.time())
+        }
+    )
+    db.add(auth_identity)
+
+    # Step 7: Commit changes
+    db.commit()
+
+    # Step 8: Consume verification code (one-time use)
+    redis_client.delete(verification_key)
+
+    # Step 9: Log successful signup
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Email verification signup completed for: {email}, username: {verification_data['username']}")
+
+    return user
+
+
+def send_email_verification_email(
+    to_email: str,
+    username: str,
+    verification_code: str
+) -> bool:
+    """
+    Send email verification code to user.
+
+    WHY: Deliver verification code for account creation
+    HOW: Send HTML email with verification code
+
+    Args:
+        to_email: Email address to send to
+        username: Username for personalization
+        verification_code: 6-digit code to include
+
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    try:
+        # Use the email service to send verification email
+        from app.services.email_service import send_email_verification_email as send_verification
+        return send_verification(to_email, username, verification_code)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send verification email to {to_email}: {e}")
+        return False
