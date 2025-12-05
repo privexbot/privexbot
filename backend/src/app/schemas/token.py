@@ -667,6 +667,31 @@ class EmailVerificationRequestSchema(BaseModel):
     )
 
 
+class EmailLinkVerificationRequestSchema(BaseModel):
+    """
+    Request schema for sending email verification code for linking to existing account.
+
+    WHY: Send verification code to email before linking to authenticated user account
+    HOW: Used when existing user wants to add email authentication to their account
+
+    Example:
+        {
+            "email": "user@example.com",
+            "password": "SecurePass123!"
+        }
+    """
+    email: EmailStr = Field(
+        ...,
+        description="Email address to send verification code to"
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Password for the email authentication method"
+    )
+
+
 class EmailVerificationResponseSchema(BaseModel):
     """
     Response schema for email verification code request.

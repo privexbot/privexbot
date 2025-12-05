@@ -180,6 +180,39 @@ class AuthApiClient {
     await this.client.post(`/auth/${provider}/link`, data);
   }
 
+  /**
+   * Send email verification code for linking email to existing account
+   */
+  async sendEmailLinkVerification(data: {
+    email: string;
+    password: string;
+  }): Promise<{
+    message: string;
+    code_sent: boolean;
+    expires_in: number;
+  }> {
+    const response = await this.client.post("/auth/email/send-link-verification", data);
+    return response.data;
+  }
+
+  /**
+   * Verify email code and link email to existing account
+   */
+  async verifyEmailAndLink(data: {
+    email: string;
+    code: string;
+  }): Promise<void> {
+    await this.client.post("/auth/email/verify-and-link", data);
+  }
+
+  /**
+   * Link email/password to existing account (requires authentication)
+   * @deprecated Use sendEmailLinkVerification + verifyEmailAndLink instead
+   */
+  async linkEmail(data: { email: string; password: string }): Promise<void> {
+    await this.client.post("/auth/email/link", data);
+  }
+
   // ============================================================
   // USER PROFILE
   // ============================================================
@@ -255,6 +288,22 @@ class AuthApiClient {
    */
   async deleteAccount(): Promise<{ message: string; deleted_at: string }> {
     const response = await this.client.delete("/auth/me");
+    return response.data;
+  }
+
+  // ============================================================
+  // AUTH METHOD MANAGEMENT
+  // ============================================================
+
+  /**
+   * Unlink authentication method from current user's account
+   */
+  async unlinkAuthMethod(provider: string, providerId: string): Promise<{
+    message: string;
+    removed_provider: string;
+    removed_identifier: string;
+  }> {
+    const response = await this.client.delete(`/auth/auth-method/${provider}/${providerId}`);
     return response.data;
   }
 }

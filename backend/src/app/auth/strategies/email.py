@@ -1040,3 +1040,221 @@ def send_email_verification_email(
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to send verification email to {to_email}: {e}")
         return False
+
+
+async def send_email_link_verification_code(
+    email: str,
+    password: str,
+    user_id: str,
+    db: Session
+) -> dict:
+    """
+    Generate and send email verification code for linking email to existing account.
+
+    WHY: Verify email ownership before linking to user account
+    HOW: Generate 6-digit code, store in Redis, send email
+
+    Args:
+        email: Email address to verify and link
+        password: Password to set for the email auth
+        user_id: ID of existing user to link email to
+        db: Database session
+
+    Returns:
+        Dict with verification status and expiration info
+
+    Security:
+        - 6-digit numeric code (easy to type, sufficient entropy for 5min window)
+        - 5-minute expiration
+        - Single-use code
+        - Rate limiting should be applied at endpoint level
+    """
+    import time
+
+    # Step 1: Validate password strength
+    validate_password_strength(password)
+
+    # Step 2: Generate 6-digit verification code
+    import secrets
+    code = f"{secrets.randbelow(1000000):06d}"  # 6-digit code with leading zeros
+
+    # Step 3: Store verification data in Redis (5 minutes expiration)
+    from app.utils.redis import redis_client
+
+    verification_data = {
+        "email": email.lower(),
+        "password": password,  # Will be hashed when linked
+        "user_id": str(user_id),
+        "code": code,
+        "created_at": int(time.time())
+    }
+
+    # Key pattern: email_link_verification:{email} -> verification data
+    import json
+    redis_client.setex(
+        f"email_link_verification:{email.lower()}",
+        300,  # 5 minutes expiration
+        json.dumps(verification_data)
+    )
+
+    # Step 4: Send verification email
+    try:
+        email_sent = send_email_link_verification_email(
+            to_email=email,
+            verification_code=code
+        )
+
+        if not email_sent:
+            # Email failed but code was stored
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Email link verification code created but email failed: {email}")
+
+        return {
+            "message": "Verification code sent to email" if email_sent else "Verification code created",
+            "code_sent": email_sent,
+            "expires_in": 300  # 5 minutes
+        }
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send link verification email to {email}: {e}")
+
+        return {
+            "message": "Verification code created but email delivery failed",
+            "code_sent": False,
+            "expires_in": 300
+        }
+
+
+async def verify_email_code_and_link(
+    email: str,
+    code: str,
+    user_id: str,
+    db: Session
+):
+    """
+    Verify email code and link email to existing user account.
+
+    WHY: Complete email linking after email verification
+    HOW: Verify code, create AuthIdentity for email/password, consume code
+
+    Args:
+        email: Email address that received the code
+        code: 6-digit verification code
+        user_id: ID of user to link email to
+        db: Database session
+
+    Raises:
+        HTTPException(400): Invalid or expired code
+        HTTPException(409): Email already registered (race condition)
+
+    Security:
+        - Single-use code consumption
+        - Time-based expiration
+        - Race condition protection
+    """
+    import time
+
+    # Step 1: Retrieve and verify code from Redis
+    from app.utils.redis import redis_client
+    import json
+
+    verification_key = f"email_link_verification:{email.lower()}"
+    verification_data_str = redis_client.get(verification_key)
+
+    if not verification_data_str:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification code"
+        )
+
+    verification_data = json.loads(verification_data_str)
+
+    # Step 2: Verify code matches
+    if verification_data.get("code") != code:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid verification code"
+        )
+
+    # Step 3: Verify user_id matches
+    if verification_data.get("user_id") != str(user_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid verification request"
+        )
+
+    # Step 4: Check if email is already linked (race condition protection)
+    from app.models.auth_identity import AuthIdentity
+
+    existing_auth = db.query(AuthIdentity).filter(
+        AuthIdentity.provider == "email",
+        AuthIdentity.provider_id == email.lower()
+    ).first()
+
+    if existing_auth:
+        # Consume code even if duplicate
+        redis_client.delete(verification_key)
+        raise HTTPException(
+            status_code=409,
+            detail="Email is already linked to an account"
+        )
+
+    # Step 5: Hash password
+    from app.core.security import hash_password
+    password_hash = hash_password(verification_data["password"])
+
+    # Step 6: Create auth identity for linking
+    auth_identity = AuthIdentity(
+        user_id=user_id,
+        provider="email",
+        provider_id=email.lower(),
+        data={
+            "password_hash": password_hash,
+            "email_verified": True,
+            "verified_at": int(time.time()),
+            "linked_at": int(time.time())
+        }
+    )
+    db.add(auth_identity)
+
+    # Step 7: Commit changes
+    db.commit()
+
+    # Step 8: Consume verification code (one-time use)
+    redis_client.delete(verification_key)
+
+    # Step 9: Log successful linking
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Email {email} successfully linked to user {user_id}")
+
+
+def send_email_link_verification_email(
+    to_email: str,
+    verification_code: str
+) -> bool:
+    """
+    Send email verification for account linking.
+
+    WHY: Deliver verification code for email linking
+    HOW: Send HTML email with verification code
+
+    Args:
+        to_email: Email address to send to
+        verification_code: 6-digit code to include
+
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    try:
+        # Use the email service to send link verification email
+        from app.services.email_service import send_email_link_verification_email as send_link_verification
+        return send_link_verification(to_email, verification_code)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send link verification email to {to_email}: {e}")
+        return False

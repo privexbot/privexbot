@@ -52,6 +52,7 @@ from app.schemas.token import (
     CosmosWalletVerifyRequest,
     LinkWalletRequest,
     CosmosLinkWalletRequest,
+    LinkEmailRequest,
     Token,
     WalletChallengeResponse,
     PasswordResetRequestSchema,
@@ -61,6 +62,7 @@ from app.schemas.token import (
     SimpleMessageResponseSchema,
     EnhancedLoginResponseSchema,
     EmailVerificationRequestSchema,
+    EmailLinkVerificationRequestSchema,
     EmailVerificationResponseSchema,
     VerifyEmailCodeRequestSchema
 )
@@ -1228,6 +1230,275 @@ async def cosmos_link(
     )
 
     return {"message": "Wallet linked successfully"}
+
+
+# ============================================================
+# EMAIL LINKING
+# ============================================================
+
+@router.post("/email/link", response_model=Dict[str, str])
+async def email_link(
+    request: LinkEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Link email/password authentication to existing user account (requires authentication).
+
+    WHY: Allow wallet-only users to add email/password login option
+    HOW: Create new AuthIdentity with email provider for existing user
+
+    Flow:
+    1. Validate current user is authenticated
+    2. Check email is not already linked to any account
+    3. Validate password strength
+    4. Hash password and create AuthIdentity
+    5. Return success message
+
+    Args:
+        request: LinkEmailRequest with email and password
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Email already linked to another account
+        HTTPException(400): Email already linked to current account
+        HTTPException(400): Weak password
+
+    Example:
+        POST /auth/email/link
+        Headers: {"Authorization": "Bearer your_jwt_token"}
+        Body: {
+            "email": "alice@example.com",
+            "password": "SecurePass123!"
+        }
+
+    Security:
+    - Requires valid JWT token (existing account)
+    - Password strength validation
+    - Email uniqueness enforcement
+    - Secure password hashing with bcrypt
+    """
+    # Call email strategy for linking
+    await email.link_email_to_user(
+        user_id=current_user.id,
+        email=request.email,
+        password=request.password,
+        db=db
+    )
+
+    return {"message": "Email linked successfully"}
+
+
+@router.post("/email/send-link-verification", response_model=EmailVerificationResponseSchema)
+async def send_email_link_verification(
+    request: EmailLinkVerificationRequestSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Send email verification code for linking email to existing account.
+
+    WHY: Verify email ownership before allowing email linking to account
+    HOW: Generate verification code, store in Redis, send email
+
+    Flow:
+    1. Validate email isn't already linked to any account
+    2. Validate password strength
+    3. Generate verification code
+    4. Store link data in Redis (5min expiry)
+    5. Send verification email
+
+    Args:
+        request: EmailLinkVerificationRequestSchema with email, password
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        EmailVerificationResponseSchema with status
+
+    Raises:
+        HTTPException(400): Email already linked to account
+        HTTPException(400): Weak password
+        HTTPException(400): Email already linked to current user
+
+    Security:
+    - Requires valid JWT token (authenticated user)
+    - Email uniqueness validation
+    - Password strength validation
+    - Verification codes expire in 5 minutes
+    """
+    # Check if email is already linked to any account
+    from app.models.auth_identity import AuthIdentity
+
+    existing_auth = db.query(AuthIdentity).filter(
+        AuthIdentity.provider == "email",
+        AuthIdentity.provider_id == request.email
+    ).first()
+
+    if existing_auth:
+        if existing_auth.user_id == current_user.id:
+            raise HTTPException(
+                status_code=400,
+                detail="This email is already linked to your account"
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="This email is already linked to another account"
+            )
+
+    # Generate and send verification code for linking
+    result = await email.send_email_link_verification_code(
+        email=request.email,
+        password=request.password,
+        user_id=current_user.id,
+        db=db
+    )
+
+    return EmailVerificationResponseSchema(**result)
+
+
+@router.post("/email/verify-and-link", response_model=Dict[str, str])
+async def verify_email_and_link(
+    request: VerifyEmailCodeRequestSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email code and link email to existing user account.
+
+    WHY: Complete email linking after email verification
+    HOW: Verify code, create AuthIdentity for email/password
+
+    Flow:
+    1. Verify the email verification code
+    2. Retrieve stored linking data from Redis
+    3. Create AuthIdentity with hashed password
+    4. Clean up Redis verification data
+    5. Return success message
+
+    Args:
+        request: VerifyEmailCodeRequestSchema with email and verification code
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Invalid or expired verification code
+        HTTPException(400): Email already linked
+
+    Security:
+    - Requires valid JWT token (authenticated user)
+    - Verification code validation
+    - Secure password hashing
+
+    Example:
+        POST /auth/email/verify-and-link
+        Headers: {"Authorization": "Bearer your_jwt_token"}
+        Body: {"email": "alice@example.com", "code": "123456"}
+    """
+    # Verify code and link email to user
+    await email.verify_email_code_and_link(
+        email=request.email,
+        code=request.code,
+        user_id=current_user.id,
+        db=db
+    )
+
+    return {"message": "Email linked successfully"}
+
+
+# ============================================================
+# AUTHENTICATION METHOD UNLINKING
+# ============================================================
+
+@router.delete("/auth-method/{provider}/{provider_id}", response_model=Dict[str, str])
+async def unlink_auth_method(
+    provider: str,
+    provider_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Unlink an authentication method from user account.
+
+    WHY: Allow users to remove authentication methods they no longer want to use
+    HOW: Delete AuthIdentity record after validating user has other auth methods
+
+    Flow:
+    1. Validate user has more than one auth method
+    2. Find the specific auth identity to remove
+    3. Delete the auth identity record
+    4. Return success message
+
+    Args:
+        provider: Auth provider type (email, evm, solana, cosmos)
+        provider_id: Provider-specific identifier (email or wallet address)
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Cannot remove last auth method
+        HTTPException(404): Auth method not found
+        HTTPException(403): Auth method belongs to different user
+
+    Security:
+    - Requires valid JWT token (authenticated user)
+    - Prevents removal of last auth method
+    - Validates ownership of auth method
+
+    Example:
+        DELETE /auth/auth-method/email/alice@example.com
+        DELETE /auth/auth-method/evm/0x742d35Cc...
+        Headers: {"Authorization": "Bearer your_jwt_token"}
+    """
+    from app.models.auth_identity import AuthIdentity
+
+    # Step 1: Check user has multiple auth methods
+    user_auth_count = db.query(AuthIdentity).filter(
+        AuthIdentity.user_id == current_user.id
+    ).count()
+
+    if user_auth_count <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot remove last authentication method. Please add another authentication method first."
+        )
+
+    # Step 2: Find the specific auth identity
+    auth_identity = db.query(AuthIdentity).filter(
+        AuthIdentity.user_id == current_user.id,
+        AuthIdentity.provider == provider,
+        AuthIdentity.provider_id == provider_id
+    ).first()
+
+    if not auth_identity:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Authentication method not found: {provider} {provider_id}"
+        )
+
+    # Step 3: Delete the auth identity
+    db.delete(auth_identity)
+    db.commit()
+
+    # Step 4: Log the action
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"User {current_user.id} unlinked {provider} auth method: {provider_id}")
+
+    return {"message": f"{provider.capitalize()} authentication method removed successfully"}
+
+
 
 
 # ============================================================
