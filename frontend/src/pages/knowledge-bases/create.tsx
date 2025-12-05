@@ -2,6 +2,7 @@
  * Knowledge Base Creation Page
  *
  * Multi-source KB creation with real-time preview and validation
+ * Modern, responsive design with consistent branding
  */
 
 import { useState, useEffect } from "react";
@@ -51,6 +52,7 @@ import { KBPreviewModal } from "@/components/kb/KBPreviewModal";
 import { IntegrationsModal } from "@/components/kb/IntegrationsModal";
 import { KBModelConfig } from "@/components/kb/KBModelConfig";
 import { ComingSoon } from "@/components/ui/coming-soon";
+import { motion } from "framer-motion";
 
 export default function CreateKnowledgeBasePage() {
   const navigate = useNavigate();
@@ -463,443 +465,515 @@ export default function CreateKnowledgeBasePage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        {/* Header */}
-        <div className="mb-8">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/knowledge-bases")}
-            className="mb-4"
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16">
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 sm:mb-8"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Sources
-          </Button>
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/knowledge-bases")}
+              className="mb-4 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 font-manrope"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Knowledge Bases
+            </Button>
 
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">
-              Create Knowledge Source
-            </h1>
-            <p className="text-muted-foreground">
-              Add comprehensive knowledge sources to train your chatbots
-            </p>
-          </div>
-        </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 font-manrope">
+                Create Knowledge Base
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 font-manrope">
+                Add comprehensive knowledge sources to train your AI chatbots
+              </p>
+            </div>
+          </motion.div>
 
-        {/* Multi-Step Progress Stepper */}
-        <div className="mb-8">
-          <Stepper
-            steps={steps}
-            currentStep={stepperState.currentStep}
-            completedSteps={stepperState.completedSteps}
-            onStepClick={handleStepClick}
-            canNavigateToStep={canNavigateToStep}
-            className="mb-8"
-          />
-        </div>
+          {/* Multi-Step Progress Stepper */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-6 sm:mb-8"
+          >
+            <Stepper
+              steps={steps}
+              currentStep={stepperState.currentStep}
+              completedSteps={stepperState.completedSteps}
+              onStepClick={handleStepClick}
+              canNavigateToStep={canNavigateToStep}
+              className="mb-8"
+            />
+          </motion.div>
 
-        <div className="space-y-8">
-          {/* Step 1: Basic Information */}
-          {stepperState.currentStep === KBCreationStep.BASIC_INFO && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Basic Information</CardTitle>
-                <CardDescription>
-                  Configure your knowledge base settings
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Name *</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => handleFormChange("name", e.target.value)}
-                      placeholder="e.g., Product Documentation"
-                      className={formErrors.name ? "border-red-500" : ""}
-                    />
-                    {formErrors.name && (
-                      <p className="text-sm text-red-500">{formErrors.name}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="workspace">Workspace</Label>
-                    <div className="flex items-center space-x-2 p-3 border rounded-md bg-muted/50">
-                      <Database className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">
-                        {currentWorkspace?.name || "Loading..."}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        ({currentWorkspace?.description || "Current workspace"})
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) =>
-                      handleFormChange("description", e.target.value)
-                    }
-                    placeholder="Describe what this knowledge base contains..."
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <Label>Context *</Label>
-                  <RadioGroup
-                    value={formData.context}
-                    onValueChange={(value) => handleFormChange("context", value)}
-                    className="flex space-x-6"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="both" id="both" />
-                      <Label htmlFor="both">Both</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="chatbot" id="chatbot" />
-                      <Label htmlFor="chatbot">Chatbot</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="chatflow" id="chatflow" />
-                      <Label htmlFor="chatflow">Chatflow</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                <div className="flex justify-end mt-6">
-                  <Button
-                    onClick={proceedToNextStep}
-                    disabled={!formData.name.trim()}
-                  >
-                    Continue to Sources
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Step 2: Content Review & Editing */}
-          {stepperState.currentStep === KBCreationStep.CONTENT_REVIEW && (
-            <>
-              {/* Knowledge Sources */}
-              <Card>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="space-y-6 sm:space-y-8"
+          >
+            {/* Step 1: Basic Information */}
+            {stepperState.currentStep === KBCreationStep.BASIC_INFO && (
+              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BookOpen className="h-5 w-5" />
-                    Knowledge Sources
-                    <span className="text-sm text-muted-foreground">
-                      {draftSources.length} items • Multiple source types supported
-                    </span>
-                  </CardTitle>
-                  <CardDescription>
-                    Add content sources and extract their content. Use "Preview Content" to see what will be extracted, then "Approve & Add Source" to proceed.
+                  <CardTitle className="text-gray-900 dark:text-gray-100 font-manrope">Basic Information</CardTitle>
+                  <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    Configure your knowledge base settings
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  {/* Source Type Selection */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
-                    {sourceTypeOptions.map((option) => {
-                      const Icon = option.icon;
-                      const isActive = activeSourceType === option.type;
-                      const isAvailable = option.available;
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="name" className="text-gray-900 dark:text-gray-100 font-manrope">Name *</Label>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => handleFormChange("name", e.target.value)}
+                        placeholder="e.g., Product Documentation"
+                        className={`bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 ${formErrors.name ? "border-red-500 dark:border-red-400" : ""}`}
+                      />
+                      {formErrors.name && (
+                        <p className="text-sm text-red-600 dark:text-red-400 font-manrope">{formErrors.name}</p>
+                      )}
+                    </div>
 
-                      return (
-                        <Card
-                          key={option.type}
-                          className={`transition-colors ${
-                            isAvailable
-                              ? `cursor-pointer ${
-                                  isActive
-                                    ? "ring-2 ring-primary"
-                                    : "hover:bg-gray-50"
-                                }`
-                              : "opacity-60 cursor-not-allowed"
-                          }`}
-                          onClick={() => {
-                            if (isAvailable) {
-                              if (option.type === "integrations") {
-                                setShowIntegrationsModal(true);
-                              } else {
-                                setActiveSourceType(option.type);
-                              }
-                            }
-                          }}
-                        >
-                          <CardContent className="p-4 text-center">
-                            <div className="flex flex-col items-center space-y-2">
-                              <Icon
-                                className={`h-8 w-8 ${
-                                  isAvailable
-                                    ? "text-muted-foreground"
-                                    : "text-gray-400"
-                                }`}
-                              />
-                              <div>
-                                <h3
-                                  className={`font-medium ${
-                                    isAvailable ? "" : "text-gray-500"
-                                  }`}
-                                >
-                                  {option.title}
-                                </h3>
-                                <p
-                                  className={`text-xs ${
-                                    isAvailable
-                                      ? "text-muted-foreground"
-                                      : "text-gray-400"
-                                  }`}
-                                >
-                                  {option.description}
-                                </p>
-                                <p
-                                  className={`text-xs font-medium ${
-                                    isAvailable
-                                      ? "text-green-600"
-                                      : "text-orange-600"
-                                  }`}
-                                >
-                                  {option.subtitle}
-                                </p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                    <div className="space-y-3">
+                      <Label htmlFor="workspace" className="text-gray-900 dark:text-gray-100 font-manrope">Workspace</Label>
+                      <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                        <div className="p-1.5 bg-gray-100 dark:bg-gray-600 rounded-md">
+                          <Database className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                            {currentWorkspace?.name || "Loading..."}
+                          </span>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope truncate">
+                            {currentWorkspace?.description || "Current workspace"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Active Source Form */}
-                  {activeSourceType === SourceType.WEB && (
-                    <KBWebSourceForm
-                      onAdd={(sourceData) =>
-                        handleAddSource(SourceType.WEB, sourceData)
+                  <div className="space-y-3">
+                    <Label htmlFor="description" className="text-gray-900 dark:text-gray-100 font-manrope">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={formData.description}
+                      onChange={(e) =>
+                        handleFormChange("description", e.target.value)
                       }
-                      onCancel={() => setActiveSourceType(null)}
-                      context={formData.context as KBContext}
+                      placeholder="Describe what this knowledge base contains..."
+                      rows={4}
+                      className="bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 resize-none"
                     />
-                  )}
+                  </div>
 
-                  {activeSourceType === SourceType.FILE && (
-                    <ComingSoon
-                      title="File Upload"
-                      description="Upload documents, PDFs, spreadsheets and other files"
-                      icon={<FileText className="h-8 w-8" />}
-                      features={[
-                        "PDF document processing",
-                        "Word document support",
-                        "Excel and CSV parsing",
-                        "Drag & drop interface",
-                        "OCR for scanned documents",
-                      ]}
-                    />
-                  )}
-
-                  {activeSourceType === SourceType.TEXT && (
-                    <ComingSoon
-                      title="Text Input"
-                      description="Add content by directly pasting or typing text"
-                      icon={<Type className="h-8 w-8" />}
-                      features={[
-                        "Rich text formatting",
-                        "Markdown support",
-                        "Content templates",
-                        "Auto-save drafts",
-                      ]}
-                    />
-                  )}
-
-                  {activeSourceType === "integrations" && (
-                    <ComingSoon
-                      title="Cloud Integrations"
-                      description="Connect and sync with your favorite cloud services"
-                      icon={<Cloud className="h-8 w-8" />}
-                      features={[
-                        "Notion workspace sync",
-                        "Google Docs integration",
-                        "Google Sheets import",
-                        "Slack conversations",
-                        "Microsoft 365 documents",
-                      ]}
-                    />
-                  )}
-
-                  {/* Source List */}
-                  <KBSourceList sources={draftSources} />
-
-                  {/* Preview Data Available Notice */}
-                  {previewData && previewData.pages.length > 0 && (
-                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm font-medium text-blue-900">
-                          Content Extracted Successfully
-                        </span>
+                  <div className="space-y-4">
+                    <Label className="text-gray-900 dark:text-gray-100 font-manrope">Context *</Label>
+                    <RadioGroup
+                      value={formData.context}
+                      onValueChange={(value) => handleFormChange("context", value)}
+                      className="flex flex-col sm:flex-row gap-4"
+                    >
+                      <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <RadioGroupItem value="both" id="both" className="border-gray-300 dark:border-gray-600" />
+                        <Label htmlFor="both" className="flex-1 text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                          Both Contexts
+                        </Label>
                       </div>
-                      <p className="text-xs text-blue-700 mt-1">
-                        {previewData.pages.length} page(s) ready for approval. Click "Continue to Approval" to review and approve this content.
-                      </p>
-                    </div>
-                  )}
+                      <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <RadioGroupItem value="chatbot" id="chatbot" className="border-gray-300 dark:border-gray-600" />
+                        <Label htmlFor="chatbot" className="flex-1 text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                          Chatbot Only
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <RadioGroupItem value="chatflow" id="chatflow" className="border-gray-300 dark:border-gray-600" />
+                        <Label htmlFor="chatflow" className="flex-1 text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                          Chatflow Only
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
 
-                  {formErrors.sources && (
-                    <p className="text-sm text-red-500 mt-2">
-                      {formErrors.sources}
-                    </p>
-                  )}
-
-                  <div className="flex justify-end mt-6">
+                  <div className="flex justify-end pt-4">
                     <Button
                       onClick={proceedToNextStep}
-                      disabled={draftSources.length === 0 && (!previewData || previewData.pages.length === 0)}
+                      disabled={!formData.name.trim()}
+                      className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
                     >
-                      Continue to Approval ({(() => {
-                        // Count pages from ALL sources, not just global previewData
-                        const totalPages = (draftSources as any[]).reduce((total: number, source: any) => {
-                          const sourcePages = source.metadata?.previewPages?.length || 0;
-                          return total + sourcePages;
-                        }, 0);
-                        return totalPages || (draftSources as any[]).length;
-                      })()} items)
+                      Continue to Sources
                     </Button>
                   </div>
                 </CardContent>
               </Card>
-            </>
-          )}
+            )}
 
-          {/* Step 3: Content Approval */}
-          {stepperState.currentStep === KBCreationStep.CONTENT_APPROVAL && (
-            <>
-              <KBContentApproval
-                onApprove={(approvedSources) => {
-                  setStepperState(prev => ({
-                    ...prev,
-                    approvedSources: [...prev.approvedSources, ...approvedSources],
-                  }));
-                }}
-              />
-              <div className="flex justify-between mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.CONTENT_REVIEW as KBCreationStep }))}
-                >
-                  Back to Sources
-                </Button>
-                <Button
-                  onClick={proceedToNextStep}
-                  disabled={stepperState.approvedSources.length === 0 && (!previewData || previewData.pages.length === 0)}
-                >
-                  Continue to Chunking
-                </Button>
-              </div>
-            </>
-          )}
+            {/* Step 2: Content Review & Editing */}
+            {stepperState.currentStep === KBCreationStep.CONTENT_REVIEW && (
+              <>
+                {/* Knowledge Sources */}
+                <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-gray-100 font-manrope">
+                      <BookOpen className="h-5 w-5" />
+                      Knowledge Sources
+                      <span className="text-sm font-normal text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+                        {draftSources.length} sources
+                      </span>
+                    </CardTitle>
+                    <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                      Add content sources and extract their content. Multiple source types supported for comprehensive knowledge bases.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {/* Source Type Selection */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+                      {sourceTypeOptions.map((option) => {
+                        const Icon = option.icon;
+                        const isActive = activeSourceType === option.type;
+                        const isAvailable = option.available;
 
-          {/* Step 4: Chunking Configuration */}
-          {stepperState.currentStep === KBCreationStep.CHUNKING_CONFIG && (
-            <>
-              <div className="space-y-6">
-                <KBChunkingConfig
-                  onConfigChange={(config) => {
-                    // Update stepper state to enable next step
+                        return (
+                          <motion.div
+                            key={option.type}
+                            whileHover={{ y: isAvailable ? -2 : 0 }}
+                            whileTap={{ scale: isAvailable ? 0.98 : 1 }}
+                          >
+                            <Card
+                              className={`transition-all duration-200 ${
+                                isAvailable
+                                  ? `cursor-pointer ${
+                                      isActive
+                                        ? "ring-2 ring-blue-500 dark:ring-blue-400 border-blue-200 dark:border-blue-600 bg-blue-50 dark:bg-blue-950/30"
+                                        : "hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-800"
+                                    }`
+                                  : "opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50"
+                              } border border-gray-200 dark:border-gray-700 rounded-lg`}
+                              onClick={() => {
+                                if (isAvailable) {
+                                  if (option.type === "integrations") {
+                                    setShowIntegrationsModal(true);
+                                  } else {
+                                    setActiveSourceType(option.type);
+                                  }
+                                }
+                              }}
+                            >
+                              <CardContent className="p-4 text-center">
+                                <div className="flex flex-col items-center space-y-3">
+                                  <div className="p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                    <Icon
+                                      className={`h-6 w-6 ${
+                                        isAvailable
+                                          ? isActive
+                                            ? "text-blue-600 dark:text-blue-400"
+                                            : "text-gray-600 dark:text-gray-400"
+                                          : "text-gray-400 dark:text-gray-500"
+                                      }`}
+                                    />
+                                  </div>
+                                  <div>
+                                    <h3
+                                      className={`font-semibold font-manrope ${
+                                        isAvailable ? "text-gray-900 dark:text-gray-100" : "text-gray-500 dark:text-gray-500"
+                                      }`}
+                                    >
+                                      {option.title}
+                                    </h3>
+                                    <p
+                                      className={`text-xs font-manrope mt-1 ${
+                                        isAvailable
+                                          ? "text-gray-600 dark:text-gray-400"
+                                          : "text-gray-400 dark:text-gray-500"
+                                      }`}
+                                    >
+                                      {option.description}
+                                    </p>
+                                    <p
+                                      className={`text-xs font-medium font-manrope mt-1 ${
+                                        isAvailable
+                                          ? "text-green-600 dark:text-green-400"
+                                          : "text-orange-600 dark:text-orange-400"
+                                      }`}
+                                    >
+                                      {option.subtitle}
+                                    </p>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Active Source Form */}
+                    {activeSourceType === SourceType.WEB && (
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
+                        <KBWebSourceForm
+                          onAdd={(sourceData) =>
+                            handleAddSource(SourceType.WEB, sourceData)
+                          }
+                          onCancel={() => setActiveSourceType(null)}
+                          context={formData.context as KBContext}
+                        />
+                      </div>
+                    )}
+
+                    {activeSourceType === SourceType.FILE && (
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
+                        <ComingSoon
+                          title="File Upload"
+                          description="Upload documents, PDFs, spreadsheets and other files"
+                          icon={<FileText className="h-8 w-8" />}
+                          features={[
+                            "PDF document processing",
+                            "Word document support",
+                            "Excel and CSV parsing",
+                            "Drag & drop interface",
+                            "OCR for scanned documents",
+                          ]}
+                        />
+                      </div>
+                    )}
+
+                    {activeSourceType === SourceType.TEXT && (
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
+                        <ComingSoon
+                          title="Text Input"
+                          description="Add content by directly pasting or typing text"
+                          icon={<Type className="h-8 w-8" />}
+                          features={[
+                            "Rich text formatting",
+                            "Markdown support",
+                            "Content templates",
+                            "Auto-save drafts",
+                          ]}
+                        />
+                      </div>
+                    )}
+
+                    {activeSourceType === "integrations" && (
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
+                        <ComingSoon
+                          title="Cloud Integrations"
+                          description="Connect and sync with your favorite cloud services"
+                          icon={<Cloud className="h-8 w-8" />}
+                          features={[
+                            "Notion workspace sync",
+                            "Google Docs integration",
+                            "Google Sheets import",
+                            "Slack conversations",
+                            "Microsoft 365 documents",
+                          ]}
+                        />
+                      </div>
+                    )}
+
+                    {/* Source List */}
+                    <KBSourceList sources={draftSources} />
+
+                    {/* Preview Data Available Notice */}
+                    {previewData && previewData.pages.length > 0 && (
+                      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                          <div>
+                            <span className="text-sm font-medium text-blue-900 dark:text-blue-100 font-manrope">
+                              Content Extracted Successfully
+                            </span>
+                            <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope mt-1">
+                              {previewData.pages.length} page(s) ready for approval. Click "Continue to Approval" to review and approve this content.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {formErrors.sources && (
+                      <p className="text-sm text-red-600 dark:text-red-400 font-manrope mt-2">
+                        {formErrors.sources}
+                      </p>
+                    )}
+
+                    <div className="flex justify-end pt-6">
+                      <Button
+                        onClick={proceedToNextStep}
+                        disabled={draftSources.length === 0 && (!previewData || previewData.pages.length === 0)}
+                        className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
+                      >
+                        Continue to Approval ({(() => {
+                          // Count pages from ALL sources, not just global previewData
+                          const totalPages = (draftSources as any[]).reduce((total: number, source: any) => {
+                            const sourcePages = source.metadata?.previewPages?.length || 0;
+                            return total + sourcePages;
+                          }, 0);
+                          return totalPages || (draftSources as any[]).length;
+                        })()} items)
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
+            {/* Step 3: Content Approval */}
+            {stepperState.currentStep === KBCreationStep.CONTENT_APPROVAL && (
+              <>
+                <KBContentApproval
+                  onApprove={(approvedSources) => {
                     setStepperState(prev => ({
                       ...prev,
-                      chunkingConfig: {
-                        strategy: config.strategy,
-                        chunk_size: config.chunk_size,
-                        chunk_overlap: config.chunk_overlap,
-                      }
+                      approvedSources: [...prev.approvedSources, ...approvedSources],
                     }));
                   }}
                 />
-                <KBChunkingPreview />
-              </div>
-              <div className="flex justify-between mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.CONTENT_APPROVAL as KBCreationStep }))}
-                >
-                  Back to Approval
-                </Button>
-                <Button
-                  onClick={proceedToNextStep}
-                  disabled={stepperState.chunkingConfig === null}
-                >
-                  Continue to Model Config
-                </Button>
-              </div>
-            </>
-          )}
-
-          {/* Step 5: Model Configuration */}
-          {stepperState.currentStep === KBCreationStep.MODEL_CONFIG && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="h-5 w-5" />
-                  Model & Vector Store Configuration
-                </CardTitle>
-                <CardDescription>
-                  Configure embedding models and vector store settings
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <KBModelConfig />
-                <div className="flex justify-between mt-6">
+                <div className="flex justify-between pt-6">
                   <Button
                     variant="outline"
-                    onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.CHUNKING_CONFIG as KBCreationStep }))}
+                    onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.CONTENT_REVIEW as KBCreationStep }))}
+                    className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                   >
-                    Back to Chunking
+                    Back to Sources
                   </Button>
                   <Button
                     onClick={proceedToNextStep}
-                    disabled={stepperState.modelConfig === null}
+                    disabled={stepperState.approvedSources.length === 0 && (!previewData || previewData.pages.length === 0)}
+                    className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
                   >
-                    Continue to Finalize
+                    Continue to Chunking
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              </>
+            )}
 
-          {/* Step 6: Finalization */}
-          {stepperState.currentStep === KBCreationStep.FINALIZATION && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Finalize Knowledge Base</CardTitle>
-                <CardDescription>
-                  Review and create your knowledge base
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="p-4 border rounded-lg bg-muted/50">
-                    <h4 className="font-medium mb-2">Configuration Summary</h4>
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <p>• Name: {formData.name}</p>
-                      <p>• Context: {formData.context}</p>
-                      <p>• Sources: {draftSources.length} items</p>
-                      <p>• Approved Sources: {stepperState.approvedSources.length} items</p>
-                    </div>
-                  </div>
+            {/* Step 4: Chunking Configuration */}
+            {stepperState.currentStep === KBCreationStep.CHUNKING_CONFIG && (
+              <>
+                <div className="space-y-6">
+                  <KBChunkingConfig
+                    onConfigChange={(config) => {
+                      // Update stepper state to enable next step
+                      setStepperState(prev => ({
+                        ...prev,
+                        chunkingConfig: {
+                          strategy: config.strategy,
+                          chunk_size: config.chunk_size,
+                          chunk_overlap: config.chunk_overlap,
+                        }
+                      }));
+                    }}
+                  />
+                  <KBChunkingPreview />
+                </div>
+                <div className="flex justify-between pt-6">
+                  <Button
+                    variant="outline"
+                    onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.CONTENT_APPROVAL as KBCreationStep }))}
+                    className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    Back to Approval
+                  </Button>
+                  <Button
+                    onClick={proceedToNextStep}
+                    disabled={stepperState.chunkingConfig === null}
+                    className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
+                  >
+                    Continue to Model Config
+                  </Button>
+                </div>
+              </>
+            )}
 
-                  <div className="flex justify-between">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancel
+            {/* Step 5: Model Configuration */}
+            {stepperState.currentStep === KBCreationStep.MODEL_CONFIG && (
+              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-gray-100 font-manrope">
+                    <Brain className="h-5 w-5" />
+                    Model & Vector Store Configuration
+                  </CardTitle>
+                  <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    Configure embedding models and vector store settings
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <KBModelConfig />
+                  <div className="flex justify-between pt-6">
+                    <Button
+                      variant="outline"
+                      onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.CHUNKING_CONFIG as KBCreationStep }))}
+                      className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    >
+                      Back to Chunking
                     </Button>
+                    <Button
+                      onClick={proceedToNextStep}
+                      disabled={stepperState.modelConfig === null}
+                      className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
+                    >
+                      Continue to Finalize
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-                    <div className="flex gap-3">
+            {/* Step 6: Finalization */}
+            {stepperState.currentStep === KBCreationStep.FINALIZATION && (
+              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-gray-900 dark:text-gray-100 font-manrope">Finalize Knowledge Base</CardTitle>
+                  <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    Review and create your knowledge base
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    <div className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                      <h4 className="font-semibold mb-3 text-gray-900 dark:text-gray-100 font-manrope">Configuration Summary</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400 font-manrope">Name:</span>
+                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">{formData.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400 font-manrope">Context:</span>
+                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">{formData.context}</span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400 font-manrope">Sources:</span>
+                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">{draftSources.length} items</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400 font-manrope">Approved:</span>
+                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">{stepperState.approvedSources.length} items</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row justify-between gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={handleCancel}
+                        className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
+                        Cancel
+                      </Button>
+
                       <Button
                         onClick={handleCreate}
                         disabled={isCreating || draftSources.length === 0}
-                        className="min-w-[140px]"
+                        className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all min-w-[160px]"
                       >
                         {isCreating
                           ? "Creating..."
@@ -907,20 +981,20 @@ export default function CreateKnowledgeBasePage() {
                       </Button>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            )}
+          </motion.div>
+
+          {/* Preview Modal */}
+          <KBPreviewModal open={showPreview} onOpenChange={setShowPreview} />
+
+          {/* Integrations Modal */}
+          <IntegrationsModal
+            open={showIntegrationsModal}
+            onOpenChange={setShowIntegrationsModal}
+          />
         </div>
-
-        {/* Preview Modal */}
-        <KBPreviewModal open={showPreview} onOpenChange={setShowPreview} />
-
-        {/* Integrations Modal */}
-        <IntegrationsModal
-          open={showIntegrationsModal}
-          onOpenChange={setShowIntegrationsModal}
-        />
       </div>
     </DashboardLayout>
   );

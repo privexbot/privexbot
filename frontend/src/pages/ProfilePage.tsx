@@ -534,7 +534,7 @@ export function ProfilePage() {
   if (!isPersonalOrg) {
     return (
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto py-8 px-4">
+        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
           <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800">
             <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
             <AlertDescription className="text-yellow-700 dark:text-yellow-300 font-manrope">
@@ -555,7 +555,7 @@ export function ProfilePage() {
   if (isLoadingProfile) {
     return (
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto py-8 px-4">
+        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
           <div className="space-y-6">
             {/* Header Skeleton */}
             <div className="animate-pulse">
@@ -585,7 +585,7 @@ export function ProfilePage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+      <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-8">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100 font-manrope">

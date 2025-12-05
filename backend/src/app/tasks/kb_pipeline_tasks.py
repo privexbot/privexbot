@@ -429,10 +429,14 @@ def process_web_kb_task(
                         page_metadata = scraped_page.get("metadata") if isinstance(scraped_page, dict) else scraped_page.metadata
                         serialized_metadata = serialize_metadata(page_metadata) if page_metadata else {}
 
+                        # Handle both dict and object formats for scraped_page
+                        title = scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title
+                        scraped_at = scraped_page.get("scraped_at") if isinstance(scraped_page, dict) else scraped_page.scraped_at
+
                         document = Document(
                             kb_id=UUID(kb_id),
                             workspace_id=kb.workspace_id,
-                            name=scraped_page.title or page_url,
+                            name=title or page_url,
                             source_type="web_scraping",
                             source_url=page_url,
                             content_full=page_content,  # ALWAYS store full content
@@ -440,7 +444,7 @@ def process_web_kb_task(
                             word_count=len(page_content.split()) if page_content else 0,
                             character_count=len(page_content) if page_content else 0,
                             source_metadata={
-                                "scraped_at": scraped_page.scraped_at.isoformat() if scraped_page.scraped_at else None,
+                                "scraped_at": scraped_at.isoformat() if scraped_at else None,
                                 "content_length": len(page_content),
                                 "metadata": serialized_metadata
                             },
