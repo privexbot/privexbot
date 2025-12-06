@@ -235,6 +235,7 @@ export const kbDraftApi = {
     chunk_size: number;
     chunk_overlap: number;
     include_metrics?: boolean;
+    custom_separators?: string[];
   }): Promise<any> {
     try {
       const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params);
@@ -876,26 +877,62 @@ export const kbApi = {
   },
 
   /**
-   * Retry failed KB processing
+   * Enhanced retry for failed KB processing with complete state restoration
    * POST /api/v1/kbs/{kb_id}/retry-processing
    */
-  async retryProcessing(kbId: string): Promise<{
+  async retryProcessing(kbId: string, options?: {
+    config_overrides?: Record<string, any>;
+    preserve_existing_chunks?: boolean;
+    retry_stages?: string[];
+  }): Promise<{
     pipeline_id: string;
     kb_id: string;
     task_id: string;
     status: string;
     message: string;
-    note: string;
+    backup_id?: string;
+    cleanup_stats?: {
+      chunks_deleted: number;
+      documents_updated: number;
+      qdrant_vectors_deleted: number;
+      errors: string[];
+    };
+    retry_features?: string[];
+    enhanced_retry?: boolean;
+    kb_name?: string;
+    configuration_overrides_applied?: boolean;
+    note?: string;
   }> {
     try {
+      const requestBody = options ? {
+        config_overrides: options.config_overrides,
+        preserve_existing_chunks: options.preserve_existing_chunks || false,
+        retry_stages: options.retry_stages
+      } : {};
+
       const response = await apiClient.post<{
         pipeline_id: string;
         kb_id: string;
         task_id: string;
         status: string;
         message: string;
-        note: string;
-      }>(`/kbs/${kbId}/retry-processing`);
+        backup_id?: string;
+        cleanup_stats?: {
+          chunks_deleted: number;
+          documents_updated: number;
+          qdrant_vectors_deleted: number;
+          errors: string[];
+        };
+        retry_features?: string[];
+        enhanced_retry?: boolean;
+        kb_name?: string;
+        configuration_overrides_applied?: boolean;
+        retry_stages?: string[];
+        preserve_existing_chunks?: boolean;
+        original_retry_options?: Record<string, any>;
+        note?: string;
+      }>(`/kbs/${kbId}/retry-processing`, requestBody);
+
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

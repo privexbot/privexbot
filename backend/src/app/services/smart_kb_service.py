@@ -178,7 +178,19 @@ class SmartKBService:
         print(f"[DEBUG] Smart KB Service - user_chunk_size: {user_chunk_size}")
         print(f"[DEBUG] Smart KB Service - user_chunk_overlap: {user_chunk_overlap}")
 
-        # If user has explicit preferences, use them
+        # Special handling for no_chunking strategies - size/overlap are irrelevant
+        if user_strategy in ("no_chunking", "full_content"):
+            print(f"[DEBUG] Smart KB Service - Using NO_CHUNKING strategy: {user_strategy}")
+            return ChunkingDecision(
+                strategy=user_strategy,
+                chunk_size=len(content),  # Full content size
+                chunk_overlap=0,  # No overlap for single chunk
+                user_preference=True,
+                adaptive_suggestion="N/A - no chunking strategy",
+                reasoning=f"No chunking strategy selected: {user_strategy}"
+            )
+
+        # If user has explicit preferences for other strategies, use them
         if user_strategy and user_chunk_size and user_chunk_overlap:
             print(f"[DEBUG] Smart KB Service - Using FULL user preferences: strategy={user_strategy}, size={user_chunk_size}, overlap={user_chunk_overlap}")
             return ChunkingDecision(

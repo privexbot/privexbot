@@ -31,6 +31,63 @@ router = APIRouter(prefix="/kbs", tags=["knowledge_bases"])
 
 
 # ========================================
+# HELPER FUNCTIONS
+# ========================================
+
+def validate_kb_not_deleting(kb: KnowledgeBase) -> None:
+    """
+    Validate that KB is not in deleting state.
+
+    WHY: Prevent operations on soft-deleted KBs to avoid race conditions
+    HOW: Check status and raise HTTP 410 Gone if deleting
+
+    Args:
+        kb: KnowledgeBase instance
+
+    Raises:
+        HTTPException: 410 if KB is being deleted, 404 if KB is None
+    """
+    if not kb:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found"
+        )
+
+    if kb.status == "deleting":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "message": f"Knowledge base '{kb.name}' is being deleted",
+                "kb_id": str(kb.id),
+                "status": "deleting",
+                "note": "This operation is not available during deletion"
+            }
+        )
+
+
+def get_kb_with_deletion_check(kb_id: UUID, db: Session) -> KnowledgeBase:
+    """
+    Get KB and ensure it's not being deleted.
+
+    Args:
+        kb_id: KB UUID
+        db: Database session
+
+    Returns:
+        KnowledgeBase instance
+
+    Raises:
+        HTTPException: 404 or 410 based on KB state
+    """
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id
+    ).first()
+
+    validate_kb_not_deleting(kb)
+    return kb
+
+
+# ========================================
 # REQUEST/RESPONSE MODELS
 # ========================================
 
@@ -146,6 +203,9 @@ async def list_kbs(
             )
         query = query.filter(KnowledgeBase.context == context)
 
+    # SAFETY FILTER: Hide deleting KBs from user list (soft delete behavior)
+    query = query.filter(KnowledgeBase.status != "deleting")
+
     # Order by most recent
     kbs = query.order_by(KnowledgeBase.created_at.desc()).all()
 
@@ -175,6 +235,10 @@ async def get_kb(
     """
     Get detailed KB information.
 
+    ENHANCED SAFETY:
+    - Blocks access to deleting KBs (HTTP 410 Gone)
+    - Prevents race conditions during deletion
+
     ACCESS CONTROL:
     - User must be in same organization as KB's workspace
 
@@ -182,15 +246,8 @@ async def get_kb(
         Detailed KB information including configuration
     """
 
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id
-    ).first()
-
-    if not kb:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Knowledge base not found"
-        )
+    # SAFETY CHECK: Prevent access to deleting KBs
+    kb = get_kb_with_deletion_check(kb_id, db)
 
     # Note: Access control simplified - KB access already validated at workspace level
     # TODO: Add proper workspace membership check if needed
@@ -222,16 +279,22 @@ async def delete_kb(
     """
     Delete a KB and all associated data.
 
+    ENHANCED IMPLEMENTATION:
+    - IMMEDIATE: Soft delete (mark as "deleting") for instant UI feedback
+    - BACKGROUND: Full cleanup of Qdrant and hard database deletion
+
     ACCESS CONTROL:
     - User must be in same organization
     - Only creator or org admin can delete (future: add role check)
 
-    IMPORTANT:
-    - Queues background task to delete Qdrant collection
-    - Immediately deletes PostgreSQL records (CASCADE)
+    FLOW:
+    1. Validate KB exists and user has access
+    2. IMMEDIATELY mark KB as "deleting" status
+    3. Queue background task for complete cleanup
+    4. Return success - user sees KB removed instantly
 
     Returns:
-        Success message
+        Success message with immediate deletion confirmation
     """
 
     kb = db.query(KnowledgeBase).filter(
@@ -244,22 +307,61 @@ async def delete_kb(
             detail="Knowledge base not found"
         )
 
+    # Prevent deletion of already deleting KBs
+    if kb.status == "deleting":
+        return {
+            "message": f"KB '{kb.name}' is already being deleted",
+            "kb_id": str(kb_id),
+            "status": "already_deleting"
+        }
+
     # Note: Access control simplified - KB access already validated at workspace level
     # TODO: Add proper workspace membership check if needed
 
-    # Queue background cleanup task (delete Qdrant collection)
-    from app.tasks.kb_maintenance_tasks import manual_cleanup_kb_task
+    try:
+        # STEP 1: IMMEDIATE SOFT DELETE
+        # Mark KB as deleting so it disappears from user's view instantly
+        kb.status = "deleting"
+        kb.error_message = f"Deletion initiated by {current_user.email} at {datetime.utcnow().isoformat()}"
+        kb.updated_at = datetime.utcnow()
 
-    manual_cleanup_kb_task.apply_async(
-        kwargs={"kb_id": str(kb_id)},
-        queue="low_priority"
-    )
+        # Commit immediately - user sees deletion right away
+        db.commit()
 
-    return {
-        "message": f"KB '{kb.name}' deletion queued",
-        "kb_id": str(kb_id),
-        "note": "Qdrant collection deletion is processing in background"
-    }
+        print(f"✅ KB {kb_id} marked as deleting by user {current_user.email}")
+
+        # STEP 2: QUEUE BACKGROUND CLEANUP
+        # Background task will handle Qdrant cleanup + hard database deletion
+        from app.tasks.kb_maintenance_tasks import manual_cleanup_kb_task
+
+        task = manual_cleanup_kb_task.apply_async(
+            kwargs={
+                "kb_id": str(kb_id),
+                "initiated_by": current_user.email,
+                "deleted_at": datetime.utcnow().isoformat()
+            },
+            queue="low_priority"
+        )
+
+        print(f"🚀 Queued background cleanup task {task.id} for KB {kb_id}")
+
+        return {
+            "message": f"KB '{kb.name}' has been deleted",
+            "kb_id": str(kb_id),
+            "status": "deleted",
+            "cleanup_task_id": task.id,
+            "note": "External resources are being cleaned up in the background"
+        }
+
+    except Exception as e:
+        # Rollback soft delete if background task queuing fails
+        db.rollback()
+        print(f"❌ Failed to delete KB {kb_id}: {str(e)}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete KB: {str(e)}"
+        )
 
 
 # ========================================
@@ -313,15 +415,8 @@ async def reindex_kb(
         }
     """
 
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id
-    ).first()
-
-    if not kb:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Knowledge base not found"
-        )
+    # SAFETY CHECK: Prevent reindexing of deleting KBs
+    kb = get_kb_with_deletion_check(kb_id, db)
 
     # Note: Access control simplified - KB access already validated at workspace level
     # TODO: Add proper workspace membership check if needed
@@ -394,41 +489,55 @@ async def retry_kb_processing(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Retry failed KB processing.
+    Enhanced retry for failed KB processing with complete state restoration.
 
-    WHY: Re-trigger pipeline for failed KB without recreating records
-    HOW: Start new Celery task with existing KB configuration
+    WHY:
+    - Preserve original draft data including content approvals and edits
+    - Complete state cleanup before retry to prevent corruption
+    - Configuration preservation and restoration
+    - Intelligent source reconstruction
+
+    HOW:
+    - Create backup of original KB state and configurations
+    - Clean up all partial chunks, documents, and Qdrant vectors
+    - Recreate draft with preserved user modifications
+    - Execute retry with enhanced error recovery
 
     ACCESS CONTROL:
     - User must be in same organization as KB's workspace
     - Only retry KBs in failed/error state
 
-    FLOW:
+    ENHANCED FLOW:
     1. Verify KB exists and user has access
     2. Check KB is in retryable state (failed/error)
-    3. Generate new pipeline ID
-    4. Update KB status to processing
-    5. Queue retry task with existing configuration
-    6. Return new pipeline ID for monitoring
+    3. Create backup of current state with all configurations
+    4. Clean up partial chunks, documents, and Qdrant vectors
+    5. Recreate draft from backup with user modifications preserved
+    6. Queue retry task with complete configuration restoration
+    7. Return enhanced monitoring details
+
+    FEATURES:
+    - ✅ Draft data backup and restoration
+    - ✅ Complete state cleanup (PostgreSQL + Qdrant)
+    - ✅ Configuration preservation and merging
+    - ✅ Source reconstruction with user modifications
+    - ✅ Enhanced error recovery and logging
 
     Returns:
         {
             "pipeline_id": str,
             "kb_id": str,
             "status": "processing",
-            "message": str
+            "message": str,
+            "backup_id": str,
+            "cleanup_stats": dict,
+            "retry_features": list,
+            "enhanced_retry": true
         }
     """
 
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id
-    ).first()
-
-    if not kb:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Knowledge base not found"
-        )
+    # SAFETY CHECK: Prevent retry on deleting KBs AND get KB safely
+    kb = get_kb_with_deletion_check(kb_id, db)
 
     # Note: Access control simplified - KB access already validated at workspace level
     # TODO: Add proper workspace membership check if needed
@@ -440,75 +549,54 @@ async def retry_kb_processing(
             detail=f"Cannot retry KB with status '{kb.status}'. Only failed KBs can be retried."
         )
 
-    # Generate new pipeline ID
-    import uuid
-    new_pipeline_id = str(uuid.uuid4())
-
-    # Update KB status to processing
-    kb.status = "processing"
-    kb.error_message = None
-    db.commit()
-
-    # Handle configuration for retry with optional overrides
-    kb_config = kb.config.copy() if kb.config else {}
-
-    # Apply configuration overrides if provided
+    # Extract configuration overrides for enhanced retry
+    config_overrides = None
     if retry_options and retry_options.config_overrides:
-        # Merge overrides while preserving existing config
-        for key, value in retry_options.config_overrides.items():
-            if isinstance(value, dict) and isinstance(kb_config.get(key), dict):
-                # Deep merge for nested dictionaries
-                kb_config[key] = {**kb_config[key], **value}
-            else:
-                kb_config[key] = value
+        config_overrides = retry_options.config_overrides
 
-    # Update KB configuration with any overrides
-    if retry_options and retry_options.config_overrides:
-        kb.config = kb_config
-        kb.updated_at = datetime.utcnow()
-        db.commit()
+    try:
+        # Execute enhanced retry with complete state management
+        from app.services.kb_retry_service import kb_retry_service
 
-    # Queue retry task
-    from app.tasks.kb_pipeline_tasks import process_web_kb_task
+        retry_result = kb_retry_service.execute_enhanced_retry(
+            kb_id=str(kb_id),
+            db=db,
+            retry_config_overrides=config_overrides
+        )
 
-    # For retry, we need to reconstruct sources from existing documents
-    from app.models.document import Document
-    documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+        # Add additional metadata from retry options
+        if retry_options:
+            retry_result.update({
+                "retry_stages": retry_options.retry_stages or ["scraping", "chunking", "embedding", "indexing"],
+                "preserve_existing_chunks": retry_options.preserve_existing_chunks,
+                "original_retry_options": {
+                    "config_overrides_provided": bool(retry_options.config_overrides),
+                    "preserve_existing_chunks": retry_options.preserve_existing_chunks,
+                    "retry_stages": retry_options.retry_stages
+                }
+            })
 
-    # Reconstruct sources from existing documents
-    sources = []
-    for doc in documents:
-        if doc.source_type == "web_scraping" and doc.source_url:
-            source = {
-                "type": "web_scraping",
-                "url": doc.source_url,
-                "config": doc.source_metadata.get("config", {}) if doc.source_metadata else {},
-                "retry": True  # Flag to indicate this is a retry
-            }
-            sources.append(source)
+        # Mark as enhanced retry for frontend distinction
+        retry_result["enhanced_retry"] = True
+        retry_result["kb_name"] = kb.name
 
-    # Queue the retry task with correct parameters
-    task = process_web_kb_task.apply_async(
-        kwargs={
-            "kb_id": str(kb_id),
-            "pipeline_id": new_pipeline_id,
-            "sources": sources,
-            "config": kb_config
-        },
-        queue="high_priority"
-    )
+        return retry_result
 
-    return {
-        "pipeline_id": new_pipeline_id,
-        "kb_id": str(kb_id),
-        "task_id": task.id,
-        "status": "processing",
-        "message": f"Processing retry queued for KB '{kb.name}'",
-        "config_overrides_applied": bool(retry_options and retry_options.config_overrides),
-        "retry_stages": retry_options.retry_stages if retry_options else ["scraping", "chunking", "embedding", "indexing"],
-        "preserve_existing_chunks": retry_options.preserve_existing_chunks if retry_options else False,
-        "note": "Monitor progress at /knowledge-bases/{kb_id}/pipeline-monitor?pipeline={pipeline_id}"
-    }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        # Log error for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Enhanced retry failed for KB {kb_id}: {str(e)}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Enhanced retry failed: {str(e)}"
+        )
 
 
 @router.get("/{kb_id}/stats")

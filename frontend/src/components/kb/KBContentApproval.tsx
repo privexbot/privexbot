@@ -68,6 +68,8 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
         ? source.metadata.approvedPageIndices
         : [];
 
+      console.log(`🔍 DEBUG: Source ${sourceIndex + 1} - approvedPageIndices:`, approvedPageIndices, 'metadata:', source.metadata);
+
       if (sourcePreviewPages && Array.isArray(sourcePreviewPages)) {
         sourcePreviewPages.forEach((page, pageInSourceIndex) => {
           // Ensure character and word counts are calculated
@@ -79,7 +81,7 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
           const isPageApprovedByIndex = approvedPageIndices.includes(pageInSourceIndex);
 
           // SIMPLE CONTENT VALIDATION: If page was edited after approval, it needs re-approval
-          const pageWasEditedAfterApproval = page.is_edited && isPageApprovedByIndex;
+          const pageWasEditedAfterApproval = Boolean(page.is_edited) && isPageApprovedByIndex;
           const isActuallyApproved = isPageApprovedByIndex && !pageWasEditedAfterApproval;
 
           if (pageWasEditedAfterApproval) {
@@ -98,11 +100,12 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
             // Ensure counts are properly calculated
             word_count: page.word_count || wordCount,
             char_count: page.char_count || charCount,
-            is_edited: page.is_edited || false,
-            // SMART APPROVAL STATE: Only approved if not edited since approval
-            is_approved: isActuallyApproved || page.is_approved || false,
-            approved_at: isActuallyApproved ? source.metadata?.lastApprovalAt : page.approved_at,
-            // Track if this needs re-approval due to edits
+            is_edited: Boolean(page.is_edited),
+            // CRITICAL FIX: Use calculated approval state, ignore backend page.is_approved
+            // Backend may return pages with is_approved=true from previous sessions
+            is_approved: isActuallyApproved,
+            approved_at: isActuallyApproved ? source.metadata?.lastApprovalAt : null,
+            // Track if this needs re-approval due to edits (ensure boolean)
             needs_reapproval: pageWasEditedAfterApproval
           });
         });

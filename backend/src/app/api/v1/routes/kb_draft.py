@@ -602,6 +602,7 @@ async def preview_chunks_live(
         "strategy": "by_heading",
         "chunk_size": 1000,
         "chunk_overlap": 200,
+        "custom_separators": ["\\n\\n", ".", "!"],  // Optional: for custom strategy
         "include_metrics": true
     }
 
@@ -626,10 +627,11 @@ async def preview_chunks_live(
     strategy = request.get("strategy", "by_heading")
     chunk_size = request.get("chunk_size", 1000)
     chunk_overlap = request.get("chunk_overlap", 200)
+    custom_separators = request.get("custom_separators", None)  # For custom strategy
     include_metrics = request.get("include_metrics", False)
 
-    # Special handling for "full_content" (no chunking)
-    if strategy == "full_content":
+    # Special handling for "no_chunking" strategies
+    if strategy in ("full_content", "no_chunking"):
         # Return content as single chunk
         chunks = [{
             "content": content,
@@ -656,7 +658,8 @@ async def preview_chunks_live(
             text=content,
             strategy=strategy,
             chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
+            chunk_overlap=chunk_overlap,
+            separators=custom_separators  # Pass custom separators for custom strategy
         )
 
         # Format chunks for frontend

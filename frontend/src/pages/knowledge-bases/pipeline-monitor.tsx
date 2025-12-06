@@ -125,11 +125,52 @@ export default function PipelineMonitorPage() {
 
   const handleRetry = async () => {
     if (!kbId) return;
+
     try {
       const result = await kbClient.kb.retryProcessing(kbId);
-      navigate(`/knowledge-bases/${kbId}/pipeline-monitor?pipeline=${result.pipeline_id}`);
-    } catch (error) {
-      console.error('Failed to retry pipeline:', error);
+
+      // Show enhanced retry information if available
+      if (result.enhanced_retry) {
+        console.log('✅ Enhanced retry initiated:', {
+          kb_name: result.kb_name,
+          backup_id: result.backup_id,
+          cleanup_stats: result.cleanup_stats,
+          retry_features: result.retry_features
+        });
+
+        // Log cleanup statistics for debugging
+        if (result.cleanup_stats) {
+          const stats = result.cleanup_stats;
+          console.log('🧹 State cleanup completed:', {
+            chunks_deleted: stats.chunks_deleted,
+            documents_updated: stats.documents_updated,
+            qdrant_vectors_deleted: stats.qdrant_vectors_deleted,
+            errors: stats.errors
+          });
+        }
+      }
+
+      // Navigate to monitor the new pipeline
+      navigate(`/knowledge-bases/${kbId}/pipeline-monitor?pipeline=${result.pipeline_id}`, {
+        state: {
+          retryInfo: result.enhanced_retry ? {
+            isEnhancedRetry: true,
+            backupId: result.backup_id,
+            retryFeatures: result.retry_features,
+            cleanupStats: result.cleanup_stats,
+            kbName: result.kb_name
+          } : null
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Failed to retry pipeline:', error);
+
+      // Show user-friendly error message
+      const errorMessage = error.message || 'Unknown error occurred during retry';
+
+      // You could add a toast notification here if you have a toast system
+      alert(`Failed to retry pipeline: ${errorMessage}`);
     }
   };
 

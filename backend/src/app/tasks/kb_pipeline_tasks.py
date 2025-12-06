@@ -119,12 +119,32 @@ class PipelineProgressTracker:
         if error:
             pipeline_data["error"] = error
 
-        # Save to Redis (24 hour TTL)
-        draft_service.redis_client.setex(
-            self.redis_key,
-            86400,
-            json.dumps(pipeline_data)
-        )
+        # Save to Redis with SMART TTL management
+        # WHY: Don't extend TTL for completed pipelines to avoid infinite retention
+        if status in ["completed", "failed", "cancelled"]:
+            # For completed pipelines, set shorter TTL (2 hours) and don't extend existing TTL
+            current_ttl = draft_service.redis_client.ttl(self.redis_key)
+            if current_ttl > 0:
+                # If key exists with TTL, keep existing TTL but cap at 2 hours max
+                new_ttl = min(current_ttl, 7200)  # 2 hours max
+            else:
+                # If no TTL or key doesn't exist, set 2 hours
+                new_ttl = 7200  # 2 hours
+
+            draft_service.redis_client.setex(
+                self.redis_key,
+                new_ttl,
+                json.dumps(pipeline_data)
+            )
+            print(f"🔒 Pipeline {self.pipeline_id} completed - TTL set to {new_ttl/3600:.1f} hours")
+
+        else:
+            # For active pipelines (running, queued), use 6 hour TTL
+            draft_service.redis_client.setex(
+                self.redis_key,
+                21600,  # 6 hours
+                json.dumps(pipeline_data)
+            )
 
     def update_stats(self, **kwargs):
         """Update specific stats counters."""
@@ -211,6 +231,9 @@ def process_web_kb_task(
     db = SessionLocal()
     start_time = datetime.utcnow()
     tracker = PipelineProgressTracker(pipeline_id, kb_id)
+
+    # Import smart KB service at function level to avoid scoping issues
+    from app.services.smart_kb_service import smart_kb_service
 
     try:
         # ========================================
@@ -400,291 +423,427 @@ def process_web_kb_task(
                 tracker.add_log("info", f"Processed {len(scraped_pages)} pages from {source_url} using {pages_source}")
 
                 # ========================================
-                # STEP 2b: PROCESS EACH PAGE
+                # STEP 2b: PROCESS PAGES (INDIVIDUAL OR COMBINED)
                 # ========================================
 
-                for page_idx, scraped_page in enumerate(scraped_pages):
-                    try:
-                        # Check for cancellation
-                        pipeline_status_json = draft_service.redis_client.get(f"pipeline:{pipeline_id}:status")
-                        if pipeline_status_json:
-                            pipeline_status = json.loads(pipeline_status_json)
-                            if pipeline_status.get("status") == "cancelled":
-                                raise Exception("Pipeline cancelled by user")
+                # Check if we should combine pages into single document for no_chunking strategy
+                # Note: Even single pages should use this path for consistency
+                should_combine_pages = chunk_strategy in ("no_chunking", "full_content")
 
+                if should_combine_pages:
+                    # COMBINE ALL PAGES INTO SINGLE DOCUMENT
+                    print(f"[DEBUG] Combining {len(scraped_pages)} pages into single document (no_chunking strategy)")
+
+                    # Combine all page contents
+                    combined_content = []
+                    combined_metadata = {
+                        "source_url": source_url,
+                        "source_type": "web_crawl_combined",
+                        "total_pages": len(scraped_pages),
+                        "pages": []
+                    }
+
+                    for page_idx, scraped_page in enumerate(scraped_pages):
                         page_url = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
                         page_content = scraped_page.get("content") if isinstance(scraped_page, dict) else scraped_page.content
+                        page_title = scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title
 
-                        # Skip if no content
-                        if not page_content or len(page_content.strip()) < 50:
-                            tracker.add_log("warning", f"Skipping page with insufficient content: {page_url}")
-                            continue
+                        if page_content and len(page_content.strip()) >= 50:
+                            # Add page separator and content
+                            page_separator = f"\n\n=== PAGE {page_idx + 1}: {page_title or page_url} ===\n\n"
+                            combined_content.append(page_separator + page_content.strip())
 
-                        # ========================================
-                        # STEP 2c: CREATE DOCUMENT RECORD (BASIC)
-                        # ========================================
+                            # Track page metadata
+                            combined_metadata["pages"].append({
+                                "page_number": page_idx + 1,
+                                "url": page_url,
+                                "title": page_title or "",
+                                "content_length": len(page_content.strip())
+                            })
 
-                        print(f"[DEBUG] Creating Document record for page: {page_url}")
-                        # Create basic Document record first (will be updated with chunking decision later)
-                        page_metadata = scraped_page.get("metadata") if isinstance(scraped_page, dict) else scraped_page.metadata
-                        serialized_metadata = serialize_metadata(page_metadata) if page_metadata else {}
+                    # Process combined content as single document
+                    final_combined_content = "\n\n".join(combined_content)
 
-                        # Handle both dict and object formats for scraped_page
-                        title = scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title
-                        scraped_at = scraped_page.get("scraped_at") if isinstance(scraped_page, dict) else scraped_page.scraped_at
-
-                        document = Document(
-                            kb_id=UUID(kb_id),
-                            workspace_id=kb.workspace_id,
-                            name=title or page_url,
-                            source_type="web_scraping",
-                            source_url=page_url,
-                            content_full=page_content,  # ALWAYS store full content
-                            content_preview=page_content[:500] if page_content else None,
-                            word_count=len(page_content.split()) if page_content else 0,
-                            character_count=len(page_content) if page_content else 0,
-                            source_metadata={
-                                "scraped_at": scraped_at.isoformat() if scraped_at else None,
-                                "content_length": len(page_content),
-                                "metadata": serialized_metadata
-                            },
-                            status="processing",
-                            created_by=kb.created_by,
-                            created_at=datetime.utcnow()
-                        )
-                        db.add(document)
-                        db.flush()  # Get document.id
-
-                        # ========================================
-                        # STEP 2d: SMART PROCESSING (USER CHOICE FIRST)
-                        # ========================================
-
-                        # Use smart KB service that respects user preferences
-                        from app.services.smart_kb_service import smart_kb_service
-
-                        # DEBUG: Log chunking config
-                        user_chunking_config = config.get("chunking_config")
-                        print(f"[DEBUG] Pipeline chunking config: {user_chunking_config}")
-                        print(f"[DEBUG] Full config passed to pipeline: {config}")
-                        print(f"[DEBUG] About to call smart_kb_service.process_document_with_proper_storage")
-
+                    if final_combined_content.strip():
                         try:
-                            # Process document with proper storage strategy and user choice respect
+                            # Create single document for all pages
+                            print(f"[DEBUG] Creating combined Document record for {len(scraped_pages)} pages from: {source_url}")
+
+                            document = Document(
+                                kb_id=UUID(kb_id),
+                                workspace_id=kb.workspace_id,
+                                name=f"{source.get('name', 'Web Source')} (Combined {len(scraped_pages)} pages)",
+                                source_type="web_scraping",
+                                source_url=source_url,
+                                source_metadata=serialize_metadata(combined_metadata),
+                                status="processing",
+                                created_by=kb.created_by,
+                                created_at=datetime.utcnow()
+                            )
+                            db.add(document)
+                            db.flush()
+
+                            # Process with smart KB service
+                            print(f"[DEBUG] About to call smart_kb_service.process_document_with_proper_storage")
+                            print(f"[DEBUG] Smart KB Service - user_config: {config.get('chunking_config', {})}")
+
                             processing_result = loop.run_until_complete(
                                 smart_kb_service.process_document_with_proper_storage(
                                     document=document,
-                                    content=page_content,
+                                    content=final_combined_content,
                                     kb=kb,
-                                    user_config=user_chunking_config  # User's explicit preferences
+                                    user_config=config.get("chunking_config", {})
                                 )
                             )
+
                             print(f"[DEBUG] smart_kb_service call completed successfully")
-                            print(f"[DEBUG] processing_result keys: {list(processing_result.keys()) if processing_result else 'None'}")
+                            print(f"[DEBUG] processing_result keys: {list(processing_result.keys())}")
 
                             if "error" in processing_result:
-                                print(f"[DEBUG] smart_kb_service returned error: {processing_result['error']}")
-                                tracker.add_log("warning", f"Processing failed for page {page_url}: {processing_result['error']}")
+                                print(f"[ERROR] Processing failed: {processing_result['error']}")
+                                document.status = "failed"
+                                document.processing_error = processing_result["error"]
+                            else:
+                                postgres_chunks = processing_result.get("postgres_chunks", [])
+                                qdrant_chunks = processing_result.get("qdrant_chunks", [])
+
+                                # Update document metadata
+                                current_metadata = document.source_metadata or {}
+                                current_metadata.update({
+                                    "chunking_decision": processing_result.get("chunking_decision").__dict__ if hasattr(processing_result.get("chunking_decision"), '__dict__') else str(processing_result.get("chunking_decision")),
+                                    "chunks_created": len(postgres_chunks),
+                                    "processing_completed_at": datetime.utcnow().isoformat()
+                                })
+                                document.source_metadata = current_metadata
+                                document.status = "processed"
+
+                                # Update Qdrant chunks with document metadata
+                                for qdrant_chunk in qdrant_chunks:
+                                    qdrant_chunk.metadata["document_id"] = str(document.id)
+                                    qdrant_chunk.metadata["page_url"] = source_url
+                                    qdrant_chunk.metadata["page_title"] = f"Combined {len(scraped_pages)} pages"
+
+                                db.commit()
+                                print(f"[DEBUG] Database commit successful, created {len(postgres_chunks)} chunks for combined document: {source_url}")
+
+                                # Index in Qdrant
+                                print(f"[DEBUG] About to upsert {len(qdrant_chunks)} chunks to Qdrant for combined document: {source_url}")
+
+                                try:
+                                    loop.run_until_complete(
+                                        qdrant_service.upsert_chunks(
+                                            kb_id=UUID(kb_id),
+                                            chunks=qdrant_chunks
+                                        )
+                                    )
+                                    print(f"[DEBUG] Qdrant upsert successful for {len(qdrant_chunks)} chunks")
+
+                                    # Update stats
+                                    tracker.update_stats(
+                                        chunks_created=tracker.stats["chunks_created"] + len(postgres_chunks),
+                                        embeddings_generated=tracker.stats["embeddings_generated"] + len(qdrant_chunks),
+                                        vectors_indexed=tracker.stats["vectors_indexed"] + len(qdrant_chunks)
+                                    )
+
+                                    all_failed = False
+
+                                except Exception as qdrant_error:
+                                    print(f"[ERROR] Qdrant upsert failed: {str(qdrant_error)}")
+                                    document.status = "failed"
+                                    document.processing_error = f"Vector indexing failed: {str(qdrant_error)}"
+                                    db.commit()
+                                    tracker.add_log("error", f"Vector indexing failed for {source_url}: {str(qdrant_error)}")
+
+                        except Exception as e:
+                            print(f"[ERROR] Combined document processing failed: {str(e)}")
+                            tracker.add_log("error", f"Combined processing failed for {source_url}: {str(e)}")
+
+                    else:
+                        print(f"[WARNING] No valid content after combining pages from {source_url}")
+                        tracker.add_log("warning", f"No valid content after combining pages: {source_url}")
+
+                else:
+                    # PROCESS EACH PAGE INDIVIDUALLY (EXISTING BEHAVIOR)
+                    for page_idx, scraped_page in enumerate(scraped_pages):
+                        try:
+                            # Check for cancellation
+                            pipeline_status_json = draft_service.redis_client.get(f"pipeline:{pipeline_id}:status")
+                            if pipeline_status_json:
+                                pipeline_status = json.loads(pipeline_status_json)
+                                if pipeline_status.get("status") == "cancelled":
+                                    raise Exception("Pipeline cancelled by user")
+
+                            page_url = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
+                            page_content = scraped_page.get("content") if isinstance(scraped_page, dict) else scraped_page.content
+
+                            # Skip if no content
+                            if not page_content or len(page_content.strip()) < 50:
+                                tracker.add_log("warning", f"Skipping page with insufficient content: {page_url}")
                                 continue
 
-                        except Exception as smart_service_error:
-                            print(f"[ERROR] smart_kb_service call failed with exception: {str(smart_service_error)}")
-                            print(f"[ERROR] Exception type: {type(smart_service_error).__name__}")
-                            print(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+                            # ========================================
+                            # STEP 2c: CREATE DOCUMENT RECORD (BASIC)
+                            # ========================================
 
-                            # FALLBACK: Use legacy chunking as emergency fallback
-                            print(f"[DEBUG] Using LEGACY CHUNKING as fallback for page: {page_url}")
-                            tracker.add_log("warning", f"Smart KB service failed, using legacy chunking for {page_url}: {str(smart_service_error)}")
+                            print(f"[DEBUG] Creating Document record for page: {page_url}")
+                            # Create basic Document record first (will be updated with chunking decision later)
+                            page_metadata = scraped_page.get("metadata") if isinstance(scraped_page, dict) else scraped_page.metadata
+                            serialized_metadata = serialize_metadata(page_metadata) if page_metadata else {}
 
-                            # Use chunking_service as fallback
-                            fallback_strategy = user_chunking_config.get("strategy", "adaptive") if user_chunking_config else "adaptive"
-                            fallback_chunk_size = user_chunking_config.get("chunk_size", 1200) if user_chunking_config else 1200
-                            fallback_chunk_overlap = user_chunking_config.get("chunk_overlap", 200) if user_chunking_config else 200
+                            # Handle both dict and object formats for scraped_page
+                            title = scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title
+                            scraped_at = scraped_page.get("scraped_at") if isinstance(scraped_page, dict) else scraped_page.scraped_at
 
-                            print(f"[DEBUG] Fallback config: strategy={fallback_strategy}, size={fallback_chunk_size}, overlap={fallback_chunk_overlap}")
-
-                            # Use legacy chunking service
-                            chunks_data = chunking_service.chunk_document(
-                                text=page_content,
-                                strategy=fallback_strategy,
-                                chunk_size=fallback_chunk_size,
-                                chunk_overlap=fallback_chunk_overlap
+                            document = Document(
+                                kb_id=UUID(kb_id),
+                                workspace_id=kb.workspace_id,
+                                name=title or page_url,
+                                source_type="web_scraping",
+                                source_url=page_url,
+                                content_full=page_content,  # ALWAYS store full content
+                                content_preview=page_content[:500] if page_content else None,
+                                word_count=len(page_content.split()) if page_content else 0,
+                                character_count=len(page_content) if page_content else 0,
+                                source_metadata={
+                                    "scraped_at": scraped_at.isoformat() if scraped_at else None,
+                                    "content_length": len(page_content),
+                                    "metadata": serialized_metadata
+                                },
+                                status="processing",
+                                created_by=kb.created_by,
+                                created_at=datetime.utcnow()
                             )
+                            db.add(document)
+                            db.flush()  # Get document.id
 
-                            # Generate embeddings
-                            chunk_texts = [chunk["content"] for chunk in chunks_data]
-                            embeddings = loop.run_until_complete(
-                                embedding_service.generate_embeddings(chunk_texts)
-                            )
+                            # ========================================
+                            # STEP 2d: SMART PROCESSING (USER CHOICE FIRST)
+                            # ========================================
 
-                            print(f"[DEBUG] LEGACY FALLBACK: Created {len(chunks_data)} chunks, {len(embeddings)} embeddings")
+                            # Use smart KB service that respects user preferences
+                            # DEBUG: Log chunking config
+                            user_chunking_config = config.get("chunking_config")
+                            print(f"[DEBUG] Pipeline chunking config: {user_chunking_config}")
+                            print(f"[DEBUG] Full config passed to pipeline: {config}")
+                            print(f"[DEBUG] About to call smart_kb_service.process_document_with_proper_storage")
 
-                            # Create processing_result compatible with main flow
-                            processing_result = {
-                                "chunking_decision": type('obj', (object,), {
-                                    'strategy': fallback_strategy,
-                                    'chunk_size': fallback_chunk_size,
-                                    'chunk_overlap': fallback_chunk_overlap,
-                                    'user_preference': True,
-                                    'reasoning': f"Legacy fallback due to smart_kb_service error: {str(smart_service_error)}"
-                                })(),
-                                "postgres_chunks": [],
-                                "qdrant_chunks": [],
-                                "chunks_created": len(chunks_data),
-                                "embeddings_generated": len(embeddings)
-                            }
+                            try:
+                                # Process document with proper storage strategy and user choice respect
+                                processing_result = loop.run_until_complete(
+                                    smart_kb_service.process_document_with_proper_storage(
+                                        document=document,
+                                        content=page_content,
+                                        kb=kb,
+                                        user_config=user_chunking_config  # User's explicit preferences
+                                    )
+                                )
+                                print(f"[DEBUG] smart_kb_service call completed successfully")
+                                print(f"[DEBUG] processing_result keys: {list(processing_result.keys()) if processing_result else 'None'}")
 
-                            # Build postgres and qdrant chunks manually
-                            for idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
-                                import uuid
-                                chunk_id = str(uuid.uuid4())
+                                if "error" in processing_result:
+                                    print(f"[DEBUG] smart_kb_service returned error: {processing_result['error']}")
+                                    tracker.add_log("warning", f"Processing failed for page {page_url}: {processing_result['error']}")
+                                    continue
 
-                                # PostgreSQL chunk
-                                postgres_chunk_data = {
-                                    "id": chunk_id,
-                                    "document_id": document.id,
-                                    "kb_id": document.kb_id,
-                                    "content": chunk_data["content"],
-                                    "chunk_index": idx,
-                                    "position": idx,
-                                    "chunk_metadata": {
-                                        "token_count": chunk_data.get("token_count", 0),
-                                        "strategy": fallback_strategy,
-                                        "chunk_size": fallback_chunk_size,
-                                        "user_preference": True,
-                                        "fallback_reason": str(smart_service_error),
-                                        "workspace_id": str(document.workspace_id),
-                                        "created_at": datetime.utcnow().isoformat()
-                                    }
+                            except Exception as smart_service_error:
+                                print(f"[ERROR] smart_kb_service call failed with exception: {str(smart_service_error)}")
+                                print(f"[ERROR] Exception type: {type(smart_service_error).__name__}")
+                                print(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+
+                                # FALLBACK: Use legacy chunking as emergency fallback
+                                print(f"[DEBUG] Using LEGACY CHUNKING as fallback for page: {page_url}")
+                                tracker.add_log("warning", f"Smart KB service failed, using legacy chunking for {page_url}: {str(smart_service_error)}")
+
+                                # Use chunking_service as fallback
+                                fallback_strategy = user_chunking_config.get("strategy", "adaptive") if user_chunking_config else "adaptive"
+                                fallback_chunk_size = user_chunking_config.get("chunk_size", 1200) if user_chunking_config else 1200
+                                fallback_chunk_overlap = user_chunking_config.get("chunk_overlap", 200) if user_chunking_config else 200
+
+                                print(f"[DEBUG] Fallback config: strategy={fallback_strategy}, size={fallback_chunk_size}, overlap={fallback_chunk_overlap}")
+
+                                # Use legacy chunking service
+                                chunks_data = chunking_service.chunk_document(
+                                    text=page_content,
+                                    strategy=fallback_strategy,
+                                    chunk_size=fallback_chunk_size,
+                                    chunk_overlap=fallback_chunk_overlap
+                                )
+
+                                # Generate embeddings
+                                chunk_texts = [chunk["content"] for chunk in chunks_data]
+                                embeddings = loop.run_until_complete(
+                                    embedding_service.generate_embeddings(chunk_texts)
+                                )
+
+                                print(f"[DEBUG] LEGACY FALLBACK: Created {len(chunks_data)} chunks, {len(embeddings)} embeddings")
+
+                                # Create processing_result compatible with main flow
+                                processing_result = {
+                                    "chunking_decision": type('obj', (object,), {
+                                        'strategy': fallback_strategy,
+                                        'chunk_size': fallback_chunk_size,
+                                        'chunk_overlap': fallback_chunk_overlap,
+                                        'user_preference': True,
+                                        'reasoning': f"Legacy fallback due to smart_kb_service error: {str(smart_service_error)}"
+                                    })(),
+                                    "postgres_chunks": [],
+                                    "qdrant_chunks": [],
+                                    "chunks_created": len(chunks_data),
+                                    "embeddings_generated": len(embeddings)
                                 }
-                                processing_result["postgres_chunks"].append(postgres_chunk_data)
 
-                                # Qdrant chunk
-                                from app.services.qdrant_service import QdrantChunk
-                                qdrant_chunk = QdrantChunk(
-                                    id=chunk_id,
-                                    embedding=embedding,
-                                    content=chunk_data["content"],
-                                    metadata={
-                                        "document_id": str(document.id),
-                                        "kb_id": str(document.kb_id),
-                                        "workspace_id": str(document.workspace_id),
+                                # Build postgres and qdrant chunks manually
+                                for idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
+                                    import uuid
+                                    chunk_id = str(uuid.uuid4())
+
+                                    # PostgreSQL chunk
+                                    postgres_chunk_data = {
+                                        "id": chunk_id,
+                                        "document_id": document.id,
+                                        "kb_id": document.kb_id,
+                                        "content": chunk_data["content"],
                                         "chunk_index": idx,
-                                        "strategy_used": fallback_strategy,
-                                        "fallback_processing": True
+                                        "position": idx,
+                                        "chunk_metadata": {
+                                            "token_count": chunk_data.get("token_count", 0),
+                                            "strategy": fallback_strategy,
+                                            "chunk_size": fallback_chunk_size,
+                                            "user_preference": True,
+                                            "fallback_reason": str(smart_service_error),
+                                            "workspace_id": str(document.workspace_id),
+                                            "created_at": datetime.utcnow().isoformat()
+                                        }
                                     }
-                                )
-                                processing_result["qdrant_chunks"].append(qdrant_chunk)
+                                    processing_result["postgres_chunks"].append(postgres_chunk_data)
 
-                        # Extract results
-                        chunking_decision = processing_result["chunking_decision"]
-                        postgres_chunks = processing_result["postgres_chunks"]
-                        qdrant_chunks = processing_result["qdrant_chunks"]
+                                    # Qdrant chunk
+                                    from app.services.qdrant_service import QdrantChunk
+                                    qdrant_chunk = QdrantChunk(
+                                        id=chunk_id,
+                                        embedding=embedding,
+                                        content=chunk_data["content"],
+                                        metadata={
+                                            "document_id": str(document.id),
+                                            "kb_id": str(document.kb_id),
+                                            "workspace_id": str(document.workspace_id),
+                                            "chunk_index": idx,
+                                            "strategy_used": fallback_strategy,
+                                            "fallback_processing": True
+                                        }
+                                    )
+                                    processing_result["qdrant_chunks"].append(qdrant_chunk)
 
-                        tracker.add_log("info",
-                            f"Processed {page_url}: {len(postgres_chunks)} chunks using {chunking_decision.strategy} strategy. "
-                            f"Reasoning: {chunking_decision.reasoning}"
-                        )
-                        tracker.update_stats(chunks_created=tracker.stats["chunks_created"] + len(postgres_chunks))
+                            # Extract results
+                            chunking_decision = processing_result["chunking_decision"]
+                            postgres_chunks = processing_result["postgres_chunks"]
+                            qdrant_chunks = processing_result["qdrant_chunks"]
 
-                        # ========================================
-                        # STEP 2d: SAVE TO POSTGRESQL (NO REDUNDANT EMBEDDINGS)
-                        # ========================================
-
-                        # Create PostgreSQL Chunk records (NO EMBEDDING FIELD - avoid redundancy)
-                        for postgres_chunk_data in postgres_chunks:
-                            chunk = Chunk(
-                                id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
-                                document_id=postgres_chunk_data["document_id"],
-                                kb_id=postgres_chunk_data["kb_id"],
-                                content=postgres_chunk_data["content"],
-                                chunk_index=postgres_chunk_data["chunk_index"],
-                                position=postgres_chunk_data["position"],
-                                # NO embedding field - stored only in Qdrant
-                                chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                            tracker.add_log("info",
+                                f"Processed {page_url}: {len(postgres_chunks)} chunks using {chunking_decision.strategy} strategy. "
+                                f"Reasoning: {chunking_decision.reasoning}"
                             )
-                            db.add(chunk)
+                            tracker.update_stats(chunks_created=tracker.stats["chunks_created"] + len(postgres_chunks))
 
-                        # Update tracking stats
-                        tracker.update_stats(
-                            embeddings_generated=tracker.stats["embeddings_generated"] + processing_result["embeddings_generated"]
-                        )
+                            # ========================================
+                            # STEP 2d: SAVE TO POSTGRESQL (NO REDUNDANT EMBEDDINGS)
+                            # ========================================
 
-                        # ========================================
-                        # STEP 2e: UPDATE DOCUMENT WITH CHUNKING DECISION
-                        # ========================================
-
-                        print(f"[DEBUG] Updating Document record with chunking decision: {page_url}")
-                        # Update document with chunking decision metadata
-                        current_metadata = document.source_metadata or {}
-                        current_metadata["chunking_decision"] = {
-                            "strategy": chunking_decision.strategy,
-                            "chunk_size": chunking_decision.chunk_size,
-                            "user_preference": chunking_decision.user_preference,
-                            "reasoning": chunking_decision.reasoning
-                        }
-                        document.source_metadata = current_metadata
-                        document.status = "processed"
-
-                        # Update Qdrant chunks with correct document ID
-                        for qdrant_chunk in qdrant_chunks:
-                            qdrant_chunk.metadata["document_id"] = str(document.id)
-                            qdrant_chunk.metadata["page_url"] = page_url
-                            qdrant_chunk.metadata["page_title"] = (scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title) or ""
-
-                        db.commit()
-                        print(f"[DEBUG] Database commit successful, created {len(qdrant_chunks)} chunks for page: {page_url}")
-
-                        # ========================================
-                        # STEP 2f: INDEX IN QDRANT
-                        # ========================================
-
-                        print(f"[DEBUG] About to upsert {len(qdrant_chunks)} chunks to Qdrant for page: {page_url}")
-
-                        try:
-                            loop.run_until_complete(
-                                qdrant_service.upsert_chunks(
-                                    kb_id=UUID(kb_id),
-                                    chunks=qdrant_chunks
+                            # Create PostgreSQL Chunk records (NO EMBEDDING FIELD - avoid redundancy)
+                            for postgres_chunk_data in postgres_chunks:
+                                chunk = Chunk(
+                                    id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
+                                    document_id=postgres_chunk_data["document_id"],
+                                    kb_id=postgres_chunk_data["kb_id"],
+                                    content=postgres_chunk_data["content"],
+                                    chunk_index=postgres_chunk_data["chunk_index"],
+                                    position=postgres_chunk_data["position"],
+                                    # NO embedding field - stored only in Qdrant
+                                    chunk_metadata=postgres_chunk_data["chunk_metadata"]
                                 )
+                                db.add(chunk)
+
+                            # Update tracking stats
+                            tracker.update_stats(
+                                embeddings_generated=tracker.stats["embeddings_generated"] + processing_result["embeddings_generated"]
                             )
-                            print(f"[DEBUG] Qdrant upsert successful for {len(qdrant_chunks)} chunks")
-                        except Exception as qdrant_error:
-                            print(f"[ERROR] Qdrant upsert failed: {str(qdrant_error)}")
-                            print(f"[ERROR] Qdrant error type: {type(qdrant_error).__name__}")
-                            print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
-                            raise  # Re-raise to be caught by outer exception handler
 
-                        tracker.update_stats(
-                            vectors_indexed=tracker.stats["vectors_indexed"] + len(qdrant_chunks)
-                        )
+                            # ========================================
+                            # STEP 2e: UPDATE DOCUMENT WITH CHUNKING DECISION
+                            # ========================================
 
-                        tracker.add_log(
-                            "info",
-                            f"Processed page: {page_url}",
-                            {
-                                "chunks": len(qdrant_chunks),
-                                "embeddings": processing_result.get("embeddings_generated", 0)
+                            print(f"[DEBUG] Updating Document record with chunking decision: {page_url}")
+                            # Update document with chunking decision metadata
+                            current_metadata = document.source_metadata or {}
+                            current_metadata["chunking_decision"] = {
+                                "strategy": chunking_decision.strategy,
+                                "chunk_size": chunking_decision.chunk_size,
+                                "user_preference": chunking_decision.user_preference,
+                                "reasoning": chunking_decision.reasoning
                             }
-                        )
+                            document.source_metadata = current_metadata
+                            document.status = "processed"
 
-                        # Mark that we successfully processed at least one page
-                        all_failed = False
+                            # Update Qdrant chunks with correct document ID
+                            for qdrant_chunk in qdrant_chunks:
+                                qdrant_chunk.metadata["document_id"] = str(document.id)
+                                qdrant_chunk.metadata["page_url"] = page_url
+                                qdrant_chunk.metadata["page_title"] = (scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title) or ""
 
-                    except Exception as page_error:
-                        tracker.update_stats(pages_failed=tracker.stats["pages_failed"] + 1)
-                        page_url_for_error = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
-                        tracker.add_log(
-                            "error",
-                            f"Failed to process page: {page_url_for_error}",
-                            {"error": str(page_error)}
-                        )
-                        # Also print to stdout for debugging
-                        print(f"[ERROR] Failed to process page: {page_url_for_error}")
-                        print(f"[ERROR] Error: {str(page_error)}")
-                        print(f"[ERROR] Error type: {type(page_error).__name__}")
-                        print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
-                        # Continue with next page
-                        continue
+                            db.commit()
+                            print(f"[DEBUG] Database commit successful, created {len(qdrant_chunks)} chunks for page: {page_url}")
+
+                            # ========================================
+                            # STEP 2f: INDEX IN QDRANT
+                            # ========================================
+
+                            print(f"[DEBUG] About to upsert {len(qdrant_chunks)} chunks to Qdrant for page: {page_url}")
+
+                            try:
+                                loop.run_until_complete(
+                                    qdrant_service.upsert_chunks(
+                                        kb_id=UUID(kb_id),
+                                        chunks=qdrant_chunks
+                                    )
+                                )
+                                print(f"[DEBUG] Qdrant upsert successful for {len(qdrant_chunks)} chunks")
+                            except Exception as qdrant_error:
+                                print(f"[ERROR] Qdrant upsert failed: {str(qdrant_error)}")
+                                print(f"[ERROR] Qdrant error type: {type(qdrant_error).__name__}")
+                                print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
+                                raise  # Re-raise to be caught by outer exception handler
+
+                            tracker.update_stats(
+                                vectors_indexed=tracker.stats["vectors_indexed"] + len(qdrant_chunks)
+                            )
+
+                            tracker.add_log(
+                                "info",
+                                f"Processed page: {page_url}",
+                                {
+                                    "chunks": len(qdrant_chunks),
+                                    "embeddings": processing_result.get("embeddings_generated", 0)
+                                }
+                            )
+
+                            # Mark that we successfully processed at least one page
+                            all_failed = False
+
+                        except Exception as page_error:
+                            tracker.update_stats(pages_failed=tracker.stats["pages_failed"] + 1)
+                            page_url_for_error = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
+                            tracker.add_log(
+                                "error",
+                                f"Failed to process page: {page_url_for_error}",
+                                {"error": str(page_error)}
+                            )
+                            # Also print to stdout for debugging
+                            print(f"[ERROR] Failed to process page: {page_url_for_error}")
+                            print(f"[ERROR] Error: {str(page_error)}")
+                            print(f"[ERROR] Error type: {type(page_error).__name__}")
+                            print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
+                            # Continue with next page
+                            continue
 
             except Exception as source_error:
                 tracker.update_stats(pages_failed=tracker.stats["pages_failed"] + 1)

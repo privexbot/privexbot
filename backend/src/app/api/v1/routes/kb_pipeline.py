@@ -65,10 +65,40 @@ async def get_pipeline_status(
     status_json = draft_service.redis_client.get(redis_key)
 
     if not status_json:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pipeline not found or expired"
-        )
+        # Pipeline status expired from Redis. Check if we can get KB status instead.
+        # Pipeline ID format: {kb_id}:{timestamp}
+        try:
+            kb_id_from_pipeline = pipeline_id.split(":")[0]
+
+            # Check if KB exists and get its current status
+            kb = db.query(KnowledgeBase).filter(
+                KnowledgeBase.id == kb_id_from_pipeline
+            ).first()
+
+            if kb:
+                # Return KB status as pipeline status for graceful degradation
+                return {
+                    "pipeline_id": pipeline_id,
+                    "kb_id": str(kb.id),
+                    "status": "completed" if kb.status == "ready" else kb.status,
+                    "current_stage": f"Completed - KB is {kb.status}",
+                    "progress_percentage": 100 if kb.status in ["ready", "failed"] else 0,
+                    "stats": kb.stats or {},
+                    "updated_at": datetime.utcnow().isoformat(),
+                    "message": f"Pipeline status expired. Current KB status: {kb.status}",
+                    "error": kb.error_message if kb.status == "failed" else None,
+                    "expired": True
+                }
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Pipeline expired and associated KB not found. Pipeline ID: {pipeline_id}"
+                )
+        except (IndexError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pipeline not found or expired (invalid pipeline ID format)"
+            )
 
     pipeline_status = json.loads(status_json)
 

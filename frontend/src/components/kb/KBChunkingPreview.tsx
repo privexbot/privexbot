@@ -10,9 +10,7 @@ import {
   Eye,
   ChevronDown,
   ChevronRight,
-  Layers,
   FileText,
-  Hash,
   AlertCircle,
   Sparkles,
   BarChart3,
@@ -26,8 +24,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useKBStore } from '@/store/kb-store';
 import kbClient from '@/lib/kb-client';
 import { ChunkingStrategy } from '@/types/knowledge-base';
@@ -75,7 +71,6 @@ export function KBChunkingPreview() {
   const [loading, setLoading] = useState(false);
   const [previews, setPreviews] = useState<Map<string, SourcePreview>>(new Map());
   const [expandedChunks, setExpandedChunks] = useState<Set<string>>(new Set());
-  const [showComparison, setShowComparison] = useState(false);
   const [copiedChunk, setCopiedChunk] = useState<string | null>(null);
 
   // Get approved sources with content
@@ -123,7 +118,8 @@ export function KBChunkingPreview() {
           strategy: strategy || chunkingConfig.strategy,
           chunk_size: chunkingConfig.chunk_size,
           chunk_overlap: chunkingConfig.chunk_overlap,
-          include_metrics: true
+          include_metrics: true,
+          custom_separators: chunkingConfig.custom_separators
         }
       );
 
@@ -463,31 +459,35 @@ export function KBChunkingPreview() {
                                   <span className="ml-2 font-medium">
                                     {isNoChunking
                                       ? '100%'
-                                      : `${Math.round((currentPreview.metrics.avg_chunk_size / 4000) * 100)}%`
+                                      : `${Math.round((currentPreview.metrics.avg_chunk_size / chunkingConfig.chunk_size) * 100)}%`
                                     }
                                   </span>
                                 </div>
                                 <div>
                                   <span className="text-gray-500">Overlap Efficiency:</span>
                                   <span className="ml-2 font-medium">
-                                    {isNoChunking ? 'N/A' : `${Math.round(currentPreview.metrics.overlap_percentage)}%`}
+                                    {isNoChunking ? 'N/A' : `${chunkingConfig.chunk_overlap}/${chunkingConfig.chunk_size} (${Math.round((chunkingConfig.chunk_overlap / chunkingConfig.chunk_size) * 100)}%)`}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Strategy Efficiency:</span>
+                                  <span className="ml-2 font-medium">
+                                    {chunkingConfig.strategy === 'adaptive' ? 'Dynamic' :
+                                     chunkingConfig.strategy === 'hybrid' ? 'Multi-method' :
+                                     chunkingConfig.strategy === 'custom' ? 'User-defined' :
+                                     chunkingConfig.strategy === 'recursive' ? 'Structured' : 'Standard'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Chunk Size Target:</span>
+                                  <span className="ml-2 font-medium">
+                                    {isNoChunking ? 'Full content' : `${chunkingConfig.chunk_size} chars`}
                                   </span>
                                 </div>
                               </div>
                             </div>
                           </AlertDescription>
                         </Alert>
-
-                        {/* Strategy Comparison */}
-                        <div className="flex justify-end">
-                          <Button
-                            variant="outline"
-                            onClick={() => setShowComparison(!showComparison)}
-                          >
-                            <Layers className="h-4 w-4 mr-2" />
-                            Compare Strategies
-                          </Button>
-                        </div>
                       </div>
                     )}
                   </TabsContent>
@@ -498,40 +498,6 @@ export function KBChunkingPreview() {
         </CardContent>
       </Card>
 
-      {/* Strategy Comparison Modal */}
-      {showComparison && selectedSource && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Strategy Comparison</CardTitle>
-            <CardDescription>
-              Compare how different strategies would chunk the same content
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {Object.values(ChunkingStrategy).map(strategy => (
-                <Button
-                  key={strategy}
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => loadPreview(selectedSource, strategy)}
-                  disabled={loading}
-                >
-                  Test with {strategy} strategy
-                </Button>
-              ))}
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => loadPreview(selectedSource, 'full_content' as ChunkingStrategy)}
-                disabled={loading}
-              >
-                Test with No Chunking (Full Content)
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

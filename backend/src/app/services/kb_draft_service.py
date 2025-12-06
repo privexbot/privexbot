@@ -548,15 +548,19 @@ class KBDraftService:
         # The prefix is added when building Redis keys (e.g., f"pipeline:{pipeline_id}:status")
         pipeline_id = f"{str(kb.id)}:{int(time.time())}"
 
-        # Store pipeline status in Redis
-        # Note: This would use Redis client, but for now using draft_service redis
+        # Store pipeline status in Redis WITH complete draft data for retry
+        # CRITICAL: Store complete draft data to enable perfect retry without reconstruction
         pipeline_data = {
             "pipeline_id": pipeline_id,
             "kb_id": str(kb.id),
             "status": "queued",
             "created_at": datetime.utcnow().isoformat(),
             "sources": data.get("sources", []),
-            "config": data
+            "config": data,
+            # RETRY ENHANCEMENT: Store complete draft data for retry
+            "complete_draft_data": draft,  # This contains ALL original user data
+            "finalized_at": datetime.utcnow().isoformat(),
+            "retry_capable": True
         }
 
         draft_service.redis_client.setex(
