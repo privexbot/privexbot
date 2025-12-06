@@ -303,18 +303,23 @@ class KBDraftService:
             ValueError: If draft not found
         """
 
+        # DEBUG: Log what we're saving
+
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
             raise ValueError("KB draft not found")
 
+
         data = draft.get("data", {})
         data["chunking_config"] = chunking_config
+
 
         draft_service.update_draft(
             draft_type=DraftType.KB,
             draft_id=draft_id,
             updates={"data": data}
         )
+
 
     def update_embedding_config(
         self,
@@ -429,7 +434,8 @@ class KBDraftService:
     async def finalize_draft(
         self,
         db: Session,
-        draft_id: str
+        draft_id: str,
+        config_override: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Finalize KB draft: Create DB records and queue processing.
@@ -466,11 +472,14 @@ class KBDraftService:
             ValueError: If draft not found or validation fails
         """
 
+        print(f"⭐ [FINALIZE_DRAFT] FUNCTION ENTRY - draft_id: {draft_id}")
+
         from app.models.knowledge_base import KnowledgeBase
         from app.models.document import Document
         import time
 
         # Get and validate draft
+        print(f"⭐ [FINALIZE_DRAFT] Getting draft from Redis...")
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
             raise ValueError("KB draft not found")
@@ -559,13 +568,24 @@ class KBDraftService:
         # Queue background task
         from app.tasks.kb_pipeline_tasks import process_web_kb_task
 
+
+        # CRITICAL FIX: Use configuration from frontend request instead of stale Redis data
+        if config_override:
+
+            # Merge the config_override with the draft data
+            pipeline_config = {**data, **config_override}
+            pipeline_preview_data = draft.get("preview_data")
+        else:
+            pipeline_config = data
+            pipeline_preview_data = draft.get("preview_data")
+
         task = process_web_kb_task.apply_async(
             kwargs={
                 "kb_id": str(kb.id),
                 "pipeline_id": pipeline_id,
-                "sources": data.get("sources", []),
-                "config": data,
-                "preview_data": draft.get("preview_data")  # Pass edited content for processing
+                "sources": pipeline_config.get("sources", []),
+                "config": pipeline_config,  # Use fresh config with latest updates
+                "preview_data": pipeline_preview_data
             },
             queue="default"  # Using default queue (web_scraping queue needs to be configured)
         )

@@ -260,8 +260,8 @@ export function KBModelConfig() {
       };
     }
 
-    // For FULL_CONTENT strategy, each source becomes one chunk
-    if (chunkingConfig.strategy === ChunkingStrategy.FULL_CONTENT) {
+    // For NO_CHUNKING strategy, each source becomes one chunk
+    if (chunkingConfig.strategy === ChunkingStrategy.NO_CHUNKING) {
       const chunks = draftSources.length;
       const vectorSize = currentConfig.embedding.dimensions;
       const vectorStorage = chunks * vectorSize * 4; // 4 bytes per float

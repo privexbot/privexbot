@@ -63,6 +63,12 @@ interface KBStoreState {
   draftSources: DraftSource[];
   chunkingConfig: ChunkingConfig;
   modelConfig: ModelConfig;
+  retrievalConfig: {
+    strategy: 'semantic_search' | 'keyword_search' | 'hybrid_search' | 'mmr' | 'similarity_score_threshold';
+    top_k: number;
+    score_threshold: number;
+    rerank_enabled: boolean;
+  };
   isDraftDirty: boolean;
   isCreatingDraft: boolean;
   draftError: string | null;
@@ -136,6 +142,7 @@ interface KBStoreActions {
   removeSource: (sourceId: string) => void;
   updateChunkingConfig: (config: Partial<ChunkingConfig>) => void;
   updateModelConfig: (config: Partial<ModelConfig>) => void;
+  updateRetrievalConfig: (config: Partial<KBStoreState['retrievalConfig']>) => void;
   validateDraft: () => Promise<DraftValidationResponse>;
   finalizeDraft: () => Promise<{ kbId: string; pipelineId: string }>;
   clearDraft: () => void;
@@ -205,17 +212,34 @@ const initialFormData = {
 };
 
 const initialChunkingConfig: ChunkingConfig = {
+  // Required parameters (user-configurable via UI)
   strategy: ChunkingStrategy.BY_HEADING,
-  chunk_size: 1000,
-  chunk_overlap: 200,
+  chunk_size: 1000, // User can modify via slider (100-4000)
+  chunk_overlap: 200, // User can modify via slider (0-500)
+
+  // Backend-supported parameters (user-configurable via UI)
+  preserve_code_blocks: true, // User can modify via checkbox - API supports this
+  preserve_structure: true, // User can modify via checkbox - Enhanced service supports this
+  include_metadata: true, // User can modify via checkbox - Enhanced service supports this
+  adaptive_sizing: false, // User can modify via checkbox - Enhanced service supports this
+  context_window: 2, // User can modify via slider (0-5) - Enhanced service supports this
+
+  // Additional parameters (user-configurable via UI - mixed backend support)
+  semantic_threshold: 0.7, // User can modify via slider for semantic strategy (0-1)
+  custom_separators: ['\n\n', '\n'], // User can modify via textarea for custom strategy
+  min_chunk_size: 50, // User can modify via input (10-500)
+  max_chunk_size: 2048, // User can modify via input (256-4096)
+  preserve_headings: true, // User can modify via checkbox
+  remove_duplicates: false, // User can modify via checkbox
+  smart_splitting: true, // User can modify via checkbox
 };
 
 const initialModelConfig: ModelConfig = {
   embedding: {
-    provider: 'openai',
-    model: 'text-embedding-ada-002',
-    dimensions: 1536,
-    batch_size: 100,
+    provider: 'local',
+    model: 'all-MiniLM-L6-v2',
+    dimensions: 384,
+    batch_size: 32,
   },
   vector_store: {
     provider: VectorStoreProvider.QDRANT,
@@ -223,7 +247,7 @@ const initialModelConfig: ModelConfig = {
       collection_naming: 'kb_{kb_id}',
       distance_metric: DistanceMetric.COSINE,
       index_type: IndexType.HNSW,
-      vector_size: 1536,
+      vector_size: 384,
       hnsw_config: {
         m: 16,
         ef_construct: 100,
@@ -237,6 +261,13 @@ const initialModelConfig: ModelConfig = {
     search_timeout: 30000,
     max_results: 10,
   },
+};
+
+const initialRetrievalConfig = {
+  strategy: 'hybrid_search' as const,
+  top_k: 10,
+  score_threshold: 0.7,
+  rerank_enabled: false,
 };
 
 // ========================================
@@ -263,6 +294,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
         draftSources: [],
         chunkingConfig: initialChunkingConfig,
         modelConfig: initialModelConfig,
+        retrievalConfig: initialRetrievalConfig,
         isDraftDirty: false,
         isCreatingDraft: false,
         draftError: null,
@@ -464,7 +496,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
             if (previewPages && previewPages.length > 0) {
               // CRITICAL FIX: Transfer extracted content to main draft AND add sources to backend
-              console.log("🔄 Transferring extracted content to main draft for approval...");
 
               try {
                 // STEP 1: Add sources to backend draft (required for approval API)
@@ -482,7 +513,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                   request.url = urlOrUrls;
                 }
 
-                console.log("🔄 Adding sources to backend draft...");
                 const backendResult = await kbClient.draft.addWebSources(
                   currentDraft.draft_id,
                   request
@@ -490,7 +520,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
                 // STEP 2: Create preview data structure with proper source IDs
                 // CRITICAL: Clear approval flags - this is "add to draft", not "approve for KB"
-                console.log("🧹 CLEARING approval state: Converting preview approval to draft content (requires fresh approval)");
                 const previewDataForBackend = {
                   pages: previewPages.map((page: any, index: number) => ({
                     ...page,
@@ -512,7 +541,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
                 // STEP 3: Transfer preview data to main draft
                 await kbClient.draft.updatePreviewData(currentDraft.draft_id, previewDataForBackend);
-                console.log("✅ Successfully transferred content and sources to main draft");
 
                 // STEP 4: Update frontend state
                 const newSources: DraftSource[] = [];
@@ -589,7 +617,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 get().saveDraftToLocalStorage();
                 return newSources;
               } catch (error) {
-                console.error("❌ Failed to transfer content to main draft:", error);
                 throw error;
               }
             }
@@ -613,11 +640,9 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
               request
             );
 
-            console.log('API Response:', result);
 
             // Handle both single and bulk response formats
             if (!result) {
-              console.error('Invalid API response: null or undefined');
               throw new Error('Invalid API response: no data returned');
             }
 
@@ -645,13 +670,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 }
               });
 
-              // Log bulk operation results
-              if (result.duplicates_skipped && result.duplicates_skipped > 0) {
-                console.log(`Skipped ${result.duplicates_skipped} duplicate URLs`);
-              }
-              if (result.invalid_urls && result.invalid_urls.length > 0) {
-                console.warn('Invalid URLs skipped:', result.invalid_urls);
-              }
             }
             // Handle single mode response (source_id)
             else if (result.source_id) {
@@ -671,7 +689,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
               });
             }
             else {
-              console.error('Invalid API response structure:', result);
               throw new Error(`Invalid API response: expected source_id or source_ids, got ${JSON.stringify(result)}`);
             }
 
@@ -740,8 +757,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           // Background API call
           kbClient.draft
             .removeSource(currentDraft.draft_id, sourceId)
-            .catch((error) => {
-              console.error("Failed to remove source:", error);
+            .catch(() => {
               // Could revert optimistic update here
             });
 
@@ -749,15 +765,22 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
         },
 
         updateChunkingConfig: (config) => {
+
           set((state) => {
             state.chunkingConfig = { ...state.chunkingConfig, ...config };
             state.isDraftDirty = true;
           });
 
           const { currentDraft } = get();
+
           if (currentDraft) {
-            // Debounced API update - implement actual update call when needed
-            // kbClient.draft.updateChunking(currentDraft.draft_id, config);
+            // CRITICAL FIX: Send COMPLETE chunking configuration, not just changed fields
+            const completeChunkingConfig = get().chunkingConfig;
+            // Update backend draft with COMPLETE chunking config
+            kbClient.draft.updateChunking(currentDraft.draft_id, { chunking_config: completeChunkingConfig })
+              .catch(() => {
+                // Silently handle errors - UI will show validation on finalize
+              });
           }
 
           get().saveDraftToLocalStorage();
@@ -770,6 +793,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           });
 
           const { currentDraft } = get();
+
           if (currentDraft) {
             // Call backend API to save model configuration
             const modelConfig = get().modelConfig;
@@ -794,9 +818,52 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             };
 
             kbClient.draft.configureModels(currentDraft.draft_id, apiRequest)
-              .catch(error => {
-                console.error('Failed to save model configuration to backend:', error);
-                // Don't throw - this is a background operation
+              .catch(() => {
+                // Silently handle errors - UI will show validation on finalize
+              });
+          }
+
+          get().saveDraftToLocalStorage();
+        },
+
+        updateRetrievalConfig: (config) => {
+          set((state) => {
+            state.retrievalConfig = { ...state.retrievalConfig, ...config };
+            state.isDraftDirty = true;
+          });
+
+          const { currentDraft } = get();
+
+          if (currentDraft) {
+            // Build API request for retrieval config
+            const retrievalConfig = get().retrievalConfig;
+            const apiRequest = {
+              retrieval_config: {
+                strategy: retrievalConfig.strategy,
+                top_k: retrievalConfig.top_k,
+                score_threshold: retrievalConfig.score_threshold,
+                rerank_enabled: retrievalConfig.rerank_enabled,
+              }
+            };
+
+            // Note: Need to implement backend endpoint for retrieval config
+            // For now, we'll call model config endpoint which includes retrieval
+            kbClient.draft.configureModels(currentDraft.draft_id, {
+              embedding_config: {
+                model: get().modelConfig.embedding.model,
+                device: 'cpu',
+                batch_size: get().modelConfig.embedding.batch_size,
+                normalize_embeddings: true,
+              },
+              vector_store_config: {
+                provider: get().modelConfig.vector_store.provider,
+                collection_name_prefix: 'kb_',
+                distance_metric: (get().modelConfig.vector_store.settings as any).distance_metric,
+              },
+              retrieval_config: apiRequest.retrieval_config
+            })
+              .catch(() => {
+                // Silently handle errors - UI will show validation on finalize
               });
           }
 
@@ -821,7 +888,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
         },
 
         finalizeDraft: async () => {
-          const { currentDraft, chunkingConfig, modelConfig } = get();
+          const { currentDraft, chunkingConfig, modelConfig, retrievalConfig } = get();
           if (!currentDraft) throw new Error("No draft to finalize");
 
           set((state) => {
@@ -829,7 +896,55 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           });
 
           try {
-            // Pass all configurations during finalization
+            // Save all current configurations to Redis before finalization
+            // This prevents the race condition where frontend state differs from Redis state
+
+            // 1. Save chunking configuration
+            const completeChunkingConfig = {
+              strategy: chunkingConfig.strategy,
+              chunk_size: chunkingConfig.chunk_size,
+              chunk_overlap: chunkingConfig.chunk_overlap,
+              preserve_code_blocks: chunkingConfig.preserve_code_blocks,
+              preserve_structure: chunkingConfig.preserve_structure,
+              include_metadata: chunkingConfig.include_metadata,
+              adaptive_sizing: chunkingConfig.adaptive_sizing,
+              context_window: chunkingConfig.context_window,
+              preserve_headings: chunkingConfig.preserve_headings,
+              min_chunk_size: chunkingConfig.min_chunk_size,
+              max_chunk_size: chunkingConfig.max_chunk_size,
+              semantic_threshold: chunkingConfig.semantic_threshold,
+              custom_separators: chunkingConfig.custom_separators,
+              remove_duplicates: chunkingConfig.remove_duplicates,
+              smart_splitting: chunkingConfig.smart_splitting
+            };
+            await kbClient.draft.updateChunking(currentDraft.draft_id, {
+              chunking_config: completeChunkingConfig
+            });
+
+            // 2. Save model & embedding configurations
+            const modelConfigRequest = {
+              embedding_config: {
+                model: modelConfig.embedding.model,
+                device: 'cpu',
+                batch_size: modelConfig.embedding.batch_size,
+                normalize_embeddings: true,
+              },
+              vector_store_config: {
+                provider: modelConfig.vector_store.provider,
+                collection_name_prefix: 'kb_',
+                distance_metric: (modelConfig.vector_store.settings as any).distance_metric,
+              },
+              retrieval_config: {
+                strategy: retrievalConfig.strategy,
+                top_k: retrievalConfig.top_k,
+                score_threshold: retrievalConfig.score_threshold,
+                rerank_enabled: retrievalConfig.rerank_enabled,
+              }
+            };
+
+            await kbClient.draft.configureModels(currentDraft.draft_id, modelConfigRequest);
+
+            // Now finalize with the saved configurations
             const finalizeRequest: FinalizeRequest = {
               chunking_config: {
                 strategy: chunkingConfig.strategy,
@@ -849,10 +964,15 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 provider: modelConfig.vector_store.provider,
                 settings: modelConfig.vector_store.settings
               },
+              retrieval_config: {
+                strategy: retrievalConfig.strategy,
+                top_k: retrievalConfig.top_k,
+                score_threshold: retrievalConfig.score_threshold,
+                rerank_enabled: retrievalConfig.rerank_enabled,
+              },
               priority: "normal"
             };
 
-            console.log('📤 Finalizing with configurations:', finalizeRequest);
             const result = await kbClient.draft.finalize(currentDraft.draft_id, finalizeRequest);
 
             set((state) => {
@@ -877,7 +997,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           // Stop any ongoing polling
           const { currentDraft } = get();
           if (currentDraft) {
-            kbClient.draft.delete(currentDraft.draft_id).catch(console.error);
+            kbClient.draft.delete(currentDraft.draft_id).catch(() => {});
           }
 
           set((state) => {
@@ -1051,7 +1171,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
                 // Include page update if content was edited OR needs re-approval
                 if ((page.is_edited || page.needs_reapproval) && page.edited_content) {
-                  console.log(`🔄 APPROVAL REQUEST: Page ${sourcePageIndex} in source ${page.sourceId} - including edit updates (is_edited: ${page.is_edited}, needs_reapproval: ${page.needs_reapproval})`);
                   group.page_updates.push({
                     page_index: sourcePageIndex,
                     edited_content: page.edited_content,
@@ -1059,13 +1178,10 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                   });
                 } else if (page.needs_reapproval) {
                   // Even without edited_content, if needs_reapproval is true, include it as an edit
-                  console.log(`🔄 APPROVAL REQUEST: Page ${sourcePageIndex} needs re-approval but no edited_content - marking as edited`);
                   group.page_updates.push({
                     page_index: sourcePageIndex,
                     is_edited: true
                   });
-                } else {
-                  console.log(`✅ APPROVAL REQUEST: Page ${sourcePageIndex} in source ${page.sourceId} - no edit updates needed (is_edited: ${page.is_edited}, already_approved: ${page.is_approved})`);
                 }
               }
             });
@@ -1161,7 +1277,6 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 state.pollingIntervals[pipelineId] = interval;
               });
             } catch (error) {
-              console.error("Pipeline polling error:", error);
               // Continue polling with exponential backoff
               const interval = setTimeout(poll, 5000);
               set((state) => {

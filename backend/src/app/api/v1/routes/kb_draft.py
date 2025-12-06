@@ -314,6 +314,7 @@ async def create_kb_draft(
         initial_data={
             "name": request.name,
             "description": request.description,
+            "context": request.context,
             "sources": [],
             "chunking_config": {
                 "strategy": "by_heading",
@@ -761,11 +762,15 @@ async def update_chunking_config(
             detail="Access denied"
         )
 
+    # DEBUG: Log what we received from frontend
+
     # Update chunking config
     try:
+        config_dict = request.dict()
+
         kb_draft_service.update_chunking_config(
             draft_id=draft_id,
-            chunking_config=request.dict()
+            chunking_config=config_dict
         )
 
         return {"message": "Chunking configuration updated"}
@@ -1868,6 +1873,55 @@ class ModelConfigRequest(BaseModel):
             "filterable_fields": ["document_id", "created_at", "workspace_id"],
             "include_source_tracking": True
         },
+        description="Metadata storage configuration"
+    )
+
+
+class KBFinalizeRequest(BaseModel):
+    """Request model for KB finalization with all configurations"""
+    chunking_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "strategy": "by_heading",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+            "preserve_code_blocks": True
+        },
+        description="Chunking configuration"
+    )
+    embedding_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "model": "all-MiniLM-L6-v2",
+            "device": "cpu",
+            "batch_size": 32,
+            "normalize_embeddings": True
+        },
+        description="Embedding model configuration"
+    )
+    vector_store_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "provider": "qdrant",
+            "collection_name_prefix": "kb",
+            "distance_metric": "cosine"
+        },
+        description="Vector store configuration"
+    )
+    retrieval_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "strategy": "semantic_search",
+            "top_k": 5,
+            "score_threshold": 0.7,
+            "rerank_enabled": False
+        },
+        description="Retrieval configuration"
+    )
+    priority: str = Field(default="normal", description="Processing priority")
+    metadata_config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "store_full_content": True,
+            "indexed_fields": ["document_id", "page_number", "content_type"],
+            "filterable_fields": ["document_id", "created_at", "workspace_id"],
+            "include_source_tracking": True
+        },
         description="Metadata storage and indexing configuration"
     )
 
@@ -2311,6 +2365,7 @@ async def get_draft_chunks(
 @router.post("/{draft_id}/finalize")
 async def finalize_kb_draft(
     draft_id: str,
+    request: KBFinalizeRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -2363,7 +2418,8 @@ async def finalize_kb_draft(
     try:
         result = await kb_draft_service.finalize_draft(
             db=db,
-            draft_id=draft_id
+            draft_id=draft_id,
+            config_override=request.dict()
         )
 
         return result

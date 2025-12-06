@@ -208,7 +208,7 @@ export function KBChunkingPreview() {
     : null;
 
   // Special handling for "no chunking" option
-  const isNoChunking = chunkingConfig.strategy === 'full_content';
+  const isNoChunking = chunkingConfig.strategy === 'no_chunking';
 
   return (
     <div className="space-y-6">

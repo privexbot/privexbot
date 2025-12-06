@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db as get_database_session
 from app.core.security import decode_token
 from app.models.user import User
+from app.models.workspace import Workspace
 
 
 # Re-export get_db for convenience
@@ -266,7 +267,7 @@ async def get_current_user_with_org(
 async def get_current_workspace(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
-) -> "Workspace":
+) -> Workspace:
     """
     Get current workspace from JWT token and validate access.
 
@@ -289,7 +290,6 @@ async def get_current_workspace(
         def my_endpoint(workspace: Workspace = Depends(get_current_workspace)):
             # Use workspace.id for filtering
     """
-    from app.models.workspace import Workspace
     from app.models.organization_member import OrganizationMember
 
     # Get user and org context first

@@ -71,6 +71,7 @@ export default function CreateKnowledgeBasePage() {
     approvedSources: [],
     chunkingConfig: null,
     modelConfig: null,
+    retrievalConfig: null,
   });
 
   // Define stepper steps
@@ -106,6 +107,12 @@ export default function CreateKnowledgeBasePage() {
       icon: <Brain className="w-4 h-4" />,
     },
     {
+      id: KBCreationStep.RETRIEVAL_CONFIG,
+      title: "Retrieval",
+      description: "Search strategy",
+      icon: <Brain className="w-4 h-4" />,
+    },
+    {
       id: KBCreationStep.FINALIZATION,
       title: "Finalize",
       description: "Create KB",
@@ -123,6 +130,7 @@ export default function CreateKnowledgeBasePage() {
     previewData,
     modelConfig,
     chunkingConfig,
+    retrievalConfig,
 
     // Actions
     createDraft,
@@ -131,6 +139,7 @@ export default function CreateKnowledgeBasePage() {
     addFileSource,
     addTextSource,
     updateModelConfig,
+    updateRetrievalConfig,
     finalizeDraft,
     validateForm,
     clearDraft,
@@ -211,6 +220,21 @@ export default function CreateKnowledgeBasePage() {
       }));
     }
   }, [chunkingConfig, stepperState.chunkingConfig]);
+
+  // Sync retrieval config changes to stepper state
+  useEffect(() => {
+    if (retrievalConfig && stepperState.retrievalConfig === null) {
+      setStepperState(prev => ({
+        ...prev,
+        retrievalConfig: {
+          strategy: retrievalConfig.strategy,
+          top_k: retrievalConfig.top_k,
+          score_threshold: retrievalConfig.score_threshold,
+          rerank_enabled: retrievalConfig.rerank_enabled,
+        }
+      }));
+    }
+  }, [retrievalConfig, stepperState.retrievalConfig]);
 
   const handleFormChange = (field: string, value: string) => {
     // Update form data immediately for responsive UI
@@ -917,6 +941,118 @@ export default function CreateKnowledgeBasePage() {
                       disabled={stepperState.modelConfig === null}
                       className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
                     >
+                      Continue to Retrieval
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step 6: Retrieval Configuration */}
+            {stepperState.currentStep === KBCreationStep.RETRIEVAL_CONFIG && (
+              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-gray-100 font-manrope">
+                    <Brain className="h-5 w-5" />
+                    Retrieval Strategy Configuration
+                  </CardTitle>
+                  <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    Configure how the knowledge base searches and retrieves information
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="retrieval-strategy" className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Search Strategy
+                      </Label>
+                      <select
+                        id="retrieval-strategy"
+                        className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value={stepperState.retrievalConfig?.strategy || 'hybrid_search'}
+                        onChange={(e) => {
+                          const newConfig = {
+                            ...stepperState.retrievalConfig,
+                            strategy: e.target.value as any
+                          };
+                          setStepperState(prev => ({ ...prev, retrievalConfig: newConfig }));
+                          updateRetrievalConfig({ strategy: e.target.value as any });
+                        }}
+                      >
+                        <option value="semantic_search">Semantic Search - Find content by meaning</option>
+                        <option value="keyword_search">Keyword Search - Find exact word matches</option>
+                        <option value="hybrid_search">Hybrid Search - Combine semantic + keyword</option>
+                        <option value="mmr">MMR - Maximum Marginal Relevance</option>
+                        <option value="similarity_score_threshold">Similarity Threshold - Filter by confidence</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="top-k" className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Max Results
+                      </Label>
+                      <Input
+                        id="top-k"
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={stepperState.retrievalConfig?.top_k || 10}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value) || 10;
+                          const newConfig = {
+                            ...stepperState.retrievalConfig,
+                            top_k: value
+                          };
+                          setStepperState(prev => ({ ...prev, retrievalConfig: newConfig }));
+                          updateRetrievalConfig({ top_k: value });
+                        }}
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Number of chunks to retrieve per search
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="score-threshold" className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Score Threshold
+                      </Label>
+                      <Input
+                        id="score-threshold"
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        value={stepperState.retrievalConfig?.score_threshold || 0.7}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value) || 0.7;
+                          const newConfig = {
+                            ...stepperState.retrievalConfig,
+                            score_threshold: value
+                          };
+                          setStepperState(prev => ({ ...prev, retrievalConfig: newConfig }));
+                          updateRetrievalConfig({ score_threshold: value });
+                        }}
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Minimum relevance score (0.0 - 1.0)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between pt-6">
+                    <Button
+                      variant="outline"
+                      onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.MODEL_CONFIG as KBCreationStep }))}
+                      className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    >
+                      Back to Model Config
+                    </Button>
+                    <Button
+                      onClick={proceedToNextStep}
+                      className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
+                    >
                       Continue to Finalize
                     </Button>
                   </div>
@@ -924,7 +1060,7 @@ export default function CreateKnowledgeBasePage() {
               </Card>
             )}
 
-            {/* Step 6: Finalization */}
+            {/* Step 7: Finalization */}
             {stepperState.currentStep === KBCreationStep.FINALIZATION && (
               <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                 <CardHeader>
@@ -962,13 +1098,22 @@ export default function CreateKnowledgeBasePage() {
                     </div>
 
                     <div className="flex flex-col sm:flex-row justify-between gap-3">
-                      <Button
-                        variant="outline"
-                        onClick={handleCancel}
-                        className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                      >
-                        Cancel
-                      </Button>
+                      <div className="flex gap-3">
+                        <Button
+                          variant="outline"
+                          onClick={() => setStepperState(prev => ({ ...prev, currentStep: KBCreationStep.RETRIEVAL_CONFIG as KBCreationStep }))}
+                          className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        >
+                          Back to Retrieval
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={handleCancel}
+                          className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
 
                       <Button
                         onClick={handleCreate}

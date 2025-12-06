@@ -9,6 +9,7 @@ import { Settings, Zap, HelpCircle, Info } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Slider } from '@/components/ui/slider';
@@ -78,59 +79,67 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
 
   const strategies = [
     {
-      value: ChunkingStrategy.FULL_CONTENT,
+      value: ChunkingStrategy.NO_CHUNKING,
       name: 'No Chunking',
-      description: 'Index full content as single document (best for small content)',
-      icon: '📄',
-      recommended: 'For content < 2000 characters'
+      description: 'Keep content as complete documents',
+      icon: '📋',
+      recommended: 'For small documents or precise control'
     },
     {
-      value: ChunkingStrategy.RECURSIVE,
-      name: 'Recursive',
-      description: 'Recursive text splitting with intelligent boundaries',
-      icon: '🔄'
+      value: ChunkingStrategy.BY_SENTENCE,
+      name: 'By Sentence',
+      description: 'Split on sentence boundaries',
+      icon: '📝',
+      recommended: 'For precise retrieval'
+    },
+    {
+      value: ChunkingStrategy.BY_PARAGRAPH,
+      name: 'By Paragraph',
+      description: 'Split on paragraph breaks',
+      icon: '¶',
+      recommended: 'For natural text flow'
     },
     {
       value: ChunkingStrategy.BY_HEADING,
       name: 'By Heading',
-      description: 'Split by document headings and structure',
-      icon: '📋'
+      description: 'Split by markdown headings and structure',
+      icon: '📋',
+      recommended: 'For structured documents'
     },
     {
       value: ChunkingStrategy.SEMANTIC,
       name: 'Semantic',
-      description: 'Split by meaning and semantic context',
-      icon: '🧠'
-    },
-    {
-      value: ChunkingStrategy.BY_SECTION,
-      name: 'By Section',
-      description: 'Split by document sections and topics',
-      icon: '📑'
+      description: 'Split on meaning boundaries using AI',
+      icon: '🧠',
+      recommended: 'For intelligent chunking'
     },
     {
       value: ChunkingStrategy.ADAPTIVE,
       name: 'Adaptive',
-      description: 'Adaptive chunking based on content type',
-      icon: '🎯'
-    },
-    {
-      value: ChunkingStrategy.SENTENCE_BASED,
-      name: 'Sentence Based',
-      description: 'Split by sentence boundaries',
-      icon: '📝'
-    },
-    {
-      value: ChunkingStrategy.PARAGRAPH_BASED,
-      name: 'Paragraph Based',
-      description: 'Split by natural paragraphs',
-      icon: '¶'
+      description: 'Dynamic chunking based on content type',
+      icon: '🎯',
+      recommended: 'For mixed content types'
     },
     {
       value: ChunkingStrategy.HYBRID,
       name: 'Hybrid',
       description: 'Combines multiple strategies intelligently',
-      icon: '⚡'
+      icon: '⚡',
+      recommended: 'For best results'
+    },
+    {
+      value: ChunkingStrategy.CUSTOM,
+      name: 'Custom',
+      description: 'User-defined separators',
+      icon: '🔧',
+      recommended: 'For specific formats'
+    },
+    {
+      value: ChunkingStrategy.RECURSIVE,
+      name: 'Recursive',
+      description: 'Recursive text splitting with intelligent boundaries',
+      icon: '🔄',
+      recommended: 'Default general-purpose method'
     }
   ];
 
@@ -156,8 +165,8 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
   const getEstimatedChunks = () => {
     if (draftSources.length === 0) return 0;
 
-    // For FULL_CONTENT strategy, each source becomes one chunk
-    if (chunkingConfig.strategy === ChunkingStrategy.FULL_CONTENT) {
+    // For NO_CHUNKING strategy, each source becomes one chunk
+    if (chunkingConfig.strategy === ChunkingStrategy.NO_CHUNKING) {
       return draftSources.length;
     }
 
@@ -198,7 +207,7 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
     else if (chunkingConfig.strategy === ChunkingStrategy.HYBRID) score += 25;
     else if (chunkingConfig.strategy === ChunkingStrategy.BY_HEADING) score += 15;
     else if (chunkingConfig.strategy === ChunkingStrategy.ADAPTIVE) score += 18;
-    else if (chunkingConfig.strategy === ChunkingStrategy.PARAGRAPH_BASED) score += 10;
+    else if (chunkingConfig.strategy === ChunkingStrategy.BY_PARAGRAPH) score += 10;
 
     // Size optimization
     if (chunkingConfig.chunk_size >= 256 && chunkingConfig.chunk_size <= 1024) score += 10;
@@ -208,6 +217,91 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
     if (overlapRatio >= 0.1 && overlapRatio <= 0.3) score += 10;
 
     return Math.min(100, score);
+  };
+
+  // Strategy-specific options renderer
+  const renderStrategyOptions = () => {
+    switch (chunkingConfig.strategy) {
+      case ChunkingStrategy.NO_CHUNKING:
+        return (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Content will be stored as complete documents without chunking.
+              No additional configuration needed.
+            </AlertDescription>
+          </Alert>
+        );
+
+      case ChunkingStrategy.SEMANTIC:
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label>Semantic Similarity Threshold</Label>
+              <Slider
+                value={[chunkingConfig.semantic_threshold || 0.7]}
+                onValueChange={([value]) => handleConfigChange('semantic_threshold', value)}
+                min={0.1} max={1.0} step={0.1}
+                className="mt-2"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Current: {chunkingConfig.semantic_threshold || 0.7} - Higher values = more similar chunks
+              </p>
+            </div>
+          </div>
+        );
+
+      case ChunkingStrategy.CUSTOM:
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label>Custom Separators (one per line)</Label>
+              <Textarea
+                value={chunkingConfig.custom_separators?.join('\n') || ''}
+                onChange={(e) => handleConfigChange('custom_separators',
+                  e.target.value.split('\n').filter(s => s.trim()))}
+                placeholder={`\\n\\n\n---\n===\n<!-- split -->\n### \n## `}
+                className="mt-2"
+                rows={6}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter separators that will be used to split your content into chunks
+              </p>
+            </div>
+          </div>
+        );
+
+      default:
+        // Standard chunk size and overlap controls for other strategies
+        return (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Chunk Size (characters)</Label>
+              <Slider
+                value={[chunkingConfig.chunk_size]}
+                onValueChange={([value]) => handleConfigChange('chunk_size', value)}
+                min={100} max={4000} step={100}
+                className="mt-2"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Current: {chunkingConfig.chunk_size} characters
+              </p>
+            </div>
+            <div>
+              <Label>Chunk Overlap (characters)</Label>
+              <Slider
+                value={[chunkingConfig.chunk_overlap]}
+                onValueChange={([value]) => handleConfigChange('chunk_overlap', value)}
+                min={0} max={500} step={50}
+                className="mt-2"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Current: {chunkingConfig.chunk_overlap} characters
+              </p>
+            </div>
+          </div>
+        );
+    }
   };
 
   const estimatedChunks = getEstimatedChunks();
@@ -295,45 +389,10 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
           </RadioGroup>
         </div>
 
-        {/* Size Configuration */}
-        <div className="grid grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Chunk Size</Label>
-              <span className="text-sm text-gray-500">{chunkingConfig.chunk_size} characters</span>
-            </div>
-            <Slider
-              value={[chunkingConfig.chunk_size]}
-              onValueChange={([value]) => handleConfigChange('chunk_size', value)}
-              max={2048}
-              min={128}
-              step={64}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>128</span>
-              <span>2048</span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Overlap</Label>
-              <span className="text-sm text-gray-500">{chunkingConfig.chunk_overlap} characters</span>
-            </div>
-            <Slider
-              value={[chunkingConfig.chunk_overlap]}
-              onValueChange={([value]) => handleConfigChange('chunk_overlap', value)}
-              max={512}
-              min={0}
-              step={25}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>0</span>
-              <span>512</span>
-            </div>
-          </div>
+        {/* Strategy-Specific Configuration */}
+        <div className="space-y-3">
+          <Label className="text-base font-medium">Strategy Configuration</Label>
+          {renderStrategyOptions()}
         </div>
 
         {/* Advanced Settings */}
@@ -397,6 +456,69 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
                 Enable smart splitting for code and tables
               </Label>
             </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="preserve-code-blocks"
+                checked={chunkingConfig.preserve_code_blocks ?? true}
+                onCheckedChange={(checked) => handleConfigChange('preserve_code_blocks', checked)}
+              />
+              <Label htmlFor="preserve-code-blocks" className="text-sm">
+                Preserve code blocks and formatting
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="preserve-structure"
+                checked={chunkingConfig.preserve_structure ?? true}
+                onCheckedChange={(checked) => handleConfigChange('preserve_structure', checked)}
+              />
+              <Label htmlFor="preserve-structure" className="text-sm">
+                Preserve document structure and element boundaries
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="include-metadata"
+                checked={chunkingConfig.include_metadata ?? true}
+                onCheckedChange={(checked) => handleConfigChange('include_metadata', checked)}
+              />
+              <Label htmlFor="include-metadata" className="text-sm">
+                Include structural metadata in chunks
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="adaptive-sizing"
+                checked={chunkingConfig.adaptive_sizing ?? false}
+                onCheckedChange={(checked) => handleConfigChange('adaptive_sizing', checked)}
+              />
+              <Label htmlFor="adaptive-sizing" className="text-sm">
+                Enable adaptive sizing based on content type
+              </Label>
+            </div>
+          </div>
+
+          {/* Context Window Setting */}
+          <div className="space-y-2">
+            <Label>Context Window (surrounding elements)</Label>
+            <div className="flex items-center space-x-4">
+              <Slider
+                value={[chunkingConfig.context_window ?? 2]}
+                onValueChange={([value]) => handleConfigChange('context_window', value)}
+                min={0} max={5} step={1}
+                className="flex-1"
+              />
+              <span className="text-sm text-gray-500 min-w-[60px]">
+                {chunkingConfig.context_window ?? 2} elements
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Number of surrounding elements to include for context
+            </p>
           </div>
         </div>
 

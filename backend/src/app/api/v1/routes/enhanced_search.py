@@ -54,7 +54,7 @@ router = APIRouter(prefix="/enhanced-search", tags=["Enhanced Search"])
 @router.post("/", response_model=EnhancedSearchResponse)
 async def enhanced_search_endpoint(
     request: EnhancedSearchRequest,
-    workspace: Workspace = Depends(get_current_workspace),
+    workspace = Depends(get_current_workspace),  # Type annotation removed to avoid import issue
     db: Session = Depends(get_db)
 ) -> EnhancedSearchResponse:
     """

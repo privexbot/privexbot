@@ -15,8 +15,9 @@ HOW:
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
@@ -379,9 +380,16 @@ async def reindex_kb(
     }
 
 
+class RetryRequest(BaseModel):
+    """Optional request model for retry with configuration overrides"""
+    config_overrides: Optional[Dict[str, Any]] = Field(None, description="Configuration overrides to apply during retry")
+    preserve_existing_chunks: bool = Field(False, description="Whether to preserve existing chunks and only retry failed operations")
+    retry_stages: Optional[List[str]] = Field(None, description="Specific stages to retry: ['scraping', 'chunking', 'embedding', 'indexing']")
+
 @router.post("/{kb_id}/retry-processing")
 async def retry_kb_processing(
     kb_id: UUID,
+    retry_options: Optional[RetryRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -441,11 +449,27 @@ async def retry_kb_processing(
     kb.error_message = None
     db.commit()
 
+    # Handle configuration for retry with optional overrides
+    kb_config = kb.config.copy() if kb.config else {}
+
+    # Apply configuration overrides if provided
+    if retry_options and retry_options.config_overrides:
+        # Merge overrides while preserving existing config
+        for key, value in retry_options.config_overrides.items():
+            if isinstance(value, dict) and isinstance(kb_config.get(key), dict):
+                # Deep merge for nested dictionaries
+                kb_config[key] = {**kb_config[key], **value}
+            else:
+                kb_config[key] = value
+
+    # Update KB configuration with any overrides
+    if retry_options and retry_options.config_overrides:
+        kb.config = kb_config
+        kb.updated_at = datetime.utcnow()
+        db.commit()
+
     # Queue retry task
     from app.tasks.kb_pipeline_tasks import process_web_kb_task
-
-    # Get existing KB configuration and sources for retry
-    kb_config = kb.config or {}
 
     # For retry, we need to reconstruct sources from existing documents
     from app.models.document import Document
@@ -480,6 +504,9 @@ async def retry_kb_processing(
         "task_id": task.id,
         "status": "processing",
         "message": f"Processing retry queued for KB '{kb.name}'",
+        "config_overrides_applied": bool(retry_options and retry_options.config_overrides),
+        "retry_stages": retry_options.retry_stages if retry_options else ["scraping", "chunking", "embedding", "indexing"],
+        "preserve_existing_chunks": retry_options.preserve_existing_chunks if retry_options else False,
         "note": "Monitor progress at /knowledge-bases/{kb_id}/pipeline-monitor?pipeline={pipeline_id}"
     }
 

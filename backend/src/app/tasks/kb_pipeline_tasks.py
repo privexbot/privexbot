@@ -462,19 +462,118 @@ def process_web_kb_task(
                         # Use smart KB service that respects user preferences
                         from app.services.smart_kb_service import smart_kb_service
 
-                        # Process document with proper storage strategy and user choice respect
-                        processing_result = loop.run_until_complete(
-                            smart_kb_service.process_document_with_proper_storage(
-                                document=document,
-                                content=page_content,
-                                kb=kb,
-                                user_config=config.get("chunking_config")  # User's explicit preferences
-                            )
-                        )
+                        # DEBUG: Log chunking config
+                        user_chunking_config = config.get("chunking_config")
+                        print(f"[DEBUG] Pipeline chunking config: {user_chunking_config}")
+                        print(f"[DEBUG] Full config passed to pipeline: {config}")
+                        print(f"[DEBUG] About to call smart_kb_service.process_document_with_proper_storage")
 
-                        if "error" in processing_result:
-                            tracker.add_log("warning", f"Processing failed for page {page_url}: {processing_result['error']}")
-                            continue
+                        try:
+                            # Process document with proper storage strategy and user choice respect
+                            processing_result = loop.run_until_complete(
+                                smart_kb_service.process_document_with_proper_storage(
+                                    document=document,
+                                    content=page_content,
+                                    kb=kb,
+                                    user_config=user_chunking_config  # User's explicit preferences
+                                )
+                            )
+                            print(f"[DEBUG] smart_kb_service call completed successfully")
+                            print(f"[DEBUG] processing_result keys: {list(processing_result.keys()) if processing_result else 'None'}")
+
+                            if "error" in processing_result:
+                                print(f"[DEBUG] smart_kb_service returned error: {processing_result['error']}")
+                                tracker.add_log("warning", f"Processing failed for page {page_url}: {processing_result['error']}")
+                                continue
+
+                        except Exception as smart_service_error:
+                            print(f"[ERROR] smart_kb_service call failed with exception: {str(smart_service_error)}")
+                            print(f"[ERROR] Exception type: {type(smart_service_error).__name__}")
+                            print(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+
+                            # FALLBACK: Use legacy chunking as emergency fallback
+                            print(f"[DEBUG] Using LEGACY CHUNKING as fallback for page: {page_url}")
+                            tracker.add_log("warning", f"Smart KB service failed, using legacy chunking for {page_url}: {str(smart_service_error)}")
+
+                            # Use chunking_service as fallback
+                            fallback_strategy = user_chunking_config.get("strategy", "adaptive") if user_chunking_config else "adaptive"
+                            fallback_chunk_size = user_chunking_config.get("chunk_size", 1200) if user_chunking_config else 1200
+                            fallback_chunk_overlap = user_chunking_config.get("chunk_overlap", 200) if user_chunking_config else 200
+
+                            print(f"[DEBUG] Fallback config: strategy={fallback_strategy}, size={fallback_chunk_size}, overlap={fallback_chunk_overlap}")
+
+                            # Use legacy chunking service
+                            chunks_data = chunking_service.chunk_document(
+                                text=page_content,
+                                strategy=fallback_strategy,
+                                chunk_size=fallback_chunk_size,
+                                chunk_overlap=fallback_chunk_overlap
+                            )
+
+                            # Generate embeddings
+                            chunk_texts = [chunk["content"] for chunk in chunks_data]
+                            embeddings = loop.run_until_complete(
+                                embedding_service.generate_embeddings(chunk_texts)
+                            )
+
+                            print(f"[DEBUG] LEGACY FALLBACK: Created {len(chunks_data)} chunks, {len(embeddings)} embeddings")
+
+                            # Create processing_result compatible with main flow
+                            processing_result = {
+                                "chunking_decision": type('obj', (object,), {
+                                    'strategy': fallback_strategy,
+                                    'chunk_size': fallback_chunk_size,
+                                    'chunk_overlap': fallback_chunk_overlap,
+                                    'user_preference': True,
+                                    'reasoning': f"Legacy fallback due to smart_kb_service error: {str(smart_service_error)}"
+                                })(),
+                                "postgres_chunks": [],
+                                "qdrant_chunks": [],
+                                "chunks_created": len(chunks_data),
+                                "embeddings_generated": len(embeddings)
+                            }
+
+                            # Build postgres and qdrant chunks manually
+                            for idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
+                                import uuid
+                                chunk_id = str(uuid.uuid4())
+
+                                # PostgreSQL chunk
+                                postgres_chunk_data = {
+                                    "id": chunk_id,
+                                    "document_id": document.id,
+                                    "kb_id": document.kb_id,
+                                    "content": chunk_data["content"],
+                                    "chunk_index": idx,
+                                    "position": idx,
+                                    "chunk_metadata": {
+                                        "token_count": chunk_data.get("token_count", 0),
+                                        "strategy": fallback_strategy,
+                                        "chunk_size": fallback_chunk_size,
+                                        "user_preference": True,
+                                        "fallback_reason": str(smart_service_error),
+                                        "workspace_id": str(document.workspace_id),
+                                        "created_at": datetime.utcnow().isoformat()
+                                    }
+                                }
+                                processing_result["postgres_chunks"].append(postgres_chunk_data)
+
+                                # Qdrant chunk
+                                from app.services.qdrant_service import QdrantChunk
+                                qdrant_chunk = QdrantChunk(
+                                    id=chunk_id,
+                                    embedding=embedding,
+                                    content=chunk_data["content"],
+                                    metadata={
+                                        "document_id": str(document.id),
+                                        "kb_id": str(document.kb_id),
+                                        "workspace_id": str(document.workspace_id),
+                                        "chunk_index": idx,
+                                        "strategy_used": fallback_strategy,
+                                        "fallback_processing": True
+                                    }
+                                )
+                                processing_result["qdrant_chunks"].append(qdrant_chunk)
 
                         # Extract results
                         chunking_decision = processing_result["chunking_decision"]
@@ -530,7 +629,7 @@ def process_web_kb_task(
                         for qdrant_chunk in qdrant_chunks:
                             qdrant_chunk.metadata["document_id"] = str(document.id)
                             qdrant_chunk.metadata["page_url"] = page_url
-                            qdrant_chunk.metadata["page_title"] = scraped_page.title or ""
+                            qdrant_chunk.metadata["page_title"] = (scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title) or ""
 
                         db.commit()
                         print(f"[DEBUG] Database commit successful, created {len(qdrant_chunks)} chunks for page: {page_url}")

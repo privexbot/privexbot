@@ -67,8 +67,11 @@ class ChunkingService:
         if strategy == "recursive":
             return self._recursive_chunk(text, chunk_size, chunk_overlap, separators)
 
-        elif strategy in ("sentence", "sentence_based"):
+        elif strategy in ("sentence", "sentence_based", "by_sentence"):
             return self._sentence_chunk(text, chunk_size, chunk_overlap)
+
+        elif strategy in ("no_chunking", "full_content"):
+            return self._full_content_chunk(text)
 
         elif strategy == "token":
             return self._token_chunk(text, chunk_size, chunk_overlap)
@@ -76,13 +79,13 @@ class ChunkingService:
         elif strategy == "semantic":
             return self._semantic_chunk(text, chunk_size, chunk_overlap)
 
-        elif strategy == "by_heading":
+        elif strategy in ("by_heading", "heading"):
             return self._heading_chunk(text, chunk_size, chunk_overlap)
 
-        elif strategy == "by_section":
+        elif strategy in ("by_section", "section"):
             return self._section_chunk(text, chunk_size, chunk_overlap)
 
-        elif strategy == "paragraph_based":
+        elif strategy in ("paragraph_based", "by_paragraph"):
             return self._paragraph_chunk(text, chunk_size, chunk_overlap)
 
         elif strategy == "adaptive":
@@ -90,6 +93,9 @@ class ChunkingService:
 
         elif strategy == "hybrid":
             return self._hybrid_chunk(text, chunk_size, chunk_overlap)
+
+        elif strategy == "custom":
+            return self._custom_chunk(text, chunk_size, chunk_overlap, separators)
 
         else:
             raise ValueError(f"Unknown chunking strategy: {strategy}")
@@ -690,6 +696,28 @@ class ChunkingService:
 
         return refined_chunks
 
+
+    def _full_content_chunk(self, text: str) -> List[dict]:
+        """
+        No chunking - return the full content as a single chunk.
+        """
+        if not text.strip():
+            return []
+        return [self._create_chunk_metadata(text.strip(), 0)]
+
+    def _custom_chunk(
+        self,
+        text: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        separators: Optional[List[str]] = None
+    ) -> List[dict]:
+        """
+        Custom chunking with user-defined separators.
+        """
+        if not separators:
+            return self._recursive_chunk(text, chunk_size, chunk_overlap)
+        return self._recursive_chunk(text, chunk_size, chunk_overlap, separators)
 
     def _create_chunk_metadata(self, content: str, index: int) -> dict:
         """

@@ -62,15 +62,15 @@ export type CrawlMethod = (typeof CrawlMethod)[keyof typeof CrawlMethod];
  * Chunking Strategies
  */
 export const ChunkingStrategy = {
-  RECURSIVE: "recursive",
-  BY_HEADING: "by_heading",
-  SEMANTIC: "semantic",
-  BY_SECTION: "by_section",
-  ADAPTIVE: "adaptive",
-  SENTENCE_BASED: "sentence_based",
-  PARAGRAPH_BASED: "paragraph_based",
-  HYBRID: "hybrid",
-  FULL_CONTENT: "full_content", // No chunking - index full content as single document
+  NO_CHUNKING: "no_chunking",         // Keep content as complete documents
+  BY_SENTENCE: "by_sentence",         // Split on sentence boundaries
+  BY_PARAGRAPH: "by_paragraph",       // Split on paragraph breaks
+  BY_HEADING: "by_heading",           // Split on markdown headings
+  SEMANTIC: "semantic",               // Split on meaning boundaries
+  ADAPTIVE: "adaptive",               // Dynamic chunking based on content
+  HYBRID: "hybrid",                   // Combination approach
+  CUSTOM: "custom",                   // User-defined separators
+  RECURSIVE: "recursive",             // Recursive text splitting (default)
 } as const;
 
 export type ChunkingStrategy =
@@ -413,6 +413,12 @@ export interface FinalizeRequest {
   chunking_config?: Partial<ChunkingConfig>;
   embedding_config?: Partial<EmbeddingConfig>;
   vector_store_config?: Partial<VectorStoreConfig>;
+  retrieval_config?: {
+    strategy?: 'semantic_search' | 'keyword_search' | 'hybrid_search' | 'mmr' | 'similarity_score_threshold';
+    top_k?: number;
+    score_threshold?: number;
+    rerank_enabled?: boolean;
+  };
   priority?: "low" | "normal" | "high";
 }
 
@@ -502,11 +508,19 @@ export interface ChunkingConfig {
   strategy: ChunkingStrategy;
   chunk_size: number; // Characters per chunk (100-5000)
   chunk_overlap: number; // Overlap between chunks (0-1000)
+
+  // Backend-supported parameters (with UI controls)
+  preserve_code_blocks?: boolean; // API endpoint supports this
+  preserve_structure?: boolean; // Enhanced service supports this - maintain element boundaries
+  include_metadata?: boolean; // Enhanced service supports this - include structural metadata
+  adaptive_sizing?: boolean; // Enhanced service supports this - adjust size based on content type
+  context_window?: number; // Enhanced service supports this - surrounding elements for context (0-5)
+
+  // Legacy/frontend-only parameters (may not have backend support)
   preserve_formatting?: boolean;
   split_by_heading_level?: number; // For by_heading strategy
   semantic_threshold?: number; // For semantic strategy (0-1)
-
-  // Additional configuration options
+  custom_separators?: string[]; // For custom strategy - user-defined separators
   min_chunk_size?: number; // Minimum chunk size (50-500)
   max_chunk_size?: number; // Maximum chunk size (500-10000)
   preserve_headings?: boolean;
@@ -769,7 +783,8 @@ export const KBCreationStep = {
   CONTENT_APPROVAL: 3, // Phase 1C: Content approval & source addition
   CHUNKING_CONFIG: 4, // Phase 1D: Chunking configuration with live preview
   MODEL_CONFIG: 5, // Phase 1E: Model & vector store configuration
-  FINALIZATION: 6, // Phase 2: Final review & creation
+  RETRIEVAL_CONFIG: 6, // Phase 1F: Retrieval strategy configuration
+  FINALIZATION: 7, // Phase 2: Final review & creation
 } as const;
 
 export type KBCreationStep =
@@ -953,6 +968,12 @@ export interface StepperState {
   approvedSources: ApprovedSource[];
   chunkingConfig: ChunkingPreviewRequest | null;
   modelConfig: ModelConfigRequest | null;
+  retrievalConfig: {
+    strategy?: 'semantic_search' | 'keyword_search' | 'hybrid_search' | 'mmr' | 'similarity_score_threshold';
+    top_k?: number;
+    score_threshold?: number;
+    rerank_enabled?: boolean;
+  } | null;
 }
 
 // ========================================

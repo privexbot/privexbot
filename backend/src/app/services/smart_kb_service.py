@@ -154,6 +154,11 @@ class SmartKBService:
         # Get user's explicit parameters (from API call, etc.)
         user_config = user_config or {}
 
+        # DEBUG: Log user config processing
+        print(f"[DEBUG] Smart KB Service - user_config: {user_config}")
+        print(f"[DEBUG] Smart KB Service - kb.config: {kb_config}")
+        print(f"[DEBUG] Smart KB Service - chunking_config from KB: {chunking_config}")
+
         # Check for explicit user preferences (highest priority)
         user_strategy = (
             user_config.get("strategy") or
@@ -168,8 +173,14 @@ class SmartKBService:
             chunking_config.get("chunk_overlap")
         )
 
+        # DEBUG: Log extracted user preferences
+        print(f"[DEBUG] Smart KB Service - user_strategy: {user_strategy}")
+        print(f"[DEBUG] Smart KB Service - user_chunk_size: {user_chunk_size}")
+        print(f"[DEBUG] Smart KB Service - user_chunk_overlap: {user_chunk_overlap}")
+
         # If user has explicit preferences, use them
         if user_strategy and user_chunk_size and user_chunk_overlap:
+            print(f"[DEBUG] Smart KB Service - Using FULL user preferences: strategy={user_strategy}, size={user_chunk_size}, overlap={user_chunk_overlap}")
             return ChunkingDecision(
                 strategy=user_strategy,
                 chunk_size=user_chunk_size,
@@ -180,13 +191,17 @@ class SmartKBService:
             )
 
         # If partial user preferences, get adaptive suggestions for missing parts
+        print(f"[DEBUG] Smart KB Service - Using PARTIAL/ADAPTIVE preferences, analyzing content...")
         adaptive_analysis = self._analyze_content_for_adaptive_suggestions(content, title, kb)
+        print(f"[DEBUG] Smart KB Service - Adaptive analysis: {adaptive_analysis}")
 
         final_strategy = user_strategy or adaptive_analysis["recommended_strategy"]
         final_chunk_size = user_chunk_size or adaptive_analysis["recommended_chunk_size"]
         final_chunk_overlap = user_chunk_overlap or adaptive_analysis["recommended_overlap"]
 
         user_preference = bool(user_strategy or user_chunk_size or user_chunk_overlap)
+
+        print(f"[DEBUG] Smart KB Service - Final decision: strategy={final_strategy}, size={final_chunk_size}, overlap={final_chunk_overlap}, user_preference={user_preference}")
 
         reasoning_parts = []
         if user_strategy:
