@@ -52,7 +52,8 @@ class RetrievalService:
         top_k: int = 5,
         search_method: str = "hybrid",
         threshold: float = 0.7,
-        apply_annotation_boost: bool = True
+        apply_annotation_boost: bool = True,
+        context_filter: str = None  # NEW: Filter by context (chatbot, chatflow, both)
     ) -> List[dict]:
         """
         Search knowledge base for relevant chunks.

@@ -99,6 +99,7 @@ export default function KBDetailPage() {
         kbClient.kb.getChunks(kbId)
       ]);
 
+
       setDocuments(documentsData || []);
       setChunks(chunksData || []);
     } catch (error) {
@@ -225,9 +226,9 @@ export default function KBDetailPage() {
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span>Created {new Date(kb.created_at).toLocaleDateString()}</span>
                 <span>•</span>
-                <span>{Array.isArray(documents) ? documents.length : 0} documents</span>
+                <span>{Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0} documents</span>
                 <span>•</span>
-                <span>{Array.isArray(chunks) ? chunks.length : 0} chunks</span>
+                <span>{Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0} chunks</span>
               </div>
             </div>
 
@@ -266,7 +267,9 @@ export default function KBDetailPage() {
             <CardContent>
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-blue-500" />
-                <span className="text-2xl font-bold">{Array.isArray(documents) ? documents.length : 0}</span>
+                <span className="text-2xl font-bold">
+                  {Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -280,7 +283,9 @@ export default function KBDetailPage() {
             <CardContent>
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-green-500" />
-                <span className="text-2xl font-bold">{Array.isArray(chunks) ? chunks.length : 0}</span>
+                <span className="text-2xl font-bold">
+                  {Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -352,8 +357,14 @@ export default function KBDetailPage() {
                       <p className="capitalize">{kb.context || 'both'}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-muted-foreground">Indexing Method</label>
-                      <p className="capitalize">{(kb as any).indexing_method || 'by_heading'}</p>
+                      <label className="text-sm font-medium text-muted-foreground">Chunking Strategy</label>
+                      <p className="capitalize">
+                        {((kb as any).config?.chunking_config?.strategy ||
+                          (kb as any).chunking_config?.strategy ||
+                          (kb as any).config?.chunking?.strategy ||
+                          'by_heading'
+                        ).replace(/_/g, ' ')}
+                      </p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Last Updated</label>
@@ -368,7 +379,9 @@ export default function KBDetailPage() {
           <TabsContent value="documents">
             <Card>
               <CardHeader>
-                <CardTitle>Documents ({Array.isArray(documents) ? documents.length : 0})</CardTitle>
+                <CardTitle>
+                  Documents ({Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0})
+                </CardTitle>
                 <CardDescription>
                   All documents in this knowledge base
                 </CardDescription>
@@ -450,7 +463,9 @@ export default function KBDetailPage() {
           <TabsContent value="chunks">
             <Card>
               <CardHeader>
-                <CardTitle>Chunks ({Array.isArray(chunks) ? chunks.length : 0})</CardTitle>
+                <CardTitle>
+                  Chunks ({Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0})
+                </CardTitle>
                 <CardDescription>
                   Text chunks used for search and retrieval
                 </CardDescription>
@@ -511,15 +526,75 @@ export default function KBDetailPage() {
               <CardContent>
                 <div className="space-y-6">
                   <div>
-                    <h4 className="font-medium mb-4">Configuration</h4>
+                    <h4 className="font-medium mb-4">Chunking Configuration</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <label className="font-medium text-muted-foreground">Strategy</label>
+                        <p className="capitalize">
+                          {((kb as any).config?.chunking_config?.strategy ||
+                            (kb as any).chunking_config?.strategy ||
+                            (kb as any).config?.chunking?.strategy ||
+                            'by_heading'
+                          ).replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="font-medium text-muted-foreground">Chunk Size</label>
+                        <p>
+                          {(kb as any).config?.chunking_config?.chunk_size ||
+                           (kb as any).chunking_config?.chunk_size ||
+                           (kb as any).config?.chunking?.chunk_size ||
+                           '1000'} characters
+                        </p>
+                      </div>
+                      <div>
+                        <label className="font-medium text-muted-foreground">Chunk Overlap</label>
+                        <p>
+                          {(kb as any).config?.chunking_config?.chunk_overlap ||
+                           (kb as any).chunking_config?.chunk_overlap ||
+                           (kb as any).config?.chunking?.chunk_overlap ||
+                           '200'} characters
+                        </p>
+                      </div>
+                      <div>
+                        <label className="font-medium text-muted-foreground">Preserve Headings</label>
+                        <p>
+                          {((kb as any).config?.chunking_config?.preserve_headings ||
+                            (kb as any).chunking_config?.preserve_headings ||
+                            (kb as any).config?.chunking?.preserve_headings) ? 'Yes' : 'No'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-4">Model Configuration</h4>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <label className="font-medium text-muted-foreground">Embedding Model</label>
-                        <p>{kb.embedding_config?.model || 'default'}</p>
+                        <p>
+                          {(kb as any).config?.embedding?.model ||
+                           kb.embedding_config?.model ||
+                           'all-MiniLM-L6-v2'}
+                        </p>
                       </div>
                       <div>
                         <label className="font-medium text-muted-foreground">Vector Store</label>
-                        <p>{kb.vector_store_config?.provider || 'qdrant'}</p>
+                        <p>
+                          {(kb as any).config?.vector_store?.provider ||
+                           kb.vector_store_config?.provider ||
+                           'qdrant'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="font-medium text-muted-foreground">Indexing Method</label>
+                        <p className="capitalize">
+                          {((kb as any).indexing_method || 'high_quality').replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="font-medium text-muted-foreground">Context</label>
+                        <p className="capitalize">{kb.context || 'both'}</p>
                       </div>
                     </div>
                   </div>

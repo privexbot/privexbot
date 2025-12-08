@@ -418,15 +418,16 @@ class SmartKBService:
             }
             postgres_chunks.append(postgres_chunk_data)
 
-            # Qdrant chunk (ONLY embedding + minimal metadata for search)
+            # Qdrant chunk (ONLY embedding + enhanced metadata for search and filtering)
             qdrant_chunk = QdrantChunk(
                 id=chunk_id,
                 embedding=embedding,
                 content=chunk_data["content"],  # Store content in Qdrant for search results
                 metadata={
                     "document_id": str(document.id),
-                    "kb_id": str(document.kb_id),
-                    "workspace_id": str(document.workspace_id),
+                    "kb_id": str(kb.id),
+                    "workspace_id": str(kb.workspace_id),
+                    "context": kb.context,  # CRITICAL: Enable context-based filtering
                     "chunk_index": idx,
                     "content_type": chunking_decision.adaptive_suggestion,
                     "strategy_used": chunking_decision.strategy,

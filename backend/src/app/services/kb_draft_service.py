@@ -494,12 +494,20 @@ class KBDraftService:
         # PHASE 2: CREATE DATABASE RECORDS
         # ========================================
 
+        # CRITICAL FIX: Merge draft config with config_override for finalization
+        final_config = data.get("config", {})
+        if config_override:
+            print(f"🔧 [FINALIZE_DRAFT] Merging config_override: {config_override}")
+            final_config.update(config_override)
+
+        print(f"🔧 [FINALIZE_DRAFT] Final KB config: {final_config}")
+
         # Create KB record (status="processing")
         kb = KnowledgeBase(
             workspace_id=UUID(draft["workspace_id"]),
             name=data["name"],
             description=data.get("description"),
-            config=data.get("config", {}),
+            config=final_config,  # Use merged config including chunking
             context=data.get("context", "both"),  # chatbot, chatflow, or both
             context_settings=data.get("context_settings", {}),
             embedding_config=data.get("embedding_config", {
@@ -518,22 +526,285 @@ class KBDraftService:
         db.add(kb)
         db.flush()  # Get kb.id without committing
 
-        # Create document placeholders (one per source)
+        # CRITICAL FIX: Create document placeholders based on chunking strategy to prevent duplication
+        # For no_chunking strategy: Create single combined document
+        # For other strategies: Create individual documents per source
+
+        sources = data.get("sources", [])
         documents = []
-        for source in data.get("sources", []):
+
+        # Get chunking strategy from config_override (finalize request) or data
+        final_config = config_override or {}
+        chunking_config = final_config.get("chunking_config") or data.get("chunking_config", {})
+        strategy = chunking_config.get("strategy", "by_heading")
+
+        print(f"🔧 [FINALIZE_DRAFT] Document creation strategy check: chunking_strategy={strategy}")
+
+        if strategy in ("no_chunking", "full_content") and len(sources) > 0:
+            # Create single combined document for no_chunking strategy
+            primary_source = sources[0]  # Use first source as primary reference
+
+            # CRITICAL FIX: Use the SAME data source as chunk preview API for consistency
+            approved_sources = []
+
+            # PRIORITY 1: Check for approved_content sources (same as chunk preview API)
+            approved_content_sources = [s for s in sources if s.get("status") == "approved" and s.get("type") == "approved_content"]
+            if approved_content_sources:
+                print(f"🎯 [FINALIZE_CONSISTENCY] Using approved_content sources (same as chunk preview)")
+                for source in approved_content_sources:
+                    approved_pages = source.get("approved_pages", [])
+                    for page in approved_pages:
+                        content = page.get("content", "")
+                        if content.strip():
+                            approved_page = {
+                                "url": page.get("url", source.get("url", "")),
+                                "title": page.get("title", ""),
+                                "content": content,  # Exact same content as chunk preview
+                                "markdown": content,
+                                "is_edited": page.get("is_edited", False),
+                                "source": "approved_content",
+                                "metadata": page.get("metadata", {}),
+                                "approved_at": page.get("approved_at"),
+                                "approved_by": page.get("approved_by")
+                            }
+                            approved_sources.append(approved_page)
+            else:
+                # FALLBACK: Use original logic for legacy compatibility
+                print(f"🔄 [FINALIZE_FALLBACK] Using metadata.previewPages (legacy compatibility)")
+                for source in sources:
+                    source_metadata = source.get("metadata", {})
+                    preview_pages = source_metadata.get("previewPages", [])
+
+                    # CRITICAL FIX: Extract content from APPROVED pages only (both edited and unedited)
+                    for page in preview_pages:
+                        # Only process pages that were actually approved by the user
+                        if not page.get("is_approved", False):
+                            continue  # Skip non-approved pages
+
+                        # For approved pages, use edited_content if available, otherwise original content
+                        approved_content = page.get("edited_content") or page.get("content", "")
+                        if approved_content.strip():  # Only include non-empty content
+                            approved_page = {
+                                "url": page.get("url", source.get("url", "")),
+                                "title": page.get("title", ""),
+                                "content": approved_content,  # This is what user actually approved
+                                "markdown": approved_content,
+                                "is_edited": page.get("is_edited", False),
+                                "source": "user_approved",
+                                "metadata": page.get("metadata", {}),
+                                "approved_at": page.get("approved_at"),
+                                "approved_by": page.get("approved_by")
+                            }
+                            approved_sources.append(approved_page)
+
+            combined_metadata = {
+                "combined_sources": len(sources),
+                "sources": [{"url": s.get("url"), "type": s.get("type")} for s in sources],
+                "chunking_strategy": strategy,
+                "document_type": "combined",
+                "approved_sources": approved_sources  # CRITICAL: Include approved content for background task
+            }
+
+            print(f"✅ [FINALIZE_DRAFT] Extracted {len(approved_sources)} approved pages for combined document")
+
             document = Document(
                 kb_id=kb.id,
                 workspace_id=kb.workspace_id,
-                name=source.get("url", "Unnamed source"),
-                source_type=source["type"],
-                source_url=source.get("url"),
-                source_metadata=source,
+                name=f"{data['name']} (Combined {len(sources)} sources)",
+                source_type="web_scraping_combined",
+                source_url=primary_source.get("url"),
+                source_metadata=combined_metadata,
                 status="pending",  # Will be updated by background task
                 created_by=UUID(draft["created_by"]),
                 created_at=datetime.utcnow()
             )
             db.add(document)
             documents.append(document)
+            print(f"✅ [FINALIZE_DRAFT] Created combined document placeholder for {len(sources)} sources")
+
+        else:
+            # Create individual document placeholders (normal behavior for chunked strategies)
+            # CRITICAL FIX: For chunked strategies, check for BOTH approval methods
+            # Method 1: New approved_content sources (from /approve-content endpoint)
+            approved_content_sources = [s for s in sources if s.get("status") == "approved" and s.get("type") == "approved_content"]
+
+            # Method 2: Sources with approved pages in metadata (from /approve-sources endpoint)
+            sources_with_approved_pages = []
+            for source in sources:
+                metadata = source.get("metadata", {})
+                preview_pages = metadata.get("previewPages", [])
+                has_approved = any(page.get("is_approved", False) for page in preview_pages)
+                if has_approved and source.get("type") != "approved_content":
+                    sources_with_approved_pages.append(source)
+
+            if approved_content_sources:
+                print(f"🎯 [FINALIZE_INDIVIDUAL] Processing {len(approved_content_sources)} approved_content sources for chunked strategy")
+                for source in approved_content_sources:
+                    # Use the same data structure as chunk preview API
+                    approved_pages = source.get("approved_pages", [])
+
+                    # CRITICAL FIX: Create ONE document per approved PAGE for individual processing
+                    # This ensures the placeholder documents match the page URLs during processing
+                    for page in approved_pages:
+                        content = page.get("content", "")
+                        if content.strip():
+                            # Each page gets its own document placeholder
+                            page_url = page.get("url", source.get("url", ""))
+                            page_title = page.get("title", "")
+
+                            # Create approved_source for this specific page
+                            approved_source_for_page = [{
+                                "url": page_url,
+                                "title": page_title,
+                                "content": content,  # Exact same content as chunk preview
+                                "markdown": content,
+                                "is_edited": page.get("is_edited", False),
+                                "source": "approved_content",
+                                "metadata": page.get("metadata", {}),
+                                "approved_at": page.get("approved_at"),
+                                "approved_by": page.get("approved_by")
+                            }]
+
+                            # Create metadata for this page's document
+                            page_metadata = {
+                                **source.get("metadata", {}),
+                                "approved_sources": approved_source_for_page,
+                                "source_name": source.get("name"),
+                                "source_id": source.get("id"),
+                                "page_index": page.get("index"),
+                                "is_approved_content": True
+                            }
+
+                            print(f"✅ [FINALIZE_INDIVIDUAL] Creating placeholder for page: {page_url}")
+
+                            # Create individual document placeholder for this page
+                            document = Document(
+                                kb_id=kb.id,
+                                workspace_id=kb.workspace_id,
+                                name=page_title or page_url or f"Page from {source.get('name', 'Approved Content')}",
+                                source_type="approved_content",
+                                source_url=page_url,  # CRITICAL: Use the PAGE URL, not source URL
+                                source_metadata=page_metadata,
+                                status="pending",
+                                created_by=UUID(draft["created_by"]),
+                                created_at=datetime.utcnow()
+                            )
+                            db.add(document)
+                            documents.append(document)
+
+                    print(f"✅ [FINALIZE_INDIVIDUAL] Created {len(approved_pages)} placeholder documents for approved pages")
+            elif sources_with_approved_pages:
+                # Handle sources that have approved pages in metadata (from /approve-sources endpoint)
+                print(f"🔄 [FINALIZE_INDIVIDUAL] Processing {len(sources_with_approved_pages)} sources with approved pages in metadata")
+                for source in sources_with_approved_pages:
+                    metadata = source.get("metadata", {})
+                    preview_pages = metadata.get("previewPages", [])
+
+                    # Process each approved page
+                    for page in preview_pages:
+                        if not page.get("is_approved", False):
+                            continue  # Skip non-approved pages
+
+                        # Get the content (edited or original)
+                        content = page.get("edited_content") or page.get("content", "")
+                        if not content.strip():
+                            continue
+
+                        page_url = page.get("url", source.get("url", ""))
+                        page_title = page.get("title", "")
+
+                        # Create approved_source for this specific page
+                        approved_source_for_page = [{
+                            "url": page_url,
+                            "title": page_title,
+                            "content": content,  # User approved content
+                            "markdown": content,
+                            "is_edited": page.get("is_edited", False),
+                            "source": "user_approved",
+                            "metadata": page.get("metadata", {}),
+                            "approved_at": page.get("approved_at"),
+                            "approved_by": page.get("approved_by")
+                        }]
+
+                        # Create metadata for this page's document
+                        page_metadata = {
+                            **metadata,
+                            "approved_sources": approved_source_for_page,
+                            "source_name": source.get("name", source.get("url", "")),
+                            "source_id": source.get("id"),
+                            "page_index": page.get("index"),
+                            "is_approved_content": True,
+                            "approval_method": "approve-sources"  # Mark how it was approved
+                        }
+
+                        print(f"✅ [FINALIZE_LEGACY_APPROVED] Creating placeholder for approved page: {page_url}")
+
+                        # Create individual document placeholder for this page
+                        document = Document(
+                            kb_id=kb.id,
+                            workspace_id=kb.workspace_id,
+                            name=page_title or page_url or f"Page from {source.get('url', 'Source')}",
+                            source_type=source.get("type", "web_scraping"),
+                            source_url=page_url,  # Use the PAGE URL
+                            source_metadata=page_metadata,
+                            status="pending",
+                            created_by=UUID(draft["created_by"]),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(document)
+                        documents.append(document)
+
+                print(f"✅ [FINALIZE_LEGACY_APPROVED] Created placeholder documents for approved pages from {len(sources_with_approved_pages)} sources")
+            else:
+                # FALLBACK: Legacy compatibility for old draft format without approvals
+                print(f"🔄 [FINALIZE_LEGACY] No approved_content sources found, using legacy previewPages logic")
+                for source in sources:
+                    # CRITICAL FIX: Extract approved content for each individual source
+                    source_metadata = dict(source)  # Copy the original source metadata
+                    preview_pages = source.get("metadata", {}).get("previewPages", [])
+
+                    if preview_pages:
+                        # CRITICAL FIX: Extract approved/edited content from APPROVED preview pages only
+                        approved_sources = []
+                        for page in preview_pages:
+                            # Only process pages that were actually approved by the user
+                            if not page.get("is_approved", False):
+                                continue  # Skip non-approved pages
+
+                            # For approved pages, use edited_content if available, otherwise original content
+                            approved_content = page.get("edited_content") or page.get("content", "")
+                            if approved_content.strip():
+                                approved_page = {
+                                    "url": page.get("url", source.get("url", "")),
+                                    "title": page.get("title", ""),
+                                    "content": approved_content,  # This is what user actually approved
+                                    "markdown": approved_content,
+                                    "is_edited": page.get("is_edited", False),
+                                    "source": "user_approved",
+                                    "metadata": page.get("metadata", {}),
+                                    "approved_at": page.get("approved_at"),
+                                    "approved_by": page.get("approved_by")
+                                }
+                                approved_sources.append(approved_page)
+
+                        # Add approved content to source metadata
+                        source_metadata["approved_sources"] = approved_sources
+                        print(f"✅ [FINALIZE_LEGACY] Extracted {len(approved_sources)} approved pages for {source.get('url')}")
+
+                    document = Document(
+                        kb_id=kb.id,
+                        workspace_id=kb.workspace_id,
+                        name=source.get("url", "Unnamed source"),
+                        source_type=source["type"],
+                        source_url=source.get("url"),
+                        source_metadata=source_metadata,  # Include approved content
+                        status="pending",  # Will be updated by background task
+                        created_by=UUID(draft["created_by"]),
+                        created_at=datetime.utcnow()
+                    )
+                    db.add(document)
+                    documents.append(document)
+            print(f"✅ [FINALIZE_DRAFT] Created {len(documents)} individual document placeholders")
 
         # Commit to PostgreSQL
         db.commit()

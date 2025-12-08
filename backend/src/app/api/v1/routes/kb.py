@@ -252,6 +252,9 @@ async def get_kb(
     # Note: Access control simplified - KB access already validated at workspace level
     # TODO: Add proper workspace membership check if needed
 
+    # Extract stats for both new stats field and legacy compatibility fields
+    kb_stats = kb.stats or {}
+
     return KBDetailResponse(
         id=str(kb.id),
         name=kb.name,
@@ -262,7 +265,10 @@ async def get_kb(
         embedding_config=kb.embedding_config or {},
         vector_store_config=kb.vector_store_config or {},
         indexing_method=kb.indexing_method or "by_heading",
-        stats=kb.stats or {},
+        stats=kb_stats,
+        # CRITICAL FIX: Populate legacy fields from stats for frontend compatibility
+        total_documents=kb_stats.get("total_documents", kb.total_documents or 0),
+        total_chunks=kb_stats.get("total_chunks", kb.total_chunks or 0),
         error_message=kb.error_message,
         created_at=kb.created_at.isoformat(),
         updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
@@ -1107,7 +1113,7 @@ async def get_kb_document(
         url=document.source_url,
         source_type=document.source_type,
         source_metadata=document.source_metadata or {},
-        content=document.content_preview or "",  # TODO: Store full content separately if needed
+        content=document.content_full or document.content_preview or "",  # Use full content for document view/edit
         content_preview=document.content_preview,
         status=document.status,
         processing_metadata=document.processing_metadata,
@@ -1358,6 +1364,7 @@ async def create_kb_document(
             source_type=request.source_type,
             source_url=None,
             source_metadata={"created_via": "api", "method": "manual_creation"},
+            content_full=request.content,  # Store full content
             content_preview=request.content[:500] if len(request.content) > 500 else request.content,
             status="processing",
             processing_progress=0,
@@ -1503,6 +1510,7 @@ async def update_kb_document(
 
         if needs_reprocessing:
             # Update content fields
+            document.content_full = request.content  # Store full content
             document.content_preview = request.content[:500] if len(request.content) > 500 else request.content
             document.word_count = len(request.content.split())
             document.character_count = len(request.content)

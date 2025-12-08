@@ -85,17 +85,50 @@ class KBRetryService:
         # Reconstruct original sources with intelligent metadata preservation
         sources = []
         for doc in documents:
-            source = {
-                "id": str(uuid4()),  # Generate new source ID for retry
-                "type": "web_scraping",  # Assuming web sources for now
-                "url": doc.source_url,
-                "config": doc.source_metadata.get("config", {}) if doc.source_metadata else {},
-                "added_at": datetime.utcnow().isoformat(),
-                "retry_from_document": str(doc.id),  # Track original document
-                "original_status": doc.status
-            }
+            # CRITICAL FIX: Check if this document has approved sources (user-finalized content)
+            has_approved_sources = (
+                doc.source_metadata and
+                "approved_sources" in doc.source_metadata and
+                doc.source_metadata["approved_sources"]
+            )
 
-            # Preserve any custom metadata that might affect processing
+            if has_approved_sources:
+                # CRITICAL: This document contains user-approved content - reconstruct as approved_content source
+                print(f"🎯 [RETRY BACKUP] Found approved sources in document {doc.id} - preserving user content")
+
+                source = {
+                    "id": str(uuid4()),
+                    "type": "approved_content",  # CRITICAL: Mark as approved content, not web_scraping
+                    "status": "approved",  # CRITICAL: Already approved by user
+                    "url": doc.source_url,
+                    "name": doc.name,
+                    "approved_pages": doc.source_metadata["approved_sources"],  # CRITICAL: Preserve approved content
+                    "config": doc.source_metadata.get("config", {}),
+                    "added_at": datetime.utcnow().isoformat(),
+                    "retry_from_document": str(doc.id),
+                    "original_status": doc.status,
+                    "metadata": {
+                        "total_pages": len(doc.source_metadata["approved_sources"]),
+                        "approval_source": "finalization_preserved",
+                        "retry_preservation": True
+                    }
+                }
+                print(f"✅ [RETRY BACKUP] Preserved {len(doc.source_metadata['approved_sources'])} approved pages")
+            else:
+                # Fallback: Regular web scraping source
+                print(f"🔄 [RETRY BACKUP] Document {doc.id} has no approved sources - creating web_scraping source")
+
+                source = {
+                    "id": str(uuid4()),
+                    "type": "web_scraping",
+                    "url": doc.source_url,
+                    "config": doc.source_metadata.get("config", {}) if doc.source_metadata else {},
+                    "added_at": datetime.utcnow().isoformat(),
+                    "retry_from_document": str(doc.id),
+                    "original_status": doc.status
+                }
+
+            # Preserve any additional custom metadata that might affect processing
             if doc.source_metadata:
                 # Extract any user-specified crawl configurations
                 if "method" in doc.source_metadata:
@@ -396,13 +429,22 @@ class KBRetryService:
             # Generate new pipeline ID
             pipeline_id = f"{kb_id}:{int(time.time())}"
 
+            # CRITICAL FIX: Use finalized KB configuration for retry, not original draft config
+            # The KB.config contains the ACTUAL configuration the user finalized with
+            retry_config = dict(draft_data)  # Copy draft data for sources
+            retry_config.update(kb.config or {})  # Override with finalized KB configuration
+
+            print(f"🔄 [RETRY] Using finalized KB config instead of original draft config")
+            print(f"🔄 [RETRY] Original draft strategy: {draft_data.get('chunking_config', {}).get('strategy', 'unknown')}")
+            print(f"🔄 [RETRY] Finalized KB strategy: {kb.config.get('chunking_config', {}).get('strategy', 'unknown')}")
+
             # Queue the retry task
             task = process_web_kb_task.apply_async(
                 kwargs={
                     "kb_id": kb_id,
                     "pipeline_id": pipeline_id,
                     "sources": draft_data.get("sources", []),
-                    "config": draft_data,
+                    "config": retry_config,  # Use finalized KB config, not original draft
                     "preview_data": original_draft_data.get("complete_draft_data", {}).get("preview_data") if original_draft_data else None
                 },
                 queue="high_priority"  # High priority for retries
