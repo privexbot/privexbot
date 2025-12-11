@@ -187,48 +187,80 @@ export default function KBDocumentEditPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Document
-            </Button>
-            <div>
-              <h1 className="text-2xl font-semibold">Edit Document</h1>
-              <p className="text-muted-foreground">{kb?.name}</p>
-            </div>
-          </div>
+      <div className="px-4 py-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-6 lg:p-8 shadow-xl border border-white/20 dark:border-gray-700/20 space-y-6">
+            {/* Header */}
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+                  className="self-start"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Document
+                </Button>
+                <div>
+                  <h1 className="text-2xl lg:text-3xl font-semibold font-manrope text-gray-900 dark:text-gray-100">Edit Document</h1>
+                  <p className="text-muted-foreground font-manrope">{kb?.name}</p>
+                </div>
+              </div>
 
-          <div className="flex items-center space-x-2">
-            {hasUnsavedChanges && (
-              <span className="text-sm text-orange-600 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                Unsaved changes
-              </span>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              Preview
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving || !hasUnsavedChanges}>
-              {isSaving ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-              ) : (
-                <Save className="h-4 w-4 mr-2" />
-              )}
-              Save Changes
-            </Button>
-          </div>
-        </div>
+              {/* Mobile: Horizontal scrolling action buttons */}
+              <div className="lg:hidden">
+                <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
+                  {hasUnsavedChanges && (
+                    <span className="text-sm text-orange-600 flex items-center flex-shrink-0">
+                      <AlertCircle className="h-4 w-4 mr-1" />
+                      Unsaved changes
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+                    className="flex-shrink-0"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview
+                  </Button>
+                  <Button onClick={handleSave} disabled={isSaving || !hasUnsavedChanges} className="flex-shrink-0">
+                    {isSaving ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                    )}
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+
+              {/* Desktop: Standard action buttons */}
+              <div className="hidden lg:flex items-center space-x-2">
+                {hasUnsavedChanges && (
+                  <span className="text-sm text-orange-600 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    Unsaved changes
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Preview
+                </Button>
+                <Button onClick={handleSave} disabled={isSaving || !hasUnsavedChanges}>
+                  {isSaving ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  Save Changes
+                </Button>
+              </div>
+            </div>
 
         {/* Edit Form */}
         <Card>
@@ -265,10 +297,14 @@ export default function KBDocumentEditPage() {
             <div className="border-t pt-4 text-sm text-muted-foreground">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <strong>Content Type:</strong> {document.source_type}
+                  <strong>Content Type:</strong> {document.content_type || document.source_type || 'Not specified'}
                 </div>
                 <div>
-                  <strong>Created:</strong> {new Date(document.created_at).toLocaleDateString()}
+                  <strong>Created:</strong> {
+                    document.created_at
+                      ? new Date(document.created_at).toLocaleDateString()
+                      : 'Not available'
+                  }
                 </div>
                 {document.chunk_count && (
                   <div>
@@ -276,21 +312,30 @@ export default function KBDocumentEditPage() {
                   </div>
                 )}
                 <div>
-                  <strong>Last Updated:</strong> {new Date(document.processed_at || document.created_at).toLocaleDateString()}
+                  <strong>Last Updated:</strong> {
+                    (() => {
+                      const lastUpdated = document.updated_at || document.processed_at || document.created_at;
+                      return lastUpdated
+                        ? new Date(lastUpdated).toLocaleDateString()
+                        : 'Not available';
+                    })()
+                  }
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Warning */}
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Editing this document will update its content in the knowledge base. The document will be
-            re-processed and re-chunked automatically after saving.
-          </AlertDescription>
-        </Alert>
+            {/* Warning */}
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Editing this document will update its content in the knowledge base. The document will be
+                re-processed and re-chunked automatically after saving.
+              </AlertDescription>
+            </Alert>
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   );

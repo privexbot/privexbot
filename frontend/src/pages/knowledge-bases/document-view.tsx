@@ -201,46 +201,72 @@ export default function KBDocumentViewPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(`/knowledge-bases/${kbId}/documents`)}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Documents
-            </Button>
-            <div>
-              <h1 className="text-2xl font-semibold flex items-center gap-2">
-                <FileText className="h-6 w-6" />
-                {document.name}
-              </h1>
-              <p className="text-muted-foreground">{kb?.name}</p>
-            </div>
-          </div>
+      <div className="px-4 py-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-6 lg:p-8 shadow-xl border border-white/20 dark:border-gray-700/20">
+            {/* Header */}
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate(`/knowledge-bases/${kbId}/documents`)}
+                  className="self-start"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Documents
+                </Button>
+                <div>
+                  <h1 className="text-2xl lg:text-3xl font-semibold font-manrope flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                    <FileText className="h-6 w-6" />
+                    {document.name}
+                  </h1>
+                  <p className="text-muted-foreground font-manrope">{kb?.name}</p>
+                </div>
+              </div>
 
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" onClick={handleDownload}>
-              <Download className="h-4 w-4 mr-2" />
-              Download
-            </Button>
-            {hasPermission('kb:edit') && (
-              <>
-                <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit
+              {/* Mobile: Horizontal scrolling action buttons */}
+              <div className="lg:hidden">
+                <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
+                  <Button variant="outline" onClick={handleDownload} className="flex-shrink-0">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                  {hasPermission('kb:edit') && (
+                    <>
+                      <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="flex-shrink-0">
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                      <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} className="flex-shrink-0">
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Desktop: Standard action buttons */}
+              <div className="hidden lg:flex items-center space-x-2">
+                <Button variant="outline" onClick={handleDownload}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
                 </Button>
-                <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
+                {hasPermission('kb:edit') && (
+                  <>
+                    <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)}>
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
 
         {/* Document Details */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -271,9 +297,9 @@ export default function KBDocumentViewPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center space-x-2">
-                  {getStatusIcon((document.metadata?.status as string) || 'unknown')}
+                  {getStatusIcon(document.status || 'pending')}
                   <Badge variant="outline" className="capitalize">
-                    {(document.metadata?.status as string) || 'unknown'}
+                    {document.status || 'pending'}
                   </Badge>
                 </div>
               </CardContent>
@@ -287,7 +313,7 @@ export default function KBDocumentViewPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-muted-foreground">Content Type</div>
-                  <div className="text-sm">{document.source_type}</div>
+                  <div className="text-sm">{document.content_type || document.source_type || 'Not specified'}</div>
                 </div>
 
                 {document.size_bytes && (
@@ -313,8 +339,9 @@ export default function KBDocumentViewPage() {
                   <div className="text-sm font-medium text-muted-foreground">Created</div>
                   <div className="text-sm flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    {new Date(document.created_at).toLocaleDateString()} at{' '}
-                    {new Date(document.created_at).toLocaleTimeString()}
+                    {document.created_at
+                      ? `${new Date(document.created_at).toLocaleDateString()} at ${new Date(document.created_at).toLocaleTimeString()}`
+                      : 'Not available'}
                   </div>
                 </div>
 
@@ -322,8 +349,12 @@ export default function KBDocumentViewPage() {
                   <div className="text-sm font-medium text-muted-foreground">Last Updated</div>
                   <div className="text-sm flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    {new Date(document.processed_at || document.created_at).toLocaleDateString()} at{' '}
-                    {new Date(document.processed_at || document.created_at).toLocaleTimeString()}
+                    {(() => {
+                      const lastUpdated = document.updated_at || document.processed_at || document.created_at;
+                      return lastUpdated
+                        ? `${new Date(lastUpdated).toLocaleDateString()} at ${new Date(lastUpdated).toLocaleTimeString()}`
+                        : 'Not available';
+                    })()}
                   </div>
                 </div>
 
@@ -350,26 +381,28 @@ export default function KBDocumentViewPage() {
           </div>
         </div>
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete Document</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete "{document?.name}"? This action cannot be undone
-                and will permanently remove the document from the knowledge base.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDelete}>
-                Delete Document
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete Document</DialogTitle>
+                  <DialogDescription>
+                    Are you sure you want to delete "{document?.name}"? This action cannot be undone
+                    and will permanently remove the document from the knowledge base.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" onClick={handleDelete}>
+                    Delete Document
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   );

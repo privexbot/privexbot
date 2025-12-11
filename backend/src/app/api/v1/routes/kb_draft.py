@@ -1908,13 +1908,13 @@ def _validate_and_fix_finalize_config(request: "KBFinalizeRequest") -> Dict[str,
         print(f"🔧 [VALIDATION] Detected no_chunking strategy: {strategy}")
         print(f"🔧 [VALIDATION] Original config: chunk_size={chunking_config.get('chunk_size')}, overlap={chunking_config.get('chunk_overlap')}")
 
-        # Override chunk_size and chunk_overlap for no_chunking
-        # chunk_size will be set to actual content length during processing
-        # chunk_overlap must be 0 for single chunk
-        chunking_config["chunk_size"] = 1  # Placeholder, will be set to content length
-        chunking_config["chunk_overlap"] = 0  # No overlap for single chunk
+        # For no_chunking, set meaningful defaults that indicate full content processing
+        # These values are for display purposes - actual processing uses full content
+        chunking_config["chunk_size"] = None  # Will be displayed as "Full Document"
+        chunking_config["chunk_overlap"] = None  # Not applicable for single chunk
+        chunking_config["strategy_display"] = "Full Document (No Chunking)"
 
-        print(f"✅ [VALIDATION] Fixed no_chunking config: chunk_size=1 (placeholder), overlap=0")
+        print(f"✅ [VALIDATION] Fixed no_chunking config: chunk_size=None (full doc), overlap=None")
 
     else:
         # Validate chunk_size and chunk_overlap for other strategies

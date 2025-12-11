@@ -13,7 +13,7 @@ HOW:
 - Integration with Celery tasks
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -1415,6 +1415,179 @@ async def create_kb_document(
         )
 
 
+@router.post("/{kb_id}/documents/upload", status_code=status.HTTP_201_CREATED)
+async def upload_kb_document(
+    kb_id: UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload a file as a new document to the KB.
+
+    WHY: Allow users to upload files (PDF, Word, Text, etc.) to KB
+    HOW: Parse file content, create document, queue background processing
+
+    ACCESS CONTROL:
+    - Requires "edit" permission on KB
+    - Same access control as text document creation
+
+    PROCESSING FLOW:
+    1. Validate file size and type
+    2. Parse file content using document processing service
+    3. Create Document record (status: "processing")
+    4. Queue background task: process_document_task
+    5. Task does: chunk → embed → index in Qdrant
+    6. Update status to "completed"
+
+    Supported formats:
+    - PDF, Word (.doc, .docx)
+    - Text (.txt, .md)
+    - CSV, JSON
+
+    Limits:
+    - File size: 10MB max
+    - Content: 50 chars min after parsing
+
+    Returns:
+        {
+            "id": str,
+            "kb_id": str,
+            "name": str,
+            "status": "processing",
+            "message": str,
+            "processing_job_id": str
+        }
+    """
+
+    from app.services.kb_rbac_service import verify_kb_access
+
+    # Verify user has edit access
+    kb = verify_kb_access(db, kb_id, current_user.id, "edit")
+
+    # File validation
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No filename provided"
+        )
+
+    # Read file content
+    try:
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large (max {MAX_FILE_SIZE / 1024 / 1024}MB)"
+            )
+
+        if len(content) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Empty file"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read file: {str(e)}"
+        )
+
+    # Parse document content
+    try:
+        from app.services.document_processing_service import document_processing_service
+
+        parsed = await document_processing_service.parse_document(
+            content=content,
+            filename=file.filename,
+            content_type=file.content_type or "application/octet-stream"
+        )
+
+        parsed_content = parsed.get("content", "")
+        if len(parsed_content.strip()) < 50:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File content too short after parsing (min 50 characters)"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to parse file: {str(e)}"
+        )
+
+    # Check document limit per KB
+    MAX_DOCUMENTS_PER_KB = 10000
+    doc_count = db.query(Document).filter(Document.kb_id == kb_id).count()
+    if doc_count >= MAX_DOCUMENTS_PER_KB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
+        )
+
+    # Create document record
+    try:
+        new_document = Document(
+            kb_id=kb_id,
+            workspace_id=kb.workspace_id,
+            name=parsed.get("title", file.filename.rsplit('.', 1)[0]),  # Remove file extension for title
+            source_type="file_upload",
+            source_url=None,
+            source_metadata={
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "file_size": len(content),
+                "page_count": parsed.get("page_count"),
+                "uploaded_by": str(current_user.id),
+                "created_via": "api",
+                "method": "file_upload"
+            },
+            content_full=parsed_content,
+            content_preview=parsed_content[:500] if len(parsed_content) > 500 else parsed_content,
+            status="processing",
+            processing_progress=0,
+            word_count=len(parsed_content.split()),
+            character_count=len(parsed_content),
+            custom_metadata={"original_filename": file.filename},
+            created_by=current_user.id
+        )
+
+        db.add(new_document)
+        db.commit()
+        db.refresh(new_document)
+
+        # Queue background processing using same task as text documents
+        from app.tasks.document_processing_tasks import process_document_task
+
+        task = process_document_task.apply_async(
+            kwargs={
+                "document_id": str(new_document.id),
+                "content": parsed_content,
+                "kb_config": kb.config or {}
+            },
+            queue="default"
+        )
+
+        return {
+            "id": str(new_document.id),
+            "kb_id": str(kb_id),
+            "name": new_document.name,
+            "status": "processing",
+            "message": "File uploaded and processing started",
+            "processing_job_id": task.id,
+            "note": "Document will be chunked, embedded, and indexed in Qdrant. Check status via GET /kbs/{kb_id}/documents/{doc_id}"
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create document: {str(e)}"
+        )
+
+
 @router.put("/{kb_id}/documents/{doc_id}")
 async def update_kb_document(
     kb_id: UUID,
@@ -1535,25 +1708,56 @@ async def update_kb_document(
                 queue="default"
             )
 
-            return {
-                "id": str(doc_id),
-                "kb_id": str(kb_id),
-                "name": document.name,
-                "status": "processing",
-                "message": "Document updated. Re-chunking and re-indexing in progress.",
-                "processing_job_id": task.id,
-                "note": "Old chunks will be deleted and new chunks will be created. Check status via GET /kbs/{kb_id}/documents/{doc_id}"
-            }
+            # Return consistent document structure matching GET endpoint
+            return DocumentDetailResponse(
+                id=str(document.id),
+                kb_id=str(document.kb_id),
+                name=document.name,
+                url=document.source_url,
+                source_type=document.source_type,
+                source_metadata=document.source_metadata or {},
+                content=document.content_full or document.content_preview or "",
+                content_preview=document.content_preview,
+                status=document.status,
+                processing_metadata=document.processing_metadata,
+                word_count=document.word_count,
+                character_count=document.character_count,
+                chunk_count=document.chunk_count,
+                custom_metadata=document.custom_metadata or {},
+                annotations=document.annotations,
+                is_enabled=document.is_enabled,
+                is_archived=document.is_archived,
+                created_at=document.created_at.isoformat() if document.created_at else None,
+                updated_at=document.updated_at.isoformat() if document.updated_at else None,
+                created_by=str(document.created_by)
+            ).dict()
         else:
             # No reprocessing needed - just metadata update
             db.commit()
 
-            return {
-                "id": str(doc_id),
-                "kb_id": str(kb_id),
-                "message": "Document updated successfully",
-                "changes_applied": [k for k, v in request.dict().items() if v is not None]
-            }
+            # Return consistent document structure matching GET endpoint
+            return DocumentDetailResponse(
+                id=str(document.id),
+                kb_id=str(document.kb_id),
+                name=document.name,
+                url=document.source_url,
+                source_type=document.source_type,
+                source_metadata=document.source_metadata or {},
+                content=document.content_full or document.content_preview or "",
+                content_preview=document.content_preview,
+                status=document.status,
+                processing_metadata=document.processing_metadata,
+                word_count=document.word_count,
+                character_count=document.character_count,
+                chunk_count=document.chunk_count,
+                custom_metadata=document.custom_metadata or {},
+                annotations=document.annotations,
+                is_enabled=document.is_enabled,
+                is_archived=document.is_archived,
+                created_at=document.created_at.isoformat() if document.created_at else None,
+                updated_at=document.updated_at.isoformat() if document.updated_at else None,
+                created_by=str(document.created_by)
+            ).dict()
 
     except Exception as e:
         db.rollback()

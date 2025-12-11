@@ -256,86 +256,167 @@ export default function KBDetailPage() {
           </div>
         </div>
 
-        {/* Statistics Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Documents
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-blue-500" />
-                <span className="text-2xl font-bold">
+        {/* Statistics Overview - Mobile First Design */}
+        <div className="mb-6 lg:mb-8">
+          {/* Mobile: Horizontal scrolling cards */}
+          <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 md:hidden scrollbar-hide">
+            <div className="flex-shrink-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-200/50 dark:border-gray-700/50 min-w-[140px]">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-500" />
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Documents</span>
+                </div>
+                <span className="text-xl font-bold font-manrope text-gray-900 dark:text-gray-100">
                   {Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0}
                 </span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Chunks
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-green-500" />
-                <span className="text-2xl font-bold">
+            <div className="flex-shrink-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-200/50 dark:border-gray-700/50 min-w-[140px]">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-green-500" />
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Chunks</span>
+                </div>
+                <span className="text-xl font-bold font-manrope text-gray-900 dark:text-gray-100">
                   {Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0}
                 </span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Words
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-purple-500" />
-                <span className="text-2xl font-bold">
+            <div className="flex-shrink-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-200/50 dark:border-gray-700/50 min-w-[140px]">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-purple-500" />
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Total Words</span>
+                </div>
+                <span className="text-xl font-bold font-manrope text-gray-900 dark:text-gray-100">
                   {Array.isArray(documents)
                     ? documents.reduce((acc, doc) => acc + ((doc as any).word_count || 0), 0).toLocaleString()
                     : '0'}
                 </span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average Chunk Size
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-orange-500" />
-                <span className="text-2xl font-bold">
+            <div className="flex-shrink-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-200/50 dark:border-gray-700/50 min-w-[140px]">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-orange-500" />
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Avg Chunk</span>
+                </div>
+                <span className="text-xl font-bold font-manrope text-gray-900 dark:text-gray-100">
                   {Array.isArray(chunks) && chunks.length > 0
                     ? Math.round(chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0) / chunks.length)
                     : 0
                   }
                 </span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+
+          {/* Desktop: Grid layout */}
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+            <Card className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-gray-200/50 dark:border-gray-700/50 shadow-lg hover:shadow-xl transition-shadow">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Documents
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-blue-500" />
+                  <span className="text-2xl lg:text-3xl font-bold font-manrope text-gray-900 dark:text-gray-100">
+                    {Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-gray-200/50 dark:border-gray-700/50 shadow-lg hover:shadow-xl transition-shadow">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Chunks
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <Database className="h-5 w-5 text-green-500" />
+                  <span className="text-2xl lg:text-3xl font-bold font-manrope text-gray-900 dark:text-gray-100">
+                    {Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-gray-200/50 dark:border-gray-700/50 shadow-lg hover:shadow-xl transition-shadow">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Total Words
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <BookOpen className="h-5 w-5 text-purple-500" />
+                  <span className="text-2xl lg:text-3xl font-bold font-manrope text-gray-900 dark:text-gray-100">
+                    {Array.isArray(documents)
+                      ? documents.reduce((acc, doc) => acc + ((doc as any).word_count || 0), 0).toLocaleString()
+                      : '0'}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-gray-200/50 dark:border-gray-700/50 shadow-lg hover:shadow-xl transition-shadow">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Average Chunk Size
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <Database className="h-5 w-5 text-orange-500" />
+                  <span className="text-2xl lg:text-3xl font-bold font-manrope text-gray-900 dark:text-gray-100">
+                    {Array.isArray(chunks) && chunks.length > 0
+                      ? Math.round(chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0) / chunks.length)
+                      : 0
+                    }
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
-        {/* Content Tabs */}
+        {/* Content Tabs - Mobile First Design */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="documents">Documents</TabsTrigger>
-            <TabsTrigger value="chunks">Chunks</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
+          <div className="mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm w-full justify-start overflow-x-auto">
+              <TabsTrigger
+                value="overview"
+                className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium"
+              >
+                Documents
+              </TabsTrigger>
+              <TabsTrigger
+                value="chunks"
+                className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium"
+              >
+                Chunks
+              </TabsTrigger>
+              <TabsTrigger
+                value="settings"
+                className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium"
+              >
+                Settings
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="overview">
             <div className="space-y-6">
@@ -541,19 +622,39 @@ export default function KBDetailPage() {
                       <div>
                         <label className="font-medium text-muted-foreground">Chunk Size</label>
                         <p>
-                          {(kb as any).config?.chunking_config?.chunk_size ||
-                           (kb as any).chunking_config?.chunk_size ||
-                           (kb as any).config?.chunking?.chunk_size ||
-                           '1000'} characters
+                          {(() => {
+                            const strategy = (kb as any).config?.chunking_config?.strategy ||
+                                          (kb as any).config?.chunking?.strategy;
+                            const chunkSize = (kb as any).config?.chunking_config?.chunk_size ??
+                                            (kb as any).config?.chunking?.chunk_size;
+
+                            if (strategy === 'no_chunking' || strategy === 'full_content' || chunkSize === null) {
+                              return 'Full Document';
+                            }
+                            if (chunkSize === undefined || chunkSize === 0) {
+                              return 'Not Configured';
+                            }
+                            return `${chunkSize} characters`;
+                          })()}
                         </p>
                       </div>
                       <div>
                         <label className="font-medium text-muted-foreground">Chunk Overlap</label>
                         <p>
-                          {(kb as any).config?.chunking_config?.chunk_overlap ||
-                           (kb as any).chunking_config?.chunk_overlap ||
-                           (kb as any).config?.chunking?.chunk_overlap ||
-                           '200'} characters
+                          {(() => {
+                            const strategy = (kb as any).config?.chunking_config?.strategy ||
+                                          (kb as any).config?.chunking?.strategy;
+                            const chunkOverlap = (kb as any).config?.chunking_config?.chunk_overlap ??
+                                                (kb as any).config?.chunking?.chunk_overlap;
+
+                            if (strategy === 'no_chunking' || strategy === 'full_content' || chunkOverlap === null) {
+                              return 'Not Applicable';
+                            }
+                            if (chunkOverlap === undefined) {
+                              return 'Not Configured';
+                            }
+                            return `${chunkOverlap} characters`;
+                          })()}
                         </p>
                       </div>
                       <div>

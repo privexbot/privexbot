@@ -159,11 +159,23 @@ export default function KBDocumentsPage() {
         title: 'Success',
         description: 'Document uploaded successfully',
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to upload document:', error);
+
+      let errorMessage = 'Failed to upload document';
+      if (error.message.includes('too large')) {
+        errorMessage = 'File is too large (max 10MB)';
+      } else if (error.message.includes('format')) {
+        errorMessage = 'Unsupported file format. Please use PDF, Word, Text, Markdown, CSV, or JSON files.';
+      } else if (error.message.includes('limit reached')) {
+        errorMessage = 'Document limit reached for this knowledge base';
+      } else if (error.message.includes('Access denied')) {
+        errorMessage = 'You do not have permission to add documents to this knowledge base';
+      }
+
       toast({
         title: 'Error',
-        description: 'Failed to upload document',
+        description: errorMessage,
         variant: 'destructive'
       });
     } finally {
@@ -191,11 +203,21 @@ export default function KBDocumentsPage() {
         title: 'Success',
         description: 'Text document created successfully',
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create document:', error);
+
+      let errorMessage = 'Failed to create text document';
+      if (error.message.includes('50 characters')) {
+        errorMessage = 'Content must be at least 50 characters long';
+      } else if (error.message.includes('too large')) {
+        errorMessage = 'Content is too large (max 10MB)';
+      } else if (error.message.includes('limit reached')) {
+        errorMessage = 'Document limit reached for this knowledge base';
+      }
+
       toast({
         title: 'Error',
-        description: 'Failed to create text document',
+        description: errorMessage,
         variant: 'destructive'
       });
     } finally {
@@ -320,17 +342,26 @@ export default function KBDocumentsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="content">Content</Label>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="content">Content</Label>
+                          <span className={`text-sm ${textDocumentData.content.length < 50 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                            {textDocumentData.content.length}/50 min
+                          </span>
+                        </div>
                         <Textarea
                           id="content"
-                          placeholder="Enter the document content..."
+                          placeholder="Enter the document content (minimum 50 characters)..."
                           rows={10}
                           value={textDocumentData.content}
                           onChange={(e) => setTextDocumentData(prev => ({
                             ...prev,
                             content: e.target.value
                           }))}
+                          className={textDocumentData.content.length > 0 && textDocumentData.content.length < 50 ? 'border-destructive' : ''}
                         />
+                        {textDocumentData.content.length > 0 && textDocumentData.content.length < 50 && (
+                          <p className="text-sm text-destructive">Content must be at least 50 characters long</p>
+                        )}
                       </div>
                       <div className="flex justify-end space-x-2">
                         <Button variant="outline" onClick={() => setTextDialogOpen(false)}>
@@ -338,7 +369,7 @@ export default function KBDocumentsPage() {
                         </Button>
                         <Button
                           onClick={handleCreateTextDocument}
-                          disabled={isUploading || !textDocumentData.title.trim() || !textDocumentData.content.trim()}
+                          disabled={isUploading || !textDocumentData.title.trim() || !textDocumentData.content.trim() || textDocumentData.content.length < 50}
                         >
                           {isUploading ? 'Creating...' : 'Create Document'}
                         </Button>
@@ -358,7 +389,7 @@ export default function KBDocumentsPage() {
                     <DialogHeader>
                       <DialogTitle>Upload Document</DialogTitle>
                       <DialogDescription>
-                        Upload a file to add to the knowledge base
+                        Upload a file to add to the knowledge base. Supported formats: PDF, Word, Text, Markdown, CSV, JSON (max 10MB)
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
@@ -370,6 +401,9 @@ export default function KBDocumentsPage() {
                           accept=".pdf,.doc,.docx,.txt,.md,.csv,.json"
                           onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                         />
+                        <p className="text-sm text-muted-foreground">
+                          Files will be automatically processed and chunked for optimal search performance
+                        </p>
                       </div>
                       {selectedFile && (
                         <div className="p-3 bg-muted rounded-lg">
