@@ -49,6 +49,17 @@ export const SourceType = {
 export type SourceType = (typeof SourceType)[keyof typeof SourceType];
 
 /**
+ * Processing Quality - Controls processing quality vs speed trade-off
+ */
+export const IndexingMethod = {
+  HIGH_QUALITY: "high_quality",
+  BALANCED: "balanced",
+  FAST: "fast",
+} as const;
+
+export type IndexingMethod = (typeof IndexingMethod)[keyof typeof IndexingMethod];
+
+/**
  * Crawl Methods for web sources (matches Crawl4AI backend exactly)
  */
 export const CrawlMethod = {
@@ -169,11 +180,7 @@ export interface ModelConfig {
     batch_size: number; // Embedding batch size
   };
   vector_store: VectorStoreConfig;
-  performance: {
-    indexing_strategy: "immediate" | "batch" | "background";
-    search_timeout: number; // Search timeout in milliseconds
-    max_results: number; // Maximum search results to return
-  };
+  indexing_method?: IndexingMethod;
 }
 
 /**
@@ -419,6 +426,7 @@ export interface FinalizeRequest {
     score_threshold?: number;
     rerank_enabled?: boolean;
   };
+  indexing_method?: IndexingMethod;
   priority?: "low" | "normal" | "high";
 }
 
@@ -902,6 +910,7 @@ export interface ModelConfigRequest {
     filterable_fields?: string[];
     include_source_tracking?: boolean;
   };
+  indexing_method?: IndexingMethod;
 }
 
 export interface ModelConfigResponse {

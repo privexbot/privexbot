@@ -497,7 +497,6 @@ class KBDraftService:
         # CRITICAL FIX: Merge draft config with config_override for finalization
         final_config = data.get("config", {})
         if config_override:
-            print(f"🔧 [FINALIZE_DRAFT] Merging config_override: {config_override}")
             final_config.update(config_override)
 
         print(f"🔧 [FINALIZE_DRAFT] Final KB config: {final_config}")
@@ -518,7 +517,7 @@ class KBDraftService:
                 "provider": "qdrant",
                 "collection_name_prefix": "kb"
             }),
-            indexing_method=data.get("indexing_method", "by_heading"),
+            indexing_method=final_config.get("indexing_method", "high_quality"),
             status="processing",  # Will be updated by background task
             created_by=UUID(draft["created_by"]),
             created_at=datetime.utcnow()

@@ -477,9 +477,10 @@ class KBRetryService:
         if kb.config and "chunking_config" in kb.config:
             return kb.config["chunking_config"]
 
-        # Fallback to indexing_method
+        # CRITICAL FIX: Use proper chunking defaults, not indexing_method
+        # indexing_method is for processing quality, not chunking strategy
         return {
-            "strategy": kb.indexing_method or "by_heading",
+            "strategy": "by_heading",  # Proper chunking strategy default
             "chunk_size": 1000,
             "chunk_overlap": 200,
             "preserve_headings": True

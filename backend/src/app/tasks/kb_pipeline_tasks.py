@@ -30,6 +30,46 @@ from app.models.document import Document
 from app.models.chunk import Chunk
 
 
+def _get_processing_quality_settings(indexing_method: str) -> Dict[str, Any]:
+    """
+    Map indexing_method to processing quality settings.
+
+    WHY: User controls processing quality vs speed trade-off
+    HOW: Different settings for embedding batch size, parsing strategy, etc.
+
+    Args:
+        indexing_method: "high_quality", "balanced", or "fast"
+
+    Returns:
+        Dict with processing settings
+    """
+
+    if indexing_method == "fast":
+        return {
+            "embedding_batch_size": 64,  # Larger batches for speed
+            "parsing_strategy": "fast",   # Quick content extraction
+            "content_analysis_depth": "basic",
+            "concurrent_limit": 8,       # More concurrent processing
+            "quality_level": "fast"
+        }
+    elif indexing_method == "balanced":
+        return {
+            "embedding_batch_size": 32,  # Balanced batches
+            "parsing_strategy": "auto",   # Automatic strategy selection
+            "content_analysis_depth": "moderate",
+            "concurrent_limit": 4,       # Moderate concurrency
+            "quality_level": "balanced"
+        }
+    else:  # "high_quality"
+        return {
+            "embedding_batch_size": 16,  # Smaller batches for accuracy
+            "parsing_strategy": "hi_res", # High-resolution parsing
+            "content_analysis_depth": "thorough",
+            "concurrent_limit": 2,       # Less concurrency for quality
+            "quality_level": "high_quality"
+        }
+
+
 def serialize_metadata(obj: Any) -> Any:
     """
     Recursively serialize metadata objects to JSON-compatible types.
@@ -270,10 +310,15 @@ def process_web_kb_task(
         # Extract config
         chunking_config = config.get("chunking_config", {})
         embedding_config = config.get("embedding_config", {})
+        indexing_method = config.get("indexing_method", "high_quality")
 
         chunk_strategy = chunking_config.get("strategy", "by_heading")
         chunk_size = chunking_config.get("chunk_size", 1000)
         chunk_overlap = chunking_config.get("chunk_overlap", 200)
+
+        # Map indexing_method to processing quality settings
+        processing_quality = _get_processing_quality_settings(indexing_method)
+        print(f"🔧 [INDEXING] Using indexing_method: {indexing_method} -> {processing_quality}")
 
         # CRITICAL DEBUG: Log the actual strategy being used
         print(f"🔍 [STRATEGY DEBUG] chunking_config: {chunking_config}")
@@ -564,9 +609,15 @@ def process_web_kb_task(
                             db.flush()
                             print(f"✅ [ALL_SOURCES] Added {len(postgres_chunks)} chunks to database session")
 
-                            # Update document status
+                            # Calculate document statistics from chunks
+                            total_doc_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
+                            total_doc_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+
+                            # Update document status and statistics
                             combined_doc.status = "processed"
                             combined_doc.chunk_count = len(postgres_chunks)
+                            combined_doc.word_count = total_doc_word_count
+                            combined_doc.character_count = total_doc_char_count
 
                             # Update Qdrant chunks with metadata
                             for qdrant_chunk in qdrant_chunks:
@@ -993,7 +1044,14 @@ def process_web_kb_task(
                                     if approved_sources:
                                         current_metadata["approved_sources"] = approved_sources
                                         print(f"✅ [NO_CHUNKING] Preserved {len(approved_sources)} approved_sources in document metadata")
+                                    # Calculate document statistics from chunks
+                                    total_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
+                                    total_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+
                                     document.source_metadata = current_metadata
+                                    document.chunk_count = len(postgres_chunks)
+                                    document.word_count = total_word_count
+                                    document.character_count = total_char_count
                                     document.status = "processed"
 
                                     # Update Qdrant chunks with document metadata
@@ -1213,8 +1271,12 @@ def process_web_kb_task(
 
                                     # Generate embeddings
                                     chunk_texts = [chunk["content"] for chunk in chunks_data]
+                                    # Apply processing quality settings to embedding generation
                                     embeddings = loop.run_until_complete(
-                                        embedding_service.generate_embeddings(chunk_texts)
+                                        embedding_service.generate_embeddings(
+                                            chunk_texts,
+                                            batch_size=processing_quality["embedding_batch_size"]
+                                        )
                                     )
 
                                     print(f"[DEBUG] LEGACY FALLBACK: Created {len(chunks_data)} chunks, {len(embeddings)} embeddings")
@@ -1239,14 +1301,21 @@ def process_web_kb_task(
                                         import uuid
                                         chunk_id = str(uuid.uuid4())
 
+                                        # Calculate word count and character count
+                                        content = chunk_data["content"]
+                                        word_count = len(content.split()) if content else 0
+                                        character_count = len(content) if content else 0
+
                                         # PostgreSQL chunk
                                         postgres_chunk_data = {
                                             "id": chunk_id,
                                             "document_id": document.id,
                                             "kb_id": document.kb_id,
-                                            "content": chunk_data["content"],
+                                            "content": content,
                                             "chunk_index": idx,
                                             "position": idx,
+                                            "word_count": word_count,
+                                            "character_count": character_count,
                                             "chunk_metadata": {
                                                 "token_count": chunk_data.get("token_count", 0),
                                                 "strategy": fallback_strategy,
@@ -1254,7 +1323,9 @@ def process_web_kb_task(
                                                 "user_preference": True,
                                                 "fallback_reason": str(smart_service_error),
                                                 "workspace_id": str(document.workspace_id),
-                                                "created_at": datetime.utcnow().isoformat()
+                                                "created_at": datetime.utcnow().isoformat(),
+                                                "word_count": word_count,
+                                                "character_count": character_count
                                             }
                                         }
                                         processing_result["postgres_chunks"].append(postgres_chunk_data)
@@ -1306,8 +1377,14 @@ def process_web_kb_task(
                                     )
                                     db.add(chunk)
 
+                                # Calculate document statistics from chunks
+                                total_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
+                                total_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+
                                 # CRITICAL: Update document statistics and status after processing
                                 document.chunk_count = len(postgres_chunks)
+                                document.word_count = total_word_count
+                                document.character_count = total_char_count
                                 document.status = "processed"
                                 print(f"✅ [NO_CHUNKING] Updated document {document.id}: {len(postgres_chunks)} chunks, status=processed")
 
@@ -1691,8 +1768,12 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
 
             # Generate embeddings
             chunk_texts = [chunk["content"] for chunk in chunks_data]
+            # Apply processing quality settings to embedding generation
             embeddings = loop.run_until_complete(
-                embedding_service.generate_embeddings(chunk_texts)
+                embedding_service.generate_embeddings(
+                    chunk_texts,
+                    batch_size=processing_quality["embedding_batch_size"]
+                )
             )
 
             # Create chunks and index in Qdrant

@@ -256,11 +256,6 @@ const initialModelConfig: ModelConfig = {
       indexing_threshold: 10000,
     },
   },
-  performance: {
-    indexing_strategy: 'immediate',
-    search_timeout: 30000,
-    max_results: 10,
-  },
 };
 
 const initialRetrievalConfig = {
@@ -811,7 +806,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
               },
               retrieval_config: {
                 strategy: 'hybrid_search',
-                top_k: modelConfig.performance.max_results,
+                top_k: 5, // Default backend value
                 score_threshold: 0.7,
                 rerank_enabled: false,
               }
@@ -970,6 +965,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 score_threshold: retrievalConfig.score_threshold,
                 rerank_enabled: retrievalConfig.rerank_enabled,
               },
+              indexing_method: modelConfig.indexing_method ?? 'balanced',
               priority: "normal"
             };
 

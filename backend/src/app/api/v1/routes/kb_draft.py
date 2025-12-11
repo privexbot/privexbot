@@ -1880,6 +1880,82 @@ class ModelConfigRequest(BaseModel):
     )
 
 
+def _validate_and_fix_finalize_config(request: "KBFinalizeRequest") -> Dict[str, Any]:
+    """
+    Validate and fix finalize configuration to prevent invalid combinations.
+
+    FIXES:
+    1. no_chunking strategy: Override chunk_size/overlap with proper values
+    2. Validate indexing_method is valid
+    3. Ensure configurations make sense together
+
+    Args:
+        request: User's finalize request
+
+    Returns:
+        Dict with validated and corrected configuration
+
+    Raises:
+        HTTPException: If configuration is invalid
+    """
+
+    # Get the chunking config
+    chunking_config = request.chunking_config.copy()
+    strategy = chunking_config.get("strategy", "by_heading")
+
+    # CRITICAL FIX: Handle no_chunking strategy properly
+    if strategy in ("no_chunking", "full_content"):
+        print(f"🔧 [VALIDATION] Detected no_chunking strategy: {strategy}")
+        print(f"🔧 [VALIDATION] Original config: chunk_size={chunking_config.get('chunk_size')}, overlap={chunking_config.get('chunk_overlap')}")
+
+        # Override chunk_size and chunk_overlap for no_chunking
+        # chunk_size will be set to actual content length during processing
+        # chunk_overlap must be 0 for single chunk
+        chunking_config["chunk_size"] = 1  # Placeholder, will be set to content length
+        chunking_config["chunk_overlap"] = 0  # No overlap for single chunk
+
+        print(f"✅ [VALIDATION] Fixed no_chunking config: chunk_size=1 (placeholder), overlap=0")
+
+    else:
+        # Validate chunk_size and chunk_overlap for other strategies
+        chunk_size = chunking_config.get("chunk_size", 1000)
+        chunk_overlap = chunking_config.get("chunk_overlap", 200)
+
+        if chunk_size <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="chunk_size must be greater than 0"
+            )
+
+        if chunk_overlap < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="chunk_overlap must be 0 or greater"
+            )
+
+        if chunk_overlap >= chunk_size:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"chunk_overlap ({chunk_overlap}) must be less than chunk_size ({chunk_size})"
+            )
+
+    # Validate indexing_method (already validated by Pydantic, but double-check)
+    indexing_method = request.indexing_method
+    if indexing_method not in ["high_quality", "balanced", "fast"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid indexing_method: {indexing_method}. Must be one of: high_quality, balanced, fast"
+        )
+
+    # Build validated config
+    validated_config = request.dict()
+    validated_config["chunking_config"] = chunking_config
+
+    print(f"✅ [VALIDATION] Final validated config: strategy={strategy}, indexing_method={indexing_method}")
+
+    return validated_config
+
+
 class KBFinalizeRequest(BaseModel):
     """Request model for KB finalization with all configurations"""
     chunking_config: Dict[str, Any] = Field(
@@ -1890,6 +1966,11 @@ class KBFinalizeRequest(BaseModel):
             "preserve_code_blocks": True
         },
         description="Chunking configuration"
+    )
+    indexing_method: str = Field(
+        default="high_quality",
+        description="Processing quality vs speed trade-off",
+        pattern="^(high_quality|balanced|fast)$"
     )
     embedding_config: Dict[str, Any] = Field(
         default_factory=lambda: {
@@ -2417,12 +2498,15 @@ async def finalize_kb_draft(
             detail="Access denied"
         )
 
+    # Validate and fix configurations before finalization
+    validated_config = _validate_and_fix_finalize_config(request)
+
     # Finalize draft (creates DB records and queues task)
     try:
         result = await kb_draft_service.finalize_draft(
             db=db,
             draft_id=draft_id,
-            config_override=request.dict()
+            config_override=validated_config
         )
 
         return result

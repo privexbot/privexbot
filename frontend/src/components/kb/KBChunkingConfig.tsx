@@ -395,30 +395,32 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
           {renderStrategyOptions()}
         </div>
 
-        {/* Advanced Settings */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Minimum Chunk Size</Label>
-            <Input
-              type="number"
-              value={chunkingConfig.min_chunk_size}
-              onChange={(e) => handleConfigChange('min_chunk_size', parseInt(e.target.value) || 50)}
-              min="10"
-              max="500"
-            />
-          </div>
+        {/* Advanced Settings - Hidden for NO_CHUNKING */}
+        {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Minimum Chunk Size</Label>
+              <Input
+                type="number"
+                value={chunkingConfig.min_chunk_size}
+                onChange={(e) => handleConfigChange('min_chunk_size', parseInt(e.target.value) || 50)}
+                min="10"
+                max="500"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label>Maximum Chunk Size</Label>
-            <Input
-              type="number"
-              value={chunkingConfig.max_chunk_size}
-              onChange={(e) => handleConfigChange('max_chunk_size', parseInt(e.target.value) || 2048)}
-              min="256"
-              max="4096"
-            />
+            <div className="space-y-2">
+              <Label>Maximum Chunk Size</Label>
+              <Input
+                type="number"
+                value={chunkingConfig.max_chunk_size}
+                onChange={(e) => handleConfigChange('max_chunk_size', parseInt(e.target.value) || 2048)}
+                min="256"
+                max="4096"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Additional Options */}
         <div className="space-y-3">
@@ -435,27 +437,33 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="remove-duplicates"
-                checked={chunkingConfig.remove_duplicates}
-                onCheckedChange={(checked) => handleConfigChange('remove_duplicates', checked)}
-              />
-              <Label htmlFor="remove-duplicates" className="text-sm">
-                Remove duplicate content across chunks
-              </Label>
-            </div>
+            {/* Only show remove duplicates for chunking strategies */}
+            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="remove-duplicates"
+                  checked={chunkingConfig.remove_duplicates}
+                  onCheckedChange={(checked) => handleConfigChange('remove_duplicates', checked)}
+                />
+                <Label htmlFor="remove-duplicates" className="text-sm">
+                  Remove duplicate content across chunks
+                </Label>
+              </div>
+            )}
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="smart-splitting"
-                checked={chunkingConfig.smart_splitting}
-                onCheckedChange={(checked) => handleConfigChange('smart_splitting', checked)}
-              />
-              <Label htmlFor="smart-splitting" className="text-sm">
-                Enable smart splitting for code and tables
-              </Label>
-            </div>
+            {/* Only show smart splitting for chunking strategies */}
+            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="smart-splitting"
+                  checked={chunkingConfig.smart_splitting}
+                  onCheckedChange={(checked) => handleConfigChange('smart_splitting', checked)}
+                />
+                <Label htmlFor="smart-splitting" className="text-sm">
+                  Enable smart splitting for code and tables
+                </Label>
+              </div>
+            )}
 
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -490,36 +498,41 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="adaptive-sizing"
-                checked={chunkingConfig.adaptive_sizing ?? false}
-                onCheckedChange={(checked) => handleConfigChange('adaptive_sizing', checked)}
-              />
-              <Label htmlFor="adaptive-sizing" className="text-sm">
-                Enable adaptive sizing based on content type
-              </Label>
-            </div>
+            {/* Only show adaptive sizing for chunking strategies */}
+            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="adaptive-sizing"
+                  checked={chunkingConfig.adaptive_sizing ?? false}
+                  onCheckedChange={(checked) => handleConfigChange('adaptive_sizing', checked)}
+                />
+                <Label htmlFor="adaptive-sizing" className="text-sm">
+                  Enable adaptive sizing based on content type
+                </Label>
+              </div>
+            )}
           </div>
 
-          {/* Context Window Setting */}
-          <div className="space-y-2">
-            <Label>Context Window (surrounding elements)</Label>
-            <div className="flex items-center space-x-4">
-              <Slider
-                value={[chunkingConfig.context_window ?? 2]}
-                onValueChange={([value]) => handleConfigChange('context_window', value)}
-                min={0} max={5} step={1}
-                className="flex-1"
-              />
-              <span className="text-sm text-gray-500 min-w-[60px]">
-                {chunkingConfig.context_window ?? 2} elements
-              </span>
+          {/* Context Window Setting - Only for chunking strategies */}
+          {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
+            <div className="space-y-2">
+              <Label>Context Window (surrounding elements)</Label>
+              <div className="flex items-center space-x-4">
+                <Slider
+                  value={[chunkingConfig.context_window ?? 2]}
+                  onValueChange={([value]) => handleConfigChange('context_window', value)}
+                  min={0} max={5} step={1}
+                  className="flex-1"
+                />
+                <span className="text-sm text-gray-500 min-w-[60px]">
+                  {chunkingConfig.context_window ?? 2} elements
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">
+                Number of surrounding elements to include for context
+              </p>
             </div>
-            <p className="text-xs text-gray-500">
-              Number of surrounding elements to include for context
-            </p>
-          </div>
+          )}
         </div>
 
         {/* Estimation and Quality */}
@@ -543,8 +556,17 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
               <div className="space-y-1">
                 <div className="font-medium">Performance Impact</div>
                 <div className="text-sm space-y-1">
-                  <div>Search speed: {chunkingConfig.chunk_size < 512 ? 'Fast' : 'Moderate'}</div>
-                  <div>Context richness: {chunkingConfig.chunk_size > 512 ? 'High' : 'Moderate'}</div>
+                  {chunkingConfig.strategy === ChunkingStrategy.NO_CHUNKING ? (
+                    <>
+                      <div>Search speed: Depends on document size</div>
+                      <div>Context richness: Maximum (full documents)</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>Search speed: {chunkingConfig.chunk_size < 512 ? 'Fast' : 'Moderate'}</div>
+                      <div>Context richness: {chunkingConfig.chunk_size > 512 ? 'High' : 'Moderate'}</div>
+                    </>
+                  )}
                 </div>
               </div>
             </AlertDescription>

@@ -755,10 +755,12 @@ class PreviewService:
                 }
 
             # Step 3: Get current configuration
+            # CRITICAL FIX: Use chunking_config.strategy, not indexing_method for chunking strategy
+            chunking_config = kb.config.get("chunking_config", {}) if kb.config else {}
             current_config = {
-                "strategy": kb.indexing_method or "by_heading",
-                "chunk_size": kb.config.get("chunk_size", 1000) if kb.config else 1000,
-                "chunk_overlap": kb.config.get("chunk_overlap", 200) if kb.config else 200
+                "strategy": chunking_config.get("strategy", "by_heading"),
+                "chunk_size": chunking_config.get("chunk_size", 1000),
+                "chunk_overlap": chunking_config.get("chunk_overlap", 200)
             }
 
             new_config = {

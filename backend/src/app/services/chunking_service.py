@@ -724,18 +724,25 @@ class ChunkingService:
         Create chunk metadata.
 
         WHY: Track chunk information
-        HOW: Add index, position, token count
+        HOW: Add index, position, token count, word count, character count
         """
 
-        # Estimate token count (4 chars ≈ 1 token)
-        estimated_tokens = len(content) // 4
+        # Calculate statistics
+        word_count = len(content.split()) if content else 0
+        character_count = len(content) if content else 0
+        estimated_tokens = len(content) // 4  # 4 chars ≈ 1 token
 
         return {
             "content": content,
             "index": index,
             "start_pos": 0,  # Would calculate actual position
-            "end_pos": len(content),
-            "token_count": estimated_tokens
+            "end_pos": character_count,
+            "token_count": estimated_tokens,
+            "metadata": {
+                "word_count": word_count,
+                "chunk_length": character_count,  # Match enhanced_chunking_service naming
+                "character_count": character_count
+            }
         }
 
 

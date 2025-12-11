@@ -26,7 +26,8 @@ import {
   ModelConfig,
   QdrantConfig,
   HNSWConfig,
-  ChunkingStrategy
+  ChunkingStrategy,
+  IndexingMethod
 } from '@/types/knowledge-base';
 
 export function KBModelConfig() {
@@ -58,11 +59,7 @@ export function KBModelConfig() {
       provider: VectorStoreProvider.QDRANT,
       settings: defaultQdrantConfig
     },
-    performance: {
-      indexing_strategy: 'batch',
-      search_timeout: 5000,
-      max_results: 10
-    }
+    indexing_method: IndexingMethod.BALANCED
   };
 
   const currentConfig = modelConfig || defaultModelConfig;
@@ -87,11 +84,7 @@ export function KBModelConfig() {
             }
           }
         },
-        performance: {
-          indexing_strategy: 'immediate' as const,
-          search_timeout: 3000,
-          max_results: 5
-        }
+        indexing_method: IndexingMethod.FAST
       },
       benefits: ['Fast setup', 'Quick testing'],
       tradeoffs: ['Lower search quality']
@@ -124,11 +117,7 @@ export function KBModelConfig() {
             }
           }
         },
-        performance: {
-          indexing_strategy: 'background' as const,
-          search_timeout: 10000,
-          max_results: 20
-        }
+        indexing_method: IndexingMethod.HIGH_QUALITY
       },
       benefits: ['Highest quality', 'Fastest search'],
       tradeoffs: ['Higher memory usage', 'Slower indexing']
@@ -242,11 +231,19 @@ export function KBModelConfig() {
           settings: { ...settings, [field]: value }
         };
       }
-    } else if (section === 'performance') {
-      newConfig.performance = { ...newConfig.performance, [field]: value };
     }
 
     updateModelConfig(newConfig);
+    setActivePreset('custom');
+  };
+
+  const handleIndexingMethodChange = (indexingMethod: IndexingMethod) => {
+    // Update the model config with the new indexing method
+    const updatedConfig = {
+      ...modelConfig,
+      indexing_method: indexingMethod,
+    };
+    updateModelConfig(updatedConfig);
     setActivePreset('custom');
   };
 
@@ -546,56 +543,77 @@ export function KBModelConfig() {
                     </div>
                   </div>
                 </div>
+
               </div>
             </TabsContent>
 
             {/* Performance Configuration */}
             <TabsContent value="performance" className="space-y-4">
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-6">
+                {/* Processing Quality Configuration */}
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Indexing Strategy</Label>
-                    <Select
-                      value={currentConfig.performance.indexing_strategy}
-                      onValueChange={(value) => handleConfigChange('performance', 'indexing_strategy', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="immediate">Immediate (Fast testing)</SelectItem>
-                        <SelectItem value="batch">Batch (Balanced)</SelectItem>
-                        <SelectItem value="background">Background (Production)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-base font-semibold flex items-center gap-2">
+                      <Zap className="h-4 w-4" />
+                      Processing Quality
+                    </Label>
+                    <p className="text-sm text-gray-600">
+                      Control the trade-off between processing speed and result quality
+                    </p>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Search Timeout (ms)</Label>
-                    <Input
-                      type="number"
-                      value={currentConfig.performance.search_timeout}
-                      onChange={(e) => handleConfigChange('performance', 'search_timeout', parseInt(e.target.value) || 5000)}
-                      min="1000"
-                      max="30000"
-                    />
-                  </div>
+                  <RadioGroup
+                    value={modelConfig?.indexing_method || IndexingMethod.BALANCED}
+                    onValueChange={(value) => handleIndexingMethodChange(value as IndexingMethod)}
+                    className="grid grid-cols-1 gap-4"
+                  >
+                    <div className="flex items-center space-x-3 rounded-lg border p-4 hover:bg-gray-50">
+                      <RadioGroupItem value={IndexingMethod.FAST} />
+                      <div className="flex-1">
+                        <Label htmlFor={IndexingMethod.FAST} className="font-medium cursor-pointer">
+                          Fast Processing
+                        </Label>
+                        <p className="text-sm text-gray-600">
+                          Quick processing, lower quality. Good for testing and development.
+                        </p>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Large batches (64), fast parsing, high concurrency
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3 rounded-lg border p-4 hover:bg-gray-50 bg-blue-50 border-blue-200">
+                      <RadioGroupItem value={IndexingMethod.BALANCED} />
+                      <div className="flex-1">
+                        <Label htmlFor={IndexingMethod.BALANCED} className="font-medium cursor-pointer">
+                          Balanced Processing <Badge variant="secondary">Recommended</Badge>
+                        </Label>
+                        <p className="text-sm text-gray-600">
+                          Good balance between speed and quality. Ideal for most use cases.
+                        </p>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Medium batches (32), auto parsing, moderate concurrency
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3 rounded-lg border p-4 hover:bg-gray-50">
+                      <RadioGroupItem value={IndexingMethod.HIGH_QUALITY} />
+                      <div className="flex-1">
+                        <Label htmlFor={IndexingMethod.HIGH_QUALITY} className="font-medium cursor-pointer">
+                          High Quality Processing
+                        </Label>
+                        <p className="text-sm text-gray-600">
+                          Slower processing, highest quality. Best for production and accuracy.
+                        </p>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Small batches (16), hi-res parsing, careful processing
+                        </div>
+                      </div>
+                    </div>
+                  </RadioGroup>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Maximum Search Results</Label>
-                  <Slider
-                    value={[currentConfig.performance.max_results]}
-                    onValueChange={([value]) => handleConfigChange('performance', 'max_results', value)}
-                    max={100}
-                    min={1}
-                    step={1}
-                    className="w-full"
-                  />
-                  <div className="text-xs text-gray-500">
-                    Current: {currentConfig.performance.max_results} results per search
-                  </div>
-                </div>
               </div>
             </TabsContent>
           </Tabs>

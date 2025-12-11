@@ -156,7 +156,6 @@ class SmartKBService:
 
         # DEBUG: Log user config processing
         print(f"[DEBUG] Smart KB Service - user_config: {user_config}")
-        print(f"[DEBUG] Smart KB Service - kb.config: {kb_config}")
         print(f"[DEBUG] Smart KB Service - chunking_config from KB: {chunking_config}")
 
         # Check for explicit user preferences (highest priority)
@@ -396,6 +395,11 @@ class SmartKBService:
             import uuid
             chunk_id = str(uuid.uuid4())
 
+            # Extract word count and character count from chunk metadata
+            chunk_metadata = chunk_data.get("metadata", {})
+            word_count = chunk_metadata.get("word_count", len(chunk_data["content"].split()) if chunk_data.get("content") else 0)
+            character_count = chunk_metadata.get("chunk_length", len(chunk_data["content"]) if chunk_data.get("content") else 0)
+
             # PostgreSQL chunk (content + metadata, NO EMBEDDING)
             postgres_chunk_data = {
                 "id": chunk_id,  # Add the UUID to postgres chunk data
@@ -404,6 +408,8 @@ class SmartKBService:
                 "content": chunk_data["content"],
                 "chunk_index": idx,
                 "position": idx,
+                "word_count": word_count,
+                "character_count": character_count,
                 # NO embedding field - avoid redundancy
                 "chunk_metadata": {
                     "token_count": chunk_data.get("token_count", 0),
@@ -413,7 +419,9 @@ class SmartKBService:
                     "adaptive_suggestion": chunking_decision.adaptive_suggestion,
                     "reasoning": chunking_decision.reasoning,
                     "workspace_id": str(document.workspace_id),
-                    "created_at": datetime.utcnow().isoformat()
+                    "created_at": datetime.utcnow().isoformat(),
+                    "word_count": word_count,  # Also store in metadata for backward compatibility
+                    "character_count": character_count
                 }
             }
             postgres_chunks.append(postgres_chunk_data)
