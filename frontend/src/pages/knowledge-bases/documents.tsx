@@ -23,7 +23,7 @@ import {
   Download
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { KnowledgeBase, KBDocument } from '@/types/knowledge-base';
+import { KnowledgeBase, KBDocument, formatDocumentSourceType, formatDocumentSource } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -55,6 +55,7 @@ export default function KBDocumentsPage() {
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
   const loadData = useCallback(async () => {
     if (!kbId || !currentWorkspace) return;
@@ -107,6 +108,38 @@ export default function KBDocumentsPage() {
     }
   }, [kbId, loadData]);
 
+  // Poll for document status updates
+  useEffect(() => {
+    const hasProcessingDocs = documents.some(doc =>
+      (doc.metadata?.status as string) === 'processing' || doc.status === 'processing'
+    );
+
+    if (hasProcessingDocs && !pollingInterval) {
+      const interval = setInterval(() => {
+        loadData();
+      }, 3000); // Poll every 3 seconds
+      setPollingInterval(interval);
+    } else if (!hasProcessingDocs && pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [documents, pollingInterval, loadData]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
   // Workspace validation
   if (!currentWorkspace) {
     return (
@@ -157,8 +190,13 @@ export default function KBDocumentsPage() {
 
       toast({
         title: 'Success',
-        description: 'Document uploaded successfully',
+        description: 'Document uploaded successfully. Processing...',
       });
+
+      // Start polling immediately if document is in processing state
+      if (newDocument.status === 'processing') {
+        setTimeout(() => loadData(), 2000); // First poll after 2 seconds
+      }
     } catch (error: any) {
       console.error('Failed to upload document:', error);
 
@@ -166,7 +204,7 @@ export default function KBDocumentsPage() {
       if (error.message.includes('too large')) {
         errorMessage = 'File is too large (max 10MB)';
       } else if (error.message.includes('format')) {
-        errorMessage = 'Unsupported file format. Please use PDF, Word, Text, Markdown, CSV, or JSON files.';
+        errorMessage = 'Unsupported file format. Please use Text, Markdown, CSV, or JSON files.';
       } else if (error.message.includes('limit reached')) {
         errorMessage = 'Document limit reached for this knowledge base';
       } else if (error.message.includes('Access denied')) {
@@ -201,8 +239,13 @@ export default function KBDocumentsPage() {
 
       toast({
         title: 'Success',
-        description: 'Text document created successfully',
+        description: 'Document created successfully. Processing...',
       });
+
+      // Start polling immediately if document is in processing state
+      if (newDocument.status === 'processing') {
+        setTimeout(() => loadData(), 2000); // First poll after 2 seconds
+      }
     } catch (error: any) {
       console.error('Failed to create document:', error);
 
@@ -267,6 +310,7 @@ export default function KBDocumentsPage() {
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   };
+
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -389,7 +433,7 @@ export default function KBDocumentsPage() {
                     <DialogHeader>
                       <DialogTitle>Upload Document</DialogTitle>
                       <DialogDescription>
-                        Upload a file to add to the knowledge base. Supported formats: PDF, Word, Text, Markdown, CSV, JSON (max 10MB)
+                        Upload a file to add to the knowledge base. Supported formats: Text, Markdown, CSV, JSON (max 10MB)
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
@@ -398,11 +442,11 @@ export default function KBDocumentsPage() {
                         <Input
                           id="file"
                           type="file"
-                          accept=".pdf,.doc,.docx,.txt,.md,.csv,.json"
+                          accept=".txt,.md,.csv,.json"
                           onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                         />
                         <p className="text-sm text-muted-foreground">
-                          Files will be automatically processed and chunked for optimal search performance
+                          Supported formats: Text (.txt), Markdown (.md), CSV (.csv), JSON (.json). Files will be automatically processed and chunked for optimal search performance.
                         </p>
                       </div>
                       {selectedFile && (
@@ -488,22 +532,24 @@ export default function KBDocumentsPage() {
                       <div className="min-w-0 flex-1">
                         <h3 className="font-medium text-lg">{document.name || document.title}</h3>
                         <div className="flex items-center space-x-4 mt-1 text-sm text-muted-foreground">
-                          <span>{document.source_type || document.content_type}</span>
+                          <span>{formatDocumentSourceType(document.source_type || document.content_type)}</span>
                           {document.size_bytes && (
                             <span>{formatFileSize(document.size_bytes)}</span>
                           )}
-                          {document.chunk_count && (
+                          {document.chunk_count ? (
                             <span>{document.chunk_count} chunks</span>
+                          ) : (
+                            ((document.metadata?.status as string) === 'processing' || document.status === 'processing') && (
+                              <span className="text-amber-600">Processing...</span>
+                            )
                           )}
                           <span>
                             Added {new Date(document.created_at).toLocaleDateString()}
                           </span>
                         </div>
-                        {document.url && (
-                          <div className="mt-2 text-sm text-muted-foreground">
-                            Source: {document.url}
-                          </div>
-                        )}
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          Source: {formatDocumentSource(document.source_type, document.url, document.source_metadata)}
+                        </div>
                       </div>
                     </div>
 

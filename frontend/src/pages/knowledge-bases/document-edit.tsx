@@ -9,7 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { ArrowLeft, Save, Eye, AlertCircle } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { KnowledgeBase, KBDocument } from '@/types/knowledge-base';
+import { KnowledgeBase, KBDocument, formatDocumentSourceType } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -297,7 +297,7 @@ export default function KBDocumentEditPage() {
             <div className="border-t pt-4 text-sm text-muted-foreground">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <strong>Content Type:</strong> {document.content_type || document.source_type || 'Not specified'}
+                  <strong>Content Type:</strong> {formatDocumentSourceType(document.content_type || document.source_type)}
                 </div>
                 <div>
                   <strong>Created:</strong> {

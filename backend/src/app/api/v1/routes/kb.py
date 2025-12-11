@@ -1397,15 +1397,29 @@ async def create_kb_document(
             queue="default"
         )
 
-        return {
-            "id": str(new_document.id),
-            "kb_id": str(kb_id),
-            "name": new_document.name,
-            "status": "processing",
-            "message": "Document created and processing started",
-            "processing_job_id": task.id,
-            "note": "Document will be chunked, embedded, and indexed in Qdrant. Check status via GET /kbs/{kb_id}/documents/{doc_id}"
-        }
+        # Return full document structure matching the GET endpoint
+        return DocumentDetailResponse(
+            id=str(new_document.id),
+            kb_id=str(new_document.kb_id),
+            name=new_document.name,
+            url=new_document.source_url,
+            source_type=new_document.source_type,
+            source_metadata=new_document.source_metadata or {},
+            content=new_document.content_full or new_document.content_preview or "",
+            content_preview=new_document.content_preview,
+            status=new_document.status,
+            processing_metadata=new_document.processing_metadata,
+            word_count=new_document.word_count,
+            character_count=new_document.character_count,
+            chunk_count=new_document.chunk_count,
+            custom_metadata=new_document.custom_metadata or {},
+            annotations=new_document.annotations,
+            is_enabled=new_document.is_enabled,
+            is_archived=new_document.is_archived,
+            created_at=new_document.created_at.isoformat() if new_document.created_at else None,
+            updated_at=new_document.updated_at.isoformat() if new_document.updated_at else None,
+            created_by=str(new_document.created_by)
+        ).dict()
 
     except Exception as e:
         db.rollback()
@@ -1493,17 +1507,39 @@ async def upload_kb_document(
             detail=f"Failed to read file: {str(e)}"
         )
 
-    # Parse document content
+    # Simple content extraction for supported file types
     try:
-        from app.services.document_processing_service import document_processing_service
+        file_extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
 
-        parsed = await document_processing_service.parse_document(
-            content=content,
-            filename=file.filename,
-            content_type=file.content_type or "application/octet-stream"
-        )
+        if file_extension in ['txt', 'md']:
+            # Plain text files
+            parsed_content = content.decode('utf-8', errors='ignore')
+            document_title = file.filename.rsplit('.', 1)[0]
 
-        parsed_content = parsed.get("content", "")
+        elif file_extension == 'json':
+            # JSON files
+            import json
+            json_data = json.loads(content.decode('utf-8'))
+            parsed_content = json.dumps(json_data, indent=2)
+            document_title = file.filename.rsplit('.', 1)[0]
+
+        elif file_extension == 'csv':
+            # CSV files
+            import csv
+            import io
+
+            csv_content = content.decode('utf-8', errors='ignore')
+            csv_reader = csv.reader(io.StringIO(csv_content))
+            parsed_content = "\n".join([", ".join(row) for row in csv_reader])
+            document_title = file.filename.rsplit('.', 1)[0]
+
+        else:
+            # Unsupported file type - provide clear guidance
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file format: .{file_extension}. Currently supported: .txt, .md, .json, .csv"
+            )
+
         if len(parsed_content.strip()) < 50:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1512,6 +1548,16 @@ async def upload_kb_document(
 
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON format in file"
+        )
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to decode file content. Please ensure file is in UTF-8 format"
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1532,14 +1578,13 @@ async def upload_kb_document(
         new_document = Document(
             kb_id=kb_id,
             workspace_id=kb.workspace_id,
-            name=parsed.get("title", file.filename.rsplit('.', 1)[0]),  # Remove file extension for title
+            name=document_title,
             source_type="file_upload",
             source_url=None,
             source_metadata={
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "file_size": len(content),
-                "page_count": parsed.get("page_count"),
                 "uploaded_by": str(current_user.id),
                 "created_via": "api",
                 "method": "file_upload"
@@ -1550,7 +1595,11 @@ async def upload_kb_document(
             processing_progress=0,
             word_count=len(parsed_content.split()),
             character_count=len(parsed_content),
+            chunk_count=0,
             custom_metadata={"original_filename": file.filename},
+            annotations=None,
+            is_enabled=True,
+            is_archived=False,
             created_by=current_user.id
         )
 
@@ -1570,15 +1619,29 @@ async def upload_kb_document(
             queue="default"
         )
 
-        return {
-            "id": str(new_document.id),
-            "kb_id": str(kb_id),
-            "name": new_document.name,
-            "status": "processing",
-            "message": "File uploaded and processing started",
-            "processing_job_id": task.id,
-            "note": "Document will be chunked, embedded, and indexed in Qdrant. Check status via GET /kbs/{kb_id}/documents/{doc_id}"
-        }
+        # Return full document structure matching the GET endpoint
+        return DocumentDetailResponse(
+            id=str(new_document.id),
+            kb_id=str(new_document.kb_id),
+            name=new_document.name,
+            url=new_document.source_url,
+            source_type=new_document.source_type,
+            source_metadata=new_document.source_metadata or {},
+            content=new_document.content_full or new_document.content_preview or "",
+            content_preview=new_document.content_preview,
+            status=new_document.status,
+            processing_metadata=new_document.processing_metadata,
+            word_count=new_document.word_count,
+            character_count=new_document.character_count,
+            chunk_count=new_document.chunk_count,
+            custom_metadata=new_document.custom_metadata or {},
+            annotations=new_document.annotations,
+            is_enabled=new_document.is_enabled,
+            is_archived=new_document.is_archived,
+            created_at=new_document.created_at.isoformat() if new_document.created_at else None,
+            updated_at=new_document.updated_at.isoformat() if new_document.updated_at else None,
+            created_by=str(new_document.created_by)
+        ).dict()
 
     except Exception as e:
         db.rollback()

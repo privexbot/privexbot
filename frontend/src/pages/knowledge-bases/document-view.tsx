@@ -9,7 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { ArrowLeft, FileText, Download, Edit, Calendar, Database, AlertCircle, CheckCircle, Clock, Trash2 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { KnowledgeBase, KBDocument } from '@/types/knowledge-base';
+import { KnowledgeBase, KBDocument, formatDocumentSourceType, formatDocumentSource } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -313,7 +313,7 @@ export default function KBDocumentViewPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-muted-foreground">Content Type</div>
-                  <div className="text-sm">{document.content_type || document.source_type || 'Not specified'}</div>
+                  <div className="text-sm">{formatDocumentSourceType(document.content_type || document.source_type)}</div>
                 </div>
 
                 {document.size_bytes && (
@@ -358,24 +358,26 @@ export default function KBDocumentViewPage() {
                   </div>
                 </div>
 
-                {document.url && (
-                  <>
-                    <Separator />
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-muted-foreground">Source URL</div>
-                      <div className="text-sm break-all">
-                        <a
-                          href={document.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          {document.url}
-                        </a>
-                      </div>
-                    </div>
-                  </>
-                )}
+                <Separator />
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">Source</div>
+                  <div className="text-sm break-all">
+                    {document.url ? (
+                      <a
+                        href={document.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {document.url}
+                      </a>
+                    ) : (
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {formatDocumentSource(document.source_type, null, document.source_metadata)}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>

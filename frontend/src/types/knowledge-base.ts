@@ -49,6 +49,22 @@ export const SourceType = {
 export type SourceType = (typeof SourceType)[keyof typeof SourceType];
 
 /**
+ * Document Source Types - matches backend API values exactly
+ */
+export const DocumentSourceType = {
+  TEXT_INPUT: 'text_input',
+  FILE_UPLOAD: 'file_upload',
+  WEB_SCRAPING: 'web_scraping',
+  WEB_SCRAPING_COMBINED: 'web_scraping_combined',
+  GOOGLE_DOCS: 'google_docs',
+  GOOGLE_SHEETS: 'google_sheets',
+  NOTION: 'notion',
+  UPLOAD: 'upload', // Legacy value
+} as const;
+
+export type DocumentSourceType = (typeof DocumentSourceType)[keyof typeof DocumentSourceType];
+
+/**
  * Processing Quality - Controls processing quality vs speed trade-off
  */
 export const IndexingMethod = {
@@ -1019,4 +1035,71 @@ export function isKBError(response: unknown): response is KBErrorResponse {
     typeof response === "object" &&
     "error_code" in response
   );
+}
+
+// ========================================
+// DOCUMENT SOURCE FORMATTING UTILITIES
+// ========================================
+
+/**
+ * Format source type for display
+ *
+ * @param sourceType - Raw source type from API
+ * @returns User-friendly display name
+ */
+export function formatDocumentSourceType(sourceType: string | undefined | null): string {
+  if (!sourceType) return 'Unknown';
+
+  const sourceTypeLabels: Record<string, string> = {
+    [DocumentSourceType.TEXT_INPUT]: 'Manual Entry',
+    [DocumentSourceType.FILE_UPLOAD]: 'File Upload',
+    [DocumentSourceType.WEB_SCRAPING]: 'Web Page',
+    [DocumentSourceType.WEB_SCRAPING_COMBINED]: 'Web Scraping',
+    [DocumentSourceType.GOOGLE_DOCS]: 'Google Docs',
+    [DocumentSourceType.GOOGLE_SHEETS]: 'Google Sheets',
+    [DocumentSourceType.NOTION]: 'Notion',
+    [DocumentSourceType.UPLOAD]: 'File Upload', // Legacy mapping
+  };
+
+  return sourceTypeLabels[sourceType] || sourceType;
+}
+
+/**
+ * Format source display with context
+ *
+ * @param sourceType - Document source type
+ * @param sourceUrl - Source URL (for web content)
+ * @param sourceMetadata - Additional source metadata
+ * @returns Formatted source display text
+ */
+export function formatDocumentSource(
+  sourceType: string | undefined | null,
+  sourceUrl?: string | null,
+  sourceMetadata?: any
+): string {
+  // For web sources with URLs, return the URL directly
+  if (sourceUrl) {
+    return sourceUrl;
+  }
+
+  if (!sourceType) return 'Unknown Source';
+
+  switch (sourceType) {
+    case DocumentSourceType.TEXT_INPUT:
+      return 'Manual Entry';
+
+    case DocumentSourceType.FILE_UPLOAD:
+    case DocumentSourceType.UPLOAD:
+      const filename = sourceMetadata?.filename || sourceMetadata?.original_filename;
+      return filename ? `File: ${filename}` : 'Uploaded File';
+
+    case DocumentSourceType.WEB_SCRAPING:
+      return 'Web Page';
+
+    case DocumentSourceType.WEB_SCRAPING_COMBINED:
+      return 'Web Scraping';
+
+    default:
+      return formatDocumentSourceType(sourceType);
+  }
 }
