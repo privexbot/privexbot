@@ -711,7 +711,7 @@ export default function KBDetailPage() {
                               This will permanently delete this knowledge base and all its data
                             </p>
                           </div>
-                          <Button variant="destructive" onClick={handleDeleteKB}>
+                          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
                           </Button>

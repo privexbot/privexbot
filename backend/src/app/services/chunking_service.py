@@ -645,14 +645,20 @@ class ChunkingService:
 
         heading_density = heading_count / total_lines if total_lines > 0 else 0
 
+        print(f"[AdaptiveChunking] Analysis - lines: {total_lines}, headings: {heading_count}, paragraphs: {paragraph_count}, heading_density: {heading_density:.3f}")
+
         # Decision logic
         if heading_density > 0.05:  # >5% headings
+            print(f"[AdaptiveChunking] Using by_heading strategy (heading_density: {heading_density:.3f})")
             return self._heading_chunk(text, chunk_size, chunk_overlap)
         elif paragraph_count > 10:
+            print(f"[AdaptiveChunking] Using paragraph_based strategy (paragraphs: {paragraph_count})")
             return self._paragraph_chunk(text, chunk_size, chunk_overlap)
         elif heading_count > 0:
+            print(f"[AdaptiveChunking] Using hybrid strategy (headings: {heading_count})")
             return self._hybrid_chunk(text, chunk_size, chunk_overlap)
         else:
+            print(f"[AdaptiveChunking] Using recursive strategy (fallback)")
             return self._recursive_chunk(text, chunk_size, chunk_overlap, None)
 
 

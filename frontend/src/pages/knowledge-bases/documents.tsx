@@ -49,7 +49,10 @@ export default function KBDocumentsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [textDialogOpen, setTextDialogOpen] = useState(false);
-  const [textDocumentData, setTextDocumentData] = useState({
+  const [textDocumentData, setTextDocumentData] = useState<{
+    title: string;
+    content: string;
+  }>({
     title: '',
     content: ''
   });
@@ -235,7 +238,10 @@ export default function KBDocumentsPage() {
       const newDocument = await kbClient.kb.createDocument(kbId, documentData);
       setDocuments(prev => [newDocument, ...(Array.isArray(prev) ? prev : [])]);
       setTextDialogOpen(false);
-      setTextDocumentData({ title: '', content: '' });
+      setTextDocumentData({
+        title: '',
+        content: ''
+      });
 
       toast({
         title: 'Success',
@@ -407,6 +413,8 @@ export default function KBDocumentsPage() {
                           <p className="text-sm text-destructive">Content must be at least 50 characters long</p>
                         )}
                       </div>
+
+
                       <div className="flex justify-end space-x-2">
                         <Button variant="outline" onClick={() => setTextDialogOpen(false)}>
                           Cancel
@@ -458,6 +466,8 @@ export default function KBDocumentsPage() {
                           </div>
                         </div>
                       )}
+
+
                       <div className="flex justify-end space-x-2">
                         <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
                           Cancel

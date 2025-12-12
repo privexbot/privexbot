@@ -13,7 +13,7 @@ HOW:
 - Integration with Celery tasks
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -328,13 +328,13 @@ async def delete_kb(
         # STEP 1: IMMEDIATE SOFT DELETE
         # Mark KB as deleting so it disappears from user's view instantly
         kb.status = "deleting"
-        kb.error_message = f"Deletion initiated by {current_user.email} at {datetime.utcnow().isoformat()}"
+        kb.error_message = f"Deletion initiated by {current_user.username} (ID: {current_user.id}) at {datetime.utcnow().isoformat()}"
         kb.updated_at = datetime.utcnow()
 
         # Commit immediately - user sees deletion right away
         db.commit()
 
-        print(f"✅ KB {kb_id} marked as deleting by user {current_user.email}")
+        print(f"✅ KB {kb_id} marked as deleting by user {current_user.username} (ID: {current_user.id})")
 
         # STEP 2: QUEUE BACKGROUND CLEANUP
         # Background task will handle Qdrant cleanup + hard database deletion
@@ -343,7 +343,7 @@ async def delete_kb(
         task = manual_cleanup_kb_task.apply_async(
             kwargs={
                 "kb_id": str(kb_id),
-                "initiated_by": current_user.email,
+                "initiated_by": current_user.username,
                 "deleted_at": datetime.utcnow().isoformat()
             },
             queue="low_priority"
@@ -1985,3 +1985,9 @@ async def delete_kb_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete document: {str(e)}"
         )
+
+
+# ========================================
+# HELPER FUNCTIONS
+# ========================================
+
