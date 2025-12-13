@@ -90,6 +90,7 @@ export type CrawlMethod = (typeof CrawlMethod)[keyof typeof CrawlMethod];
  */
 export const ChunkingStrategy = {
   NO_CHUNKING: "no_chunking",         // Keep content as complete documents
+  FULL_CONTENT: "full_content",       // Alias for no_chunking (backward compatibility)
   BY_SENTENCE: "by_sentence",         // Split on sentence boundaries
   BY_PARAGRAPH: "by_paragraph",       // Split on paragraph breaks
   BY_HEADING: "by_heading",           // Split on markdown headings

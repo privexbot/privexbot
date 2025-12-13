@@ -302,17 +302,12 @@ class KBDraftService:
         Raises:
             ValueError: If draft not found
         """
-
-        # DEBUG: Log what we're saving
-
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
             raise ValueError("KB draft not found")
 
-
         data = draft.get("data", {})
         data["chunking_config"] = chunking_config
-
 
         draft_service.update_draft(
             draft_type=DraftType.KB,

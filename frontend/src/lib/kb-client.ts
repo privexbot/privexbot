@@ -236,6 +236,7 @@ export const kbDraftApi = {
     chunk_overlap: number;
     include_metrics?: boolean;
     custom_separators?: string[];
+    max_chunks?: number;
   }): Promise<any> {
     try {
       const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params);

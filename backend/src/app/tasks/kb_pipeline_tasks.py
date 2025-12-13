@@ -275,6 +275,10 @@ def process_web_kb_task(
     # Import smart KB service at function level to avoid scoping issues
     from app.services.smart_kb_service import smart_kb_service
 
+    # CRITICAL FIX: Initialize user_chunking_config at function level to avoid UnboundLocalError
+    # This ensures the variable is always defined before any usage
+    user_chunking_config = config.get("chunking_config", {})
+
     try:
         # ========================================
         # STEP 0: INITIALIZATION
@@ -792,7 +796,6 @@ def process_web_kb_task(
                                 debug_source = approved_scraped_page.get("source", "no_source")
                                 print(f"🔍 [APPROVED CONTENT DEBUG] Page {idx}: {debug_url}")
                                 print(f"🔍 [APPROVED CONTENT DEBUG] Source: {debug_source}, Length: {debug_content_len}")
-                                print(f"🔍 [APPROVED CONTENT DEBUG] Content preview: {approved_scraped_page.get('content', '')[:200]}...")
 
                     # Check if this is an approved source with content (Phase 1C architecture)
                     if scraped_pages is None and source.get("type") == "approved_content" and source.get("status") == "approved":
@@ -1208,6 +1211,11 @@ def process_web_kb_task(
 
                     else:
                         # PROCESS EACH PAGE INDIVIDUALLY (EXISTING BEHAVIOR)
+                        # CRITICAL FIX: Define user_chunking_config for individual processing
+                        user_chunking_config = config.get("chunking_config", {})
+                        print(f"🔧 [INDIVIDUAL] User chunking config: {user_chunking_config}")
+                        print(f"🔧 [INDIVIDUAL] Strategy: {user_chunking_config.get('strategy', 'unknown')}")
+
                         for page_idx, scraped_page in enumerate(scraped_pages):
                             try:
                                 # Check for cancellation
@@ -1241,14 +1249,11 @@ def process_web_kb_task(
                                 # Log the final content source being used
                                 if content_source in ("user_approved", "approved_content", "corrected_to_approved"):
                                     print(f"✅ [APPROVED CONTENT GUARANTEE] Using approved content from {content_source}")
-                                    print(f"✅ [APPROVED CONTENT GUARANTEE] Content starts with: {page_content[:100] if page_content else 'None'}...")
+
                                 else:
-                                    print(f"ℹ️ [CONTENT SOURCE] Using {content_source} content")
                                     print(f"ℹ️ [CONTENT SOURCE] Content starts with: {page_content[:100] if page_content else 'None'}...")
                                 print(f"🔍 [CONTENT FLOW DEBUG] Page: {page_url}")
-                                print(f"🔍 [CONTENT FLOW DEBUG] Content source: {content_source}")
-                                print(f"🔍 [CONTENT FLOW DEBUG] Content length: {len(page_content) if page_content else 0}")
-                                print(f"🔍 [CONTENT FLOW DEBUG] Content preview: {page_content[:200] if page_content else 'None'}...")
+
 
                                 # Skip if no content
                                 if not page_content or len(page_content.strip()) < 50:

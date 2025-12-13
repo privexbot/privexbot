@@ -629,6 +629,7 @@ async def preview_chunks_live(
     chunk_overlap = request.get("chunk_overlap", 200)
     custom_separators = request.get("custom_separators", None)  # For custom strategy
     include_metrics = request.get("include_metrics", False)
+    max_chunks = request.get("max_chunks", None)  # Allow frontend to control chunk limit
 
     # Special handling for "no_chunking" strategies
     if strategy in ("full_content", "no_chunking"):
@@ -724,11 +725,22 @@ async def preview_chunks_live(
         else:
             metrics = {}
 
+    # Smart performance optimization: Default to 20 chunks, allow expansion on request
+    if max_chunks is None:
+        # Default to 20 chunks for performance, but users can request more
+        chunk_limit = min(20, len(chunks))
+    else:
+        # User explicitly requested a specific limit (e.g., "Show All")
+        chunk_limit = max_chunks
+
+    preview_chunks = chunks[:chunk_limit]
+
     return {
-        "chunks": chunks[:20],  # Limit preview to 20 chunks
+        "chunks": preview_chunks,
         "metrics": metrics,
         "total_chunks": len(chunks),
-        "preview_limited": len(chunks) > 20
+        "preview_limited": len(chunks) > chunk_limit,
+        "chunks_shown": len(preview_chunks)
     }
 
 
