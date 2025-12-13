@@ -472,14 +472,11 @@ class KBDraftService:
             ValueError: If draft not found or validation fails
         """
 
-        print(f"⭐ [FINALIZE_DRAFT] FUNCTION ENTRY - draft_id: {draft_id}")
-
         from app.models.knowledge_base import KnowledgeBase
         from app.models.document import Document
         import time
 
         # Get and validate draft
-        print(f"⭐ [FINALIZE_DRAFT] Getting draft from Redis...")
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
             raise ValueError("KB draft not found")
@@ -498,8 +495,6 @@ class KBDraftService:
         final_config = data.get("config", {})
         if config_override:
             final_config.update(config_override)
-
-        print(f"🔧 [FINALIZE_DRAFT] Final KB config: {final_config}")
 
         # Create KB record (status="processing")
         kb = KnowledgeBase(
@@ -536,8 +531,6 @@ class KBDraftService:
         final_config = config_override or {}
         chunking_config = final_config.get("chunking_config") or data.get("chunking_config", {})
         strategy = chunking_config.get("strategy", "by_heading")
-
-        print(f"🔧 [FINALIZE_DRAFT] Document creation strategy check: chunking_strategy={strategy}")
 
         if strategy in ("no_chunking", "full_content") and len(sources) > 0:
             # Create single combined document for no_chunking strategy
@@ -604,8 +597,6 @@ class KBDraftService:
                 "approved_sources": approved_sources  # CRITICAL: Include approved content for background task
             }
 
-            print(f"✅ [FINALIZE_DRAFT] Extracted {len(approved_sources)} approved pages for combined document")
-
             document = Document(
                 kb_id=kb.id,
                 workspace_id=kb.workspace_id,
@@ -619,7 +610,6 @@ class KBDraftService:
             )
             db.add(document)
             documents.append(document)
-            print(f"✅ [FINALIZE_DRAFT] Created combined document placeholder for {len(sources)} sources")
 
         else:
             # Create individual document placeholders (normal behavior for chunked strategies)
@@ -825,7 +815,6 @@ class KBDraftService:
                     )
                     db.add(document)
                     documents.append(document)
-            print(f"✅ [FINALIZE_DRAFT] Created {len(documents)} individual document placeholders")
 
         # Commit to PostgreSQL
         db.commit()

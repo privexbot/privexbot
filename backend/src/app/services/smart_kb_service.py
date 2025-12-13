@@ -402,7 +402,6 @@ class SmartKBService:
             # CRITICAL FIX: Robust character count calculation
             # Always calculate from content length as the authoritative source
             character_count = len(chunk_data["content"]) if chunk_data.get("content") else 0
-            print(f"🔧 [SMART_KB_FIX] character_count calculated: {character_count} for content length: {len(chunk_data.get('content', ''))}")
 
             # PostgreSQL chunk (content + metadata, NO EMBEDDING)
             postgres_chunk_data = {

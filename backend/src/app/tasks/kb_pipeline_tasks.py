@@ -1382,16 +1382,6 @@ def process_web_kb_task(
                                 # STEP 2d: SMART PROCESSING (USER CHOICE FIRST)
                                 # ========================================
 
-                                # Use smart KB service that respects user preferences
-                                # DEBUG: Log chunking config
-                                user_chunking_config = config.get("chunking_config")
-                                print(f"[DEBUG] Pipeline chunking config: {user_chunking_config}")
-                                print(f"[DEBUG] Full config passed to pipeline: {config}")
-                                print(f"[DEBUG] About to call smart_kb_service.process_document_with_proper_storage")
-                                print(f"🔍 [SMART SERVICE DEBUG] Content length passed to smart_kb_service: {len(page_content) if page_content else 0}")
-                                print(f"🔍 [SMART SERVICE DEBUG] Content source: {content_source}")
-                                print(f"🔍 [SMART SERVICE DEBUG] Content preview: {page_content[:200] if page_content else 'None'}...")
-
                                 try:
                                     # Process document with proper storage strategy and user choice respect
                                     processing_result = loop.run_until_complete(
@@ -1530,10 +1520,6 @@ def process_web_kb_task(
 
                                 # Create PostgreSQL Chunk records (NO EMBEDDING FIELD - avoid redundancy)
                                 for postgres_chunk_data in postgres_chunks:
-                                    char_count_from_data = postgres_chunk_data.get("character_count", 0)
-                                    content_length = len(postgres_chunk_data.get("content", ""))
-                                    print(f"🔧 [PIPELINE_DEBUG] postgres_chunk_data character_count: {char_count_from_data}, content_length: {content_length}")
-
                                     chunk = Chunk(
                                         id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
                                         document_id=postgres_chunk_data["document_id"],
