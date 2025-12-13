@@ -96,7 +96,7 @@ export default function KBDetailPage() {
       // Load documents and chunks in parallel
       const [documentsData, chunksData] = await Promise.all([
         kbClient.kb.getDocuments(kbId),
-        kbClient.kb.getChunks(kbId)
+        kbClient.kb.getChunks(kbId, 1, 100) // Fetch up to 100 chunks to show all
       ]);
 
 
