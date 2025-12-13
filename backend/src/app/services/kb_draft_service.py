@@ -642,19 +642,14 @@ class KBDraftService:
                     # Use the same data structure as chunk preview API
                     approved_pages = source.get("approved_pages", [])
 
-                    # CRITICAL FIX: Create ONE document per approved PAGE for individual processing
-                    # This ensures the placeholder documents match the page URLs during processing
+                    # CRITICAL FIX: Collect ALL approved pages from this source
+                    all_approved_sources_from_this_source = []
                     for page in approved_pages:
                         content = page.get("content", "")
                         if content.strip():
-                            # Each page gets its own document placeholder
-                            page_url = page.get("url", source.get("url", ""))
-                            page_title = page.get("title", "")
-
-                            # Create approved_source for this specific page
-                            approved_source_for_page = [{
-                                "url": page_url,
-                                "title": page_title,
+                            approved_page = {
+                                "url": page.get("url", source.get("url", "")),
+                                "title": page.get("title", ""),
                                 "content": content,  # Exact same content as chunk preview
                                 "markdown": content,
                                 "is_edited": page.get("is_edited", False),
@@ -662,16 +657,29 @@ class KBDraftService:
                                 "metadata": page.get("metadata", {}),
                                 "approved_at": page.get("approved_at"),
                                 "approved_by": page.get("approved_by")
-                            }]
+                            }
+                            all_approved_sources_from_this_source.append(approved_page)
 
-                            # Create metadata for this page's document
+                    print(f"📋 [FINALIZE_INDIVIDUAL] Collected {len(all_approved_sources_from_this_source)} approved pages from source {source.get('url', 'Unknown')}")
+
+                    # CRITICAL FIX: Create ONE document per approved PAGE for individual processing
+                    # But store ALL approved pages from the source in each document's metadata
+                    for page in approved_pages:
+                        content = page.get("content", "")
+                        if content.strip():
+                            # Each page gets its own document placeholder
+                            page_url = page.get("url", source.get("url", ""))
+                            page_title = page.get("title", "")
+
+                            # Create metadata for this page's document with ALL approved sources from the source
                             page_metadata = {
                                 **source.get("metadata", {}),
-                                "approved_sources": approved_source_for_page,
+                                "approved_sources": all_approved_sources_from_this_source,  # ALL pages, not just this one
                                 "source_name": source.get("name"),
                                 "source_id": source.get("id"),
                                 "page_index": page.get("index"),
-                                "is_approved_content": True
+                                "is_approved_content": True,
+                                "total_approved_pages": len(all_approved_sources_from_this_source)  # For debugging
                             }
 
                             print(f"✅ [FINALIZE_INDIVIDUAL] Creating placeholder for page: {page_url}")
@@ -699,7 +707,33 @@ class KBDraftService:
                     metadata = source.get("metadata", {})
                     preview_pages = metadata.get("previewPages", [])
 
-                    # Process each approved page
+                    # CRITICAL FIX: Collect ALL approved pages from this source FIRST
+                    all_approved_sources_from_this_source = []
+                    for page in preview_pages:
+                        if not page.get("is_approved", False):
+                            continue  # Skip non-approved pages
+
+                        # Get the content (edited or original)
+                        content = page.get("edited_content") or page.get("content", "")
+                        if not content.strip():
+                            continue
+
+                        approved_page = {
+                            "url": page.get("url", source.get("url", "")),
+                            "title": page.get("title", ""),
+                            "content": content,  # User approved content
+                            "markdown": content,
+                            "is_edited": page.get("is_edited", False),
+                            "source": "user_approved",
+                            "metadata": page.get("metadata", {}),
+                            "approved_at": page.get("approved_at"),
+                            "approved_by": page.get("approved_by")
+                        }
+                        all_approved_sources_from_this_source.append(approved_page)
+
+                    print(f"📋 [FINALIZE_INDIVIDUAL] Collected {len(all_approved_sources_from_this_source)} approved pages from source {source.get('url', 'Unknown')}")
+
+                    # Process each approved page to create individual documents
                     for page in preview_pages:
                         if not page.get("is_approved", False):
                             continue  # Skip non-approved pages
@@ -712,28 +746,16 @@ class KBDraftService:
                         page_url = page.get("url", source.get("url", ""))
                         page_title = page.get("title", "")
 
-                        # Create approved_source for this specific page
-                        approved_source_for_page = [{
-                            "url": page_url,
-                            "title": page_title,
-                            "content": content,  # User approved content
-                            "markdown": content,
-                            "is_edited": page.get("is_edited", False),
-                            "source": "user_approved",
-                            "metadata": page.get("metadata", {}),
-                            "approved_at": page.get("approved_at"),
-                            "approved_by": page.get("approved_by")
-                        }]
-
-                        # Create metadata for this page's document
+                        # Create metadata for this page's document with ALL approved sources from the source
                         page_metadata = {
                             **metadata,
-                            "approved_sources": approved_source_for_page,
+                            "approved_sources": all_approved_sources_from_this_source,  # ALL pages, not just this one
                             "source_name": source.get("name", source.get("url", "")),
                             "source_id": source.get("id"),
                             "page_index": page.get("index"),
                             "is_approved_content": True,
-                            "approval_method": "approve-sources"  # Mark how it was approved
+                            "approval_method": "approve-sources",  # Mark how it was approved
+                            "total_approved_pages": len(all_approved_sources_from_this_source)  # For debugging
                         }
 
                         print(f"✅ [FINALIZE_LEGACY_APPROVED] Creating placeholder for approved page: {page_url}")

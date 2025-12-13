@@ -752,6 +752,32 @@ class ChunkingService:
         }
 
 
+    def chunk_content(
+        self,
+        content: str,
+        strategy: str = "recursive",
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+        preserve_code_blocks: bool = True
+    ) -> List[str]:
+        """
+        Alias for chunk_document that returns just the content strings.
+
+        WHY: Used by chunk preview endpoints
+        HOW: Call chunk_document and extract content from metadata
+
+        Returns:
+            List of chunk content strings (not metadata objects)
+        """
+        chunks_data = self.chunk_document(
+            text=content,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+        # Extract just the content strings
+        return [chunk_data["content"] for chunk_data in chunks_data]
+
     def create_chunks_for_document(
         self,
         db: Session,

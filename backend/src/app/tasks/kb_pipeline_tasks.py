@@ -395,11 +395,32 @@ def process_web_kb_task(
                     scraped_pages = None
 
                     # Check for approved content first (same logic as individual processing)
+                    # FIXED: Query for documents that belong to this source (handle both base URL and individual page URLs)
+                    print(f"🔍 [ALL_SOURCES QUERY DEBUG] Looking for approved documents for source: {source_url}")
                     doc_with_approved = db.query(Document).filter(
                         Document.kb_id == UUID(kb_id),
-                        Document.source_url == source_url,
                         Document.status == "pending"
+                    ).filter(
+                        # Match either exact URL or documents that contain source_url as base
+                        (Document.source_url == source_url) |
+                        (Document.source_url.like(f"{source_url}%"))
                     ).first()
+
+                    if doc_with_approved:
+                        print(f"✅ [ALL_SOURCES QUERY DEBUG] Found document: source_url={doc_with_approved.source_url}")
+                    else:
+                        print(f"❌ [ALL_SOURCES QUERY DEBUG] No approved document found for: {source_url}")
+                        # Debug: Show what documents do exist for this KB
+                        all_pending_docs = db.query(Document).filter(
+                            Document.kb_id == UUID(kb_id),
+                            Document.status == "pending"
+                        ).all()
+                        if all_pending_docs:
+                            print(f"📋 [DEBUG] Existing pending documents:")
+                            for doc in all_pending_docs[:5]:  # Show first 5
+                                print(f"   - {doc.source_url}")
+                        else:
+                            print(f"📋 [DEBUG] No pending documents found for KB {kb_id}")
 
                     if doc_with_approved and doc_with_approved.source_metadata:
                         approved_sources_in_doc = doc_with_approved.source_metadata.get("approved_sources", [])
@@ -694,23 +715,62 @@ def process_web_kb_task(
 
                     # CRITICAL FIX: First check if a document exists with approved_sources for this source
                     scraped_pages = None
+                    found_approved_content = False
+
+                    # FIXED: Query for documents that belong to this source (handle both base URL and individual page URLs)
+                    print(f"🔍 [INDIVIDUAL QUERY DEBUG] Looking for approved documents for source: {source_url}")
                     doc_with_approved = db.query(Document).filter(
                         Document.kb_id == UUID(kb_id),
-                        Document.source_url == source_url,
                         Document.status == "pending"
+                    ).filter(
+                        # Match either exact URL or documents that contain source_url as base
+                        (Document.source_url == source_url) |
+                        (Document.source_url.like(f"{source_url}%"))
                     ).first()
+
+                    if doc_with_approved:
+                        print(f"✅ [INDIVIDUAL QUERY DEBUG] Found document: source_url={doc_with_approved.source_url}")
+                    else:
+                        print(f"❌ [INDIVIDUAL QUERY DEBUG] No approved document found for: {source_url}")
+                        # Debug: Show what documents do exist for this KB
+                        all_pending_docs = db.query(Document).filter(
+                            Document.kb_id == UUID(kb_id),
+                            Document.status == "pending"
+                        ).all()
+                        if all_pending_docs:
+                            print(f"📋 [DEBUG] Existing pending documents:")
+                            for doc in all_pending_docs[:5]:  # Show first 5
+                                print(f"   - {doc.source_url}")
+                        else:
+                            print(f"📋 [DEBUG] No pending documents found for KB {kb_id}")
 
                     if doc_with_approved and doc_with_approved.source_metadata:
                         approved_sources_in_doc = doc_with_approved.source_metadata.get("approved_sources", [])
                         if approved_sources_in_doc:
                             print(f"🎯 [SOURCE] Found {len(approved_sources_in_doc)} APPROVED pages in document metadata for {source_url}")
                             scraped_pages = []
+                            found_approved_content = True
 
                             for approved_page in approved_sources_in_doc:
                                 # Use approved/edited content EXACTLY as user approved
                                 content = approved_page.get("content", "")
 
                                 if content.strip():
+                                    # Ensure source identification metadata is preserved
+                                    page_metadata = approved_page.get("metadata", {}).copy()
+
+                                    # Add source identification if not already present
+                                    if "source_id" not in page_metadata:
+                                        # Extract from current source context
+                                        page_metadata["source_id"] = source.get("id")
+                                    if "page_index" not in page_metadata and "index" not in page_metadata:
+                                        # Try to determine page index from URL or position
+                                        page_url = approved_page.get("url", source_url)
+                                        for idx, other_page in enumerate(approved_sources_in_doc):
+                                            if other_page.get("url") == page_url:
+                                                page_metadata["page_index"] = idx
+                                                break
+
                                     scraped_page = {
                                         "url": approved_page.get("url", source_url),
                                         "title": approved_page.get("title", ""),
@@ -718,22 +778,39 @@ def process_web_kb_task(
                                         "markdown": content,
                                         "is_edited": approved_page.get("is_edited", False),
                                         "source": "user_approved",
-                                        "metadata": approved_page.get("metadata", {})
+                                        "metadata": page_metadata
                                     }
                                     scraped_pages.append(scraped_page)
 
                             tracker.add_log("info", f"Using {len(scraped_pages)} APPROVED pages from document for {source_url}")
                             print(f"✅ [SOURCE] Using APPROVED content from document metadata")
 
+                            # DEBUG: Show what approved content was loaded
+                            for idx, approved_scraped_page in enumerate(scraped_pages):
+                                debug_url = approved_scraped_page.get("url", "no_url")
+                                debug_content_len = len(approved_scraped_page.get("content", ""))
+                                debug_source = approved_scraped_page.get("source", "no_source")
+                                print(f"🔍 [APPROVED CONTENT DEBUG] Page {idx}: {debug_url}")
+                                print(f"🔍 [APPROVED CONTENT DEBUG] Source: {debug_source}, Length: {debug_content_len}")
+                                print(f"🔍 [APPROVED CONTENT DEBUG] Content preview: {approved_scraped_page.get('content', '')[:200]}...")
+
                     # Check if this is an approved source with content (Phase 1C architecture)
-                    if not scraped_pages and source.get("type") == "approved_content" and source.get("status") == "approved":
+                    if scraped_pages is None and source.get("type") == "approved_content" and source.get("status") == "approved":
                         # Use approved content from sources (Phase 1C)
                         approved_pages = source.get("approved_pages", [])
                         scraped_pages = []
+                        found_approved_content = True
 
-                        for page in approved_pages:
+                        for page_idx, page in enumerate(approved_pages):
                             # Use final approved content (edited or original)
                             content = page.get("content", "")
+
+                            # Ensure source identification metadata is preserved
+                            page_metadata = page.get("metadata", {}).copy()
+
+                            # Add source identification for reliable document matching
+                            page_metadata["source_id"] = source.get("id")
+                            page_metadata["page_index"] = page_idx  # Use enumeration index
 
                             # Create scraped_page format expected by processing logic
                             scraped_page = {
@@ -745,14 +822,14 @@ def process_web_kb_task(
                                 "source": "approved_content",  # Flag to indicate this came from approved sources
                                 "approved_at": page.get("approved_at"),
                                 "original_content": page.get("original_content", ""),
-                                "metadata": page.get("metadata", {})
+                                "metadata": page_metadata
                             }
                             scraped_pages.append(scraped_page)
 
                         tracker.add_log("info", f"Using {len(scraped_pages)} approved pages from source: {source.get('name')}")
                         print(f"[DEBUG] Using {len(scraped_pages)} approved pages from source (no scraping needed)")
 
-                    elif preview_data and preview_data.get("pages"):
+                    elif not found_approved_content and scraped_pages is None and preview_data and preview_data.get("pages"):
                         # Fallback: Use preview_data if no approved sources (legacy support)
                         preview_pages = preview_data.get("pages", [])
                         scraped_pages = []
@@ -775,7 +852,7 @@ def process_web_kb_task(
                         tracker.add_log("info", f"Using {len(scraped_pages)} pages from preview data (fallback mode)")
                         print(f"[DEBUG] Using {len(scraped_pages)} pages from preview_data (fallback)")
 
-                    if not scraped_pages:
+                    if not found_approved_content and not scraped_pages:
                         # No preview data available, proceed with normal scraping
                         tracker.add_log("info", f"Scraping {source_url}")
 
@@ -1143,6 +1220,36 @@ def process_web_kb_task(
                                 page_url = scraped_page.get("url") if isinstance(scraped_page, dict) else scraped_page.url
                                 page_content = scraped_page.get("content") if isinstance(scraped_page, dict) else scraped_page.content
 
+                                # CRITICAL DEBUG: Track content source
+                                content_source = scraped_page.get("source", "unknown") if isinstance(scraped_page, dict) else "object_format"
+
+                                # CRITICAL FIX: Apply no_chunking success pattern - GUARANTEE approved content usage
+                                # If this scraped_page came from fallback but we have approved content available, use it instead
+                                if content_source == "preview_data" and isinstance(scraped_page, dict):
+                                    # Check if this page has approved/edited content available
+                                    edited_content = scraped_page.get("edited_content")
+                                    if edited_content and edited_content.strip():
+                                        print(f"🔄 [CONTENT CORRECTION] Found edited_content in preview_data page, using it instead of original content")
+                                        print(f"🔄 [CONTENT CORRECTION] Original content start: {page_content[:100] if page_content else 'None'}...")
+                                        print(f"🔄 [CONTENT CORRECTION] Approved content start: {edited_content[:100] if edited_content else 'None'}...")
+                                        page_content = edited_content  # Use approved content instead
+                                        content_source = "corrected_to_approved"
+                                    else:
+                                        print(f"⚠️ [FALLBACK WARNING] Using preview_data fallback - no edited_content available!")
+                                        print(f"⚠️ [FALLBACK WARNING] Content starts with: {page_content[:100] if page_content else 'None'}...")
+
+                                # Log the final content source being used
+                                if content_source in ("user_approved", "approved_content", "corrected_to_approved"):
+                                    print(f"✅ [APPROVED CONTENT GUARANTEE] Using approved content from {content_source}")
+                                    print(f"✅ [APPROVED CONTENT GUARANTEE] Content starts with: {page_content[:100] if page_content else 'None'}...")
+                                else:
+                                    print(f"ℹ️ [CONTENT SOURCE] Using {content_source} content")
+                                    print(f"ℹ️ [CONTENT SOURCE] Content starts with: {page_content[:100] if page_content else 'None'}...")
+                                print(f"🔍 [CONTENT FLOW DEBUG] Page: {page_url}")
+                                print(f"🔍 [CONTENT FLOW DEBUG] Content source: {content_source}")
+                                print(f"🔍 [CONTENT FLOW DEBUG] Content length: {len(page_content) if page_content else 0}")
+                                print(f"🔍 [CONTENT FLOW DEBUG] Content preview: {page_content[:200] if page_content else 'None'}...")
+
                                 # Skip if no content
                                 if not page_content or len(page_content.strip()) < 50:
                                     tracker.add_log("warning", f"Skipping page with insufficient content: {page_url}")
@@ -1154,13 +1261,45 @@ def process_web_kb_task(
 
                                 print(f"[DEBUG] Looking for existing placeholder document for page: {page_url}")
 
-                                # CRITICAL FIX: Check if a placeholder document exists for this URL
-                                # This happens when approved_content sources are created during finalization
-                                existing_doc = db.query(Document).filter(
-                                    Document.kb_id == UUID(kb_id),
-                                    Document.source_url == page_url,
-                                    Document.status == "pending"
-                                ).first()
+                                # CRITICAL FIX: Check if a placeholder document exists using metadata-based matching
+                                # This is more reliable than URL matching for approved content
+                                existing_doc = None
+
+                                # Extract source identification from scraped_page metadata
+                                if isinstance(scraped_page, dict):
+                                    page_metadata = scraped_page.get("metadata", {})
+                                    source_id = page_metadata.get("source_id")
+                                    page_index = page_metadata.get("page_index") or page_metadata.get("index")
+
+                                    if source_id is not None:
+                                        # Use metadata-based matching (most reliable)
+                                        print(f"🔍 [METADATA MATCH] Looking for document with source_id={source_id}, page_index={page_index}")
+                                        existing_doc = db.query(Document).filter(
+                                            Document.kb_id == UUID(kb_id),
+                                            Document.status == "pending"
+                                        ).filter(
+                                            Document.source_metadata["source_id"].astext == str(source_id)
+                                        ).filter(
+                                            Document.source_metadata["page_index"].astext == str(page_index) if page_index is not None else True
+                                        ).first()
+
+                                        if existing_doc:
+                                            print(f"✅ [METADATA MATCH] Found document by metadata: {existing_doc.id}")
+
+                                # Fallback: URL-based matching for legacy compatibility
+                                if not existing_doc:
+                                    print(f"🔍 [URL FALLBACK] Looking for document with URL: {page_url}")
+                                    existing_doc = db.query(Document).filter(
+                                        Document.kb_id == UUID(kb_id),
+                                        Document.source_url == page_url,
+                                        Document.status == "pending"
+                                    ).first()
+
+                                    if existing_doc:
+                                        print(f"✅ [URL FALLBACK] Found document by URL: {existing_doc.id}")
+
+                                if not existing_doc:
+                                    print(f"❌ [NO MATCH] No existing document found for page: {page_url}")
 
                                 if existing_doc:
                                     # Use existing placeholder document (likely has approved_sources)
@@ -1174,8 +1313,27 @@ def process_web_kb_task(
                                         # The page_content we have IS the approved content from scraped_page
                                         # which was built from approved sources
 
-                                    # Update document with current content (which may be approved)
-                                    document.content_full = page_content  # This is approved content if from approved sources
+                                    # CRITICAL FIX: Final verification before storing - apply no_chunking success pattern
+                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Setting document.content_full for {page_url}")
+                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Content source was: {content_source}")
+                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Document ID: {document.id}")
+                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Content length being stored: {len(page_content) if page_content else 0}")
+
+                                    # FINAL SAFETY CHECK: Ensure we're storing approved content when available
+                                    if content_source in ("user_approved", "approved_content", "corrected_to_approved"):
+                                        print(f"✅ [FINAL VERIFICATION] STORING APPROVED CONTENT - source: {content_source}")
+                                        print(f"✅ [FINAL VERIFICATION] Content preview: {page_content[:150] if page_content else 'None'}...")
+                                    else:
+                                        # Check document metadata to see if approved content should be available
+                                        doc_metadata = document.source_metadata or {}
+                                        if doc_metadata.get("approved_sources"):
+                                            print(f"🚨 [CRITICAL WARNING] Document has approved_sources but using {content_source} content!")
+                                            print(f"🚨 [CRITICAL WARNING] This indicates a logic error in content selection")
+                                            print(f"🚨 [CRITICAL WARNING] Content preview: {page_content[:150] if page_content else 'None'}...")
+                                        else:
+                                            print(f"ℹ️ [STORAGE INFO] Storing {content_source} content (no approved sources available)")
+
+                                    document.content_full = page_content  # Store the final content (should be approved if available)
                                     document.content_preview = page_content[:500] if page_content else None
                                     document.word_count = len(page_content.split()) if page_content else 0
                                     document.character_count = len(page_content) if page_content else 0
@@ -1193,6 +1351,10 @@ def process_web_kb_task(
                                     # Handle both dict and object formats for scraped_page
                                     title = scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title
                                     scraped_at = scraped_page.get("scraped_at") if isinstance(scraped_page, dict) else scraped_page.scraped_at
+
+                                    print(f"🔍 [NEW DOCUMENT DEBUG] Creating new document for {page_url}")
+                                    print(f"🔍 [NEW DOCUMENT DEBUG] Content source was: {content_source}")
+                                    print(f"🔍 [NEW DOCUMENT DEBUG] Content length: {len(page_content) if page_content else 0}")
 
                                     document = Document(
                                         kb_id=UUID(kb_id),
@@ -1226,6 +1388,9 @@ def process_web_kb_task(
                                 print(f"[DEBUG] Pipeline chunking config: {user_chunking_config}")
                                 print(f"[DEBUG] Full config passed to pipeline: {config}")
                                 print(f"[DEBUG] About to call smart_kb_service.process_document_with_proper_storage")
+                                print(f"🔍 [SMART SERVICE DEBUG] Content length passed to smart_kb_service: {len(page_content) if page_content else 0}")
+                                print(f"🔍 [SMART SERVICE DEBUG] Content source: {content_source}")
+                                print(f"🔍 [SMART SERVICE DEBUG] Content preview: {page_content[:200] if page_content else 'None'}...")
 
                                 try:
                                     # Process document with proper storage strategy and user choice respect
