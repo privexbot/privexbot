@@ -223,7 +223,7 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
                 <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Documents</span>
               </div>
               <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
-                {kb.stats?.documents || 0}
+                {kb.total_documents || 0}
               </p>
             </div>
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -232,7 +232,7 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
                 <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Chunks</span>
               </div>
               <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
-                {kb.stats?.chunks || 0}
+                {kb.total_chunks || 0}
               </p>
             </div>
           </div>
@@ -322,8 +322,8 @@ export default function KnowledgeBasesPage() {
     ready: kbs.filter(kb => kb.status === KBStatus.READY).length,
     processing: kbs.filter(kb => kb.status === KBStatus.PROCESSING || kb.status === KBStatus.REINDEXING).length,
     failed: kbs.filter(kb => kb.status === KBStatus.FAILED).length,
-    totalDocuments: kbs.reduce((sum, kb) => sum + (kb.stats?.documents || 0), 0),
-    totalChunks: kbs.reduce((sum, kb) => sum + (kb.stats?.chunks || 0), 0),
+    totalDocuments: kbs.reduce((sum, kb) => sum + (kb.total_documents || 0), 0),
+    totalChunks: kbs.reduce((sum, kb) => sum + (kb.total_chunks || 0), 0),
     totalSize: kbs.reduce((sum, kb) => sum + (kb.stats?.total_size_bytes || 0), 0),
     successRate: kbs.length > 0 ? Math.round((kbs.filter(kb => kb.status === KBStatus.READY).length / kbs.length) * 100) : 0
   };
@@ -532,11 +532,11 @@ export default function KnowledgeBasesPage() {
                                 <div className="flex flex-wrap items-center gap-4 text-sm">
                                   <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                                     <FileText className="h-4 w-4 flex-shrink-0" />
-                                    <span className="font-manrope">{kb.stats?.documents || 0} docs</span>
+                                    <span className="font-manrope">{kb.total_documents || 0} docs</span>
                                   </span>
                                   <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                                     <Layers className="h-4 w-4 flex-shrink-0" />
-                                    <span className="font-manrope">{kb.stats?.chunks || 0} chunks</span>
+                                    <span className="font-manrope">{kb.total_chunks || 0} chunks</span>
                                   </span>
                                   <Badge
                                     variant={kb.status === KBStatus.READY ? 'default' : kb.status === KBStatus.FAILED ? 'destructive' : 'secondary'}

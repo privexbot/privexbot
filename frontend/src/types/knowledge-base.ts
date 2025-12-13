@@ -687,6 +687,10 @@ export interface KBSummary {
     chunks: number;
     total_size_bytes: number;
   };
+  // Backend compatibility fields for statistics display
+  total_documents?: number;
+  total_chunks?: number;
+  total_size_bytes?: number;
 }
 
 /**

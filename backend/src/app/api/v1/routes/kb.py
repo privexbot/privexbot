@@ -99,6 +99,9 @@ class KBResponse(BaseModel):
     workspace_id: str
     status: str
     stats: dict
+    total_documents: int = 0  # Legacy field for frontend compatibility
+    total_chunks: int = 0     # Legacy field for frontend compatibility
+    total_size_bytes: int = 0  # Legacy field for frontend compatibility (size in bytes)
     created_at: str
     updated_at: Optional[str]
     created_by: str
@@ -218,6 +221,10 @@ async def list_kbs(
             workspace_id=str(kb.workspace_id),
             status=kb.status,
             stats=kb.stats or {},
+            # CRITICAL FIX: Populate legacy fields from stats for frontend compatibility
+            total_documents=(kb.stats or {}).get("total_documents", kb.total_documents or 0),
+            total_chunks=(kb.stats or {}).get("total_chunks", kb.total_chunks or 0),
+            total_size_bytes=(kb.stats or {}).get("total_size_bytes", 0),
             created_at=kb.created_at.isoformat(),
             updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
             created_by=str(kb.created_by)

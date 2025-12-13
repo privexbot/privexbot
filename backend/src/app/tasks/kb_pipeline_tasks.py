@@ -1713,6 +1713,13 @@ def process_web_kb_task(
         actual_documents_count = db.query(Document).filter(Document.kb_id == UUID(kb_id)).count()
         actual_chunks_count = db.query(Chunk).filter(Chunk.kb_id == UUID(kb_id)).count()
 
+        # Calculate total size in bytes from all documents
+        from sqlalchemy import func
+        total_size_result = db.query(func.sum(Document.character_count)).filter(
+            Document.kb_id == UUID(kb_id)
+        ).scalar()
+        total_size_bytes = total_size_result or 0
+
         print(f"📊 [REALITY CHECK] Planned vs Actual:")
 
         # CRITICAL FIX: For no_chunking strategy, planned documents should be 1 (combined), not pages_scraped
@@ -1766,6 +1773,7 @@ def process_web_kb_task(
             "total_documents": actual_documents_count,
             "total_chunks": actual_chunks_count,  # Use ACTUAL count from DB
             "total_vectors": actual_vectors_count,  # Use ACTUAL count from Qdrant
+            "total_size_bytes": total_size_bytes,  # Total content size in bytes
             "processing_duration_seconds": int(duration),
             # Keep page stats for reference
             "pages_scraped": tracker.stats.get("pages_scraped", 0),
@@ -1999,6 +2007,13 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             total_chunks += len(chunks_data)
             total_vectors += len(qdrant_chunks)
 
+        # Calculate total size in bytes from all documents
+        from sqlalchemy import func
+        total_size_result = db.query(func.sum(Document.character_count)).filter(
+            Document.kb_id == UUID(kb_id)
+        ).scalar()
+        total_size_bytes = total_size_result or 0
+
         # Update KB status
         kb.status = "ready"
         kb.updated_at = datetime.utcnow()
@@ -2006,6 +2021,7 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             "total_documents": len(documents),
             "total_chunks": total_chunks,
             "total_vectors": total_vectors,
+            "total_size_bytes": total_size_bytes,
             "reindexed_at": datetime.utcnow().isoformat()
         }
 
