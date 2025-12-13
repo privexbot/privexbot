@@ -398,7 +398,11 @@ class SmartKBService:
             # Extract word count and character count from chunk metadata
             chunk_metadata = chunk_data.get("metadata", {})
             word_count = chunk_metadata.get("word_count", len(chunk_data["content"].split()) if chunk_data.get("content") else 0)
-            character_count = chunk_metadata.get("chunk_length", len(chunk_data["content"]) if chunk_data.get("content") else 0)
+
+            # CRITICAL FIX: Robust character count calculation
+            # Always calculate from content length as the authoritative source
+            character_count = len(chunk_data["content"]) if chunk_data.get("content") else 0
+            print(f"🔧 [SMART_KB_FIX] character_count calculated: {character_count} for content length: {len(chunk_data.get('content', ''))}")
 
             # PostgreSQL chunk (content + metadata, NO EMBEDDING)
             postgres_chunk_data = {

@@ -1530,6 +1530,10 @@ def process_web_kb_task(
 
                                 # Create PostgreSQL Chunk records (NO EMBEDDING FIELD - avoid redundancy)
                                 for postgres_chunk_data in postgres_chunks:
+                                    char_count_from_data = postgres_chunk_data.get("character_count", 0)
+                                    content_length = len(postgres_chunk_data.get("content", ""))
+                                    print(f"🔧 [PIPELINE_DEBUG] postgres_chunk_data character_count: {char_count_from_data}, content_length: {content_length}")
+
                                     chunk = Chunk(
                                         id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
                                         document_id=postgres_chunk_data["document_id"],
@@ -1537,6 +1541,8 @@ def process_web_kb_task(
                                         content=postgres_chunk_data["content"],
                                         chunk_index=postgres_chunk_data["chunk_index"],
                                         position=postgres_chunk_data["position"],
+                                        word_count=postgres_chunk_data.get("word_count", 0),  # CRITICAL FIX: Include word_count
+                                        character_count=postgres_chunk_data.get("character_count", 0),  # CRITICAL FIX: Include character_count
                                         # NO embedding field - stored only in Qdrant
                                         chunk_metadata=postgres_chunk_data["chunk_metadata"]
                                     )
@@ -1945,20 +1951,29 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             qdrant_chunks = []
 
             for chunk_idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
+                # Calculate statistics for this chunk
+                chunk_content = chunk_data["content"]
+                chunk_word_count = len(chunk_content.split()) if chunk_content else 0
+                chunk_character_count = len(chunk_content) if chunk_content else 0
+
                 # Create Chunk in PostgreSQL
                 chunk = Chunk(
                     document_id=document.id,
                     kb_id=UUID(kb_id),
                     workspace_id=kb.workspace_id,
-                    content=chunk_data["content"],
+                    content=chunk_content,
                     chunk_index=chunk_idx,
+                    word_count=chunk_word_count,  # CRITICAL FIX: Include word_count for re-indexing
+                    character_count=chunk_character_count,  # CRITICAL FIX: Include character_count for re-indexing
                     embedding=embedding,
                     chunk_metadata={
                         "token_count": chunk_data.get("token_count", 0),
                         "strategy": strategy,
                         "chunk_size": chunk_size,
                         "chunk_overlap": chunk_overlap,
-                        "reindexed_at": datetime.utcnow().isoformat()
+                        "reindexed_at": datetime.utcnow().isoformat(),
+                        "word_count": chunk_word_count,
+                        "character_count": chunk_character_count
                     },
                     created_at=datetime.utcnow()
                 )

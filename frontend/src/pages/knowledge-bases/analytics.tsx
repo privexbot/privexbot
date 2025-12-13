@@ -76,10 +76,14 @@ export default function KBAnalyticsPage() {
 
     setIsLoading(true);
     try {
-      const [kbData, statsData] = await Promise.all([
-        kbClient.kb.get(kbId),
-        kbClient.kb.getStats(kbId)
-      ]);
+      // First get KB data to check status
+      const kbData = await kbClient.kb.get(kbId);
+
+      // Only get stats if KB is ready (processing completed)
+      let statsData = null;
+      if (kbData.status === 'ready') {
+        statsData = await kbClient.kb.getStats(kbId);
+      }
 
       // Workspace validation
       if (kbData.workspace_id !== currentWorkspace.id) {
@@ -104,8 +108,10 @@ export default function KBAnalyticsPage() {
       setKb(kbData);
       setStats(statsData);
 
-      // Build analytics from available real KB stats data
-      setAnalyticsData({
+      // Only build analytics if we have stats (KB is ready)
+      if (statsData) {
+        // Build analytics from available real KB stats data
+        setAnalyticsData({
         overview: {
           total_queries: 0, // Not available yet - will be 0 until backend provides this
           avg_response_time: 0, // Not available yet
@@ -144,6 +150,10 @@ export default function KBAnalyticsPage() {
           }
         }
       });
+      } else {
+        // KB is still processing, clear any previous analytics data
+        setAnalyticsData(null);
+      }
     } catch (error) {
       console.error('Failed to load data:', error);
       toast({
@@ -216,6 +226,33 @@ export default function KBAnalyticsPage() {
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[50vh]">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Show processing state if KB is not ready yet
+  if (kb && kb.status === 'processing') {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center space-y-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-medium">Processing Knowledge Base</h3>
+              <p className="text-muted-foreground">
+                Your knowledge base is being processed. Analytics will be available once processing is complete.
+              </p>
+              <Button
+                variant="outline"
+                onClick={loadData}
+                disabled={isRefreshing}
+                className="mt-4"
+              >
+                {isRefreshing ? 'Checking...' : 'Check Status'}
+              </Button>
+            </div>
+          </div>
         </div>
       </DashboardLayout>
     );
