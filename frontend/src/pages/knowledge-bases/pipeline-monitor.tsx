@@ -186,7 +186,7 @@ export default function PipelineMonitorPage() {
     const stats = currentStatus.stats;
     if (stats) {
       if (stage === 'scraping' && stats.pages_scraped > 0) return 'completed';
-      if (stage === 'parsing' && stats.pages_scraped > 0) return 'completed';
+      if (stage === 'parsing' && stats.pages_scraped > 0 && stats.pages_scraped >= (stats.pages_discovered || 1)) return 'completed';
       if (stage === 'chunking' && stats.chunks_created > 0) return 'completed';
       if (stage === 'embedding' && stats.embeddings_generated > 0) return 'completed';
       if (stage === 'indexing' && stats.vectors_indexed > 0) return 'completed';
@@ -196,8 +196,45 @@ export default function PipelineMonitorPage() {
   };
 
   const getProgressPercentage = () => {
-    if (!currentStatus || !currentStatus.progress) return 0;
-    return currentStatus.progress.percent || 0;
+    // Try to use backend-provided percentage first
+    if (currentStatus?.progress?.percent !== undefined && currentStatus.progress.percent > 0) {
+      return currentStatus.progress.percent;
+    }
+
+    // Fallback: Calculate progress based on completed stages
+    if (!currentStatus) return 0;
+
+    const stages = ['scraping', 'parsing', 'chunking', 'embedding', 'indexing'];
+    let completedStages = 0;
+    let activeStageProgress = 0;
+
+    // Count completed stages
+    stages.forEach((stage) => {
+      const status = getStageStatus(stage);
+      if (status === 'completed') {
+        completedStages++;
+      } else if (status === 'active') {
+        // Add partial progress for active stage
+        const stats = currentStatus.stats;
+        if (stats && stage === 'scraping' && stats.pages_discovered > 0) {
+          activeStageProgress = Math.min(0.8, stats.pages_scraped / stats.pages_discovered * 0.9);
+        } else if (stats && stage === 'chunking' && stats.pages_scraped > 0) {
+          // Estimate chunking progress based on scraped pages
+          activeStageProgress = 0.5; // Default to 50% for active chunking
+        } else if (stats && stage === 'embedding' && stats.chunks_created > 0) {
+          // Estimate embedding progress
+          activeStageProgress = 0.3; // Default to 30% for active embedding
+        } else {
+          activeStageProgress = 0.2; // Default to 20% for any active stage
+        }
+      }
+    });
+
+    // Each stage is worth 20% (100% / 5 stages)
+    const baseProgress = (completedStages / stages.length) * 100;
+    const activeProgress = (activeStageProgress / stages.length) * 100;
+
+    return Math.min(100, Math.round(baseProgress + activeProgress));
   };
 
   const getStatusColor = (status?: string) => {
@@ -228,40 +265,52 @@ export default function PipelineMonitorPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto py-8 px-4">
+      <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-8">
         {/* Header */}
-        <div className="mb-8">
+        <div>
           <Button
             variant="ghost"
             onClick={handleBackToList}
-            className="mb-4"
+            className="mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Knowledge Bases
           </Button>
 
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">
-              Processing Knowledge Base
-            </h1>
-            <p className="text-muted-foreground">
-              Monitor the progress of your knowledge base processing pipeline
-            </p>
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                <Cpu className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="space-y-1">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white font-manrope">
+                  Processing Knowledge Base
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
+                  Monitor the progress of your knowledge base processing pipeline
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Status Card */}
-        <Card className="mb-6">
-          <CardHeader>
+        <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
             <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Pipeline Status</CardTitle>
-                <CardDescription>
-                  {currentStatus ? `Pipeline ID: ${pipelineId}` : 'Loading pipeline status...'}
-                </CardDescription>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-gray-900 dark:text-white font-manrope text-xl">Pipeline Status</CardTitle>
+                  <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    {currentStatus ? `Pipeline ID: ${pipelineId}` : 'Loading pipeline status...'}
+                  </CardDescription>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={getStatusBadgeVariant(currentStatus?.status)}>
+              <div className="flex items-center gap-3">
+                <Badge variant={getStatusBadgeVariant(currentStatus?.status)} className="font-manrope font-medium">
                   {currentStatus?.status || 'Loading'}
                 </Badge>
                 <Button
@@ -269,51 +318,52 @@ export default function PipelineMonitorPage() {
                   size="sm"
                   onClick={handleRefresh}
                   disabled={isPolling}
+                  className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
                 >
                   <RefreshCw className={cn("h-4 w-4", isPolling && "animate-spin")} />
                 </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 sm:p-6">
             {/* Overall Progress */}
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Overall Progress</span>
-                  <span className="text-sm text-muted-foreground">
+            <div className="space-y-6">
+              <div className="bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-600 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-base font-semibold text-gray-900 dark:text-white font-manrope">Overall Progress</span>
+                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400 font-manrope bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-lg">
                     {getProgressPercentage()}%
                   </span>
                 </div>
-                <Progress value={getProgressPercentage()} className="h-2" />
+                <Progress value={getProgressPercentage()} className="h-3 bg-gray-200 dark:bg-gray-700" />
               </div>
 
               {/* Statistics */}
               {currentStatus?.stats && (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{currentStatus.stats.pages_discovered}</div>
-                    <div className="text-xs text-muted-foreground">Pages Found</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 lg:gap-6">
+                  <div className="bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 text-center shadow-sm">
+                    <div className="text-2xl font-bold text-gray-700 dark:text-gray-300 font-manrope">{currentStatus.stats.pages_discovered}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope mt-1">Pages Found</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">{currentStatus.stats.pages_scraped}</div>
-                    <div className="text-xs text-muted-foreground">Pages Scraped</div>
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl p-4 text-center shadow-sm">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope">{currentStatus.stats.pages_scraped}</div>
+                    <div className="text-xs text-blue-700 dark:text-blue-300 font-manrope mt-1">Pages Scraped</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-red-600">{currentStatus.stats.pages_failed}</div>
-                    <div className="text-xs text-muted-foreground">Failed</div>
+                  <div className="bg-gradient-to-br from-red-50 to-pink-50 dark:from-red-900/30 dark:to-pink-900/30 border border-red-200 dark:border-red-700 rounded-xl p-4 text-center shadow-sm">
+                    <div className="text-2xl font-bold text-red-600 dark:text-red-400 font-manrope">{currentStatus.stats.pages_failed}</div>
+                    <div className="text-xs text-red-700 dark:text-red-300 font-manrope mt-1">Failed</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{currentStatus.stats.chunks_created}</div>
-                    <div className="text-xs text-muted-foreground">Chunks</div>
+                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700 rounded-xl p-4 text-center shadow-sm">
+                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 font-manrope">{currentStatus.stats.chunks_created}</div>
+                    <div className="text-xs text-purple-700 dark:text-purple-300 font-manrope mt-1">Chunks</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{currentStatus.stats.embeddings_generated}</div>
-                    <div className="text-xs text-muted-foreground">Embeddings</div>
+                  <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/30 dark:to-amber-900/30 border border-yellow-200 dark:border-yellow-700 rounded-xl p-4 text-center shadow-sm">
+                    <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 font-manrope">{currentStatus.stats.embeddings_generated}</div>
+                    <div className="text-xs text-yellow-700 dark:text-yellow-300 font-manrope mt-1">Embeddings</div>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">{currentStatus.stats.vectors_indexed}</div>
-                    <div className="text-xs text-muted-foreground">Indexed</div>
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 rounded-xl p-4 text-center shadow-sm">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope">{currentStatus.stats.vectors_indexed}</div>
+                    <div className="text-xs text-green-700 dark:text-green-300 font-manrope mt-1">Indexed</div>
                   </div>
                 </div>
               )}
@@ -322,14 +372,21 @@ export default function PipelineMonitorPage() {
         </Card>
 
         {/* Pipeline Stages */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Processing Stages</CardTitle>
-            <CardDescription>
-              Track progress through each stage of the pipeline
-            </CardDescription>
+        <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+          <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                <Cpu className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <CardTitle className="text-gray-900 dark:text-white font-manrope text-xl">Processing Stages</CardTitle>
+                <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                  Track progress through each stage of the pipeline
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 sm:p-6">
             <div className="space-y-4">
               {Object.entries(STAGE_DESCRIPTIONS).map(([stage, description]) => {
                 const Icon = STAGE_ICONS[stage as keyof typeof STAGE_ICONS];
@@ -341,38 +398,49 @@ export default function PipelineMonitorPage() {
                   <div
                     key={stage}
                     className={cn(
-                      "flex items-center gap-4 p-4 rounded-lg border transition-colors",
-                      isActive && "bg-blue-50 border-blue-300",
-                      isCompleted && "bg-green-50 border-green-300"
+                      "flex items-center gap-4 p-4 rounded-xl border transition-all duration-300 shadow-sm",
+                      isActive && "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-200 dark:border-blue-700 shadow-md",
+                      isCompleted && "bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-200 dark:border-green-700",
+                      !isActive && !isCompleted && "bg-white dark:bg-gray-800/30 border-gray-200 dark:border-gray-700"
                     )}
                   >
                     <div className={cn(
-                      "flex items-center justify-center w-10 h-10 rounded-full",
-                      isCompleted && "bg-green-500 text-white",
-                      isActive && "bg-blue-500 text-white animate-pulse",
-                      !isCompleted && !isActive && "bg-gray-200 text-gray-500"
+                      "flex items-center justify-center w-12 h-12 rounded-xl shadow-sm",
+                      isCompleted && "bg-gradient-to-br from-green-500 to-emerald-600 text-white",
+                      isActive && "bg-gradient-to-br from-blue-500 to-indigo-600 text-white animate-pulse",
+                      !isCompleted && !isActive && "bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-500 dark:text-gray-400"
                     )}>
                       {isCompleted ? (
-                        <CheckCircle2 className="h-5 w-5" />
+                        <CheckCircle2 className="h-6 w-6" />
                       ) : isActive ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <Loader2 className="h-6 w-6 animate-spin" />
                       ) : (
-                        <Icon className="h-5 w-5" />
+                        <Icon className="h-6 w-6" />
                       )}
                     </div>
 
                     <div className="flex-1">
-                      <div className="font-medium capitalize">{stage}</div>
-                      <div className="text-sm text-muted-foreground">{description}</div>
+                      <div className={cn(
+                        "font-semibold capitalize text-lg font-manrope",
+                        isCompleted && "text-green-900 dark:text-green-100",
+                        isActive && "text-blue-900 dark:text-blue-100",
+                        !isActive && !isCompleted && "text-gray-900 dark:text-gray-100"
+                      )}>{stage}</div>
+                      <div className={cn(
+                        "text-sm font-manrope",
+                        isCompleted && "text-green-700 dark:text-green-300",
+                        isActive && "text-blue-700 dark:text-blue-300",
+                        !isActive && !isCompleted && "text-gray-600 dark:text-gray-400"
+                      )}>{description}</div>
                     </div>
 
                     {isActive && (
-                      <Badge variant="default" className="animate-pulse">
+                      <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 animate-pulse font-manrope">
                         Processing...
                       </Badge>
                     )}
                     {isCompleted && (
-                      <Badge variant="default" className="bg-green-100 text-green-800">
+                      <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 font-manrope">
                         <CheckCircle2 className="h-3 w-3 mr-1" />
                         Completed
                       </Badge>
@@ -386,56 +454,82 @@ export default function PipelineMonitorPage() {
 
         {/* Error Alert */}
         {currentStatus?.status === 'failed' && currentStatus.error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Pipeline Failed:</strong> {currentStatus.error}
-              {errorRetryCount > 0 && (
-                <div className="mt-2 text-sm">
-                  Retry attempts: {errorRetryCount}
-                </div>
-              )}
-            </AlertDescription>
+          <Alert className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-900/20 dark:to-pink-900/20 border border-red-200 dark:border-red-700 rounded-xl shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              <AlertDescription className="flex-1">
+                <strong className="text-red-900 dark:text-red-100 font-manrope">Pipeline Failed:</strong>
+                <div className="text-red-800 dark:text-red-200 font-manrope mt-1">{currentStatus.error}</div>
+                {errorRetryCount > 0 && (
+                  <div className="mt-3 text-sm text-red-700 dark:text-red-300 font-manrope bg-red-100 dark:bg-red-900/30 p-2 rounded-lg">
+                    Retry attempts: {errorRetryCount}
+                  </div>
+                )}
+              </AlertDescription>
+            </div>
           </Alert>
         )}
 
         {/* Completion Alert */}
         {currentStatus?.status === 'completed' && (
-          <Alert className="mb-6 border-green-200 bg-green-50">
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
-            <AlertDescription>
-              <strong className="text-green-900">Processing Complete!</strong>
-              <div className="mt-2">
-                Your knowledge base has been successfully processed and is ready to use.
+          <Alert className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-xl shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
               </div>
-            </AlertDescription>
+              <AlertDescription className="flex-1">
+                <strong className="text-green-900 dark:text-green-100 font-manrope">Processing Complete!</strong>
+                <div className="text-green-800 dark:text-green-200 font-manrope mt-1">
+                  Your knowledge base has been successfully processed and is ready to use.
+                </div>
+              </AlertDescription>
+            </div>
           </Alert>
         )}
 
         {/* Actions */}
-        <div className="flex justify-end gap-3">
-          {kbDetails?.status === 'failed' && (
-            <Button onClick={handleRetry} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry Pipeline
-            </Button>
-          )}
-          {currentStatus?.status === 'completed' && (
-            <Button onClick={handleViewKB}>
-              View Knowledge Base
-            </Button>
-          )}
+        <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6">
+          <div className="flex justify-end gap-3">
+            {kbDetails?.status === 'failed' && (
+              <Button
+                onClick={handleRetry}
+                variant="outline"
+                className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry Pipeline
+              </Button>
+            )}
+            {currentStatus?.status === 'completed' && (
+              <Button
+                onClick={handleViewKB}
+                className="bg-green-600 hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500 text-white font-manrope font-medium shadow-sm hover:shadow-md transition-all duration-200 rounded-lg"
+              >
+                View Knowledge Base
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Timing Information */}
         {currentStatus && (
-          <div className="mt-6 text-sm text-muted-foreground text-center">
-            {currentStatus.started_at && (
-              <p>Started: {new Date(currentStatus.started_at).toLocaleString()}</p>
-            )}
-            {currentStatus.completed_at && (
-              <p>Completed: {new Date(currentStatus.completed_at).toLocaleString()}</p>
-            )}
+          <div className="mt-6 bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 text-center shadow-sm">
+            <div className="space-y-2 text-sm font-manrope">
+              {currentStatus.started_at && (
+                <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400">
+                  <Clock className="h-4 w-4" />
+                  <span><strong>Started:</strong> {new Date(currentStatus.started_at).toLocaleString()}</span>
+                </div>
+              )}
+              {currentStatus.completed_at && (
+                <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <span><strong>Completed:</strong> {new Date(currentStatus.completed_at).toLocaleString()}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
