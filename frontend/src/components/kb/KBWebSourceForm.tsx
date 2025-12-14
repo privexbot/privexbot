@@ -630,36 +630,42 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
   };
 
   return (
-    <Card className="border-2 border-primary/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Globe className="h-5 w-5" />
+    <Card className="border-2 border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white font-manrope text-lg sm:text-xl">
+          <Globe className="h-5 w-5 sm:h-6 sm:h-6 text-blue-600 dark:text-blue-400 flex-shrink-0" />
           Add Website URL
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-sm sm:text-base">
           Enter a URL to scrape content from a website
         </CardDescription>
       </CardHeader>
 
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <CardContent className="pt-0">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           {/* Bulk Mode Toggle */}
-          <div className="flex items-center space-x-2 mb-4">
+          <div className="flex items-start space-x-3 p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
             <Checkbox
               id="bulk-mode"
               checked={bulkMode}
               onCheckedChange={(checked) => setBulkMode(!!checked)}
+              className="mt-0.5"
             />
-            <Label htmlFor="bulk-mode" className="text-sm font-medium">
-              Bulk URL Mode (Add multiple URLs at once)
-            </Label>
+            <div className="flex-1">
+              <Label htmlFor="bulk-mode" className="text-sm sm:text-base font-medium text-gray-900 dark:text-white font-manrope cursor-pointer">
+                Bulk URL Mode
+              </Label>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-manrope mt-1">
+                Add multiple URLs at once
+              </p>
+            </div>
           </div>
 
           {/* URL Input */}
           {!bulkMode ? (
             <div className="space-y-2">
-              <Label htmlFor="url">Website URL</Label>
-              <div className="flex gap-2">
+              <Label htmlFor="url" className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Website URL</Label>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                 <Input
                   id="url"
                   value={url}
@@ -669,54 +675,68 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
                   }}
                   onBlur={(e) => handleUrlValidation(e.target.value)}
                   placeholder="https://example.com"
-                  className={`flex-1 ${
+                  className={`flex-1 h-11 text-base border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope ${
                     validationResult === null ? '' :
-                    validationResult.valid ? 'border-green-500' :
-                    'border-red-500'
+                    validationResult.valid ? 'border-green-500 dark:border-green-400' :
+                    'border-red-500 dark:border-red-400'
                   }`}
                 />
                 <Button
                   type="button"
                   variant="outline"
-                  size="icon"
+                  className="h-11 px-4 sm:w-auto border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg font-manrope whitespace-nowrap"
                   onClick={() => handleUrlValidation(url)}
                   disabled={isValidating || !url.trim()}
                 >
-                  {isValidating ? '...' : '✓'}
+                  {isValidating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Checking...
+                    </>
+                  ) : (
+                    '✓ Validate'
+                  )}
                 </Button>
               </div>
 
               {validationResult && !validationResult.valid && (
-                <div className="space-y-1">
-                  <p className="text-sm text-red-500">{validationResult.error}</p>
+                <div className="space-y-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <p className="text-sm text-red-600 dark:text-red-400 font-manrope">{validationResult.error}</p>
                   {validationResult.suggestions && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Suggestions:</p>
-                      {validationResult.suggestions.map((suggestion: string, index: number) => (
-                        <Button
-                          key={index}
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setUrl(suggestion)}
-                          className="h-auto p-1 text-xs text-primary"
-                        >
-                          {suggestion}
-                        </Button>
-                      ))}
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">Suggestions:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {validationResult.suggestions.map((suggestion: string, index: number) => (
+                          <Button
+                            key={index}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setUrl(suggestion)}
+                            className="h-8 px-2 text-xs text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-manrope"
+                          >
+                            {suggestion}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
               {validationResult && validationResult.valid && (
-                <p className="text-sm text-green-600">✓ URL is valid and accessible</p>
+                <div className="p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <p className="text-sm text-green-600 dark:text-green-400 font-manrope flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    URL is valid and accessible
+                  </p>
+                </div>
               )}
             </div>
           ) : (
-            <div className="space-y-2">
-              <Label htmlFor="bulk-urls">Website URLs (one per line)</Label>
-              <div className="space-y-2">
+            <div className="space-y-3">
+              <Label htmlFor="bulk-urls" className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Website URLs (one per line)</Label>
+              <div className="space-y-3">
                 <textarea
                   id="bulk-urls"
                   value={bulkUrls}
@@ -737,13 +757,13 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
 https://example.com/page2
 https://docs.example.com
 ...`}
-                  className="w-full min-h-32 p-3 border rounded-md text-sm"
+                  className="w-full min-h-32 sm:min-h-40 p-3 border border-gray-300 dark:border-gray-600 rounded-lg text-sm sm:text-base bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope resize-none"
                   rows={6}
                 />
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+                  className="h-10 px-4 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg font-manrope"
                   onClick={() => {
                     const urls = bulkUrls
                       .split('\n')
@@ -755,26 +775,39 @@ https://docs.example.com
                   }}
                   disabled={isValidating || !bulkUrls.trim()}
                 >
-                  {isValidating ? 'Validating...' : `Validate ${bulkUrls.split('\n').filter(url => url.trim().length > 0).length} URLs`}
+                  {isValidating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Validating...
+                    </>
+                  ) : (
+                    `Validate ${bulkUrls.split('\n').filter(url => url.trim().length > 0).length} URLs`
+                  )}
                 </Button>
               </div>
 
               {bulkValidationResults.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">
+                <div className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="text-sm text-gray-700 dark:text-gray-300 font-manrope font-medium">
                     Validation Results ({bulkValidationResults.filter(r => r.valid).length}/{bulkValidationResults.length} valid):
                   </div>
-                  <div className="max-h-32 overflow-y-auto space-y-1 text-xs">
+                  <div className="max-h-32 sm:max-h-40 overflow-y-auto space-y-1.5">
                     {bulkValidationResults.map((result, index) => (
                       <div
                         key={index}
-                        className={`flex items-center gap-2 p-1 rounded ${
-                          result.valid ? 'text-green-600' : 'text-red-500'
+                        className={`flex items-start gap-3 p-2 rounded-lg border ${
+                          result.valid
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
                         }`}
                       >
-                        <span>{result.valid ? '✓' : '✗'}</span>
-                        <span className="truncate">{result.url}</span>
-                        {result.error && <span className="text-red-400">- {result.error}</span>}
+                        <span className="mt-0.5 flex-shrink-0">
+                          {result.valid ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs sm:text-sm font-manrope truncate block" title={result.url}>{result.url}</span>
+                          {result.error && <span className="text-xs font-manrope text-red-600 dark:text-red-400 mt-1 block">{result.error}</span>}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1040,22 +1073,22 @@ https://docs.example.com
           )}
 
           {/* Basic Configuration */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Crawl Method</Label>
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Crawl Method</Label>
               <Select
                 value={config.method}
                 onValueChange={(value) => setConfig({ ...config, method: value as CrawlMethod })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {crawlMethodOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div>
-                        <div className="font-medium">{option.label}</div>
-                        <div className="text-xs text-muted-foreground">
+                    <SelectItem key={option.value} value={option.value} className="font-manrope">
+                      <div className="py-1">
+                        <div className="font-medium text-gray-900 dark:text-white">{option.label}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                           {option.description}
                         </div>
                       </div>
@@ -1064,26 +1097,29 @@ https://docs.example.com
                 </SelectContent>
               </Select>
             </div>
-
           </div>
 
           {/* Advanced Options */}
           <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
             <CollapsibleTrigger asChild>
-              <Button type="button" variant="ghost" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto h-11 px-4 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg font-manrope justify-start"
+              >
+                <Settings className="h-4 w-4 mr-2" />
                 Advanced Options
-                <span className="text-xs text-muted-foreground">
+                <span className="ml-auto text-sm">
                   {showAdvanced ? '▼' : '▶'}
                 </span>
               </Button>
             </CollapsibleTrigger>
 
-            <CollapsibleContent className="space-y-4 mt-4">
+            <CollapsibleContent className="space-y-4 sm:space-y-6 mt-4 p-4 bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 rounded-lg">
               {/* Limits */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Max Pages</Label>
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Max Pages</Label>
                   <Input
                     type="number"
                     min="1"
@@ -1092,12 +1128,13 @@ https://docs.example.com
                     onChange={(e) =>
                       setConfig({ ...config, max_pages: parseInt(e.target.value) || 50 })
                     }
+                    className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
-                  <p className="text-xs text-muted-foreground">1-1000 pages</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">1-1000 pages</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Max Depth</Label>
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Max Depth</Label>
                   <Input
                     type="number"
                     min="1"
@@ -1106,15 +1143,16 @@ https://docs.example.com
                     onChange={(e) =>
                       setConfig({ ...config, max_depth: parseInt(e.target.value) || 3 })
                     }
+                    className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
-                  <p className="text-xs text-muted-foreground">1-10 levels</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">1-10 levels</p>
                 </div>
               </div>
 
               {/* Include Patterns */}
-              <div className="space-y-2">
-                <Label>Include Patterns</Label>
-                <div className="flex gap-2">
+              <div className="space-y-3">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Include Patterns</Label>
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Input
                     placeholder="/docs/**, /api/**"
                     value={includePattern}
@@ -1125,37 +1163,39 @@ https://docs.example.com
                         handleAddPattern('include');
                       }
                     }}
+                    className="flex-1 h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
                   <Button
                     type="button"
-                    size="icon"
+                    className="h-11 px-4 bg-blue-600 hover:bg-blue-700 text-white font-manrope rounded-lg whitespace-nowrap"
                     onClick={() => handleAddPattern('include')}
                     disabled={!includePattern.trim()}
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Pattern
                   </Button>
                 </div>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {(config.include_patterns || []).map((pattern: string, index: number) => (
                     <Badge
                       key={index}
                       variant="secondary"
-                      className="cursor-pointer"
+                      className="cursor-pointer bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/50 font-manrope px-3 py-1"
                       onClick={() => handleRemovePattern('include', index)}
                     >
                       {pattern} ×
                     </Badge>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">
                   Patterns to include in crawling
                 </p>
               </div>
 
               {/* Exclude Patterns */}
-              <div className="space-y-2">
-                <Label>Exclude Patterns</Label>
-                <div className="flex gap-2">
+              <div className="space-y-3">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Exclude Patterns</Label>
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Input
                     placeholder="/admin/**, /auth/**"
                     value={excludePattern}
@@ -1166,29 +1206,31 @@ https://docs.example.com
                         handleAddPattern('exclude');
                       }
                     }}
+                    className="flex-1 h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
                   <Button
                     type="button"
-                    size="icon"
+                    className="h-11 px-4 bg-red-600 hover:bg-red-700 text-white font-manrope rounded-lg whitespace-nowrap"
                     onClick={() => handleAddPattern('exclude')}
                     disabled={!excludePattern.trim()}
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Pattern
                   </Button>
                 </div>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {(config.exclude_patterns || []).map((pattern: string, index: number) => (
                     <Badge
                       key={index}
                       variant="outline"
-                      className="cursor-pointer"
+                      className="cursor-pointer bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 font-manrope px-3 py-1"
                       onClick={() => handleRemovePattern('exclude', index)}
                     >
                       {pattern} ×
                     </Badge>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">
                   Patterns to exclude from crawling
                 </p>
               </div>
@@ -1197,51 +1239,74 @@ https://docs.example.com
 
           {/* Enhanced Content Preview with Approval Workflow */}
           {showPreview && previewData && (
-            <Card className="border-blue-200 bg-blue-50/50">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Eye className="h-5 w-5" />
+            <Card className="border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-xl shadow-sm">
+              <CardHeader className="pb-4">
+                <div className="flex items-start justify-between gap-3">
+                  <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100 font-manrope text-lg sm:text-xl">
+                    <Eye className="h-5 w-5 sm:h-6 sm:h-6 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                     Full Content Preview
                   </CardTitle>
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
                     onClick={handleRejectPreview}
+                    className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex-shrink-0"
                   >
                     <XCircle className="h-4 w-4" />
                   </Button>
                 </div>
-                <CardDescription>
-                  Preview of extracted content from {previewData.url} based on your configuration
+                <CardDescription className="text-blue-700 dark:text-blue-300 font-manrope text-sm sm:text-base pr-8">
+                  Preview of extracted content from <span className="font-medium">{previewData.url}</span> based on your configuration
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
+              <CardContent className="pt-0">
+                <div className="space-y-4 sm:space-y-6">
                   {/* Content Statistics */}
-                  <div className="flex gap-6 text-sm text-muted-foreground">
-                    <span><strong>Total Pages:</strong> {previewData.fullPages?.length || 0}</span>
-                    <span><strong>Total Words:</strong> {previewData.wordCount.toLocaleString()}</span>
-                    <span><strong>Title:</strong> {previewData.title}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 p-4 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="text-center sm:text-left">
+                      <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide">Total Pages</span>
+                      <span className="block text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope">{previewData.fullPages?.length || 0}</span>
+                    </div>
+                    <div className="text-center sm:text-left">
+                      <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide">Total Words</span>
+                      <span className="block text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope">{previewData.wordCount.toLocaleString()}</span>
+                    </div>
+                    <div className="text-center sm:text-left">
+                      <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide">Title</span>
+                      <span className="block text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope truncate" title={previewData.title}>{previewData.title}</span>
+                    </div>
                   </div>
 
                   {/* Configuration Summary */}
-                  <div className="bg-white border rounded p-3">
-                    <h4 className="font-medium mb-2 text-sm">Configuration Used:</h4>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span><strong>Method:</strong> {previewData.configuration?.method || 'Single Page'}</span>
-                      <span><strong>Max Pages:</strong> {previewData.configuration?.max_pages || 'Not set'}</span>
-                      <span><strong>Max Depth:</strong> {previewData.configuration?.max_depth || 'Not set'}</span>
-                      <span><strong>Patterns:</strong> {(previewData.configuration?.include_patterns?.length || 0) + (previewData.configuration?.exclude_patterns?.length || 0)} rules</span>
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <h4 className="font-medium mb-3 text-sm text-gray-900 dark:text-white font-manrope">Configuration Used:</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                      <div>
+                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Method:</span>
+                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{previewData.configuration?.method || 'Single Page'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Max Pages:</span>
+                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{previewData.configuration?.max_pages || 'Not set'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Max Depth:</span>
+                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{previewData.configuration?.max_depth || 'Not set'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Patterns:</span>
+                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{(previewData.configuration?.include_patterns?.length || 0) + (previewData.configuration?.exclude_patterns?.length || 0)} rules</span>
+                      </div>
                     </div>
                   </div>
 
                   {/* First Page Content Preview */}
                   <div>
-                    <h4 className="font-medium mb-2">First Page Content:</h4>
-                    <div className="bg-white border rounded p-3 max-h-48 overflow-y-auto text-sm">
-                      {previewData.content || 'No content could be extracted from the first page.'}
+                    <h4 className="font-medium mb-3 text-gray-900 dark:text-white font-manrope">First Page Content:</h4>
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 max-h-48 sm:max-h-64 overflow-y-auto">
+                      <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words">
+                        {previewData.content || 'No content could be extracted from the first page.'}
+                      </pre>
                     </div>
                   </div>
 
@@ -1252,7 +1317,7 @@ https://docs.example.com
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
+                          className="w-full sm:w-auto h-11 px-4 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg font-manrope"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -1261,19 +1326,21 @@ https://docs.example.com
                           View All {previewData.fullPages.length} Pages
                         </Button>
                       </CollapsibleTrigger>
-                      <CollapsibleContent className="mt-3 space-y-3">
+                      <CollapsibleContent className="mt-4 space-y-3">
                         {previewData.fullPages.slice(1).map((page, index) => (
-                          <div key={index} className="bg-white border rounded p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="text-xs text-muted-foreground">
+                          <div key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-gray-200 dark:border-gray-600">
+                              <div className="text-sm text-gray-600 dark:text-gray-400 font-manrope truncate" title={page.title || page.url}>
                                 Page {index + 2}: {page.title || page.url}
                               </div>
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-gray-500 dark:text-gray-500 font-manrope whitespace-nowrap">
                                 {page.content?.split(/\s+/).length || 0} words
                               </div>
                             </div>
-                            <div className="text-sm max-h-32 overflow-y-auto bg-gray-50 p-2 rounded">
-                              {page.content || 'No content extracted from this page.'}
+                            <div className="max-h-32 sm:max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words">
+                                {page.content || 'No content extracted from this page.'}
+                              </pre>
                             </div>
                           </div>
                         ))}
@@ -1282,11 +1349,11 @@ https://docs.example.com
                   )}
 
                   {/* Decision Alert */}
-                  <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <h4 className="font-medium text-amber-800 mb-1">Content Preview Complete</h4>
-                      <p className="text-sm text-amber-700 mb-3">
+                      <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2 font-manrope">Content Preview Complete</h4>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 font-manrope leading-relaxed">
                         This is the full content that would be extracted and added to your knowledge base.
                         Review the content quality and coverage before deciding.
                       </p>
@@ -1294,27 +1361,27 @@ https://docs.example.com
                   </div>
 
                   {/* Approval Actions */}
-                  <div className="flex justify-between items-center pt-4 border-t">
+                  <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handleRejectPreview}
-                      className="text-red-600 border-red-200 hover:bg-red-50"
+                      className="order-2 sm:order-1 h-11 px-4 sm:px-6 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-manrope"
                     >
-                      <XCircle className="h-4 w-4 mr-2" />
+                      <XCircle className="h-4 w-4 mr-2 flex-shrink-0" />
                       Reject & Discard
                     </Button>
 
-                    <div className="text-xs text-muted-foreground">
+                    <div className="order-3 sm:order-2 hidden sm:flex text-xs text-gray-500 dark:text-gray-400 font-manrope text-center px-4">
                       Preview based on your crawl configuration
                     </div>
 
                     <Button
                       type="button"
                       onClick={handleApprovePreview}
-                      className="bg-green-600 hover:bg-green-700 text-white"
+                      className="order-1 sm:order-3 h-11 px-4 sm:px-6 bg-green-600 hover:bg-green-700 text-white rounded-lg font-manrope"
                     >
-                      <CheckCircle className="h-4 w-4 mr-2" />
+                      <CheckCircle className="h-4 w-4 mr-2 flex-shrink-0" />
                       Approve & Add Source
                     </Button>
                   </div>
@@ -1324,24 +1391,29 @@ https://docs.example.com
           )}
 
           {/* Actions */}
-          <div className="flex gap-3">
-            <Button type="button" variant="outline" onClick={onCancel}>
+          <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              className="order-3 sm:order-1 h-11 px-4 sm:px-6 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg font-manrope"
+            >
               Cancel
             </Button>
 
             {/* Preview Button - Fixed nested button issue */}
             {isLoadingPreview ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center px-4 py-2 border rounded-md bg-muted">
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  <div className="flex flex-col">
-                    <span className="text-sm">
+              <div className="order-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+                <div className="flex items-center px-4 py-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex-1">
+                  <Loader2 className="h-4 w-4 mr-3 animate-spin text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-sm font-manrope text-blue-700 dark:text-blue-300 truncate">
                       {bulkMode && bulkValidationResults.filter(r => r.valid).length > 1
-                        ? `Crawling ${bulkValidationResults.filter(r => r.valid).length} URLs... (up to 5 min)`
-                        : config.method === CrawlMethod.CRAWL ? 'Crawling...' : 'Extracting...'}
+                        ? `Crawling ${bulkValidationResults.filter(r => r.valid).length} URLs...`
+                        : config.method === CrawlMethod.CRAWL ? 'Crawling website...' : 'Extracting content...'}
                     </span>
                     {previewProgress && (
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-blue-600 dark:text-blue-400 font-manrope mt-0.5 truncate">
                         {previewProgress}
                       </div>
                     )}
@@ -1350,8 +1422,7 @@ https://docs.example.com
                 {canCancelPreview && (
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="sm"
+                    variant="outline"
                     onClick={() => {
                       setIsLoadingPreview(false);
                       setPreviewProgress('');
@@ -1361,9 +1432,9 @@ https://docs.example.com
                         description: 'Preview operation was cancelled by user'
                       });
                     }}
-                    className="text-xs h-8"
+                    className="h-11 px-4 border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-manrope whitespace-nowrap"
                   >
-                    Cancel
+                    Cancel Preview
                   </Button>
                 )}
               </div>
@@ -1376,9 +1447,10 @@ https://docs.example.com
                            bulkValidationResults.filter(r => r.valid).length === 0 :
                            !url.trim() || (validationResult && !validationResult.valid)
                          }
+                className="order-2 h-11 px-4 sm:px-6 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg font-manrope"
               >
-                <Eye className="h-4 w-4 mr-2" />
-                Preview Content
+                <Eye className="h-4 w-4 mr-2 flex-shrink-0" />
+                <span className="truncate">Preview Content</span>
               </Button>
             )}
 
@@ -1389,12 +1461,15 @@ https://docs.example.com
                          bulkUrls.trim().length === 0 || (bulkValidationResults.length > 0 && bulkValidationResults.some(r => !r.valid)) :
                          !url.trim() || (validationResult && !validationResult.valid)
                        )}
+              className="order-1 sm:order-3 h-11 px-4 sm:px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-manrope rounded-lg"
             >
-              <Plus className="h-4 w-4 mr-2" />
-              {bulkMode ?
-                `Add ${bulkUrls.split('\n').filter(url => url.trim().length > 0).length} URLs` :
-                'Add URL'
-              }
+              <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
+              <span className="truncate">
+                {bulkMode ?
+                  `Add ${bulkUrls.split('\n').filter(url => url.trim().length > 0).length} URLs` :
+                  'Add URL'
+                }
+              </span>
             </Button>
           </div>
         </form>
