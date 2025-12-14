@@ -1844,23 +1844,6 @@ https://docs.example.com
               </Button>
             )}
 
-            <Button
-              type="submit"
-              disabled={isValidating ||
-                       (bulkMode ?
-                         bulkUrls.trim().length === 0 || (bulkValidationResults.length > 0 && bulkValidationResults.some(r => !r.valid)) :
-                         !url.trim() || (validationResult && !validationResult.valid)
-                       )}
-              className="order-1 sm:order-3 h-11 px-4 sm:px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-manrope rounded-lg"
-            >
-              <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span className="truncate">
-                {bulkMode ?
-                  `Add ${bulkUrls.split('\n').filter(url => url.trim().length > 0).length} URLs` :
-                  'Add URL'
-                }
-              </span>
-            </Button>
           </div>
         </form>
       </CardContent>
