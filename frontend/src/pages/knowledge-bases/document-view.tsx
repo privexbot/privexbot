@@ -201,65 +201,51 @@ export default function KBDocumentViewPage() {
 
   return (
     <DashboardLayout>
-      <div className="px-4 py-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-6 lg:p-8 shadow-xl border border-white/20 dark:border-gray-700/20">
-            {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
-              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate(`/knowledge-bases/${kbId}/documents`)}
-                  className="self-start"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Documents
-                </Button>
-                <div>
-                  <h1 className="text-2xl lg:text-3xl font-semibold font-manrope flex items-center gap-2 text-gray-900 dark:text-gray-100">
-                    <FileText className="h-6 w-6" />
+      <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-8">
+        {/* Header */}
+        <div>
+          <Button
+            variant="ghost"
+            onClick={() => navigate(`/knowledge-bases/${kbId}/documents`)}
+            className="mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Documents
+          </Button>
+
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="flex items-start gap-4 flex-1 min-w-0">
+                <FileText className="h-8 w-8 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white font-manrope break-words">
                     {document.name}
                   </h1>
-                  <p className="text-muted-foreground font-manrope">{kb?.name}</p>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope text-base">
+                    Knowledge Base: <span className="font-medium text-blue-700 dark:text-blue-300">{kb?.name}</span>
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(document.status || 'pending')}
+                    <Badge variant="outline" className="capitalize font-manrope">
+                      {document.status || 'pending'}
+                    </Badge>
+                  </div>
                 </div>
               </div>
 
-              {/* Mobile: Horizontal scrolling action buttons */}
-              <div className="lg:hidden">
-                <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
-                  <Button variant="outline" onClick={handleDownload} className="flex-shrink-0">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                  {hasPermission('kb:edit') && (
-                    <>
-                      <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="flex-shrink-0">
-                        <Edit className="h-4 w-4 mr-2" />
-                        Edit
-                      </Button>
-                      <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} className="flex-shrink-0">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Desktop: Standard action buttons */}
-              <div className="hidden lg:flex items-center space-x-2">
-                <Button variant="outline" onClick={handleDownload}>
+              {/* Action buttons */}
+              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                <Button variant="outline" onClick={handleDownload} className="font-manrope">
                   <Download className="h-4 w-4 mr-2" />
                   Download
                 </Button>
                 {hasPermission('kb:edit') && (
                   <>
-                    <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)}>
+                    <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="font-manrope">
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </Button>
-                    <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+                    <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} className="font-manrope">
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete
                     </Button>
@@ -267,22 +253,25 @@ export default function KBDocumentViewPage() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
 
         {/* Document Details */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Content</CardTitle>
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border-b border-emerald-200 dark:border-emerald-700 rounded-t-xl p-6">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                  <CardTitle className="text-xl font-bold text-emerald-900 dark:text-emerald-100 font-manrope">Document Content</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
-                <div className="prose prose-sm max-w-none">
-                  <div className="bg-muted p-4 rounded-lg">
-                    <pre className="whitespace-pre-wrap text-sm">
-                      {document.content || document.content_preview || (document.metadata?.content as string) || 'Content not available'}
-                    </pre>
-                  </div>
+              <CardContent className="p-6">
+                <div className="bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-xl p-4">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200 font-mono leading-relaxed overflow-x-auto">
+                    {document.content || document.content_preview || (document.metadata?.content as string) || 'Content not available'}
+                  </pre>
                 </div>
               </CardContent>
             </Card>
@@ -291,14 +280,17 @@ export default function KBDocumentViewPage() {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Status */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Status</CardTitle>
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-b border-purple-200 dark:border-purple-700 rounded-t-xl p-4">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  <CardTitle className="text-lg font-bold text-purple-900 dark:text-purple-100 font-manrope">Status</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center space-x-2">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
                   {getStatusIcon(document.status || 'pending')}
-                  <Badge variant="outline" className="capitalize">
+                  <Badge variant="outline" className="capitalize font-manrope">
                     {document.status || 'pending'}
                   </Badge>
                 </div>
@@ -306,49 +298,52 @@ export default function KBDocumentViewPage() {
             </Card>
 
             {/* Metadata */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Details</CardTitle>
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border-b border-cyan-200 dark:border-cyan-700 rounded-t-xl p-4">
+                <div className="flex items-center gap-3">
+                  <Database className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                  <CardTitle className="text-lg font-bold text-cyan-900 dark:text-cyan-100 font-manrope">Document Details</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-muted-foreground">Content Type</div>
-                  <div className="text-sm">{formatDocumentSourceType(document.content_type || document.source_type)}</div>
+              <CardContent className="p-4 space-y-4">
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 space-y-2">
+                  <div className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 font-manrope">Content Type</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope">{formatDocumentSourceType(document.content_type || document.source_type)}</div>
                 </div>
 
                 {document.size_bytes && (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">File Size</div>
-                    <div className="text-sm">{formatFileSize(document.size_bytes)}</div>
+                  <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 space-y-2">
+                    <div className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 font-manrope">File Size</div>
+                    <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope">{formatFileSize(document.size_bytes)}</div>
                   </div>
                 )}
 
                 {document.chunk_count && (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">Chunks</div>
-                    <div className="text-sm flex items-center gap-2">
-                      <Database className="h-4 w-4" />
+                  <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 space-y-2">
+                    <div className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 font-manrope">Chunks</div>
+                    <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope flex items-center gap-2">
+                      <Database className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
                       {document.chunk_count}
                     </div>
                   </div>
                 )}
 
-                <Separator />
+                <Separator className="border-gray-200 dark:border-gray-600" />
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-muted-foreground">Created</div>
-                  <div className="text-sm flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 space-y-2">
+                  <div className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 font-manrope">Created</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
                     {document.created_at
                       ? `${new Date(document.created_at).toLocaleDateString()} at ${new Date(document.created_at).toLocaleTimeString()}`
                       : 'Not available'}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-muted-foreground">Last Updated</div>
-                  <div className="text-sm flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 space-y-2">
+                  <div className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 font-manrope">Last Updated</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
                     {(() => {
                       const lastUpdated = document.updated_at || document.processed_at || document.created_at;
                       return lastUpdated
@@ -358,21 +353,22 @@ export default function KBDocumentViewPage() {
                   </div>
                 </div>
 
-                <Separator />
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-muted-foreground">Source</div>
-                  <div className="text-sm break-all">
+                <Separator className="border-gray-200 dark:border-gray-600" />
+
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 space-y-2">
+                  <div className="text-sm font-semibold text-cyan-700 dark:text-cyan-300 font-manrope">Source</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope break-all">
                     {document.url ? (
                       <a
                         href={document.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
+                        className="text-cyan-600 dark:text-cyan-400 hover:underline font-medium"
                       >
                         {document.url}
                       </a>
                     ) : (
-                      <span className="text-gray-600 dark:text-gray-400">
+                      <span>
                         {formatDocumentSource(document.source_type, null, document.source_metadata)}
                       </span>
                     )}
@@ -383,28 +379,37 @@ export default function KBDocumentViewPage() {
           </div>
         </div>
 
-            {/* Delete Confirmation Dialog */}
-            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Delete Document</DialogTitle>
-                  <DialogDescription>
-                    Are you sure you want to delete "{document?.name}"? This action cannot be undone
-                    and will permanently remove the document from the knowledge base.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button variant="destructive" onClick={handleDelete}>
-                    Delete Document
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent className="bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-xl shadow-xl max-w-md">
+            <DialogHeader className="text-center pb-4">
+              <AlertCircle className="w-12 h-12 mx-auto text-red-600 dark:text-red-400 mb-4" />
+              <DialogTitle className="text-xl font-bold text-red-900 dark:text-red-100 font-manrope">Delete Document</DialogTitle>
+              <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed mt-3">
+                Are you sure you want to delete <span className="font-semibold text-red-700 dark:text-red-300">"{document?.name}"</span>?
+                <br /><br />
+                This action <span className="font-semibold">cannot be undone</span> and will permanently remove the document from the knowledge base.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-6">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteDialogOpen(false)}
+                className="flex-1 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                className="flex-1 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 font-manrope"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Document
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

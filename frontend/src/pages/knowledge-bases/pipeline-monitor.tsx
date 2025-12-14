@@ -279,9 +279,7 @@ export default function PipelineMonitorPage() {
 
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-700 rounded-xl p-4 sm:p-6 shadow-sm">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-                <Cpu className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
+              <Cpu className="h-8 w-8 text-purple-600 dark:text-purple-400" />
               <div className="space-y-1">
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white font-manrope">
                   Processing Knowledge Base
@@ -299,9 +297,7 @@ export default function PipelineMonitorPage() {
           <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-                  <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
+                <Database className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 <div>
                   <CardTitle className="text-gray-900 dark:text-white font-manrope text-xl">Pipeline Status</CardTitle>
                   <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
@@ -375,9 +371,7 @@ export default function PipelineMonitorPage() {
         <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
           <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                <Cpu className="h-5 w-5 text-green-600 dark:text-green-400" />
-              </div>
+              <Cpu className="h-6 w-6 text-green-600 dark:text-green-400" />
               <div>
                 <CardTitle className="text-gray-900 dark:text-white font-manrope text-xl">Processing Stages</CardTitle>
                 <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">
