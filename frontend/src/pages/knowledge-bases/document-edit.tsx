@@ -187,71 +187,56 @@ export default function KBDocumentEditPage() {
 
   return (
     <DashboardLayout>
-      <div className="px-4 py-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-2xl p-6 lg:p-8 shadow-xl border border-white/20 dark:border-gray-700/20 space-y-6">
-            {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
-                  className="self-start"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Document
-                </Button>
-                <div>
-                  <h1 className="text-2xl lg:text-3xl font-semibold font-manrope text-gray-900 dark:text-gray-100">Edit Document</h1>
-                  <p className="text-muted-foreground font-manrope">{kb?.name}</p>
-                </div>
-              </div>
+      <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-8">
+        {/* Header */}
+        <div>
+          <Button
+            variant="ghost"
+            onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+            className="mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Document
+          </Button>
 
-              {/* Mobile: Horizontal scrolling action buttons */}
-              <div className="lg:hidden">
-                <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 border border-orange-200 dark:border-orange-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="flex items-start gap-4 flex-1 min-w-0">
+                <Save className="h-8 w-8 text-orange-600 dark:text-orange-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white font-manrope">
+                    Edit Document
+                  </h1>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope text-base">
+                    Knowledge Base: <span className="font-medium text-orange-700 dark:text-orange-300">{kb?.name}</span>
+                  </p>
+                  <p className="text-gray-600 dark:text-gray-400 font-manrope text-sm">
+                    Document: <span className="font-medium">{document.name}</span>
+                  </p>
                   {hasUnsavedChanges && (
-                    <span className="text-sm text-orange-600 flex items-center flex-shrink-0">
-                      <AlertCircle className="h-4 w-4 mr-1" />
-                      Unsaved changes
-                    </span>
+                    <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                      <AlertCircle className="h-4 w-4" />
+                      <span className="text-sm font-medium font-manrope">You have unsaved changes</span>
+                    </div>
                   )}
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
-                    className="flex-shrink-0"
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    Preview
-                  </Button>
-                  <Button onClick={handleSave} disabled={isSaving || !hasUnsavedChanges} className="flex-shrink-0">
-                    {isSaving ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    ) : (
-                      <Save className="h-4 w-4 mr-2" />
-                    )}
-                    Save Changes
-                  </Button>
                 </div>
               </div>
 
-              {/* Desktop: Standard action buttons */}
-              <div className="hidden lg:flex items-center space-x-2">
-                {hasUnsavedChanges && (
-                  <span className="text-sm text-orange-600 flex items-center">
-                    <AlertCircle className="h-4 w-4 mr-1" />
-                    Unsaved changes
-                  </span>
-                )}
+              {/* Action buttons */}
+              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                 <Button
                   variant="outline"
                   onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+                  className="font-manrope"
                 >
                   <Eye className="h-4 w-4 mr-2" />
                   Preview
                 </Button>
-                <Button onClick={handleSave} disabled={isSaving || !hasUnsavedChanges}>
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving || !hasUnsavedChanges}
+                  className="font-manrope bg-orange-600 hover:bg-orange-700 dark:bg-orange-600 dark:hover:bg-orange-500"
+                >
                   {isSaving ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   ) : (
@@ -261,81 +246,101 @@ export default function KBDocumentEditPage() {
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
 
         {/* Edit Form */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Document Details</CardTitle>
+        <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+          <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-b border-purple-200 dark:border-purple-700 rounded-t-xl p-6">
+            <div className="flex items-center gap-3">
+              <Save className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              <CardTitle className="text-xl font-bold text-purple-900 dark:text-purple-100 font-manrope">Edit Document</CardTitle>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
+          <CardContent className="p-6 space-y-6">
+            <div className="space-y-3">
+              <Label htmlFor="title" className="text-base font-semibold text-gray-900 dark:text-gray-100 font-manrope">Document Title</Label>
               <Input
                 id="title"
                 value={formData.title}
                 onChange={(e) => handleInputChange('title', e.target.value)}
-                placeholder="Document title"
+                placeholder="Enter document title..."
+                className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-lg shadow-sm font-manrope text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="content">Content</Label>
+            <div className="space-y-3">
+              <Label htmlFor="content" className="text-base font-semibold text-gray-900 dark:text-gray-100 font-manrope">Document Content</Label>
               <Textarea
                 id="content"
                 value={formData.content}
                 onChange={(e) => handleInputChange('content', e.target.value)}
-                placeholder="Document content..."
+                placeholder="Enter document content..."
                 rows={20}
-                className="font-mono text-sm"
+                className="font-mono text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-lg shadow-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent"
               />
-              <p className="text-xs text-muted-foreground">
-                Changes to content will trigger re-processing and re-chunking of this document.
-              </p>
+              <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+                <p className="text-sm text-blue-700 dark:text-blue-300 font-manrope">
+                  <AlertCircle className="h-4 w-4 inline mr-2" />
+                  Changes to content will trigger re-processing and re-chunking of this document.
+                </p>
+              </div>
             </div>
 
             {/* Document Info */}
-            <div className="border-t pt-4 text-sm text-muted-foreground">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <strong>Content Type:</strong> {formatDocumentSourceType(document.content_type || document.source_type)}
+            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+              <h4 className="text-lg font-bold text-gray-900 dark:text-gray-100 font-manrope mb-4 flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                Document Information
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-1">Content Type</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope">{formatDocumentSourceType(document.content_type || document.source_type)}</div>
                 </div>
-                <div>
-                  <strong>Created:</strong> {
-                    document.created_at
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-1">Created</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope">
+                    {document.created_at
                       ? new Date(document.created_at).toLocaleDateString()
-                      : 'Not available'
-                  }
+                      : 'Not available'}
+                  </div>
                 </div>
                 {document.chunk_count && (
-                  <div>
-                    <strong>Chunks:</strong> {document.chunk_count}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-1">Chunks</div>
+                    <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope">{document.chunk_count}</div>
                   </div>
                 )}
-                <div>
-                  <strong>Last Updated:</strong> {
-                    (() => {
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-1">Last Updated</div>
+                  <div className="text-sm text-gray-800 dark:text-gray-200 font-manrope">
+                    {(() => {
                       const lastUpdated = document.updated_at || document.processed_at || document.created_at;
                       return lastUpdated
                         ? new Date(lastUpdated).toLocaleDateString()
                         : 'Not available';
-                    })()
-                  }
+                    })()}
+                  </div>
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-            {/* Warning */}
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
+        {/* Warning Alert */}
+        <Alert className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border border-yellow-200 dark:border-yellow-700 rounded-xl shadow-sm">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+            <AlertDescription className="flex-1">
+              <strong className="text-yellow-900 dark:text-yellow-100 font-manrope block mb-1">Important Note</strong>
+              <div className="text-yellow-800 dark:text-yellow-200 font-manrope leading-relaxed">
                 Editing this document will update its content in the knowledge base. The document will be
                 re-processed and re-chunked automatically after saving.
-              </AlertDescription>
-            </Alert>
+              </div>
+            </AlertDescription>
           </div>
-        </div>
+        </Alert>
       </div>
     </DashboardLayout>
   );
