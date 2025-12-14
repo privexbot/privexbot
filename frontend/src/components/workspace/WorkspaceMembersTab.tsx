@@ -308,7 +308,7 @@ export const WorkspaceMembersTab = ({
       {/* Error Message */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-md p-3">
-          <p className="text-sm text-red-800 dark:text-red-300 font-medium">{error}</p>
+          <p className="text-sm text-red-800 dark:text-red-300 font-medium font-manrope">{error}</p>
         </div>
       )}
 
@@ -318,22 +318,22 @@ export const WorkspaceMembersTab = ({
           {!showAddMember ? (
             <Button
               onClick={() => setShowAddMember(true)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm font-manrope"
             >
               <Mail className="h-4 w-4 mr-2" />
               Send Invitation
             </Button>
           ) : (
-            <form onSubmit={handleSubmit(handleSendInvitation)} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-3 border border-gray-200 dark:border-gray-600">
+            <form onSubmit={handleSubmit(handleSendInvitation)} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-3 border border-gray-200 dark:border-gray-600">
               {/* Root Error Message */}
               {formErrors.root && (
                 <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-md p-3">
-                  <p className="text-sm text-red-800 dark:text-red-300 font-medium">{formErrors.root.message}</p>
+                  <p className="text-sm text-red-800 dark:text-red-300 font-medium font-manrope">{formErrors.root.message}</p>
                 </div>
               )}
 
               <div>
-                <label htmlFor="add-member-email" className="block text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide mb-2">
+                <label htmlFor="add-member-email" className="block text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide mb-2 font-manrope">
                   Email Address <span className="text-red-600 dark:text-red-400">*</span>
                 </label>
                 <input
@@ -341,33 +341,33 @@ export const WorkspaceMembersTab = ({
                   type="email"
                   {...register("email")}
                   placeholder="user@example.com"
-                  className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-50 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors"
+                  className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors font-manrope"
                 />
                 {formErrors.email && (
-                  <p className="mt-1.5 text-xs text-red-700 dark:text-red-400 font-medium">{formErrors.email.message}</p>
+                  <p className="mt-1.5 text-xs text-red-700 dark:text-red-400 font-medium font-manrope">{formErrors.email.message}</p>
                 )}
                 {!formErrors.email && (
-                  <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300">
+                  <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-400 font-manrope">
                     Enter the email address of the person you want to invite
                   </p>
                 )}
               </div>
 
               <div>
-                <label htmlFor="add-member-role" className="block text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide mb-2">
+                <label htmlFor="add-member-role" className="block text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide mb-2 font-manrope">
                   Role
                 </label>
                 <select
                   id="add-member-role"
                   {...register("role")}
-                  className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors"
+                  className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors font-manrope"
                 >
                   <option value="viewer">Viewer</option>
                   <option value="editor">Editor</option>
                   <option value="admin">Admin</option>
                 </select>
                 {formErrors.role && (
-                  <p className="mt-1.5 text-xs text-red-700 dark:text-red-400 font-medium">{formErrors.role.message}</p>
+                  <p className="mt-1.5 text-xs text-red-700 dark:text-red-400 font-medium font-manrope">{formErrors.role.message}</p>
                 )}
               </div>
 
@@ -375,7 +375,7 @@ export const WorkspaceMembersTab = ({
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm font-manrope"
                 >
                   {isSubmitting ? "Sending..." : "Send Invitation"}
                 </Button>
@@ -386,7 +386,7 @@ export const WorkspaceMembersTab = ({
                     resetForm();
                   }}
                   variant="outline"
-                  className="flex-1 border-gray-300 dark:border-gray-500 text-gray-900 dark:text-gray-50 hover:bg-gray-100 dark:hover:bg-gray-600 font-medium"
+                  className="flex-1 border-gray-300 dark:border-gray-500 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 font-medium font-manrope"
                   disabled={isSubmitting}
                 >
                   Cancel
@@ -402,8 +402,8 @@ export const WorkspaceMembersTab = ({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-yellow-600 dark:text-yellow-500" />
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">Pending Invitations</h3>
-            <Badge variant="outline" className="text-xs text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-500">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white font-manrope">Pending Invitations</h3>
+            <Badge variant="outline" className="text-xs text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-500 font-manrope">
               {invitations.length}
             </Badge>
           </div>
@@ -416,12 +416,12 @@ export const WorkspaceMembersTab = ({
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <Mail className="h-4 w-4 text-yellow-600 dark:text-yellow-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-gray-900 dark:text-gray-50 font-medium truncate">{invitation.email}</p>
+                    <p className="text-gray-900 dark:text-white font-medium truncate font-manrope">{invitation.email}</p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <Badge className="bg-yellow-600 text-white text-xs capitalize">
+                      <Badge className="bg-yellow-600 text-white text-xs capitalize font-manrope">
                         {invitation.invited_role}
                       </Badge>
-                      <span className="text-xs text-gray-600 dark:text-gray-300">
+                      <span className="text-xs text-gray-600 dark:text-gray-400 font-manrope">
                         Expires: {new Date(invitation.expires_at).toLocaleDateString()}
                       </span>
                     </div>
@@ -464,7 +464,7 @@ export const WorkspaceMembersTab = ({
       {!isLoading && members.length === 0 && (
         <div className="text-center py-8">
           <UsersIcon className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-3" />
-          <p className="text-sm text-gray-700 dark:text-gray-200">No members found</p>
+          <p className="text-sm text-gray-700 dark:text-gray-400 font-manrope">No members found</p>
         </div>
       )}
 
@@ -486,13 +486,13 @@ export const WorkspaceMembersTab = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-gray-900 dark:text-gray-50 font-medium truncate">
+                      <p className="text-gray-900 dark:text-white font-medium truncate font-manrope">
                         {member.username}
-                        {isCurrentUser && <span className="text-blue-600 dark:text-blue-400 ml-1">(You)</span>}
+                        {isCurrentUser && <span className="text-blue-600 dark:text-blue-400 ml-1 font-manrope">(You)</span>}
                       </p>
                     </div>
                     {member.email && (
-                      <p className="text-xs text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 truncate font-manrope">{member.email}</p>
                     )}
                   </div>
                 </div>
@@ -502,7 +502,7 @@ export const WorkspaceMembersTab = ({
                     <select
                       value={member.role}
                       onChange={(e) => handleUpdateRole(member.id, e.target.value as WorkspaceRole)}
-                      className="px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600 transition-colors"
+                      className="px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-colors font-manrope"
                     >
                       <option value="viewer">Viewer</option>
                       <option value="editor">Editor</option>

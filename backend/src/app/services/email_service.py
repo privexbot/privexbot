@@ -123,11 +123,18 @@ def _send_email(
         html_part = MIMEText(html_content, "html")
         message.attach(html_part)
 
-        # Send via SMTP with timeout
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=5) as server:
-            server.starttls()  # Enable TLS
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.send_message(message)
+        # Send via SMTP with timeout - handle both SSL (465) and STARTTLS (587)
+        if settings.SMTP_PORT == 465:
+            # Use SSL for port 465
+            with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                server.send_message(message)
+        else:
+            # Use STARTTLS for port 587 and others
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+                server.starttls()  # Enable TLS
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                server.send_message(message)
 
         logger.info(f"[EmailService] Email sent successfully to {to_email}")
         return True
