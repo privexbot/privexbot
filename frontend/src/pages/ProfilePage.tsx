@@ -14,7 +14,7 @@
  * - Proper validation and error handling
  */
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,6 +23,7 @@ import {
   Save,
   Trash2,
   AlertTriangle,
+  AlertCircle,
   Shield,
   Mail,
   Wallet,
@@ -77,8 +78,8 @@ import { toast } from "@/components/ui/use-toast";
 
 export function ProfilePage() {
   const navigate = useNavigate();
-  const { } = useAuth();
-  const { currentOrganization } = useApp();
+  const { logout } = useAuth();
+  const { currentOrganization, currentWorkspace } = useApp();
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -133,8 +134,13 @@ export function ProfilePage() {
     resolver: zodResolver(linkEmailSchema),
   });
 
-  // Check if user is in their personal organization
-  const isPersonalOrg = currentOrganization?.name?.includes("'s Organization") ?? false;
+  // Check if user is in their personal organization (matches MainMenu logic)
+  // Must match EXACTLY the same logic used in MainMenu.tsx
+  const isPersonalOrg = React.useMemo(() => {
+    // Both organization and workspace must be marked as default/personal
+    // This is set by the backend during user signup and is permanent
+    return currentOrganization?.is_default && currentWorkspace?.is_default;
+  }, [currentOrganization?.is_default, currentWorkspace?.is_default]);
 
   // Load user profile and detect wallets
   useEffect(() => {
@@ -347,12 +353,14 @@ export function ProfilePage() {
 
   // Handle wallet linking
   const handleWalletLink = async (walletId: string) => {
+    let walletConfig: any = null;
+
     try {
       setIsLinking(true);
       setError(null);
       setSelectedWallet(walletId);
 
-      const walletConfig = WALLET_CONFIGS[walletId];
+      walletConfig = WALLET_CONFIGS[walletId];
       if (!walletConfig) {
         throw new Error("Wallet configuration not found");
       }
@@ -446,13 +454,24 @@ export function ProfilePage() {
 
       // Extract detailed error information from backend response
       let errorMessage = "Failed to link wallet";
+      let isWalletConflict = false;
+
+      console.log("Raw error response:", err.response?.data);
+
       if (err.response?.data?.detail) {
         errorMessage = err.response.data.detail;
+        // Detect wallet already linked to another account
+        if (errorMessage.toLowerCase().includes("already linked to another account")) {
+          isWalletConflict = true;
+        }
       } else if (err.response?.data?.message) {
         errorMessage = err.response.data.message;
       } else if (err.message) {
         errorMessage = err.message;
       }
+
+      console.log("Parsed error message:", errorMessage);
+      console.log("Is wallet conflict:", isWalletConflict);
 
       // Log detailed error for debugging
       console.error("Detailed error info:", {
@@ -466,13 +485,28 @@ export function ProfilePage() {
         }
       });
 
-      setError(errorMessage);
+      // Enhanced error messaging for wallet conflicts
+      if (isWalletConflict) {
+        const walletName = walletConfig?.name || "wallet";
+        const conflictMessage = `This ${walletName} wallet is already linked to another account.`;
+        console.log("Setting wallet conflict error:", conflictMessage);
+        setError(conflictMessage);
 
-      toast({
-        title: "Linking failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
+        toast({
+          title: "Wallet Already in Use",
+          description: `This ${walletName} wallet is already linked to another account. You can either log in with that wallet or use a different wallet address.`,
+          variant: "destructive",
+        });
+      } else {
+        console.log("Setting general error:", errorMessage);
+        setError(errorMessage);
+
+        toast({
+          title: "Linking failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLinking(false);
       setSelectedWallet(null);
@@ -1077,6 +1111,54 @@ export function ProfilePage() {
                                   <strong>Note:</strong> Make sure your wallet extension is installed and unlocked before connecting.
                                 </p>
                               </div>
+
+                              {/* Error Display with Enhanced Messaging */}
+                              {error && (
+                                <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl">
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex-shrink-0">
+                                      <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="text-sm text-red-800 dark:text-red-200 font-manrope font-medium mb-2">
+                                        {error}
+                                      </p>
+                                      {error.includes("already linked to another account") && (
+                                        <div className="space-y-2">
+                                          <p className="text-xs text-red-700 dark:text-red-300 font-manrope">
+                                            <strong>What you can do:</strong>
+                                          </p>
+                                          <ul className="text-xs text-red-700 dark:text-red-300 font-manrope space-y-1 ml-4">
+                                            <li className="flex items-start gap-2">
+                                              <span className="text-red-500 mt-1">•</span>
+                                              <span>
+                                                <button
+                                                  onClick={() => {
+                                                    logout();
+                                                    navigate("/signin");
+                                                  }}
+                                                  className="text-red-700 dark:text-red-300 underline hover:text-red-800 dark:hover:text-red-200 font-medium"
+                                                >
+                                                  Log out
+                                                </button>
+                                                {" "}and sign in with this wallet to access that account
+                                              </span>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                              <span className="text-red-500 mt-1">•</span>
+                                              <span>Use a different wallet address for this account</span>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                              <span className="text-red-500 mt-1">•</span>
+                                              <span>Contact support if you believe this is an error</span>
+                                            </li>
+                                          </ul>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Cancel Button */}
                               <div className="pt-2">
