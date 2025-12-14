@@ -118,7 +118,6 @@ export function DashboardPage() {
 
   return (
     <DashboardLayout>
-      {/* Container for unified header + stats section */}
       <div className="w-full bg-white dark:bg-gray-800">
         {/* Dashboard Header */}
         <DashboardHeader
@@ -131,12 +130,12 @@ export function DashboardPage() {
           onCustomDateRangeChange={setCustomDateRange}
         />
 
-        {/* Horizontal Divider between Header and Stats - Fixed spacing */}
-        <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 2xl:pl-8 2xl:pr-16 max-w-none">
+        {/* Horizontal Divider between Header and Stats */}
+        <div className="px-4 sm:px-6 lg:px-8 xl:px-12">
           <div className="h-px bg-gray-200 dark:bg-gray-700/50" />
         </div>
 
-        {/* Stats Cards - Unified with Header */}
+        {/* Stats Cards - Separate Section */}
         <StatsCards
           stats={dashboardData?.stats || {
             total_chatbots: 0,
@@ -151,14 +150,15 @@ export function DashboardPage() {
           customDateRange={customDateRange}
         />
 
-        {/* Horizontal Divider below Stats - Fixed spacing */}
-        <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 2xl:pl-8 2xl:pr-16 max-w-none">
+        {/* Horizontal Divider below Stats */}
+        <div className="px-4 sm:px-6 lg:px-8 xl:px-12">
           <div className="h-px bg-gray-200 dark:bg-gray-700/50" />
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 2xl:pl-8 2xl:pr-16 max-w-none space-y-6 py-4 sm:py-5 md:py-6">
+      <div className="px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 py-6">
+
         {/* Error State */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -166,8 +166,8 @@ export function DashboardPage() {
           </div>
         )}
 
-        {/* 2-Column Layout: Recent Activities + Recent Resources */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5 lg:gap-6">
+        {/* Main Content: 2-Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column: Recent Activities */}
           <RecentActivities
             activities={dashboardData?.recent_activities || []}
@@ -187,27 +187,14 @@ export function DashboardPage() {
             isLoading={isLoading}
           />
         </div>
-      </div>
 
-      {/* Horizontal Divider before Quick Actions - Fixed spacing */}
-      <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 2xl:pl-8 2xl:pr-16 max-w-none">
-        <div className="h-px bg-gray-200 dark:bg-gray-700/50" />
-      </div>
-
-      {/* Quick Actions Section */}
-      <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 2xl:pl-8 2xl:pr-16 max-w-none py-4 sm:py-5 md:py-6">
-        {/* Action Cards Grid */}
-        <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-50 mb-4 font-manrope">
-            Quick Actions
-          </h2>
-          <ActionCards
-            onCreateChatbot={handleCreateChatbot}
-            onCreateChatflow={handleCreateChatflow}
-            onCreateKnowledgeBase={handleCreateKnowledgeBase}
-            onViewAnalytics={handleViewAnalytics}
-          />
-        </div>
+        {/* Quick Actions Section */}
+        <ActionCards
+          onCreateChatbot={handleCreateChatbot}
+          onCreateChatflow={handleCreateChatflow}
+          onCreateKnowledgeBase={handleCreateKnowledgeBase}
+          onViewAnalytics={handleViewAnalytics}
+        />
       </div>
     </DashboardLayout>
   );

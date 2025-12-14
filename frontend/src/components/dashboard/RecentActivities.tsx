@@ -150,7 +150,7 @@ export function RecentActivities({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-lg h-full flex flex-col transition-all duration-300"
+      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm h-full flex flex-col"
     >
       {/* Header - No border divider for unified look */}
       <div className="flex items-start justify-between p-5 sm:p-6 flex-shrink-0">
@@ -165,7 +165,7 @@ export function RecentActivities({
         {onViewAll && (
           <button
             onClick={onViewAll}
-            className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors font-manrope flex items-center gap-1"
+            className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-all font-manrope flex items-center gap-1"
           >
             View All
             <span className="text-xs">→</span>
@@ -173,13 +173,11 @@ export function RecentActivities({
         )}
       </div>
 
-      {/* Activities List */}
-      <div className="flex-1 px-5 sm:px-6 pb-5 sm:pb-6">
+      {/* Activities List - Light background */}
+      <div className="flex-1 px-5 sm:px-6 pb-5 sm:pb-6 bg-gray-50 dark:bg-gray-800/50">
         {activities.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
-              <Clock className="h-8 w-8 text-gray-400 dark:text-gray-500" />
-            </div>
+            <Clock className="h-12 w-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope mb-1">No recent activities</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
               Activities will appear here as you work
@@ -188,7 +186,7 @@ export function RecentActivities({
         ) : (
           <div className="space-y-1">
             {activities.slice(0, 5).map((activity, index) => {
-              const { icon: Icon, colorClass, bgClass } = getActivityIcon(activity.type);
+              const { icon: Icon } = getActivityIcon(activity.type);
 
               return (
                 <motion.div
@@ -202,14 +200,9 @@ export function RecentActivities({
                     onActivityClick && "cursor-pointer"
                   )}
                 >
-                  {/* Icon Container */}
+                  {/* Pure Icon - No background container */}
                   <div className="flex-shrink-0">
-                    <div className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200 group-hover:scale-105",
-                      bgClass
-                    )}>
-                      <Icon className={cn("h-5 w-5", colorClass)} />
-                    </div>
+                    <Icon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                   </div>
 
                   {/* Text Block - Center */}
