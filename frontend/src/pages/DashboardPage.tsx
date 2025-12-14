@@ -119,7 +119,7 @@ export function DashboardPage() {
   return (
     <DashboardLayout>
       {/* Container for unified header + stats section */}
-      <div className="w-full bg-white dark:bg-[#1F2937]">
+      <div className="w-full bg-white dark:bg-gray-800">
         {/* Dashboard Header */}
         <DashboardHeader
           user={user}
@@ -162,7 +162,7 @@ export function DashboardPage() {
         {/* Error State */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+            <p className="text-sm text-red-800 dark:text-red-300 font-manrope">{error}</p>
           </div>
         )}
 
@@ -198,7 +198,7 @@ export function DashboardPage() {
       <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 2xl:pl-8 2xl:pr-16 max-w-none py-4 sm:py-5 md:py-6">
         {/* Action Cards Grid */}
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-50 mb-4">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-50 mb-4 font-manrope">
             Quick Actions
           </h2>
           <ActionCards
