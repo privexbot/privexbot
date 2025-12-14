@@ -786,7 +786,7 @@ https://docs.example.com
                 </Button>
               </div>
 
-              {bulkValidationResults.length > 0 && (
+              {bulkValidationResults.length > 0 ? (
                 <div className="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
                   <div className="text-sm text-gray-700 dark:text-gray-300 font-manrope font-medium">
                     Validation Results ({bulkValidationResults.filter(r => r.valid).length}/{bulkValidationResults.length} valid):
@@ -812,260 +812,500 @@ https://docs.example.com
                     ))}
                   </div>
                 </div>
+              ) : bulkUrls.trim().length > 0 ? (
+                <div className="p-6 text-center bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 text-amber-600 dark:text-amber-400 animate-spin" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-amber-800 dark:text-amber-200 font-manrope mb-1">
+                        Validation Needed
+                      </h4>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 font-manrope">
+                        Click "Validate URLs" to check your URLs before proceeding
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                      <Globe className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-gray-900 dark:text-white font-manrope">
+                        No URLs Added Yet
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope max-w-sm mx-auto leading-relaxed">
+                        Enter your website URLs above (one per line) to get started with bulk content extraction
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2 mt-2">
+                      <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full font-manrope">
+                        📄 Multiple pages supported
+                      </span>
+                      <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-3 py-1 rounded-full font-manrope">
+                        ⚙️ Per-URL configuration
+                      </span>
+                    </div>
+                  </div>
+                </div>
               )}
 
-              {/* Per-URL Configuration */}
+              {/* Enhanced Per-URL Configuration */}
               {bulkValidationResults.length > 0 && bulkValidationResults.some(r => r.valid) && (
-                <div className="space-y-3">
-                  <div className="text-sm font-medium text-muted-foreground">
-                    Per-URL Overrides (Optional) - Leave blank to use global settings
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-2">
-                    {bulkValidationResults.filter(r => r.valid).map((result) => (
-                      <div key={result.url} className="p-3 border rounded-md bg-muted/50">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium truncate pr-2">{result.url}</div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedBulkUrl(selectedBulkUrl === result.url ? null : result.url);
-                            }}
-                          >
-                            {selectedBulkUrl === result.url ? 'Hide Config' : 'Configure'}
-                          </Button>
+                <div className="space-y-4">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                          <Settings className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 font-manrope mb-1">
+                          Per-URL Configuration (Optional)
+                        </h3>
+                        <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope leading-relaxed">
+                          Customize crawl settings for individual URLs. Leave blank to use global settings defined above.
+                        </p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <span className="text-xs bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full font-manrope">
+                            {bulkValidationResults.filter(r => r.valid).length} URLs ready
+                          </span>
+                          <span className="text-xs bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded-full font-manrope">
+                            {Object.keys(bulkConfigs).length} customized
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-                        {selectedBulkUrl === result.url && (
-                          <div className="space-y-3 mt-3 pt-3 border-t">
-                            {/* Max Pages and Max Depth */}
-                            <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-2">
-                              <Label className="text-xs">Max Pages (default: {config.max_pages || 50})</Label>
-                              <Input
-                                type="number"
-                                value={bulkConfigs[result.url]?.max_pages || ''}
-                                onChange={(e) => {
-                                  const value = e.target.value ? parseInt(e.target.value) : undefined;
-                                  setBulkConfigs(prev => {
-                                    const updated = { ...prev };
-                                    if (value === undefined) {
-                                      delete updated[result.url]?.max_pages;
-                                      if (updated[result.url] && Object.keys(updated[result.url]).length === 0) {
-                                        delete updated[result.url];
-                                      }
-                                    } else {
-                                      updated[result.url] = {
-                                        ...prev[result.url],
-                                        max_pages: value
-                                      };
-                                    }
-                                    return updated;
-                                  });
-                                }}
-                                min={1}
-                                max={200}
-                                className="h-8"
-                                placeholder={`Default: ${config.max_pages || 50}`}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs">Max Depth (default: {config.max_depth || 3})</Label>
-                              <Input
-                                type="number"
-                                value={bulkConfigs[result.url]?.max_depth || ''}
-                                onChange={(e) => {
-                                  const value = e.target.value ? parseInt(e.target.value) : undefined;
-                                  setBulkConfigs(prev => {
-                                    const updated = { ...prev };
-                                    if (value === undefined) {
-                                      delete updated[result.url]?.max_depth;
-                                      if (updated[result.url] && Object.keys(updated[result.url]).length === 0) {
-                                        delete updated[result.url];
-                                      }
-                                    } else {
-                                      updated[result.url] = {
-                                        ...prev[result.url],
-                                        max_depth: value
-                                      };
-                                    }
-                                    return updated;
-                                  });
-                                }}
-                                min={1}
-                                max={10}
-                                className="h-8"
-                                placeholder={`Default: ${config.max_depth || 3}`}
-                              />
-                            </div>
-                            </div>
+                  <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+                    {bulkValidationResults.filter(r => r.valid).map((result, index) => {
+                      const hasCustomConfig = bulkConfigs[result.url] && Object.keys(bulkConfigs[result.url]).length > 0;
+                      const isExpanded = selectedBulkUrl === result.url;
 
-                            {/* URL-Specific Include Patterns */}
-                            <div className="space-y-2">
-                              <Label className="text-xs">Include Patterns (for this URL)</Label>
-
-                              {/* Pattern Suggestions */}
-                              <div className="flex flex-wrap gap-1 mb-2">
-                                <Label className="text-xs text-muted-foreground">Suggestions:</Label>
-                                {(() => {
-                                  const url = result.url;
-                                  const path = new URL(url).pathname;
-                                  const pathSegments = path.split('/').filter(Boolean);
-
-                                  const suggestions = [];
-                                  // Current path and all sub-paths
-                                  if (path !== '/') {
-                                    suggestions.push(`${path}/**`);
-                                  }
-                                  // Parent directory
-                                  if (pathSegments.length > 1) {
-                                    const parentPath = '/' + pathSegments.slice(0, -1).join('/');
-                                    suggestions.push(`${parentPath}/**`);
-                                  }
-                                  // Common patterns based on URL
-                                  if (path.includes('/docs')) suggestions.push('/**/docs/**');
-                                  if (path.includes('/api')) suggestions.push('/**/api/**');
-                                  if (path.includes('/concepts')) suggestions.push('/**/concepts/**');
-                                  if (path.includes('/guide')) suggestions.push('/**/guide/**');
-                                  if (path.includes('/sdk')) suggestions.push('/**/sdk/**');
-
-                                  return suggestions.slice(0, 3).map((suggestion, idx) => (
-                                    <Button
-                                      key={idx}
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-6 text-xs"
-                                      onClick={() => {
-                                        setBulkConfigs(prev => {
-                                          const current = prev[result.url] || {};
-                                          const currentPatterns = current.include_patterns || [];
-                                          if (!currentPatterns.includes(suggestion)) {
-                                            return {
-                                              ...prev,
-                                              [result.url]: {
-                                                ...current,
-                                                include_patterns: [...currentPatterns, suggestion]
-                                              }
-                                            };
-                                          }
-                                          return prev;
-                                        });
-                                      }}
-                                    >
-                                      {suggestion}
-                                    </Button>
-                                  ));
-                                })()}
+                      return (
+                        <div key={result.url} className={`bg-white dark:bg-gray-800 border-2 rounded-xl overflow-hidden transition-all duration-200 ${
+                          hasCustomConfig
+                            ? 'border-blue-200 dark:border-blue-700 shadow-md'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}>
+                          <div className="p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  hasCustomConfig
+                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-sm font-medium text-gray-900 dark:text-white font-manrope truncate" title={result.url}>
+                                    {new URL(result.url).hostname}
+                                  </h4>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope truncate">
+                                    {result.url}
+                                  </p>
+                                  {hasCustomConfig && (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                      <span className="text-xs text-blue-600 dark:text-blue-400 font-manrope">
+                                        Custom configuration applied
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-
-                              <Input
-                                placeholder="e.g., /docs/**, /api/**"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    const input = e.currentTarget;
-                                    const pattern = input.value.trim();
-                                    if (pattern) {
-                                      setBulkConfigs(prev => {
-                                        const current = prev[result.url] || {};
-                                        const currentPatterns = current.include_patterns || [];
-                                        return {
-                                          ...prev,
-                                          [result.url]: {
-                                            ...current,
-                                            include_patterns: [...currentPatterns, pattern]
-                                          }
-                                        };
-                                      });
-                                      input.value = '';
-                                    }
-                                  }
+                              <Button
+                                type="button"
+                                variant={hasCustomConfig ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedBulkUrl(selectedBulkUrl === result.url ? null : result.url);
                                 }}
-                              />
-                              <div className="flex flex-wrap gap-1">
-                                {bulkConfigs[result.url]?.include_patterns?.map((pattern: string, index: number) => (
-                                  <Badge
-                                    key={index}
-                                    variant="secondary"
-                                    className="cursor-pointer"
-                                    onClick={() => {
-                                      setBulkConfigs(prev => {
-                                        const current = prev[result.url] || {};
-                                        const patterns = current.include_patterns || [];
-                                        return {
-                                          ...prev,
-                                          [result.url]: {
-                                            ...current,
-                                            include_patterns: patterns.filter((_, i) => i !== index)
-                                          }
-                                        };
-                                      });
-                                    }}
-                                  >
-                                    {pattern} ×
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* URL-Specific Exclude Patterns */}
-                            <div className="space-y-2">
-                              <Label className="text-xs">Exclude Patterns (for this URL)</Label>
-                              <Input
-                                placeholder="e.g., /admin/**, *.pdf"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    const input = e.currentTarget;
-                                    const pattern = input.value.trim();
-                                    if (pattern) {
-                                      setBulkConfigs(prev => {
-                                        const current = prev[result.url] || {};
-                                        const currentPatterns = current.exclude_patterns || [];
-                                        return {
-                                          ...prev,
-                                          [result.url]: {
-                                            ...current,
-                                            exclude_patterns: [...currentPatterns, pattern]
-                                          }
-                                        };
-                                      });
-                                      input.value = '';
-                                    }
-                                  }
-                                }}
-                              />
-                              <div className="flex flex-wrap gap-1">
-                                {bulkConfigs[result.url]?.exclude_patterns?.map((pattern: string, index: number) => (
-                                  <Badge
-                                    key={index}
-                                    variant="outline"
-                                    className="cursor-pointer"
-                                    onClick={() => {
-                                      setBulkConfigs(prev => {
-                                        const current = prev[result.url] || {};
-                                        const patterns = current.exclude_patterns || [];
-                                        return {
-                                          ...prev,
-                                          [result.url]: {
-                                            ...current,
-                                            exclude_patterns: patterns.filter((_, i) => i !== index)
-                                          }
-                                        };
-                                      });
-                                    }}
-                                  >
-                                    {pattern} ×
-                                  </Badge>
-                                ))}
-                              </div>
+                                className={`h-9 px-3 rounded-lg font-manrope whitespace-nowrap transition-all duration-200 ${
+                                  hasCustomConfig
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                }`}
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <span className="hidden sm:inline">Hide Config</span>
+                                    <span className="sm:hidden">Hide</span>
+                                    <span className="ml-2">▲</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="hidden sm:inline">{hasCustomConfig ? 'Edit Config' : 'Configure'}</span>
+                                    <span className="sm:hidden">{hasCustomConfig ? 'Edit' : 'Config'}</span>
+                                    <span className="ml-2">▼</span>
+                                  </>
+                                )}
+                              </Button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+
+                          {selectedBulkUrl === result.url && (
+                            <div className="border-t border-gray-200 dark:border-gray-700 bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-800/50 dark:to-blue-900/10 p-4">
+                              <div className="space-y-4">
+                                {/* Configuration Header */}
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-medium text-gray-900 dark:text-white font-manrope text-sm">
+                                    Custom Configuration
+                                  </h4>
+                                  {hasCustomConfig && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setBulkConfigs(prev => {
+                                          const updated = { ...prev };
+                                          delete updated[result.url];
+                                          return updated;
+                                        });
+                                      }}
+                                      className="h-8 px-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md font-manrope text-xs"
+                                    >
+                                      Reset to Global
+                                    </Button>
+                                  )}
+                                </div>
+
+                                {/* Max Pages and Max Depth */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-gray-700 dark:text-gray-300 font-manrope">
+                                      Max Pages
+                                      <span className="text-gray-500 dark:text-gray-400">(global: {config.max_pages || 50})</span>
+                                    </Label>
+                                    <div className="relative">
+                                      <Input
+                                        type="number"
+                                        value={bulkConfigs[result.url]?.max_pages || ''}
+                                        onChange={(e) => {
+                                          const value = e.target.value ? parseInt(e.target.value) : undefined;
+                                          setBulkConfigs(prev => {
+                                            const updated = { ...prev };
+                                            if (value === undefined) {
+                                              if (updated[result.url]) {
+                                                delete updated[result.url].max_pages;
+                                                if (Object.keys(updated[result.url]).length === 0) {
+                                                  delete updated[result.url];
+                                                }
+                                              }
+                                            } else {
+                                              updated[result.url] = {
+                                                ...prev[result.url],
+                                                max_pages: value
+                                              };
+                                            }
+                                            return updated;
+                                          });
+                                        }}
+                                        min={1}
+                                        max={500}
+                                        className="h-10 pr-16 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
+                                        placeholder={`Default: ${config.max_pages || 50}`}
+                                      />
+                                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                        <span className="text-xs text-gray-400 dark:text-gray-500 font-manrope">pages</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-gray-700 dark:text-gray-300 font-manrope">
+                                      Max Depth
+                                      <span className="text-gray-500 dark:text-gray-400">(global: {config.max_depth || 3})</span>
+                                    </Label>
+                                    <div className="relative">
+                                      <Input
+                                        type="number"
+                                        value={bulkConfigs[result.url]?.max_depth || ''}
+                                        onChange={(e) => {
+                                          const value = e.target.value ? parseInt(e.target.value) : undefined;
+                                          setBulkConfigs(prev => {
+                                            const updated = { ...prev };
+                                            if (value === undefined) {
+                                              if (updated[result.url]) {
+                                                delete updated[result.url].max_depth;
+                                                if (Object.keys(updated[result.url]).length === 0) {
+                                                  delete updated[result.url];
+                                                }
+                                              }
+                                            } else {
+                                              updated[result.url] = {
+                                                ...prev[result.url],
+                                                max_depth: value
+                                              };
+                                            }
+                                            return updated;
+                                          });
+                                        }}
+                                        min={1}
+                                        max={10}
+                                        className="h-10 pr-16 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
+                                        placeholder={`Default: ${config.max_depth || 3}`}
+                                      />
+                                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                        <span className="text-xs text-gray-400 dark:text-gray-500 font-manrope">levels</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* URL-Specific Include Patterns */}
+                                <div className="space-y-3">
+                                  <div>
+                                    <Label className="text-xs font-medium text-gray-700 dark:text-gray-300 font-manrope mb-2 block">
+                                      Include Patterns (URL-specific)
+                                    </Label>
+
+                                    {/* Smart Pattern Suggestions */}
+                                    <div className="mb-3">
+                                      <span className="text-xs text-gray-600 dark:text-gray-400 font-manrope mb-2 block">Quick suggestions:</span>
+                                      <div className="flex flex-wrap gap-2">
+                                        {(() => {
+                                          try {
+                                            const urlObj = new URL(result.url);
+                                            const path = urlObj.pathname;
+                                            const pathSegments = path.split('/').filter(Boolean);
+                                            const suggestions = [];
+
+                                            if (path !== '/') suggestions.push(`${path}/**`);
+                                            if (pathSegments.length > 1) {
+                                              const parentPath = '/' + pathSegments.slice(0, -1).join('/');
+                                              suggestions.push(`${parentPath}/**`);
+                                            }
+                                            if (path.includes('/docs')) suggestions.push('/**/docs/**');
+                                            if (path.includes('/api')) suggestions.push('/**/api/**');
+                                            if (path.includes('/guide')) suggestions.push('/**/guide/**');
+
+                                            return suggestions.slice(0, 3).map((suggestion, idx) => (
+                                              <Button
+                                                key={idx}
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 text-xs border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md font-manrope"
+                                                onClick={() => {
+                                                  setBulkConfigs(prev => {
+                                                    const current = prev[result.url] || {};
+                                                    const currentPatterns = current.include_patterns || [];
+                                                    if (!currentPatterns.includes(suggestion)) {
+                                                      return {
+                                                        ...prev,
+                                                        [result.url]: {
+                                                          ...current,
+                                                          include_patterns: [...currentPatterns, suggestion]
+                                                        }
+                                                      };
+                                                    }
+                                                    return prev;
+                                                  });
+                                                }}
+                                              >
+                                                + {suggestion}
+                                              </Button>
+                                            ));
+                                          } catch {
+                                            return [];
+                                          }
+                                        })()}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                      <Input
+                                        placeholder="e.g., /docs/**, /api/**"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const input = e.currentTarget;
+                                            const pattern = input.value.trim();
+                                            if (pattern) {
+                                              setBulkConfigs(prev => {
+                                                const current = prev[result.url] || {};
+                                                const currentPatterns = current.include_patterns || [];
+                                                if (!currentPatterns.includes(pattern)) {
+                                                  return {
+                                                    ...prev,
+                                                    [result.url]: {
+                                                      ...current,
+                                                      include_patterns: [...currentPatterns, pattern]
+                                                    }
+                                                  };
+                                                }
+                                                return prev;
+                                              });
+                                              input.value = '';
+                                            }
+                                          }
+                                        }}
+                                        className="flex-1 h-10 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 font-manrope"
+                                      />
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-10 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-manrope whitespace-nowrap"
+                                        onClick={(e) => {
+                                          const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
+                                          const pattern = input?.value.trim();
+                                          if (pattern) {
+                                            setBulkConfigs(prev => {
+                                              const current = prev[result.url] || {};
+                                              const currentPatterns = current.include_patterns || [];
+                                              if (!currentPatterns.includes(pattern)) {
+                                                return {
+                                                  ...prev,
+                                                  [result.url]: {
+                                                    ...current,
+                                                    include_patterns: [...currentPatterns, pattern]
+                                                  }
+                                                };
+                                              }
+                                              return prev;
+                                            });
+                                            input.value = '';
+                                          }
+                                        }}
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+
+                                    {bulkConfigs[result.url]?.include_patterns && bulkConfigs[result.url]!.include_patterns!.length > 0 && (
+                                      <div className="flex flex-wrap gap-1.5 mt-2">
+                                        {bulkConfigs[result.url]?.include_patterns?.map((pattern: string, index: number) => (
+                                          <Badge
+                                            key={index}
+                                            variant="secondary"
+                                            className="cursor-pointer bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/50 font-manrope px-2 py-1 text-xs"
+                                            onClick={() => {
+                                              setBulkConfigs(prev => {
+                                                const current = prev[result.url] || {};
+                                                const patterns = current.include_patterns || [];
+                                                return {
+                                                  ...prev,
+                                                  [result.url]: {
+                                                    ...current,
+                                                    include_patterns: patterns.filter((_, i) => i !== index)
+                                                  }
+                                                };
+                                              });
+                                            }}
+                                          >
+                                            {pattern} ×
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* URL-Specific Exclude Patterns */}
+                                  <div>
+                                    <Label className="text-xs font-medium text-gray-700 dark:text-gray-300 font-manrope mb-2 block">
+                                      Exclude Patterns (URL-specific)
+                                    </Label>
+                                    <div className="flex gap-2">
+                                      <Input
+                                        placeholder="e.g., /admin/**, *.pdf"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const input = e.currentTarget;
+                                            const pattern = input.value.trim();
+                                            if (pattern) {
+                                              setBulkConfigs(prev => {
+                                                const current = prev[result.url] || {};
+                                                const currentPatterns = current.exclude_patterns || [];
+                                                if (!currentPatterns.includes(pattern)) {
+                                                  return {
+                                                    ...prev,
+                                                    [result.url]: {
+                                                      ...current,
+                                                      exclude_patterns: [...currentPatterns, pattern]
+                                                    }
+                                                  };
+                                                }
+                                                return prev;
+                                              });
+                                              input.value = '';
+                                            }
+                                          }
+                                        }}
+                                        className="flex-1 h-10 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 font-manrope"
+                                      />
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-10 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-manrope whitespace-nowrap"
+                                        onClick={(e) => {
+                                          const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
+                                          const pattern = input?.value.trim();
+                                          if (pattern) {
+                                            setBulkConfigs(prev => {
+                                              const current = prev[result.url] || {};
+                                              const currentPatterns = current.exclude_patterns || [];
+                                              if (!currentPatterns.includes(pattern)) {
+                                                return {
+                                                  ...prev,
+                                                  [result.url]: {
+                                                    ...current,
+                                                    exclude_patterns: [...currentPatterns, pattern]
+                                                  }
+                                                };
+                                              }
+                                              return prev;
+                                            });
+                                            input.value = '';
+                                          }
+                                        }}
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+
+                                    {bulkConfigs[result.url]?.exclude_patterns && bulkConfigs[result.url]!.exclude_patterns!.length > 0 && (
+                                      <div className="flex flex-wrap gap-1.5 mt-2">
+                                        {bulkConfigs[result.url]?.exclude_patterns?.map((pattern: string, index: number) => (
+                                          <Badge
+                                            key={index}
+                                            variant="outline"
+                                            className="cursor-pointer bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 font-manrope px-2 py-1 text-xs"
+                                            onClick={() => {
+                                              setBulkConfigs(prev => {
+                                                const current = prev[result.url] || {};
+                                                const patterns = current.exclude_patterns || [];
+                                                return {
+                                                  ...prev,
+                                                  [result.url]: {
+                                                    ...current,
+                                                    exclude_patterns: patterns.filter((_, i) => i !== index)
+                                                  }
+                                                };
+                                              });
+                                            }}
+                                          >
+                                            {pattern} ×
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1239,155 +1479,305 @@ https://docs.example.com
 
           {/* Enhanced Content Preview with Approval Workflow */}
           {showPreview && previewData && (
-            <Card className="border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-xl shadow-sm">
-              <CardHeader className="pb-4">
-                <div className="flex items-start justify-between gap-3">
-                  <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100 font-manrope text-lg sm:text-xl">
-                    <Eye className="h-5 w-5 sm:h-6 sm:h-6 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                    Full Content Preview
-                  </CardTitle>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleRejectPreview}
-                    className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex-shrink-0"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </Button>
-                </div>
-                <CardDescription className="text-blue-700 dark:text-blue-300 font-manrope text-sm sm:text-base pr-8">
-                  Preview of extracted content from <span className="font-medium">{previewData.url}</span> based on your configuration
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="space-y-4 sm:space-y-6">
-                  {/* Content Statistics */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 p-4 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg">
-                    <div className="text-center sm:text-left">
-                      <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide">Total Pages</span>
-                      <span className="block text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope">{previewData.fullPages?.length || 0}</span>
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && handleRejectPreview()}>
+              <Card className="w-full max-w-6xl max-h-[90vh] border-2 border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-900 rounded-xl shadow-2xl flex flex-col">
+                <CardHeader className="pb-4 border-b border-blue-200 dark:border-blue-800 flex-shrink-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100 font-manrope text-lg sm:text-xl">
+                        <Eye className="h-5 w-5 sm:h-6 sm:h-6 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                        Full Content Preview
+                      </CardTitle>
+                      <CardDescription className="text-blue-700 dark:text-blue-300 font-manrope text-sm sm:text-base mt-1">
+                        Preview of extracted content from <span className="font-medium break-words">{previewData.url}</span>
+                      </CardDescription>
                     </div>
-                    <div className="text-center sm:text-left">
-                      <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide">Total Words</span>
-                      <span className="block text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope">{previewData.wordCount.toLocaleString()}</span>
-                    </div>
-                    <div className="text-center sm:text-left">
-                      <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide">Title</span>
-                      <span className="block text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope truncate" title={previewData.title}>{previewData.title}</span>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleRejectPreview}
+                      className="h-9 w-9 p-0 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex-shrink-0"
+                    >
+                      <XCircle className="h-5 w-5" />
+                    </Button>
                   </div>
-
-                  {/* Configuration Summary */}
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                    <h4 className="font-medium mb-3 text-sm text-gray-900 dark:text-white font-manrope">Configuration Used:</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                      <div>
-                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Method:</span>
-                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{previewData.configuration?.method || 'Single Page'}</span>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto">
+                  <div className="space-y-4 sm:space-y-6 p-4">
+                    {/* Content Statistics */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+                      <div className="text-center sm:text-left p-3 bg-white/50 dark:bg-white/5 rounded-lg border border-blue-100 dark:border-blue-700/50">
+                        <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide font-medium">Total Pages</span>
+                        <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
+                          <div className="w-2 h-2 bg-blue-600 dark:bg-blue-400 rounded-full"></div>
+                          <span className="text-2xl font-bold text-blue-900 dark:text-blue-100 font-manrope">{previewData.fullPages?.length || 0}</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Max Pages:</span>
-                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{previewData.configuration?.max_pages || 'Not set'}</span>
+                      <div className="text-center sm:text-left p-3 bg-white/50 dark:bg-white/5 rounded-lg border border-blue-100 dark:border-blue-700/50">
+                        <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide font-medium">Total Words</span>
+                        <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
+                          <div className="w-2 h-2 bg-green-600 dark:bg-green-400 rounded-full"></div>
+                          <span className="text-2xl font-bold text-blue-900 dark:text-blue-100 font-manrope">{previewData.wordCount.toLocaleString()}</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Max Depth:</span>
-                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{previewData.configuration?.max_depth || 'Not set'}</span>
-                      </div>
-                      <div>
-                        <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope">Patterns:</span>
-                        <span className="font-medium text-gray-900 dark:text-white font-manrope">{(previewData.configuration?.include_patterns?.length || 0) + (previewData.configuration?.exclude_patterns?.length || 0)} rules</span>
+                      <div className="text-center sm:text-left p-3 bg-white/50 dark:bg-white/5 rounded-lg border border-blue-100 dark:border-blue-700/50">
+                        <span className="block text-xs text-blue-600 dark:text-blue-400 font-manrope uppercase tracking-wide font-medium">Source Title</span>
+                        <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
+                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
+                          <span className="text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope truncate" title={previewData.title}>{previewData.title}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* First Page Content Preview */}
-                  <div>
-                    <h4 className="font-medium mb-3 text-gray-900 dark:text-white font-manrope">First Page Content:</h4>
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 max-h-48 sm:max-h-64 overflow-y-auto">
-                      <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words">
-                        {previewData.content || 'No content could be extracted from the first page.'}
-                      </pre>
-                    </div>
-                  </div>
-
-                  {/* All Pages Preview */}
-                  {previewData.fullPages && previewData.fullPages.length > 1 && (
-                    <Collapsible>
+                    {/* Configuration Summary */}
+                    <Collapsible defaultOpen={false}>
                       <CollapsibleTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
-                          className="w-full sm:w-auto h-11 px-4 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg font-manrope"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
+                          className="w-full justify-between h-12 px-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg font-manrope"
                         >
-                          View All {previewData.fullPages.length} Pages
+                          <div className="flex items-center gap-2">
+                            <Settings className="h-4 w-4" />
+                            <span>Configuration Details</span>
+                          </div>
+                          <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-full">
+                            {(previewData.configuration?.include_patterns?.length || 0) + (previewData.configuration?.exclude_patterns?.length || 0)} rules
+                          </span>
                         </Button>
                       </CollapsibleTrigger>
-                      <CollapsibleContent className="mt-4 space-y-3">
-                        {previewData.fullPages.slice(1).map((page, index) => (
-                          <div key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-gray-200 dark:border-gray-600">
-                              <div className="text-sm text-gray-600 dark:text-gray-400 font-manrope truncate" title={page.title || page.url}>
-                                Page {index + 2}: {page.title || page.url}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-500 font-manrope whitespace-nowrap">
-                                {page.content?.split(/\s+/).length || 0} words
-                              </div>
+                      <CollapsibleContent className="mt-3">
+                        <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                            <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
+                              <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope uppercase tracking-wide">Crawl Method</span>
+                              <span className="block font-semibold text-gray-900 dark:text-white font-manrope mt-1">{previewData.configuration?.method || 'Single Page'}</span>
                             </div>
-                            <div className="max-h-32 sm:max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words">
-                                {page.content || 'No content extracted from this page.'}
-                              </pre>
+                            <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
+                              <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope uppercase tracking-wide">Max Pages</span>
+                              <span className="block font-semibold text-gray-900 dark:text-white font-manrope mt-1">{previewData.configuration?.max_pages || 'Unlimited'}</span>
+                            </div>
+                            <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
+                              <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope uppercase tracking-wide">Max Depth</span>
+                              <span className="block font-semibold text-gray-900 dark:text-white font-manrope mt-1">{previewData.configuration?.max_depth || 'Unlimited'}</span>
+                            </div>
+                            <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
+                              <span className="block text-xs text-gray-600 dark:text-gray-400 font-manrope uppercase tracking-wide">Filter Rules</span>
+                              <span className="block font-semibold text-gray-900 dark:text-white font-manrope mt-1">
+                                {(previewData.configuration?.include_patterns?.length || 0) + (previewData.configuration?.exclude_patterns?.length || 0)} patterns
+                              </span>
                             </div>
                           </div>
-                        ))}
+                          {/* Pattern Details */}
+                          {(previewData.configuration?.include_patterns?.length > 0 || previewData.configuration?.exclude_patterns?.length > 0) && (
+                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {previewData.configuration?.include_patterns?.length > 0 && (
+                                  <div>
+                                    <span className="block text-xs text-green-600 dark:text-green-400 font-manrope uppercase tracking-wide mb-2">Include Patterns</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {previewData.configuration.include_patterns.map((pattern: string, index: number) => (
+                                        <Badge key={index} variant="secondary" className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs">
+                                          {pattern}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {previewData.configuration?.exclude_patterns?.length > 0 && (
+                                  <div>
+                                    <span className="block text-xs text-red-600 dark:text-red-400 font-manrope uppercase tracking-wide mb-2">Exclude Patterns</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {previewData.configuration.exclude_patterns.map((pattern: string, index: number) => (
+                                        <Badge key={index} variant="outline" className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-xs">
+                                          {pattern}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </CollapsibleContent>
                     </Collapsible>
-                  )}
 
-                  {/* Decision Alert */}
-                  <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2 font-manrope">Content Preview Complete</h4>
-                      <p className="text-sm text-amber-700 dark:text-amber-300 font-manrope leading-relaxed">
-                        This is the full content that would be extracted and added to your knowledge base.
-                        Review the content quality and coverage before deciding.
-                      </p>
+                    {/* Content Preview Tabs */}
+                    <div className="space-y-4">
+                      <div className="border-b border-gray-200 dark:border-gray-700">
+                        <nav className="flex space-x-8" aria-label="Content tabs">
+                          <button
+                            type="button"
+                            className="border-b-2 border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 whitespace-nowrap py-3 px-1 text-sm font-medium font-manrope"
+                          >
+                            First Page Preview
+                          </button>
+                          {previewData.fullPages && previewData.fullPages.length > 1 && (
+                            <button
+                              type="button"
+                              className="border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 whitespace-nowrap py-3 px-1 text-sm font-medium font-manrope"
+                            >
+                              All Pages ({previewData.fullPages.length})
+                            </button>
+                          )}
+                        </nav>
+                      </div>
+
+                      {/* First Page Content */}
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold text-gray-900 dark:text-white font-manrope text-sm">Content Preview</h4>
+                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 font-manrope">
+                              <span>{previewData.content ? previewData.content.split(' ').length : 0} words</span>
+                              <span>•</span>
+                              <span>{previewData.content ? Math.ceil(previewData.content.length / 500) : 0} min read</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="p-4 max-h-96 overflow-y-auto">
+                          <div className="prose prose-sm max-w-none dark:prose-invert">
+                            <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words leading-relaxed">
+                              {previewData.content || 'No content could be extracted from the first page.'}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Approval Actions */}
-                  <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    {/* All Pages Overview */}
+                    {previewData.fullPages && previewData.fullPages.length > 1 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-gray-900 dark:text-white font-manrope">All Extracted Pages</h4>
+                          <span className="text-xs bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-1 rounded-full font-manrope">
+                            {previewData.fullPages.length} pages total
+                          </span>
+                        </div>
+                        <div className="grid gap-3 max-h-80 overflow-y-auto pr-2">
+                          {previewData.fullPages.map((page, index) => (
+                            <div key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                              <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-800/50 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-bold">
+                                      {index + 1}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <h5 className="text-sm font-medium text-gray-900 dark:text-white font-manrope truncate" title={page.title || page.url}>
+                                        {page.title || new URL(page.url || '').pathname}
+                                      </h5>
+                                      <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope truncate">
+                                        {page.url}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 font-manrope whitespace-nowrap">
+                                    <span className="flex items-center gap-1">
+                                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                      {page.content?.split(/\s+/).length || 0} words
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                      {Math.ceil((page.content?.length || 0) / 500)} min read
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Collapsible>
+                                <CollapsibleTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="w-full h-10 px-4 justify-between text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-none font-manrope text-sm"
+                                  >
+                                    <span>Preview content</span>
+                                    <span className="text-xs">▼</span>
+                                  </Button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                  <div className="p-4 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-600">
+                                    <div className="max-h-40 overflow-y-auto">
+                                      <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words leading-relaxed">
+                                        {(page.content || 'No content extracted from this page.').substring(0, 500)}...
+                                      </pre>
+                                    </div>
+                                  </div>
+                                </CollapsibleContent>
+                              </Collapsible>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Decision Alert */}
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-l-4 border-amber-400 dark:border-amber-500 p-4 rounded-r-lg">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+                            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-amber-800 dark:text-amber-200 mb-2 font-manrope text-sm">Content Preview Complete</h4>
+                          <p className="text-sm text-amber-700 dark:text-amber-300 font-manrope leading-relaxed mb-3">
+                            This is the full content that would be extracted and added to your knowledge base.
+                            Review the content quality and coverage before making your decision.
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-2 py-1 rounded-full font-manrope">
+                              ✓ Content extracted successfully
+                            </span>
+                            <span className="bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-2 py-1 rounded-full font-manrope">
+                              ✓ Ready for approval
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </CardContent>
+
+                {/* Fixed Footer Actions */}
+                <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handleRejectPreview}
-                      className="order-2 sm:order-1 h-11 px-4 sm:px-6 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-manrope"
+                      className="order-2 sm:order-1 h-12 px-6 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-manrope transition-all duration-200 hover:scale-105"
                     >
                       <XCircle className="h-4 w-4 mr-2 flex-shrink-0" />
                       Reject & Discard
                     </Button>
 
-                    <div className="order-3 sm:order-2 hidden sm:flex text-xs text-gray-500 dark:text-gray-400 font-manrope text-center px-4">
-                      Preview based on your crawl configuration
+                    <div className="order-3 sm:order-2 hidden sm:flex flex-col items-center text-center px-4">
+                      <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                        Preview based on your crawl configuration
+                      </span>
+                      <div className="flex items-center gap-1 mt-1">
+                        <div className="w-1 h-1 bg-green-500 rounded-full"></div>
+                        <span className="text-xs text-green-600 dark:text-green-400 font-manrope">
+                          Content ready for import
+                        </span>
+                      </div>
                     </div>
 
                     <Button
                       type="button"
                       onClick={handleApprovePreview}
-                      className="order-1 sm:order-3 h-11 px-4 sm:px-6 bg-green-600 hover:bg-green-700 text-white rounded-lg font-manrope"
+                      className="order-1 sm:order-3 h-12 px-6 bg-green-600 hover:bg-green-700 text-white rounded-lg font-manrope transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl"
                     >
                       <CheckCircle className="h-4 w-4 mr-2 flex-shrink-0" />
                       Approve & Add Source
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </Card>
+            </div>
           )}
 
           {/* Actions */}

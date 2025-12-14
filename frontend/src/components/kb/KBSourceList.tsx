@@ -12,11 +12,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useKBStore } from '@/store/kb-store';
 import { toast } from '@/components/ui/use-toast';
 import { ContentEditor } from '@/components/ui/content-editor';
-import { kbDraftApi } from '@/lib/kb-client';
 
 interface KBSourceListProps {
   sources: DraftSource[];
@@ -31,20 +29,18 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     removeSource,
     updateSource,
     draftSources,
-    previewData,
-    previewDraft,
-    currentDraft
+    previewData
   } = useKBStore();
 
   if (sources.length === 0) {
     return (
-      <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border-2 border-dashed">
-        <AlertCircle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No Sources Added Yet</h3>
-        <p className="text-gray-500 mb-2">
+      <div className="text-center py-8 px-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
+        <AlertCircle className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 font-manrope">No Sources Added Yet</h3>
+        <p className="text-gray-600 dark:text-gray-400 mb-4 font-manrope">
           Use the source types above to add content
         </p>
-        <div className="text-sm text-gray-400 space-y-1">
+        <div className="text-sm text-gray-500 dark:text-gray-400 space-y-2 font-manrope">
           <p>1. Select a source type (Website, File, Text)</p>
           <p>2. Configure and preview the content</p>
           <p>3. Approve & add the source</p>
@@ -99,21 +95,21 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     switch (status) {
       case 'completed':
         return (
-          <Badge variant="default" className="bg-green-100 text-green-800">
-            <CheckCircle className="h-3 w-3 mr-1" />
+          <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700 font-manrope font-medium">
+            <CheckCircle className="h-3 w-3 mr-1.5" />
             Completed
           </Badge>
         );
       case 'failed':
         return (
-          <Badge variant="destructive">
-            <AlertCircle className="h-3 w-3 mr-1" />
+          <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-700 font-manrope font-medium">
+            <AlertCircle className="h-3 w-3 mr-1.5" />
             Failed
           </Badge>
         );
       default:
         return (
-          <Badge variant="secondary">
+          <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700 font-manrope font-medium">
             Pending
           </Badge>
         );
@@ -172,7 +168,7 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     setEditingPageIndex(pageIndex);
   };
 
-  const handleSaveEdit = async (pageIndex: number, content: string, operations: any[]): Promise<void> => {
+  const handleSaveEdit = async (pageIndex: number, content: string, _operations: any[]): Promise<void> => {
     try {
       if (!previewSource?.source_id) {
         throw new Error('No source ID available for editing');
@@ -461,71 +457,138 @@ ${pages.map((page, index) => {
     return (
       <div className="space-y-4">
         {/* Configuration Summary */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-900 mb-2">Crawl Configuration</h4>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <span className="font-medium">URL:</span> <span className="text-blue-700">{source.url}</span>
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+          <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-4 font-manrope flex items-center gap-2">
+            <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            Crawl Configuration
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-manrope">
+            <div className="space-y-1">
+              <span className="font-medium text-gray-900 dark:text-white">URL:</span>
+              <p className="text-blue-700 dark:text-blue-300 break-all">{source.url}</p>
             </div>
-            <div>
-              <span className="font-medium">Method:</span> <span className="text-gray-700">{source.config?.method || 'crawl'}</span>
+            <div className="space-y-1">
+              <span className="font-medium text-gray-900 dark:text-white">Method:</span>
+              <p className="text-gray-700 dark:text-gray-300 capitalize">{source.config?.method || 'crawl'}</p>
             </div>
-            <div>
-              <span className="font-medium">Max Pages:</span> <span className="text-gray-700">{source.config?.max_pages || 50}</span>
+            <div className="space-y-1">
+              <span className="font-medium text-gray-900 dark:text-white">Max Pages:</span>
+              <p className="text-gray-700 dark:text-gray-300">{source.config?.max_pages || 50}</p>
             </div>
-            <div>
-              <span className="font-medium">Max Depth:</span> <span className="text-gray-700">{source.config?.max_depth || 3}</span>
+            <div className="space-y-1">
+              <span className="font-medium text-gray-900 dark:text-white">Max Depth:</span>
+              <p className="text-gray-700 dark:text-gray-300">{source.config?.max_depth || 3}</p>
             </div>
           </div>
-          {hasPatterns ? (
-            <div className="mt-3 space-y-1 text-sm">
+          {hasPatterns && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 space-y-2 text-sm font-manrope">
               {source.config?.include_patterns?.length ? (
-                <div><span className="font-medium">Include:</span> <span className="text-green-700">{source.config.include_patterns.join(', ')}</span></div>
+                <div className="space-y-1">
+                  <span className="font-medium text-gray-900 dark:text-white">Include Patterns:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {source.config.include_patterns.map((pattern, i) => (
+                      <span key={i} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md text-xs border border-green-200 dark:border-green-700">
+                        {pattern}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               ) : null}
               {source.config?.exclude_patterns?.length ? (
-                <div><span className="font-medium">Exclude:</span> <span className="text-red-700">{source.config.exclude_patterns.join(', ')}</span></div>
+                <div className="space-y-1">
+                  <span className="font-medium text-gray-900 dark:text-white">Exclude Patterns:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {source.config.exclude_patterns.map((pattern, i) => (
+                      <span key={i} className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md text-xs border border-red-200 dark:border-red-700">
+                        {pattern}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               ) : null}
             </div>
-          ) : null}
+          )}
         </div>
 
         {/* Content Statistics */}
-        {hasStats ? (
-          <div className="flex gap-6 text-sm bg-gray-50 p-3 rounded">
-            <span><strong>Total Pages:</strong> {(source.metadata?.pageCount as number) || 0}</span>
-            <span><strong>Total Words:</strong> {((source.metadata?.wordCount as number) || 0).toLocaleString()}</span>
-            <span><strong>Crawled At:</strong> {source.metadata?.crawledAt ? new Date(source.metadata.crawledAt as string).toLocaleString() : 'N/A'}</span>
+        {hasStats && (
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+              Content Statistics
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm font-manrope">
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                <div className="font-semibold text-lg text-gray-900 dark:text-white">
+                  {(source.metadata?.pageCount as number) || 0}
+                </div>
+                <div className="text-gray-600 dark:text-gray-400">Total Pages</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                <div className="font-semibold text-lg text-gray-900 dark:text-white">
+                  {((source.metadata?.wordCount as number) || 0).toLocaleString()}
+                </div>
+                <div className="text-gray-600 dark:text-gray-400">Total Words</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                <div className="font-semibold text-sm text-gray-900 dark:text-white">
+                  {source.metadata?.crawledAt ? new Date(source.metadata.crawledAt as string).toLocaleDateString() : 'N/A'}
+                </div>
+                <div className="text-gray-600 dark:text-gray-400">Crawled Date</div>
+              </div>
+            </div>
           </div>
-        ) : null}
+        )}
 
         {/* Enhanced Editable Pages Content */}
         {hasPreviewPages ? (
           <div className="space-y-4">
-            <div className="bg-white p-3 sm:p-4 rounded-lg border shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Crawled Pages Content</h4>
-                <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-                  <Button variant="outline" size="sm" onClick={handleCopyAll} className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <h4 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg font-manrope flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  Crawled Pages Content
+                </h4>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyAll}
+                    className="bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 font-manrope"
+                  >
                     <Copy className="h-4 w-4 mr-2" />
                     <span className="hidden sm:inline">Copy All Pages</span>
                     <span className="sm:hidden">Copy All</span>
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-700 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 font-manrope"
+                      >
                         <Download className="h-4 w-4 mr-2" />
                         <span className="hidden sm:inline">Export All</span>
                         <span className="sm:hidden">Export</span>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleExportFormat('markdown')}>
+                    <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
+                      <DropdownMenuItem
+                        onClick={() => handleExportFormat('markdown')}
+                        className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
                         📄 Export as Markdown
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExportFormat('plain_text')}>
+                      <DropdownMenuItem
+                        onClick={() => handleExportFormat('plain_text')}
+                        className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
                         📝 Export as Plain Text
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExportFormat('html')}>
+                      <DropdownMenuItem
+                        onClick={() => handleExportFormat('html')}
+                        className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
                         🌐 Export as HTML
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -544,31 +607,32 @@ ${pages.map((page, index) => {
               const title = page.title || page.url || `Page ${index + 1}`;
 
               return (
-                <Card key={index} className="border-gray-200 min-w-0 flex-shrink-0">
-                  <CardHeader className="py-3 px-3 sm:px-4">
+                <Card key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 min-w-0 flex-shrink-0">
+                  <CardHeader className="py-4 px-4 sm:px-6 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between w-full">
-                      <div className="flex flex-col gap-2 min-w-0 flex-1">
-                        <div className="text-sm font-medium break-words">
-                          <strong>Page {index + 1}:</strong> <span className="font-normal">{title}</span>
+                      <div className="flex flex-col gap-3 min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white font-manrope break-words">
+                          <span className="font-semibold text-blue-600 dark:text-blue-400">Page {index + 1}:</span>
+                          <span className="ml-2">{title}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-xs text-muted-foreground">
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 font-manrope bg-gray-100 dark:bg-gray-700/50 px-2 py-1 rounded-md">
                             {content.split(/\s+/).filter(Boolean).length.toLocaleString()} words
                           </div>
                           {isEdited && (
-                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                            <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope">
                               <Edit2 className="h-3 w-3 mr-1" />
                               Edited
                             </Badge>
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-row gap-2 sm:flex-row sm:items-center flex-shrink-0">
+                      <div className="flex flex-row gap-2 flex-shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleEditPage(index)}
-                          className="bg-white text-xs sm:text-sm"
+                          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope text-xs sm:text-sm"
                         >
                           <Edit2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                           <span className="hidden sm:inline">Edit</span>
@@ -577,7 +641,7 @@ ${pages.map((page, index) => {
                           variant="outline"
                           size="sm"
                           onClick={() => handleCopyPage(index)}
-                          className="bg-white text-xs sm:text-sm"
+                          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope text-xs sm:text-sm"
                         >
                           <Copy className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
@@ -586,7 +650,7 @@ ${pages.map((page, index) => {
                             variant="outline"
                             size="sm"
                             onClick={() => handleRevertPage(index)}
-                            className="text-orange-600 border-orange-200 hover:bg-orange-50 text-xs sm:text-sm"
+                            className="bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700 hover:bg-orange-100 dark:hover:bg-orange-900/50 font-manrope text-xs sm:text-sm"
                           >
                             <Undo2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                             <span className="hidden sm:inline">Revert</span>
@@ -595,7 +659,7 @@ ${pages.map((page, index) => {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="px-4 pb-4">
+                  <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
                     {editingPageIndex === index ? (
                       <ContentEditor
                         pageIndex={index}
@@ -607,9 +671,11 @@ ${pages.map((page, index) => {
                         onRevert={() => handleRevertPage(index)}
                       />
                     ) : (
-                      <div className="max-h-48 overflow-auto bg-gray-50 p-4 rounded text-sm border min-w-0">
-                        <div className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed break-words overflow-wrap-anywhere">
-                          {content || 'No content extracted'}
+                      <div className="max-h-48 overflow-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 p-4 rounded-lg text-sm min-w-0">
+                        <div className="whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-300 leading-relaxed break-words overflow-wrap-anywhere">
+                          {content || (
+                            <span className="text-gray-500 dark:text-gray-400 italic">No content extracted</span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -619,11 +685,16 @@ ${pages.map((page, index) => {
             })}
           </div>
         ) : (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <AlertCircle className="h-5 w-5 text-amber-600 inline mr-2" />
-            <span className="text-sm text-amber-800">
-              Full content preview not available. Only configuration data is stored for this source.
-            </span>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 sm:p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-amber-800 dark:text-amber-300 mb-2 font-manrope">Content Preview Unavailable</h4>
+                <p className="text-sm text-amber-700 dark:text-amber-400 font-manrope leading-relaxed">
+                  Full content preview not available. Only configuration data is stored for this source.
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -635,16 +706,34 @@ ${pages.map((page, index) => {
     const hasContent = source.metadata?.content;
 
     return (
-      <div className="space-y-3">
-        <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-          <p><strong>Filename:</strong> {(source.metadata?.file_name as string) || 'Unknown'}</p>
-          <p><strong>Size:</strong> {(((source.metadata?.file_size as number) || 0) / 1024 / 1024).toFixed(2)} MB</p>
-          <p><strong>Type:</strong> {(source.metadata?.file_type as string) || 'auto-detected'}</p>
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+          <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
+            <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            File Information
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm font-manrope">
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+              <div className="font-medium text-gray-900 dark:text-white mb-1">Filename</div>
+              <div className="text-gray-600 dark:text-gray-400 break-all">{(source.metadata?.file_name as string) || 'Unknown'}</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+              <div className="font-medium text-gray-900 dark:text-white mb-1">Size</div>
+              <div className="text-gray-600 dark:text-gray-400">{(((source.metadata?.file_size as number) || 0) / 1024 / 1024).toFixed(2)} MB</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+              <div className="font-medium text-gray-900 dark:text-white mb-1">Type</div>
+              <div className="text-gray-600 dark:text-gray-400">{(source.metadata?.file_type as string) || 'auto-detected'}</div>
+            </div>
+          </div>
         </div>
         {hasContent ? (
-          <div className="bg-white border rounded-lg p-4">
-            <h4 className="font-semibold mb-2">File Content Preview</h4>
-            <pre className="whitespace-pre-wrap text-sm max-h-64 overflow-y-auto bg-gray-50 p-3 rounded">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
+              <Eye className="h-5 w-5 text-green-600 dark:text-green-400" />
+              File Content Preview
+            </h4>
+            <pre className="whitespace-pre-wrap text-sm max-h-64 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 p-4 rounded-lg font-mono text-gray-900 dark:text-gray-100 leading-relaxed">
               {String(source.metadata!.content)}
             </pre>
           </div>
@@ -654,60 +743,73 @@ ${pages.map((page, index) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium">
+        <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white font-manrope">
           Added Sources ({sources.length})
         </h3>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {sources.map((source, index) => (
-          <Card key={source.source_id || index} className="transition-colors hover:bg-accent/50">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+          <Card key={source.source_id || index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-600">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
-                    {getSourceIcon(source.type)}
-                    <h4 className="font-medium truncate">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-shrink-0">
+                      {getSourceIcon(source.type)}
+                    </div>
+                    <h4 className="font-semibold text-gray-900 dark:text-white truncate font-manrope text-base sm:text-lg">
                       {getSourceTitle(source)}
                     </h4>
                     {getStatusBadge(source)}
                   </div>
 
-                  <p className="text-sm text-muted-foreground mb-2">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-manrope">
                     {getSourceDescription(source)}
                   </p>
 
-                  {source.status === 'failed' ? (
-                    <p className="text-sm text-red-600 bg-red-50 p-2 rounded">
-                      Processing failed. Please try again.
-                    </p>
-                  ) : null}
+                  {source.status === 'failed' && (
+                    <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 rounded-lg mb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                        <span className="font-manrope">Processing failed. Please try again.</span>
+                      </div>
+                    </div>
+                  )}
 
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="capitalize">{source.type} source</span>
+                  <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                    <span className="capitalize font-medium">{source.type} source</span>
                     <span>Added {new Date().toLocaleDateString()}</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 ml-4">
+                <div className="flex items-center gap-3 flex-shrink-0">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <Settings className="h-4 w-4" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
+                      >
+                        <Settings className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                        <span className="sr-only">Source options</span>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handlePreviewSource(source)}>
-                        <Eye className="h-4 w-4 mr-2" />
+                    <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
+                      <DropdownMenuItem
+                        onClick={() => handlePreviewSource(source)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 focus:bg-blue-50 dark:focus:bg-blue-900/20 rounded-md"
+                      >
+                        <Eye className="h-4 w-4" />
                         Preview Content
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setDeleteSourceId(source.source_id || `${index}`)}
-                        className="text-red-600"
+                        className="flex items-center gap-2 px-3 py-2 text-sm font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 focus:bg-red-50 dark:focus:bg-red-900/20 rounded-md"
                       >
-                        <Trash2 className="h-4 w-4 mr-2" />
+                        <Trash2 className="h-4 w-4" />
                         Remove Source
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -721,22 +823,30 @@ ${pages.map((page, index) => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteSourceId} onOpenChange={() => setDeleteSourceId(null)}>
-        <DialogContent>
+        <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-w-md">
           <DialogHeader>
-            <DialogTitle>Remove Source?</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-white font-manrope flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              Remove Source?
+            </DialogTitle>
+            <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
               This will remove the source from your knowledge base draft.
               You can add it back later if needed.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-3 mt-4">
-            <Button variant="outline" onClick={() => setDeleteSourceId(null)}>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteSourceId(null)}
+              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
+            >
               Cancel
             </Button>
             <Button
-              variant="destructive"
               onClick={() => deleteSourceId && handleDeleteSource(deleteSourceId)}
+              className="bg-red-600 hover:bg-red-700 text-white font-manrope"
             >
+              <Trash2 className="h-4 w-4 mr-2" />
               Remove Source
             </Button>
           </div>
@@ -746,36 +856,58 @@ ${pages.map((page, index) => {
       {/* Enhanced Preview Dialog with Full Pages Content */}
       <Dialog open={!!previewSource} onOpenChange={() => {
         setPreviewSource(null);
+        setEditingPageIndex(null);
       }}>
-        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] flex flex-col p-0">
-          <DialogHeader className="flex-shrink-0 p-4 sm:p-6 border-b">
-            <DialogTitle className="flex items-center gap-2">
-              {previewSource ? getSourceIcon(previewSource.type) : null}
+        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] flex flex-col p-0 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl">
+          <DialogHeader className="flex-shrink-0 p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <DialogTitle className="flex items-center gap-3 text-lg sm:text-xl font-semibold text-gray-900 dark:text-white font-manrope">
+              <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                {previewSource ? getSourceIcon(previewSource.type) : null}
+              </div>
               Full Content Preview
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope mt-2">
               {previewSource ? getSourceTitle(previewSource) : ''}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-auto">
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {previewSource?.type === SourceType.TEXT ? (
-                <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-lg">
-                  {(previewSource.metadata?.content as string) || 'No content available'}
-                </pre>
-              ) : null}
+          <div className="flex-1 overflow-auto bg-gray-50/50 dark:bg-gray-900/50">
+            <div className="p-4 sm:p-6 space-y-6">
+              {previewSource?.type === SourceType.TEXT && (
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6">
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
+                    <Type className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    Text Content
+                  </h4>
+                  <pre className="whitespace-pre-wrap text-sm bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-600 font-mono text-gray-900 dark:text-gray-100 leading-relaxed">
+                    {(previewSource.metadata?.content as string) || 'No content available'}
+                  </pre>
+                </div>
+              )}
 
-              {previewSource?.type === SourceType.WEB ? renderWebPreviewContent(previewSource) : null}
-              {previewSource?.type === SourceType.FILE ? renderFilePreviewContent(previewSource) : null}
+              {previewSource?.type === SourceType.WEB && renderWebPreviewContent(previewSource)}
+              {previewSource?.type === SourceType.FILE && renderFilePreviewContent(previewSource)}
             </div>
           </div>
 
-          <div className="flex justify-end p-4 border-t flex-shrink-0">
-            <Button onClick={() => {
-              setPreviewSource(null);
-            }}>
-              Close
+          <div className="flex justify-between items-center p-4 sm:p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
+            <div className="text-sm text-gray-500 dark:text-gray-400 font-manrope">
+              {previewSource && (
+                <span>
+                  {previewSource.type === SourceType.WEB && 'Website Source'}
+                  {previewSource.type === SourceType.FILE && 'File Source'}
+                  {previewSource.type === SourceType.TEXT && 'Text Source'}
+                </span>
+              )}
+            </div>
+            <Button
+              onClick={() => {
+                setPreviewSource(null);
+                setEditingPageIndex(null);
+              }}
+              className="bg-gray-600 hover:bg-gray-700 text-white font-manrope px-6"
+            >
+              Close Preview
             </Button>
           </div>
         </DialogContent>

@@ -268,8 +268,267 @@ export default function KBCreationWizard() {
           <div className="space-y-4 sm:space-y-6">
             <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white font-manrope">Add Documents</h2>
 
+            {/* Enhanced Empty State - No Sources Added Yet */}
+            {uploadedFiles.length === 0 && urls.length === 0 && (
+              <div className="relative bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-purple-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-3xl p-6 sm:p-8 lg:p-12 mb-8 shadow-lg shadow-blue-100/50 dark:shadow-blue-900/30 overflow-hidden">
+                {/* Decorative Background Elements */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-indigo-200/40 to-transparent dark:from-indigo-700/20 rounded-full blur-3xl"></div>
+                <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-blue-200/40 to-transparent dark:from-blue-700/20 rounded-full blur-3xl"></div>
+
+                <div className="relative text-center max-w-5xl mx-auto">
+                  {/* Header */}
+                  <div className="mb-8 sm:mb-10">
+                    <div className="relative w-24 h-24 sm:w-28 sm:h-28 lg:w-32 lg:h-32 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-200/30 dark:shadow-blue-900/30 ring-4 ring-white/50 dark:ring-gray-800/50">
+                      <Database className="w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 text-blue-600 dark:text-blue-400" />
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-indigo-400/20 dark:from-blue-500/10 dark:to-indigo-500/10 rounded-full animate-pulse"></div>
+                    </div>
+                    <h3 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-transparent bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 dark:from-blue-100 dark:via-indigo-100 dark:to-purple-100 bg-clip-text font-manrope mb-4">
+                      No Sources Added Yet
+                    </h3>
+                    <p className="text-blue-700 dark:text-blue-300 font-manrope text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto font-medium">
+                      Build your knowledge base with multiple content sources
+                    </p>
+                    <div className="mt-4 px-4 py-2 bg-blue-100/60 dark:bg-blue-900/30 rounded-full inline-block border border-blue-200/60 dark:border-blue-700/40">
+                      <p className="text-sm text-blue-600 dark:text-blue-400 font-manrope font-medium">
+                        🚀 Get started in just 4 simple steps
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Step-by-Step Guide */}
+                  <div className="mb-10 sm:mb-12">
+                    <h4 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope mb-6 sm:mb-8">
+                      How It Works
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+                      <div className="group relative bg-white/80 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-blue-200/60 dark:border-blue-700/40 shadow-lg shadow-blue-100/30 dark:shadow-blue-900/20 hover:shadow-xl hover:shadow-blue-200/40 dark:hover:shadow-blue-900/30 transition-all duration-300 hover:-translate-y-1">
+                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-3">
+                          <div className="w-6 h-6 bg-blue-500 rounded-full shadow-lg"></div>
+                        </div>
+                        <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                          <span className="text-white font-bold font-manrope text-xl">1</span>
+                        </div>
+                        <h4 className="font-bold text-gray-900 dark:text-white font-manrope mb-3 text-base sm:text-lg">
+                          Select Source Type
+                        </h4>
+                        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                          Choose from Website, File, or Cloud sources
+                        </p>
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 to-blue-600 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                      </div>
+
+                      <div className="group relative bg-white/80 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-green-200/60 dark:border-green-700/40 shadow-lg shadow-green-100/30 dark:shadow-green-900/20 hover:shadow-xl hover:shadow-green-200/40 dark:hover:shadow-green-900/30 transition-all duration-300 hover:-translate-y-1">
+                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-3">
+                          <div className="w-6 h-6 bg-green-500 rounded-full shadow-lg"></div>
+                        </div>
+                        <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                          <span className="text-white font-bold font-manrope text-xl">2</span>
+                        </div>
+                        <h4 className="font-bold text-gray-900 dark:text-white font-manrope mb-3 text-base sm:text-lg">
+                          Configure & Preview
+                        </h4>
+                        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                          Set options and preview the content
+                        </p>
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-green-400 to-green-600 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                      </div>
+
+                      <div className="group relative bg-white/80 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-purple-200/60 dark:border-purple-700/40 shadow-lg shadow-purple-100/30 dark:shadow-purple-900/20 hover:shadow-xl hover:shadow-purple-200/40 dark:hover:shadow-purple-900/30 transition-all duration-300 hover:-translate-y-1">
+                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-3">
+                          <div className="w-6 h-6 bg-purple-500 rounded-full shadow-lg"></div>
+                        </div>
+                        <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                          <span className="text-white font-bold font-manrope text-xl">3</span>
+                        </div>
+                        <h4 className="font-bold text-gray-900 dark:text-white font-manrope mb-3 text-base sm:text-lg">
+                          Approve & Add
+                        </h4>
+                        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                          Review and approve the source
+                        </p>
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-400 to-purple-600 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                      </div>
+
+                      <div className="group relative bg-white/80 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-amber-200/60 dark:border-amber-700/40 shadow-lg shadow-amber-100/30 dark:shadow-amber-900/20 hover:shadow-xl hover:shadow-amber-200/40 dark:hover:shadow-amber-900/30 transition-all duration-300 hover:-translate-y-1">
+                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-3">
+                          <div className="w-6 h-6 bg-amber-500 rounded-full shadow-lg"></div>
+                        </div>
+                        <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                          <span className="text-white font-bold font-manrope text-xl">4</span>
+                        </div>
+                        <h4 className="font-bold text-gray-900 dark:text-white font-manrope mb-3 text-base sm:text-lg">
+                          Continue to Approval
+                        </h4>
+                        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                          Move to the next step when ready
+                        </p>
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Interactive Source Type Cards */}
+                  <div className="mb-8 sm:mb-10">
+                    <h4 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white font-manrope mb-6 sm:mb-8 text-center px-4">
+                      Choose Your Content Source
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 px-2 sm:px-0">
+                      <div
+                        onClick={() => {
+                          const urlSection = document.querySelector('[data-section="url-input"]');
+                          urlSection?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className="group relative bg-gradient-to-br from-white to-blue-50/50 dark:from-gray-800/70 dark:to-blue-900/20 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border-2 border-blue-200/60 dark:border-blue-700/40 hover:border-blue-400 dark:hover:border-blue-500 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-200/40 dark:hover:shadow-blue-900/30 cursor-pointer hover:-translate-y-2 active:scale-95 touch-manipulation min-h-[280px] sm:min-h-[320px] flex flex-col justify-between"
+                      >
+                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 sm:transition-opacity duration-300">
+                          <div className="w-10 h-10 sm:w-8 sm:h-8 bg-blue-500 rounded-full flex items-center justify-center shadow-lg">
+                            <ChevronRight className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
+                          </div>
+                        </div>
+                        <div className="text-center flex-1">
+                          <div className="relative w-20 h-20 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-4 sm:mb-6 shadow-xl shadow-blue-200/50 dark:shadow-blue-900/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                            <Globe className="w-10 h-10 text-white" />
+                            <div className="absolute inset-0 bg-gradient-to-br from-blue-400/30 to-transparent rounded-3xl animate-pulse"></div>
+                          </div>
+                          <h4 className="font-bold text-gray-900 dark:text-white font-manrope text-lg sm:text-xl mb-3">
+                            Website URLs
+                          </h4>
+                          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope mb-4 sm:mb-6 leading-relaxed px-2">
+                            Scrape content from websites, documentation, or blogs
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex flex-wrap gap-2 justify-center mb-4">
+                            <span className="text-xs sm:text-sm bg-blue-100/80 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-blue-200/60 dark:border-blue-700/40">
+                              Single pages
+                            </span>
+                            <span className="text-xs sm:text-sm bg-blue-100/80 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-blue-200/60 dark:border-blue-700/40">
+                              Full crawling
+                            </span>
+                          </div>
+                          <div className="text-sm text-blue-600 dark:text-blue-400 font-manrope font-medium opacity-0 group-hover:opacity-100 sm:transition-opacity duration-300">
+                            Tap to get started →
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        onClick={() => {
+                          const fileSection = document.querySelector('[data-section="file-upload"]');
+                          fileSection?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className="group relative bg-gradient-to-br from-white to-green-50/50 dark:from-gray-800/70 dark:to-green-900/20 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border-2 border-green-200/60 dark:border-green-700/40 hover:border-green-400 dark:hover:border-green-500 transition-all duration-300 hover:shadow-2xl hover:shadow-green-200/40 dark:hover:shadow-green-900/30 cursor-pointer hover:-translate-y-2 active:scale-95 touch-manipulation min-h-[280px] sm:min-h-[320px] flex flex-col justify-between"
+                      >
+                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 sm:transition-opacity duration-300">
+                          <div className="w-10 h-10 sm:w-8 sm:h-8 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+                            <ChevronRight className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
+                          </div>
+                        </div>
+                        <div className="text-center flex-1">
+                          <div className="relative w-20 h-20 sm:w-20 sm:h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-3xl flex items-center justify-center mx-auto mb-4 sm:mb-6 shadow-xl shadow-green-200/50 dark:shadow-green-900/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                            <Upload className="w-10 h-10 text-white" />
+                            <div className="absolute inset-0 bg-gradient-to-br from-green-400/30 to-transparent rounded-3xl animate-pulse"></div>
+                          </div>
+                          <h4 className="font-bold text-gray-900 dark:text-white font-manrope text-lg sm:text-xl mb-3">
+                            File Upload
+                          </h4>
+                          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope mb-4 sm:mb-6 leading-relaxed px-2">
+                            Upload documents, PDFs, text files, or presentations
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex flex-wrap gap-1 sm:gap-2 justify-center mb-4">
+                            <span className="text-xs sm:text-sm bg-green-100/80 dark:bg-green-900/40 text-green-700 dark:text-green-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-green-200/60 dark:border-green-700/40">
+                              PDF
+                            </span>
+                            <span className="text-xs sm:text-sm bg-green-100/80 dark:bg-green-900/40 text-green-700 dark:text-green-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-green-200/60 dark:border-green-700/40">
+                              DOCX
+                            </span>
+                            <span className="text-xs sm:text-sm bg-green-100/80 dark:bg-green-900/40 text-green-700 dark:text-green-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-green-200/60 dark:border-green-700/40">
+                              TXT
+                            </span>
+                            <span className="text-xs sm:text-sm bg-green-100/80 dark:bg-green-900/40 text-green-700 dark:text-green-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-green-200/60 dark:border-green-700/40">
+                              MD
+                            </span>
+                          </div>
+                          <div className="text-sm text-green-600 dark:text-green-400 font-manrope font-medium opacity-0 group-hover:opacity-100 sm:transition-opacity duration-300">
+                            Tap to get started →
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        onClick={() => {
+                          const cloudSection = document.querySelector('[data-section="cloud-sources"]');
+                          cloudSection?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className="group relative bg-gradient-to-br from-white to-purple-50/50 dark:from-gray-800/70 dark:to-purple-900/20 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border-2 border-purple-200/60 dark:border-purple-700/40 hover:border-purple-400 dark:hover:border-purple-500 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-200/40 dark:hover:shadow-purple-900/30 cursor-pointer hover:-translate-y-2 active:scale-95 touch-manipulation min-h-[280px] sm:min-h-[320px] flex flex-col justify-between"
+                      >
+                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 sm:transition-opacity duration-300">
+                          <div className="w-10 h-10 sm:w-8 sm:h-8 bg-purple-500 rounded-full flex items-center justify-center shadow-lg">
+                            <ChevronRight className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
+                          </div>
+                        </div>
+                        <div className="text-center flex-1">
+                          <div className="relative w-20 h-20 sm:w-20 sm:h-20 bg-gradient-to-br from-purple-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-4 sm:mb-6 shadow-xl shadow-purple-200/50 dark:shadow-purple-900/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                            <Cloud className="w-10 h-10 text-white" />
+                            <div className="absolute inset-0 bg-gradient-to-br from-purple-400/30 to-transparent rounded-3xl animate-pulse"></div>
+                          </div>
+                          <h4 className="font-bold text-gray-900 dark:text-white font-manrope text-lg sm:text-xl mb-3">
+                            Cloud Sources
+                          </h4>
+                          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 font-manrope mb-4 sm:mb-6 leading-relaxed px-2">
+                            Connect your Notion, Google Drive, or other services
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex flex-wrap gap-2 justify-center mb-4">
+                            <span className="text-xs sm:text-sm bg-purple-100/80 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-purple-200/60 dark:border-purple-700/40">
+                              Notion
+                            </span>
+                            <span className="text-xs sm:text-sm bg-purple-100/80 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full font-manrope font-medium border border-purple-200/60 dark:border-purple-700/40">
+                              Google Drive
+                            </span>
+                          </div>
+                          <div className="text-sm text-purple-600 dark:text-purple-400 font-manrope font-medium opacity-0 group-hover:opacity-100 sm:transition-opacity duration-300">
+                            Tap to get started →
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <div className="mt-8 sm:mt-10">
+                    <div className="relative bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-700 dark:to-indigo-700 rounded-2xl p-6 sm:p-8 shadow-xl shadow-blue-200/40 dark:shadow-blue-900/30 overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+                      <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-xl"></div>
+                      <div className="relative text-center">
+                        <div className="flex items-center justify-center gap-3 mb-4">
+                          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                            <CheckCircle className="w-6 h-6 text-white" />
+                          </div>
+                          <span className="font-bold text-white font-manrope text-xl sm:text-2xl">
+                            Ready to get started?
+                          </span>
+                        </div>
+                        <p className="text-base sm:text-lg text-blue-100 dark:text-blue-200 font-manrope leading-relaxed mb-6 max-w-2xl mx-auto">
+                          Choose a source type above and follow the guided process to add your first content source.
+                        </p>
+                        <div className="flex items-center justify-center gap-2 text-sm text-blue-200 font-manrope">
+                          <span className="w-2 h-2 bg-blue-300 rounded-full animate-pulse"></span>
+                          <span>Your knowledge base will be ready in minutes</span>
+                          <span className="w-2 h-2 bg-blue-300 rounded-full animate-pulse"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* File Upload */}
-            <div>
+            <div data-section="file-upload">
               <h3 className="font-medium mb-3 flex items-center gap-2 text-gray-900 dark:text-white font-manrope text-base sm:text-lg">
                 <Upload className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                 Upload Files
@@ -314,7 +573,7 @@ export default function KBCreationWizard() {
             </div>
 
             {/* URL Input */}
-            <div>
+            <div data-section="url-input">
               <h3 className="font-medium mb-3 flex items-center gap-2 text-gray-900 dark:text-white font-manrope text-base sm:text-lg">
                 <Globe className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                 Add Website URLs
@@ -360,7 +619,7 @@ export default function KBCreationWizard() {
             </div>
 
             {/* Cloud Sources */}
-            <div>
+            <div data-section="cloud-sources">
               <h3 className="font-medium mb-3 flex items-center gap-2 text-gray-900 dark:text-white font-manrope text-base sm:text-lg">
                 <Cloud className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                 Connect Cloud Sources
