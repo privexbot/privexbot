@@ -177,7 +177,22 @@ class AuthApiClient {
     provider: WalletProvider,
     data: WalletVerifyRequest | CosmosWalletVerifyRequest
   ): Promise<void> {
-    await this.client.post(`/auth/${provider}/link`, data);
+    const url = `/auth/${provider}/link`;
+    console.log(`[AuthAPI] Linking wallet to ${url} with data:`, {
+      provider,
+      address: data.address,
+      signed_message_length: data.signed_message?.length || 0,
+      signature_length: data.signature?.length || 0,
+      has_public_key: 'public_key' in data ? 'YES' : 'NO'
+    });
+
+    try {
+      await this.client.post(url, data);
+      console.log(`[AuthAPI] Successfully linked ${provider} wallet`);
+    } catch (error) {
+      console.error(`[AuthAPI] Failed to link ${provider} wallet:`, error);
+      throw error;
+    }
   }
 
   /**

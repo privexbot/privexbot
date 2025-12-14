@@ -415,6 +415,17 @@ export function ProfilePage() {
         linkData.public_key = publicKey;
       }
 
+      // Debug logging
+      console.log("[ProfilePage] Linking wallet with data:", {
+        provider: walletConfig.provider,
+        linkData: {
+          address: linkData.address,
+          signed_message: linkData.signed_message ? "[PRESENT]" : "[MISSING]",
+          signature: linkData.signature ? "[PRESENT]" : "[MISSING]",
+          public_key: linkData.public_key ? "[PRESENT]" : "[NOT_REQUIRED]"
+        }
+      });
+
       await authApi.linkWallet(walletConfig.provider, linkData);
 
       // Refresh user profile to show new auth method
@@ -432,7 +443,29 @@ export function ProfilePage() {
       });
     } catch (err: any) {
       console.error("Wallet linking failed:", err);
-      const errorMessage = err.message || "Failed to link wallet";
+
+      // Extract detailed error information from backend response
+      let errorMessage = "Failed to link wallet";
+      if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      // Log detailed error for debugging
+      console.error("Detailed error info:", {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        config: {
+          url: err.config?.url,
+          method: err.config?.method,
+          data: err.config?.data
+        }
+      });
+
       setError(errorMessage);
 
       toast({
@@ -961,45 +994,101 @@ export function ProfilePage() {
                           </Button>
 
                           {linkingType === "wallet" && (
-                            <div className="mt-3 space-y-2">
-                              {availableOptions.wallets.map((wallet) => (
-                                <Button
-                                  key={wallet.id}
-                                  variant="outline"
-                                  onClick={() => handleWalletLink(wallet.id)}
-                                  disabled={isLinking}
-                                  className="w-full justify-start font-manrope text-left border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
-                                >
-                                  {wallet.iconPath ? (
-                                    <img
-                                      src={wallet.iconPath}
-                                      alt={`${wallet.name} logo`}
-                                      className="w-5 h-5 mr-2 rounded"
-                                    />
-                                  ) : (
-                                    <span className="mr-2">{wallet.icon}</span>
-                                  )}
-                                  <div>
-                                    <div className="font-medium font-manrope">{wallet.name}</div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 capitalize font-manrope">
-                                      {wallet.provider} • {wallet.detected ? "Installed" : "Not installed"}
-                                    </div>
+                            <div className="mt-4 space-y-3">
+                              {/* Wallet Options Grid */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {availableOptions.wallets.map((wallet) => (
+                                  <div
+                                    key={wallet.id}
+                                    className="relative group"
+                                  >
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => handleWalletLink(wallet.id)}
+                                      disabled={isLinking}
+                                      className={`w-full p-4 h-auto justify-start font-manrope text-left border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-200 ${
+                                        selectedWallet === wallet.id && isLinking
+                                          ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/30'
+                                          : wallet.detected
+                                            ? 'border-green-200 dark:border-green-700 hover:border-green-300 dark:hover:border-green-600'
+                                            : 'border-gray-200 dark:border-gray-600'
+                                      }`}
+                                    >
+                                      <div className="flex items-center w-full">
+                                        {/* Wallet Icon */}
+                                        <div className="flex-shrink-0 mr-3">
+                                          {wallet.iconPath ? (
+                                            <img
+                                              src={wallet.iconPath}
+                                              alt={`${wallet.name} logo`}
+                                              className="w-8 h-8 rounded-lg shadow-sm"
+                                            />
+                                          ) : (
+                                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                                              {wallet.name.charAt(0)}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* Wallet Info */}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center justify-between">
+                                            <div className="font-semibold font-manrope text-gray-900 dark:text-gray-100 truncate">
+                                              {wallet.name}
+                                            </div>
+                                            {/* Status Badge */}
+                                            <div className="flex-shrink-0 ml-2">
+                                              {wallet.detected ? (
+                                                <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">
+                                                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></div>
+                                                  Installed
+                                                </div>
+                                              ) : (
+                                                <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                                                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5"></div>
+                                                  Not Found
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                          <div className="text-xs text-gray-500 dark:text-gray-400 capitalize font-manrope mt-1">
+                                            {wallet.provider} Network
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Loading Spinner Overlay */}
+                                      {selectedWallet === wallet.id && isLinking && (
+                                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                                          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium text-sm">
+                                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-blue-600 dark:border-t-blue-400"></div>
+                                            Connecting...
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Button>
                                   </div>
-                                  {selectedWallet === wallet.id && isLinking && (
-                                    <div className="ml-auto">
-                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 dark:border-blue-400"></div>
-                                    </div>
-                                  )}
+                                ))}
+                              </div>
+
+                              {/* Helper Text */}
+                              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+                                <p className="text-sm text-blue-800 dark:text-blue-200 font-manrope">
+                                  <strong>Note:</strong> Make sure your wallet extension is installed and unlocked before connecting.
+                                </p>
+                              </div>
+
+                              {/* Cancel Button */}
+                              <div className="pt-2">
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => setLinkingType(null)}
+                                  disabled={isLinking}
+                                  className="w-full font-manrope text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg"
+                                >
+                                  Cancel
                                 </Button>
-                              ))}
-                              <Button
-                                variant="ghost"
-                                onClick={() => setLinkingType(null)}
-                                disabled={isLinking}
-                                className="w-full font-manrope text-gray-600 dark:text-gray-400 rounded-lg"
-                              >
-                                Cancel
-                              </Button>
+                              </div>
                             </div>
                           )}
                         </div>
