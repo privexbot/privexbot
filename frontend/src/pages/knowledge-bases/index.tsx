@@ -101,9 +101,7 @@ function UnifiedStatsCard({ stats }: { stats: any }) {
                   )}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700">
-                      <Icon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                    </div>
+                    <Icon className="h-5 w-5 text-gray-600 dark:text-gray-400 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope truncate">
                         {item.title}
@@ -161,9 +159,7 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
       <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col">
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between mb-3">
-            <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl">
-              <BookOpen className="h-6 w-6 text-gray-600 dark:text-gray-400" />
-            </div>
+            <BookOpen className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -517,9 +513,7 @@ export default function KnowledgeBasesPage() {
                         <CardContent className="p-4 sm:p-6">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                             <div className="flex items-center gap-4 flex-1 min-w-0">
-                              <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl flex-shrink-0">
-                                <BookOpen className="h-6 w-6 text-gray-600 dark:text-gray-400" />
-                              </div>
+                              <BookOpen className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 font-manrope truncate mb-1">
                                   {kb.name}
@@ -587,9 +581,7 @@ export default function KnowledgeBasesPage() {
           ) : (
             <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
               <CardContent className="text-center py-12 sm:py-16">
-                <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-full inline-flex mb-4">
-                  <BookOpen className="h-8 sm:h-12 w-8 sm:w-12 text-gray-400 dark:text-gray-500" />
-                </div>
+                <BookOpen className="h-8 sm:h-12 w-8 sm:w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
                 <h3 className="text-lg sm:text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100 font-manrope">
                   No Knowledge Bases Yet
                 </h3>
