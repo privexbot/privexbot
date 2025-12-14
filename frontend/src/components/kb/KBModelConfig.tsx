@@ -327,44 +327,66 @@ export function KBModelConfig() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
+      <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+          <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
+            <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
+              <Database className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
             Model & Vector Store Configuration
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
             Configure embedding models and vector database settings for optimal search performance
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 p-4 sm:p-6">
           {/* Presets */}
-          <div className="space-y-3">
-            <Label className="text-base font-medium">Choose a Configuration Preset</Label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-lg font-semibold text-gray-900 dark:text-white font-manrope">Choose a Configuration Preset</Label>
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                Select a pre-configured setup optimized for different use cases
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {presets.map((preset) => (
                 <Card
                   key={preset.id}
-                  className={`cursor-pointer transition-all ${
+                  className={`cursor-pointer transition-all duration-300 border rounded-xl shadow-sm hover:shadow-md transform hover:scale-[1.02] ${
                     activePreset === preset.id
-                      ? 'ring-2 ring-primary bg-primary/5'
-                      : 'hover:bg-gray-50'
+                      ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                      : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                   }`}
                   onClick={() => handlePresetSelect(preset.id)}
                 >
-                  <CardContent className="p-4">
-                    <div className="text-center space-y-2">
-                      <div className="text-2xl">{preset.icon}</div>
-                      <h3 className="font-medium">{preset.name}</h3>
-                      <p className="text-sm text-gray-600">{preset.description}</p>
+                  <CardContent className="p-4 sm:p-6">
+                    <div className="text-center space-y-3">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl flex items-center justify-center mx-auto">
+                        <span className="text-2xl sm:text-3xl">{preset.icon}</span>
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{preset.name}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">{preset.description}</p>
+                      </div>
 
-                      <div className="space-y-1">
-                        {preset.benefits.map((benefit, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {benefit}
-                          </Badge>
-                        ))}
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-1.5 justify-center">
+                          {preset.benefits.map((benefit, index) => (
+                            <Badge key={index} className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 font-manrope font-medium">
+                              {benefit}
+                            </Badge>
+                          ))}
+                        </div>
+                        {preset.tradeoffs && preset.tradeoffs.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 justify-center">
+                            {preset.tradeoffs.map((tradeoff, index) => (
+                              <Badge key={index} variant="outline" className="text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-600 font-manrope font-medium">
+                                {tradeoff}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -376,19 +398,44 @@ export function KBModelConfig() {
           <Separator />
 
           {/* Detailed Configuration */}
-          <Tabs defaultValue="vector_store" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="vector_store">Vector Database</TabsTrigger>
-              <TabsTrigger value="embedding">Embedding Model</TabsTrigger>
-              <TabsTrigger value="performance">Performance</TabsTrigger>
-            </TabsList>
+          <Tabs defaultValue="vector_store" className="space-y-6">
+            <div className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-1">
+              <TabsList className="grid w-full grid-cols-3 bg-transparent gap-1">
+                <TabsTrigger
+                  value="vector_store"
+                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm border-0 rounded-lg font-manrope font-medium transition-all duration-200"
+                >
+                  <Database className="h-4 w-4 mr-2" />
+                  Vector Database
+                </TabsTrigger>
+                <TabsTrigger
+                  value="embedding"
+                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm border-0 rounded-lg font-manrope font-medium transition-all duration-200"
+                >
+                  <Cpu className="h-4 w-4 mr-2" />
+                  Embedding Model
+                </TabsTrigger>
+                <TabsTrigger
+                  value="performance"
+                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm border-0 rounded-lg font-manrope font-medium transition-all duration-200"
+                >
+                  <Zap className="h-4 w-4 mr-2" />
+                  Performance
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             {/* Vector Store Configuration */}
-            <TabsContent value="vector_store" className="space-y-4">
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <Label className="text-base font-medium">Vector Store Provider</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TabsContent value="vector_store" className="space-y-6">
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-lg font-semibold text-gray-900 dark:text-white font-manrope">Vector Store Provider</Label>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                      Select the vector database that will store and search your embeddings
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {vectorStoreProviders.map((provider) => {
                       const isActive = provider.id === currentConfig.vector_store.provider;
                       const isAvailable = provider.status === 'active';
@@ -396,36 +443,49 @@ export function KBModelConfig() {
                       return (
                         <Card
                           key={provider.id}
-                          className={`cursor-pointer transition-all ${
+                          className={`cursor-pointer transition-all duration-300 border rounded-xl shadow-sm hover:shadow-md ${
+                            !isAvailable ? 'opacity-60 cursor-not-allowed' : ''
+                          } ${
                             isActive
-                              ? 'ring-2 ring-primary bg-primary/5'
+                              ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
                               : isAvailable
-                              ? 'hover:bg-gray-50'
-                              : 'opacity-60'
+                              ? 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                              : 'bg-gray-50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700'
                           }`}
                           onClick={() => isAvailable && handleConfigChange('vector_store', 'provider', provider.id)}
                         >
-                          <CardContent className="p-4">
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="text-2xl">{provider.icon}</div>
-                              <div>
-                                <h3 className="font-medium">{provider.name}</h3>
-                                <p className="text-sm text-gray-600">{provider.description}</p>
+                          <CardContent className="p-4 sm:p-6">
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-lg flex items-center justify-center">
+                                <span className="text-xl">{provider.icon}</span>
                               </div>
-                              {isActive && <CheckCircle2 className="h-5 w-5 text-green-600" />}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{provider.name}</h3>
+                                  {isActive && <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />}
+                                </div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">{provider.description}</p>
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
+                            <div className="space-y-2 mb-4">
                               {provider.features.map((feature, index) => (
-                                <div key={index} className="text-xs text-gray-500 flex items-center gap-1">
-                                  <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-                                  {feature}
+                                <div key={index} className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2 font-manrope">
+                                  <div className="w-1.5 h-1.5 bg-blue-500 dark:bg-blue-400 rounded-full flex-shrink-0"></div>
+                                  <span>{feature}</span>
                                 </div>
                               ))}
                             </div>
 
                             {provider.status === 'coming_soon' && (
-                              <Badge variant="outline" className="mt-2">Coming Soon</Badge>
+                              <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 font-manrope font-medium">
+                                Coming Soon
+                              </Badge>
+                            )}
+                            {isActive && (
+                              <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 font-manrope font-medium">
+                                Active
+                              </Badge>
                             )}
                           </CardContent>
                         </Card>
@@ -436,128 +496,219 @@ export function KBModelConfig() {
 
                 {/* Qdrant Specific Configuration */}
                 {currentConfig.vector_store.provider === VectorStoreProvider.QDRANT && (
-                  <div className="space-y-4 p-4 bg-blue-50 rounded-lg">
-                    <h4 className="font-medium text-blue-900">Qdrant Configuration</h4>
+                  <Card className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 border border-blue-200 dark:border-blue-700 rounded-xl shadow-sm">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="flex items-center gap-3 text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope">
+                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                          <Settings className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        Qdrant Configuration
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div className="space-y-3">
+                            <Label className="text-base font-semibold text-blue-900 dark:text-blue-100 font-manrope">Distance Metric</Label>
+                            <RadioGroup
+                              value={(currentConfig.vector_store.settings as QdrantConfig).distance_metric}
+                              onValueChange={(value) => handleConfigChange('vector_store', 'distance_metric', value)}
+                              className="space-y-3"
+                            >
+                              {distanceMetrics.map((metric) => (
+                                <div key={metric.value} className="flex items-center space-x-3 p-3 bg-white dark:bg-gray-800/50 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                                  <RadioGroupItem value={metric.value} id={metric.value} />
+                                  <Label htmlFor={metric.value} className="text-sm font-manrope cursor-pointer flex-1">
+                                    <span className="text-lg mr-2">{metric.icon}</span>
+                                    <span className="font-semibold text-blue-900 dark:text-blue-100">{metric.name}</span>
+                                    <span className="text-blue-700 dark:text-blue-300"> - {metric.description}</span>
+                                  </Label>
+                                </div>
+                              ))}
+                            </RadioGroup>
+                          </div>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Distance Metric</Label>
-                        <RadioGroup
-                          value={(currentConfig.vector_store.settings as QdrantConfig).distance_metric}
-                          onValueChange={(value) => handleConfigChange('vector_store', 'distance_metric', value)}
-                          className="flex flex-col space-y-2"
-                        >
-                          {distanceMetrics.map((metric) => (
-                            <div key={metric.value} className="flex items-center space-x-2">
-                              <RadioGroupItem value={metric.value} id={metric.value} />
-                              <Label htmlFor={metric.value} className="text-sm">
-                                {metric.icon} {metric.name} - {metric.description}
-                              </Label>
+                        <div className="space-y-6">
+                          <div className="bg-white dark:bg-gray-800/50 border border-blue-200 dark:border-blue-700 rounded-xl p-4">
+                            <div className="space-y-4">
+                              <Label className="text-base font-semibold text-blue-900 dark:text-blue-100 font-manrope">Batch Size</Label>
+                              <Slider
+                                value={[(currentConfig.vector_store.settings as QdrantConfig).batch_size]}
+                                onValueChange={([value]) => handleConfigChange('vector_store', 'batch_size', value)}
+                                max={500}
+                                min={10}
+                                step={10}
+                                className="w-full"
+                              />
+                              <div className="flex justify-between text-sm text-blue-700 dark:text-blue-300 font-manrope">
+                                <span>Current: <strong>{(currentConfig.vector_store.settings as QdrantConfig).batch_size}</strong> chunks per batch</span>
+                              </div>
                             </div>
-                          ))}
-                        </RadioGroup>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Batch Size</Label>
-                          <Slider
-                            value={[(currentConfig.vector_store.settings as QdrantConfig).batch_size]}
-                            onValueChange={([value]) => handleConfigChange('vector_store', 'batch_size', value)}
-                            max={500}
-                            min={10}
-                            step={10}
-                            className="w-full"
-                          />
-                          <div className="text-xs text-gray-500">
-                            Current: {(currentConfig.vector_store.settings as QdrantConfig).batch_size} chunks per batch
                           </div>
-                        </div>
 
-                        <div className="space-y-2">
-                          <Label>HNSW M Parameter</Label>
-                          <Slider
-                            value={[(currentConfig.vector_store.settings as QdrantConfig).hnsw_config.m]}
-                            onValueChange={([value]) => handleConfigChange('vector_store', 'hnsw_m', value)}
-                            max={64}
-                            min={4}
-                            step={4}
-                            className="w-full"
-                          />
-                          <div className="text-xs text-gray-500">
-                            Current: {(currentConfig.vector_store.settings as QdrantConfig).hnsw_config.m} connections per node
+                          <div className="bg-white dark:bg-gray-800/50 border border-blue-200 dark:border-blue-700 rounded-xl p-4">
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-base font-semibold text-blue-900 dark:text-blue-100 font-manrope">HNSW M Parameter</Label>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-sm">Higher values = better search quality, more memory usage</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                              <Slider
+                                value={[(currentConfig.vector_store.settings as QdrantConfig).hnsw_config.m]}
+                                onValueChange={([value]) => handleConfigChange('vector_store', 'hnsw_m', value)}
+                                max={64}
+                                min={4}
+                                step={4}
+                                className="w-full"
+                              />
+                              <div className="flex justify-between text-sm text-blue-700 dark:text-blue-300 font-manrope">
+                                <span>Current: <strong>{(currentConfig.vector_store.settings as QdrantConfig).hnsw_config.m}</strong> connections per node</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 )}
               </div>
             </TabsContent>
 
             {/* Embedding Model Configuration */}
-            <TabsContent value="embedding" className="space-y-4">
-              <div className="space-y-4">
-                <Alert>
-                  <Cpu className="h-4 w-4" />
-                  <AlertDescription>
-                    <div className="space-y-2">
-                      <p className="font-medium">Current Embedding Setup</p>
-                      <div className="text-sm space-y-1">
-                        <div><strong>Provider:</strong> Local (all-MiniLM-L6-v2)</div>
-                        <div><strong>Dimensions:</strong> 384</div>
-                        <div><strong>Performance:</strong> ~500 embeddings/second</div>
-                        <div><strong>Privacy:</strong> Fully local processing</div>
+            <TabsContent value="embedding" className="space-y-6">
+              <div className="space-y-6">
+                <Alert className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-xl shadow-sm">
+                  <Cpu className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <AlertDescription className="text-green-900 dark:text-green-100">
+                    <div className="space-y-3">
+                      <p className="font-semibold text-lg text-green-900 dark:text-green-100 font-manrope">Current Embedding Setup</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-3">
+                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                            <div className="text-sm font-manrope">
+                              <span className="text-green-700 dark:text-green-300 font-medium">Provider:</span>
+                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">Local (all-MiniLM-L6-v2)</div>
+                            </div>
+                          </div>
+                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                            <div className="text-sm font-manrope">
+                              <span className="text-green-700 dark:text-green-300 font-medium">Dimensions:</span>
+                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">384</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                            <div className="text-sm font-manrope">
+                              <span className="text-green-700 dark:text-green-300 font-medium">Performance:</span>
+                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">~500 embeddings/second</div>
+                            </div>
+                          </div>
+                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                            <div className="text-sm font-manrope">
+                              <span className="text-green-700 dark:text-green-300 font-medium">Privacy:</span>
+                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">Fully local processing</div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </AlertDescription>
                 </Alert>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Embedding Provider</Label>
-                    <Select disabled value="local">
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select provider" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="local">Local (Privacy-focused)</SelectItem>
-                        <SelectItem value="openai" disabled>OpenAI (Coming Soon)</SelectItem>
-                        <SelectItem value="huggingface" disabled>Hugging Face (Coming Soon)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-bold text-gray-900 dark:text-white font-manrope">
+                        Embedding Provider
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <Select disabled value="local">
+                        <SelectTrigger className="bg-gray-50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600 rounded-lg font-manrope">
+                          <SelectValue placeholder="Select provider" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                          <SelectItem value="local" className="font-manrope">
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-600 dark:text-green-400">🔒</span>
+                              Local (Privacy-focused)
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="openai" disabled className="font-manrope opacity-50">
+                            <div className="flex items-center gap-2">
+                              <span>🔮</span>
+                              OpenAI (Coming Soon)
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="huggingface" disabled className="font-manrope opacity-50">
+                            <div className="flex items-center gap-2">
+                              <span>🤗</span>
+                              Hugging Face (Coming Soon)
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                        Local processing ensures your data never leaves your infrastructure
+                      </p>
+                    </CardContent>
+                  </Card>
 
-                  <div className="space-y-2">
-                    <Label>Batch Size</Label>
-                    <Slider
-                      value={[currentConfig.embedding.batch_size]}
-                      onValueChange={([value]) => handleConfigChange('embedding', 'batch_size', value)}
-                      max={128}
-                      min={8}
-                      step={8}
-                      className="w-full"
-                    />
-                    <div className="text-xs text-gray-500">
-                      Current: {currentConfig.embedding.batch_size} texts per batch
-                    </div>
-                  </div>
+                  <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-bold text-gray-900 dark:text-white font-manrope">
+                        Batch Configuration
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-base font-semibold text-gray-900 dark:text-white font-manrope">Batch Size</Label>
+                        <Slider
+                          value={[currentConfig.embedding.batch_size]}
+                          onValueChange={([value]) => handleConfigChange('embedding', 'batch_size', value)}
+                          max={128}
+                          min={8}
+                          step={8}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                          <span>Current: <strong>{currentConfig.embedding.batch_size}</strong> texts per batch</span>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
+                          <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                            Higher batch sizes process more texts at once but use more memory
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-
               </div>
             </TabsContent>
 
             {/* Performance Configuration */}
-            <TabsContent value="performance" className="space-y-4">
+            <TabsContent value="performance" className="space-y-6">
               <div className="space-y-6">
                 {/* Processing Quality Configuration */}
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-base font-semibold flex items-center gap-2">
-                      <Zap className="h-4 w-4" />
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <Label className="text-lg font-semibold flex items-center gap-3 text-gray-900 dark:text-white font-manrope">
+                      <div className="w-8 h-8 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                        <Zap className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                      </div>
                       Processing Quality
                     </Label>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-base text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
                       Control the trade-off between processing speed and result quality
                     </p>
                   </div>
@@ -565,93 +716,208 @@ export function KBModelConfig() {
                   <RadioGroup
                     value={modelConfig?.indexing_method || IndexingMethod.BALANCED}
                     onValueChange={(value) => handleIndexingMethodChange(value as IndexingMethod)}
-                    className="grid grid-cols-1 gap-4"
+                    className="space-y-4"
                   >
-                    <div className="flex items-center space-x-3 rounded-lg border p-4 hover:bg-gray-50">
-                      <RadioGroupItem value={IndexingMethod.FAST} />
-                      <div className="flex-1">
-                        <Label htmlFor={IndexingMethod.FAST} className="font-medium cursor-pointer">
-                          Fast Processing
-                        </Label>
-                        <p className="text-sm text-gray-600">
-                          Quick processing, lower quality. Good for testing and development.
-                        </p>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Large batches (64), fast parsing, high concurrency
+                    <Card className={`cursor-pointer transition-all duration-300 border rounded-xl shadow-sm hover:shadow-md ${
+                      (modelConfig?.indexing_method || IndexingMethod.BALANCED) === IndexingMethod.FAST
+                        ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                        : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}>
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex items-center space-x-4">
+                          <RadioGroupItem value={IndexingMethod.FAST} />
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 rounded-lg flex items-center justify-center">
+                                <span className="text-lg">🚀</span>
+                              </div>
+                              <Label htmlFor={IndexingMethod.FAST} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
+                                Fast Processing
+                              </Label>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                              Quick processing, lower quality. Good for testing and development.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 font-manrope font-medium">
+                                Large batches (64)
+                              </Badge>
+                              <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope font-medium">
+                                Fast parsing
+                              </Badge>
+                              <Badge className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 font-manrope font-medium">
+                                High concurrency
+                              </Badge>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
 
-                    <div className="flex items-center space-x-3 rounded-lg border p-4 hover:bg-gray-50 bg-blue-50 border-blue-200">
-                      <RadioGroupItem value={IndexingMethod.BALANCED} />
-                      <div className="flex-1">
-                        <Label htmlFor={IndexingMethod.BALANCED} className="font-medium cursor-pointer">
-                          Balanced Processing <Badge variant="secondary">Recommended</Badge>
-                        </Label>
-                        <p className="text-sm text-gray-600">
-                          Good balance between speed and quality. Ideal for most use cases.
-                        </p>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Medium batches (32), auto parsing, moderate concurrency
+                    <Card className={`cursor-pointer transition-all duration-300 border rounded-xl shadow-sm hover:shadow-md ${
+                      (modelConfig?.indexing_method || IndexingMethod.BALANCED) === IndexingMethod.BALANCED
+                        ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                        : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}>
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex items-center space-x-4">
+                          <RadioGroupItem value={IndexingMethod.BALANCED} />
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-lg flex items-center justify-center">
+                                <span className="text-lg">⚖️</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label htmlFor={IndexingMethod.BALANCED} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
+                                  Balanced Processing
+                                </Label>
+                                <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope font-medium">
+                                  Recommended
+                                </Badge>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                              Good balance between speed and quality. Ideal for most use cases.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-700 font-manrope font-medium">
+                                Medium batches (32)
+                              </Badge>
+                              <Badge className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 font-manrope font-medium">
+                                Auto parsing
+                              </Badge>
+                              <Badge className="bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700 font-manrope font-medium">
+                                Moderate concurrency
+                              </Badge>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
 
-                    <div className="flex items-center space-x-3 rounded-lg border p-4 hover:bg-gray-50">
-                      <RadioGroupItem value={IndexingMethod.HIGH_QUALITY} />
-                      <div className="flex-1">
-                        <Label htmlFor={IndexingMethod.HIGH_QUALITY} className="font-medium cursor-pointer">
-                          High Quality Processing
-                        </Label>
-                        <p className="text-sm text-gray-600">
-                          Slower processing, highest quality. Best for production and accuracy.
-                        </p>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Small batches (16), hi-res parsing, careful processing
+                    <Card className={`cursor-pointer transition-all duration-300 border rounded-xl shadow-sm hover:shadow-md ${
+                      (modelConfig?.indexing_method || IndexingMethod.BALANCED) === IndexingMethod.HIGH_QUALITY
+                        ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                        : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}>
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex items-center space-x-4">
+                          <RadioGroupItem value={IndexingMethod.HIGH_QUALITY} />
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center justify-center">
+                                <span className="text-lg">🏆</span>
+                              </div>
+                              <Label htmlFor={IndexingMethod.HIGH_QUALITY} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
+                                High Quality Processing
+                              </Label>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                              Slower processing, highest quality. Best for production and accuracy.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700 font-manrope font-medium">
+                                Small batches (16)
+                              </Badge>
+                              <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 font-manrope font-medium">
+                                Hi-res parsing
+                              </Badge>
+                              <Badge className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 font-manrope font-medium">
+                                Careful processing
+                              </Badge>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
                   </RadioGroup>
                 </div>
-
               </div>
             </TabsContent>
           </Tabs>
 
           {/* Storage Estimate */}
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              <div className="space-y-2">
-                <p className="font-medium">Storage Estimation</p>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Estimated Chunks:</span>
-                    <span className="ml-2 font-medium">{storageEstimate.chunks.toLocaleString()}</span>
+          <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-lg">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-3 text-lg font-bold text-indigo-900 dark:text-indigo-100 font-manrope">
+                <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
+                  <Info className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                Storage Estimation
+              </CardTitle>
+              <p className="text-sm text-indigo-700 dark:text-indigo-300 font-manrope">
+                Estimated storage requirements based on your current configuration
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-gray-800/50 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 font-manrope mb-1">
+                    {storageEstimate.chunks.toLocaleString()}
                   </div>
-                  <div>
-                    <span className="text-gray-500">Vector Storage:</span>
-                    <span className="ml-2 font-medium">{storageEstimate.vectorStorage} MB</span>
+                  <p className="text-sm text-indigo-700 dark:text-indigo-300 font-manrope font-medium">
+                    Estimated Chunks
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-gray-800/50 border border-blue-100 dark:border-blue-800 rounded-xl p-4 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope mb-1">
+                    {storageEstimate.vectorStorage}
                   </div>
-                  <div>
-                    <span className="text-gray-500">Metadata Storage:</span>
-                    <span className="ml-2 font-medium">{storageEstimate.metadataStorage} KB</span>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 font-manrope font-medium">
+                    Vector Storage (MB)
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-gray-800/50 border border-green-100 dark:border-green-800 rounded-xl p-4 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope mb-1">
+                    {storageEstimate.metadataStorage}
                   </div>
-                  <div>
-                    <span className="text-gray-500">Total Storage:</span>
-                    <span className="ml-2 font-medium">{storageEstimate.totalStorage} MB</span>
+                  <p className="text-sm text-green-700 dark:text-green-300 font-manrope font-medium">
+                    Metadata Storage (KB)
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-gray-800/50 border border-purple-100 dark:border-purple-800 rounded-xl p-4 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 font-manrope mb-1">
+                    {storageEstimate.totalStorage}
                   </div>
+                  <p className="text-sm text-purple-700 dark:text-purple-300 font-manrope font-medium">
+                    Total Storage (MB)
+                  </p>
                 </div>
               </div>
-            </AlertDescription>
-          </Alert>
+
+              <div className="bg-white dark:bg-gray-800/50 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4">
+                <div className="text-sm text-indigo-700 dark:text-indigo-300 font-manrope leading-relaxed">
+                  <p className="font-semibold mb-2">💡 Storage Notes:</p>
+                  <ul className="space-y-1 list-none">
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-500 dark:text-indigo-400">•</span>
+                      Estimates based on {currentConfig.embedding.dimensions}-dimensional embeddings
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-500 dark:text-indigo-400">•</span>
+                      Vector storage scales with chunk count and embedding dimensions
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-500 dark:text-indigo-400">•</span>
+                      Metadata includes source information, timestamps, and content references
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Reset Button */}
-          <div className="flex justify-end">
+          <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+            <div className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+              Need to start over? Reset all settings to production defaults
+            </div>
             <Button
               variant="outline"
               onClick={() => handlePresetSelect('production')}
+              className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200"
             >
+              <Settings className="h-4 w-4 mr-2" />
               Reset to Production Defaults
             </Button>
           </div>
