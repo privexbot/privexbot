@@ -452,7 +452,7 @@ ${pages.map((page, index) => {
 
     // Data flow confirmed working - preview pages loaded successfully
     const hasPatterns = source.config?.include_patterns?.length || source.config?.exclude_patterns?.length;
-    const hasStats = source.metadata?.wordCount;
+    const hasStats = source.metadata?.wordCount as number | undefined;
 
     return (
       <div className="space-y-4">
@@ -486,26 +486,26 @@ ${pages.map((page, index) => {
                 <div className="space-y-1">
                   <span className="font-medium text-gray-900 dark:text-white">Include Patterns:</span>
                   <div className="flex flex-wrap gap-1">
-                    {source.config.include_patterns.map((pattern, i) => (
+                    {source.config.include_patterns.map((pattern: string, i: number) => (
                       <span key={i} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md text-xs border border-green-200 dark:border-green-700">
                         {pattern}
                       </span>
                     ))}
                   </div>
                 </div>
-              ) : null}
+              ) : <></>}
               {source.config?.exclude_patterns?.length ? (
                 <div className="space-y-1">
                   <span className="font-medium text-gray-900 dark:text-white">Exclude Patterns:</span>
                   <div className="flex flex-wrap gap-1">
-                    {source.config.exclude_patterns.map((pattern, i) => (
+                    {source.config.exclude_patterns.map((pattern: string, i: number) => (
                       <span key={i} className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md text-xs border border-red-200 dark:border-red-700">
                         {pattern}
                       </span>
                     ))}
                   </div>
                 </div>
-              ) : null}
+              ) : <></>}
             </div>
           )}
         </div>

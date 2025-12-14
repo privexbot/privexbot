@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   FileText,
   ExternalLink,
@@ -48,32 +47,34 @@ export const KBContentPreviewModal: React.FC<KBContentPreviewModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] max-w-6xl h-[95vh] max-h-[95vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
+      <DialogContent className="w-[95vw] max-w-6xl h-[95vh] max-h-[95vh] flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl">
+        <DialogHeader className="flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl p-6">
+          <DialogTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
+            <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+              <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
             Content Preview
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
             Review the extracted content as it will be added to your knowledge base
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 flex flex-col space-y-4 min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col space-y-6 min-h-0 overflow-hidden p-6">
           {/* Page Info */}
-          <div className="flex-shrink-0 space-y-2">
-            <div className="flex items-start justify-between gap-4">
-              <h3 className="font-medium text-lg leading-tight min-w-0 flex-1">
+          <div className="flex-shrink-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <h3 className="font-bold text-xl text-gray-900 dark:text-white font-manrope leading-tight min-w-0 flex-1">
                 {page.title || `Page ${pageIndex + 1}`}
               </h3>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
                 {page.is_edited && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope">
                     <Edit className="h-3 w-3 mr-1" />
                     Edited
                   </Badge>
                 )}
-                <Badge variant="secondary" className="text-xs">
+                <Badge className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 font-manrope">
                   Page {pageIndex + 1}
                 </Badge>
               </div>
@@ -81,13 +82,13 @@ export const KBContentPreviewModal: React.FC<KBContentPreviewModalProps> = ({
 
             {/* URL if available */}
             {page.url && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
-                <ExternalLink className="h-4 w-4 flex-shrink-0" />
+              <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400 font-manrope min-w-0 mb-4">
+                <ExternalLink className="h-4 w-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
                 <a
                   href={page.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hover:underline truncate min-w-0"
+                  className="hover:underline truncate min-w-0 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
                 >
                   {page.url}
                 </a>
@@ -95,56 +96,66 @@ export const KBContentPreviewModal: React.FC<KBContentPreviewModalProps> = ({
             )}
 
             {/* Stats */}
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span>{wordCount.toLocaleString()} words</span>
-              <span>•</span>
-              <span>{charCount.toLocaleString()} characters</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-gray-900 dark:text-white font-manrope">{wordCount.toLocaleString()}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope">Words</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-gray-900 dark:text-white font-manrope">{charCount.toLocaleString()}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope">Characters</div>
+              </div>
               {page.sourceName && (
-                <>
-                  <span>•</span>
-                  <span className="truncate">Source: {page.sourceName}</span>
-                </>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white font-manrope truncate" title={page.sourceName}>{page.sourceName}</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope">Source</div>
+                </div>
               )}
             </div>
-
-            <Separator />
           </div>
 
           {/* Content Display */}
-          <div className="flex-1 flex flex-col space-y-2 min-h-0">
-            <div className="flex items-center justify-between flex-shrink-0">
-              <h4 className="font-medium">Content</h4>
-              {page.is_edited && (
-                <Badge variant="outline" className="text-xs">
-                  Showing edited version
-                </Badge>
-              )}
-            </div>
+          <div className="flex-1 flex flex-col space-y-4 min-h-0">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 className="font-semibold text-gray-900 dark:text-white font-manrope flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  Content
+                </h4>
+                {page.is_edited && (
+                  <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 font-manrope">
+                    Showing edited version
+                  </Badge>
+                )}
+              </div>
 
-            <div className="flex-1 border rounded-lg overflow-hidden">
-              <ScrollArea className="h-full w-full">
-                <div className="p-4">
-                  <div className="prose prose-sm max-w-none">
-                    <div
-                      className="text-sm leading-relaxed whitespace-pre-wrap break-words font-mono"
-                      style={{
-                        wordBreak: 'break-word',
-                        overflowWrap: 'break-word',
-                        hyphens: 'auto'
-                      }}
-                    >
-                      {displayContent}
+              <div className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full w-full">
+                  <div className="p-4 sm:p-6">
+                    <div className="prose prose-sm max-w-none">
+                      <div
+                        className="text-sm leading-relaxed whitespace-pre-wrap break-words font-mono text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-600"
+                        style={{
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          hyphens: 'auto'
+                        }}
+                      >
+                        {displayContent}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </ScrollArea>
+                </ScrollArea>
+              </div>
             </div>
           </div>
 
           {/* Edit History (if applicable) */}
           {page.is_edited && page.last_edited_at && (
-            <div className="text-xs text-muted-foreground flex-shrink-0">
-              Last edited: {new Date(page.last_edited_at).toLocaleString()}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 flex-shrink-0">
+              <div className="text-xs text-blue-700 dark:text-blue-300 font-manrope font-medium">
+                Last edited: {new Date(page.last_edited_at).toLocaleString()}
+              </div>
             </div>
           )}
         </div>

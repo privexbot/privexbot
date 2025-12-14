@@ -328,38 +328,42 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5" />
+      <Card className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+          <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
+            <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+            </div>
             Content Approval
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
             Review extracted content and approve pages for knowledge base creation
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 p-4 sm:p-6">
           {/* Statistics */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold">{stats.totalPages}</div>
-              <div className="text-sm text-muted-foreground">Total Pages</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{stats.selectedPages}</div>
-              <div className="text-sm text-muted-foreground">Selected</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-yellow-600">{stats.editedPages}</div>
-              <div className="text-sm text-muted-foreground">Edited</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold">{stats.totalWords}</div>
-              <div className="text-sm text-muted-foreground">Total Words</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{stats.approvedSources}</div>
-              <div className="text-sm text-muted-foreground">Approved</div>
+          <div className="bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="bg-white dark:bg-gray-800/50 rounded-lg p-3 sm:p-4 border border-gray-200 dark:border-gray-600 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white font-manrope">{stats.totalPages.toLocaleString()}</div>
+                <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-manrope font-medium">Total Pages</div>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-700 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400 font-manrope">{stats.selectedPages.toLocaleString()}</div>
+                <div className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 font-manrope font-medium">Selected</div>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-900/30 rounded-lg p-3 sm:p-4 border border-amber-200 dark:border-amber-700 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-amber-600 dark:text-amber-400 font-manrope">{stats.editedPages.toLocaleString()}</div>
+                <div className="text-xs sm:text-sm text-amber-700 dark:text-amber-300 font-manrope font-medium">Edited</div>
+              </div>
+              <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3 sm:p-4 border border-purple-200 dark:border-purple-700 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-purple-600 dark:text-purple-400 font-manrope">{stats.totalWords.toLocaleString()}</div>
+                <div className="text-xs sm:text-sm text-purple-700 dark:text-purple-300 font-manrope font-medium">Total Words</div>
+              </div>
+              <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-3 sm:p-4 border border-green-200 dark:border-green-700 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400 font-manrope">{stats.approvedSources.toLocaleString()}</div>
+                <div className="text-xs sm:text-sm text-green-700 dark:text-green-300 font-manrope font-medium">Approved</div>
+              </div>
             </div>
           </div>
 
@@ -368,13 +372,17 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
           {/* Extracted Pages Section */}
           {allPages.length > 0 && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Extracted Pages</h4>
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white font-manrope flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  Extracted Pages
+                </h4>
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={toggleAllPages}
+                    className="border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
                   >
                     {(() => {
                       const selectableCount = allPages.filter(p => !p.is_approved || p.needs_reapproval).length;
@@ -382,13 +390,15 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
 
                       return allSelectableSelected ? (
                         <>
-                          <CheckSquare className="h-4 w-4 mr-1" />
-                          Deselect All
+                          <CheckSquare className="h-4 w-4 mr-1.5" />
+                          <span className="hidden sm:inline">Deselect All</span>
+                          <span className="sm:hidden">Deselect</span>
                         </>
                       ) : (
                         <>
-                          <Square className="h-4 w-4 mr-1" />
-                          Select All ({selectableCount})
+                          <Square className="h-4 w-4 mr-1.5" />
+                          <span className="hidden sm:inline">Select All ({selectableCount})</span>
+                          <span className="sm:hidden">All ({selectableCount})</span>
                         </>
                       );
                     })()}
@@ -397,87 +407,179 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
                     size="sm"
                     onClick={handleApproveSelected}
                     disabled={selectedPages.size === 0 || isApproving}
+                    className="bg-green-600 hover:bg-green-700 text-white font-manrope disabled:bg-gray-400 dark:disabled:bg-gray-600"
                   >
                     {isApproving ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                     ) : (
-                      <CheckCircle2 className="h-4 w-4 mr-1" />
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" />
                     )}
-                    Approve Selected ({selectedPages.size})
+                    <span className="hidden sm:inline">Approve Selected ({selectedPages.size})</span>
+                    <span className="sm:hidden">Approve ({selectedPages.size})</span>
                   </Button>
                 </div>
               </div>
 
-              <ScrollArea className="h-[400px] border rounded-lg p-4">
-                <div className="space-y-2">
+              <ScrollArea className="h-[400px] border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-900/50 p-3 sm:p-4">
+                <div className="space-y-3">
                   {allPages.map((page, index) => (
                     <div
                       key={index}
                       className={cn(
-                        "flex items-center gap-3 p-3 rounded-lg border transition-colors",
+                        "rounded-xl border transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden",
                         page.is_approved
-                          ? "bg-green-50 border-green-300 opacity-75"
+                          ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700 opacity-90"
                           : page.needs_reapproval
-                          ? "bg-amber-50 border-amber-300"
+                          ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"
                           : selectedPages.has(index)
-                          ? "bg-blue-50 border-blue-300"
-                          : "hover:bg-gray-50"
+                          ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700"
+                          : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                       )}
                     >
-                      <Checkbox
-                        checked={selectedPages.has(index)}
-                        disabled={page.is_approved && !page.needs_reapproval}
-                        onCheckedChange={() => togglePageSelection(index)}
-                      />
-
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-medium">
-                            {page.title || `Page ${index + 1}`}
-                          </span>
-                          {page.is_approved && (
-                            <Badge variant="default" className="text-xs bg-green-600">
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
-                              Approved
-                            </Badge>
-                          )}
-                          {page.needs_reapproval && (
-                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-700">
-                              <Edit className="h-3 w-3 mr-1" />
-                              Needs Re-approval
-                            </Badge>
-                          )}
-                          {page.is_edited && !page.needs_reapproval && (
-                            <Badge variant="outline" className="text-xs">
-                              <Edit className="h-3 w-3 mr-1" />
-                              Edited
-                            </Badge>
-                          )}
-                        </div>
-                        {page.url && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {page.url}
+                      {/* Mobile: Stacked Layout */}
+                      <div className="block sm:hidden">
+                        <div className="p-4 space-y-3">
+                          {/* Header with checkbox and title */}
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              checked={selectedPages.has(index)}
+                              disabled={page.is_approved && !page.needs_reapproval}
+                              onCheckedChange={() => togglePageSelection(index)}
+                              className="mt-1 flex-shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start gap-2">
+                                <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
+                                <span className="font-semibold text-gray-900 dark:text-white font-manrope text-sm leading-tight break-words">
+                                  {page.title || `Page ${index + 1}`}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        )}
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {(() => {
-                            // Use same calculation as modal for consistency
-                            const content = page.edited_content || page.content || '';
-                            const liveWordCount = content.split(/\s+/).filter((word: string) => word.length > 0).length;
-                            const liveCharCount = content.length;
-                            return `${liveWordCount} words • ${liveCharCount.toLocaleString()} characters`;
-                          })()}
+
+                          {/* Badges */}
+                          <div className="flex flex-wrap gap-1.5 pl-9">
+                            {page.is_approved && (
+                              <Badge className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 font-manrope">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Approved
+                              </Badge>
+                            )}
+                            {page.needs_reapproval && (
+                              <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 font-manrope">
+                                <Edit className="h-3 w-3 mr-1" />
+                                Needs Re-approval
+                              </Badge>
+                            )}
+                            {page.is_edited && !page.needs_reapproval && (
+                              <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope">
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edited
+                              </Badge>
+                            )}
+                          </div>
+
+                          {/* URL (if available) */}
+                          {page.url && (
+                            <div className="pl-9">
+                              <div className="text-xs text-gray-500 dark:text-gray-400 font-manrope bg-gray-50 dark:bg-gray-700/30 px-2 py-1 rounded break-all text-wrap max-w-full">
+                                {page.url}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Stats */}
+                          <div className="pl-9">
+                            <div className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                              {(() => {
+                                const content = page.edited_content || page.content || '';
+                                const liveWordCount = content.split(/\s+/).filter((word: string) => word.length > 0).length;
+                                const liveCharCount = content.length;
+                                return `${liveWordCount.toLocaleString()} words • ${liveCharCount.toLocaleString()} characters`;
+                              })()}
+                            </div>
+                          </div>
+
+                          {/* Preview button */}
+                          <div className="pt-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePreviewPage(index)}
+                              className="border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope w-full"
+                            >
+                              <Eye className="h-4 w-4" />
+                              <span className="ml-1.5">Preview Content</span>
+                            </Button>
+                          </div>
                         </div>
                       </div>
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePreviewPage(index)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      {/* Desktop: Horizontal Layout */}
+                      <div className="hidden sm:flex sm:items-center gap-4 p-4">
+                        <Checkbox
+                          checked={selectedPages.has(index)}
+                          disabled={page.is_approved && !page.needs_reapproval}
+                          onCheckedChange={() => togglePageSelection(index)}
+                          className="flex-shrink-0"
+                        />
+
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-start gap-2">
+                            <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <span className="font-semibold text-gray-900 dark:text-white font-manrope block truncate">
+                                {page.title || `Page ${index + 1}`}
+                              </span>
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {page.is_approved && (
+                                  <Badge className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 font-manrope">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Approved
+                                  </Badge>
+                                )}
+                                {page.needs_reapproval && (
+                                  <Badge className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 font-manrope">
+                                    <Edit className="h-3 w-3 mr-1" />
+                                    Needs Re-approval
+                                  </Badge>
+                                )}
+                                {page.is_edited && !page.needs_reapproval && (
+                                  <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope">
+                                    <Edit className="h-3 w-3 mr-1" />
+                                    Edited
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {page.url && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 font-manrope truncate bg-gray-50 dark:bg-gray-700/30 px-2 py-1 rounded max-w-md" title={page.url}>
+                              {page.url}
+                            </div>
+                          )}
+
+                          <div className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                            {(() => {
+                              const content = page.edited_content || page.content || '';
+                              const liveWordCount = content.split(/\s+/).filter((word: string) => word.length > 0).length;
+                              const liveCharCount = content.length;
+                              return `${liveWordCount.toLocaleString()} words • ${liveCharCount.toLocaleString()} characters`;
+                            })()}
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePreviewPage(index)}
+                          className="border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope flex-shrink-0"
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span className="ml-1.5">Preview</span>
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -488,10 +590,12 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
 
           {/* No Content Message */}
           {allPages.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No content available for approval</p>
-              <p className="text-sm mt-2">
+            <div className="text-center py-12 px-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
+              <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="h-10 w-10 text-gray-400 dark:text-gray-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-manrope mb-2">No content available for approval</h3>
+              <p className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed max-w-md mx-auto">
                 Go back to Content Review to extract content from your sources
               </p>
             </div>

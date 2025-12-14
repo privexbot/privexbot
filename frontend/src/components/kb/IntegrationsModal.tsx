@@ -4,7 +4,7 @@
  * Modal for selecting cloud service integrations
  */
 
-import { FileText } from "lucide-react";
+import { ExternalLink, Zap } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface IntegrationsModalProps {
   open: boolean;
@@ -77,10 +78,13 @@ export function IntegrationsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl bg-white dark:bg-gray-900">
         <DialogHeader>
-          <DialogTitle>Cloud Integrations</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white font-manrope">
+            <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            Cloud Integrations
+          </DialogTitle>
+          <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
             Connect your cloud services to import content directly into your
             knowledge base
           </DialogDescription>
@@ -90,50 +94,75 @@ export function IntegrationsModal({
           {integrations.map((integration) => (
             <Card
               key={integration.id}
-              className={`${
+              className={`transition-all duration-200 shadow-sm hover:shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl ${
                 integration.available
-                  ? "cursor-pointer hover:bg-gray-50"
-                  : "opacity-60"
+                  ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  : "opacity-90"
               }`}
             >
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-2xl">{integration.icon}</span>
-                      <h3 className="font-semibold text-lg">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-start gap-4 sm:gap-6">
+                  {/* Enhanced icon container with gradient background */}
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-2xl sm:text-3xl">
+                      {integration.icon}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    {/* Title and status badge */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
+                      <h3 className="font-bold text-lg sm:text-xl text-gray-900 dark:text-white font-manrope">
                         {integration.title}
                       </h3>
                       <Badge
-                        variant={
-                          integration.available ? "default" : "secondary"
-                        }
+                        className={`text-xs font-manrope font-medium w-fit ${
+                          integration.available
+                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700"
+                            : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700"
+                        }`}
                       >
                         {integration.available ? "Available" : "Coming Soon"}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-3">
+
+                    {/* Description with proper contrast */}
+                    <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-4 leading-relaxed">
                       {integration.description}
                     </p>
+
+                    {/* Feature badges with enhanced styling */}
                     <div className="flex flex-wrap gap-2">
                       {integration.features.map((feature, index) => (
                         <Badge
                           key={index}
                           variant="outline"
-                          className="text-xs"
+                          className="text-xs bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-manrope font-medium hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
                         >
                           {feature}
                         </Badge>
                       ))}
                     </div>
                   </div>
-                  {!integration.available && (
-                    <div className="text-sm text-muted-foreground">
-                      <span className="text-orange-600 font-medium">
-                        Coming Soon
-                      </span>
-                    </div>
-                  )}
+
+                  {/* Action area with enhanced styling */}
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                    {integration.available ? (
+                      <Button
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-manrope font-medium shadow-sm transition-all duration-200 hover:shadow-md"
+                        size="sm"
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Connect
+                      </Button>
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-gray-700/30 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope font-medium text-center">
+                          Coming Soon
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
