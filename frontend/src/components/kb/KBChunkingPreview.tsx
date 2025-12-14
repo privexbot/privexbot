@@ -319,45 +319,52 @@ export function KBChunkingPreview() {
   return (
     <div className="space-y-6">
       {/* Source Selector */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5" />
+      <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+          <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
+            <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+              <Eye className="h-5 w-5 text-green-600 dark:text-green-400" />
+            </div>
             Live Chunking Preview
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
             See how your approved content will be chunked with current settings
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4 sm:p-6">
           {approvedSources.length === 0 ? (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
+            <Alert className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <AlertDescription className="text-amber-700 dark:text-amber-300 font-manrope">
                 No approved content available. Please approve content in the previous step to preview chunking.
               </AlertDescription>
             </Alert>
           ) : (
             // Show combined preview info for all strategies
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 font-manrope">
                     {isNoChunking
                       ? 'Combined Content from All Sources'
                       : 'All Sources Preview'
                     }
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope mt-1">
                     {isNoChunking
                       ? `${approvedSources.length} sources combined into a single document`
                       : `Showing chunks from all ${approvedSources.length} sources (matches final KB structure)`
                     }
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={isNoChunking ? "secondary" : "outline"}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <Badge
+                    className={`w-fit font-manrope ${isNoChunking
+                      ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700"
+                      : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700"
+                    }`}
+                  >
                     {isNoChunking ? 'No Chunking - Full Document' : 'Multi-Source Chunking'}
                   </Badge>
                   <Button
@@ -365,6 +372,7 @@ export function KBChunkingPreview() {
                     variant="outline"
                     onClick={() => loadCombinedPreview()}
                     disabled={loading}
+                    className="bg-white dark:bg-gray-800 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-manrope"
                   >
                     <Sparkles className="h-4 w-4 mr-2" />
                     Refresh Preview
@@ -378,79 +386,81 @@ export function KBChunkingPreview() {
 
       {/* Combined Preview Content */}
       {currentPreview && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Chunk Preview - {currentPreview.source_name}
+        <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+            <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
+              <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                <BarChart3 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <span className="truncate">Chunk Preview - {currentPreview.source_name}</span>
             </CardTitle>
 
             {/* Special Message for No Chunking */}
             {isNoChunking && (
-              <Alert>
-                <Sparkles className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Full Content Mode:</strong> Content will be indexed as a single document without chunking.
+              <Alert className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-xl">
+                <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                <AlertDescription className="text-purple-700 dark:text-purple-300 font-manrope">
+                  <strong className="font-semibold">Full Content Mode:</strong> Content will be indexed as a single document without chunking.
                   Best for small content (&lt;2000 chars) to maintain complete context.
                 </AlertDescription>
               </Alert>
             )}
           </CardHeader>
 
-          <CardContent>
+          <CardContent className="p-4 sm:p-6">
             {/* Preview Content */}
             <div className="space-y-4">
               {/* Metrics Overview */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold">
-                      {isNoChunking ? 1 : currentPreview.metrics.total_chunks}
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope">
+                      {isNoChunking ? 1 : currentPreview.metrics.total_chunks.toLocaleString()}
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope font-medium">
                       {isNoChunking ? 'Document' : 'Total Chunks'}
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold">
+                <Card className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope">
                       {isNoChunking
-                        ? currentPreview.original_content?.length || 0
-                        : Math.round(currentPreview.metrics.avg_chunk_size)
+                        ? (currentPreview.original_content?.length || 0).toLocaleString()
+                        : Math.round(currentPreview.metrics.avg_chunk_size).toLocaleString()
                       }
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-green-700 dark:text-green-300 font-manrope font-medium">
                       {isNoChunking ? 'Total Chars' : 'Avg Chunk Size'}
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardContent className="p-4">
-                    <div className={cn("text-2xl font-bold", getSpeedColor(currentPreview.metrics.retrieval_speed))}>
+                <Card className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <div className={cn("text-2xl font-bold font-manrope", getSpeedColor(currentPreview.metrics.retrieval_speed))}>
                       {currentPreview.metrics.retrieval_speed}
                     </div>
-                    <p className="text-xs text-gray-500">Retrieval Speed</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-manrope font-medium">Retrieval Speed</p>
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardContent className="p-4">
-                    <div className={cn("text-2xl font-bold", getQualityColor(currentPreview.metrics.context_quality))}>
+                <Card className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <div className={cn("text-2xl font-bold font-manrope", getQualityColor(currentPreview.metrics.context_quality))}>
                       {currentPreview.metrics.context_quality}
                     </div>
-                    <p className="text-xs text-gray-500">Context Quality</p>
+                    <p className="text-xs text-purple-700 dark:text-purple-300 font-manrope font-medium">Context Quality</p>
                   </CardContent>
                 </Card>
               </div>
 
               {/* Chunk Preview Controls */}
               {!isNoChunking && (
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Showing {chunksShown} of {totalChunks} chunks
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-600">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 font-manrope font-medium">
+                    Showing {chunksShown.toLocaleString()} of {totalChunks.toLocaleString()} chunks
                   </div>
                   {previewLimited && (
                     <Button
@@ -458,37 +468,44 @@ export function KBChunkingPreview() {
                       variant="outline"
                       onClick={showAllChunks}
                       disabled={loading}
+                      className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
                     >
                       <Eye className="h-4 w-4 mr-2" />
-                      Show All {totalChunks} Chunks
+                      Show All {totalChunks.toLocaleString()} Chunks
                     </Button>
                   )}
                 </div>
               )}
 
               {/* Chunks Preview */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <h3 className="font-bold text-gray-900 dark:text-white font-manrope text-lg">
                     {isNoChunking ? 'Full Content Preview' : 'Chunk Preview'}
                   </h3>
-                  <Badge variant="secondary">
+                  <Badge
+                    className="w-fit bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 font-manrope"
+                    variant="outline"
+                  >
                     {isNoChunking ? 'No Chunking' : `${chunkingConfig.strategy} strategy`}
                   </Badge>
                 </div>
 
-                <ScrollArea className="h-[400px] border rounded-lg p-4">
+                <ScrollArea className="h-[400px] bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
                   <div className="space-y-3">
                     {isNoChunking ? (
                       // Show full content for no chunking
-                      <Card>
-                        <CardHeader className="pb-3">
+                      <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800/50 dark:to-blue-900/20 rounded-t-xl border-b border-gray-200 dark:border-gray-700">
                           <div className="flex items-center justify-between">
-                            <Badge>Full Document</Badge>
+                            <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope font-medium">
+                              Full Document
+                            </Badge>
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => copyChunkContent(currentPreview.original_content || '', 'full')}
+                              className="h-8 w-8 p-0 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors"
                             >
                               {copiedChunk === 'full' ? (
                                 <Check className="h-3 w-3" />
@@ -498,8 +515,8 @@ export function KBChunkingPreview() {
                             </Button>
                           </div>
                         </CardHeader>
-                        <CardContent>
-                          <p className="text-sm whitespace-pre-wrap">
+                        <CardContent className="p-4">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed font-manrope">
                             {currentPreview.original_content}
                           </p>
                         </CardContent>
@@ -516,30 +533,44 @@ export function KBChunkingPreview() {
                             open={isExpanded}
                             onOpenChange={() => toggleChunkExpansion(chunkId)}
                           >
-                            <Card>
+                            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-md transition-all duration-200">
                               <CollapsibleTrigger className="w-full">
-                                <CardHeader className="pb-3">
+                                <CardHeader className="pb-3 bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/50 rounded-t-xl border-b border-gray-200 dark:border-gray-700 hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 transition-all duration-200">
                                   <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      {isExpanded ? (
-                                        <ChevronDown className="h-4 w-4" />
-                                      ) : (
-                                        <ChevronRight className="h-4 w-4" />
-                                      )}
-                                      <Badge>Chunk {chunk.index + 1}</Badge>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <div className="text-gray-600 dark:text-gray-400">
+                                        {isExpanded ? (
+                                          <ChevronDown className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4" />
+                                        )}
+                                      </div>
+                                      <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope font-medium">
+                                        Chunk {chunk.index + 1}
+                                      </Badge>
                                       {chunk.source_info && (
-                                        <Badge variant="outline">{chunk.source_info}</Badge>
+                                        <Badge
+                                          variant="outline"
+                                          className="bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 font-manrope font-medium"
+                                        >
+                                          {chunk.source_info}
+                                        </Badge>
                                       )}
                                       {chunk.has_overlap && (
-                                        <Badge variant="outline">Has Overlap</Badge>
+                                        <Badge
+                                          variant="outline"
+                                          className="bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-600 font-manrope font-medium"
+                                        >
+                                          Has Overlap
+                                        </Badge>
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
                                         {chunk.char_count} chars • {chunk.token_count} tokens
                                       </span>
                                       <div
-                                        className="inline-flex items-center justify-center p-1 rounded hover:bg-gray-100 cursor-pointer transition-colors"
+                                        className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 cursor-pointer transition-colors text-blue-600 dark:text-blue-400"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           copyChunkContent(chunk.content, chunkId);
@@ -557,18 +588,18 @@ export function KBChunkingPreview() {
                               </CollapsibleTrigger>
 
                               <CollapsibleContent>
-                                <CardContent>
+                                <CardContent className="p-4">
                                   {chunk.overlap_content && (
-                                    <Alert className="mb-3">
-                                      <AlertDescription className="text-xs">
-                                        <strong>Overlap from previous chunk:</strong>
-                                        <p className="mt-1 italic text-gray-600">
+                                    <Alert className="mb-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+                                      <AlertDescription className="text-xs text-amber-700 dark:text-amber-300 font-manrope">
+                                        <strong className="font-semibold">Overlap from previous chunk:</strong>
+                                        <p className="mt-1 italic text-amber-600 dark:text-amber-400 leading-relaxed">
                                           {chunk.overlap_content}
                                         </p>
                                       </AlertDescription>
                                     </Alert>
                                   )}
-                                  <p className="text-sm whitespace-pre-wrap">
+                                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed font-manrope">
                                     {chunk.content}
                                   </p>
                                 </CardContent>
@@ -584,54 +615,56 @@ export function KBChunkingPreview() {
 
               {/* Performance Predictions */}
               {currentPreview.metrics && (
-                <Alert>
-                  <BarChart3 className="h-4 w-4" />
-                  <AlertDescription>
-                    <div className="space-y-2">
-                      <p className="font-medium">Performance Predictions</p>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-gray-500">Embedding Cost:</span>
-                          <span className="ml-2 font-medium">
+                <Alert className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-sm">
+                  <BarChart3 className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <AlertDescription className="text-indigo-900 dark:text-indigo-100">
+                    <div className="space-y-3">
+                      <p className="font-semibold text-lg text-indigo-900 dark:text-indigo-100 font-manrope">
+                        Performance Predictions
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                          <span className="text-gray-600 dark:text-gray-400 font-manrope font-medium">Embedding Cost:</span>
+                          <div className="font-semibold text-indigo-700 dark:text-indigo-300 font-manrope mt-1">
                             ${currentPreview.metrics.estimated_cost.toFixed(4)}
-                          </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-gray-500">Search Latency:</span>
-                          <span className="ml-2 font-medium">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                          <span className="text-gray-600 dark:text-gray-400 font-manrope font-medium">Search Latency:</span>
+                          <div className="font-semibold text-indigo-700 dark:text-indigo-300 font-manrope mt-1">
                             {currentPreview.metrics.retrieval_speed === 'fast' ? '<50ms' :
                              currentPreview.metrics.retrieval_speed === 'moderate' ? '50-150ms' : '>150ms'}
-                          </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-gray-500">Context Window Usage:</span>
-                          <span className="ml-2 font-medium">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                          <span className="text-gray-600 dark:text-gray-400 font-manrope font-medium">Context Window Usage:</span>
+                          <div className="font-semibold text-indigo-700 dark:text-indigo-300 font-manrope mt-1">
                             {isNoChunking
                               ? '100%'
                               : `${Math.round((currentPreview.metrics.avg_chunk_size / chunkingConfig.chunk_size) * 100)}%`
                             }
-                          </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-gray-500">Overlap Efficiency:</span>
-                          <span className="ml-2 font-medium">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                          <span className="text-gray-600 dark:text-gray-400 font-manrope font-medium">Overlap Efficiency:</span>
+                          <div className="font-semibold text-indigo-700 dark:text-indigo-300 font-manrope mt-1">
                             {isNoChunking ? 'N/A' : `${chunkingConfig.chunk_overlap}/${chunkingConfig.chunk_size} (${Math.round((chunkingConfig.chunk_overlap / chunkingConfig.chunk_size) * 100)}%)`}
-                          </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-gray-500">Strategy Efficiency:</span>
-                          <span className="ml-2 font-medium">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                          <span className="text-gray-600 dark:text-gray-400 font-manrope font-medium">Strategy Efficiency:</span>
+                          <div className="font-semibold text-indigo-700 dark:text-indigo-300 font-manrope mt-1">
                             {chunkingConfig.strategy === 'adaptive' ? 'Dynamic' :
                              chunkingConfig.strategy === 'hybrid' ? 'Multi-method' :
                              chunkingConfig.strategy === 'custom' ? 'User-defined' :
                              chunkingConfig.strategy === 'recursive' ? 'Structured' : 'Standard'}
-                          </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-gray-500">Chunk Size Target:</span>
-                          <span className="ml-2 font-medium">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                          <span className="text-gray-600 dark:text-gray-400 font-manrope font-medium">Chunk Size Target:</span>
+                          <div className="font-semibold text-indigo-700 dark:text-indigo-300 font-manrope mt-1">
                             {isNoChunking ? 'Full content' : `${chunkingConfig.chunk_size} chars`}
-                          </span>
+                          </div>
                         </div>
                       </div>
                     </div>

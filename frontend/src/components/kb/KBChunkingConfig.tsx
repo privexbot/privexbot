@@ -224,9 +224,9 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
     switch (chunkingConfig.strategy) {
       case ChunkingStrategy.NO_CHUNKING:
         return (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
+          <Alert className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
+            <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <AlertDescription className="text-amber-700 dark:text-amber-300 font-manrope">
               Content will be stored as complete documents without chunking.
               No additional configuration needed.
             </AlertDescription>
@@ -237,14 +237,14 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
         return (
           <div className="space-y-4">
             <div>
-              <Label>Semantic Similarity Threshold</Label>
+              <Label className="text-gray-700 dark:text-gray-300 font-manrope font-medium">Semantic Similarity Threshold</Label>
               <Slider
                 value={[chunkingConfig.semantic_threshold || 0.7]}
                 onValueChange={([value]) => handleConfigChange('semantic_threshold', value)}
                 min={0.1} max={1.0} step={0.1}
-                className="mt-2"
+                className="mt-3"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-manrope">
                 Current: {chunkingConfig.semantic_threshold || 0.7} - Higher values = more similar chunks
               </p>
             </div>
@@ -255,16 +255,16 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
         return (
           <div className="space-y-4">
             <div>
-              <Label>Custom Separators (one per line)</Label>
+              <Label className="text-gray-700 dark:text-gray-300 font-manrope font-medium">Custom Separators (one per line)</Label>
               <Textarea
                 value={chunkingConfig.custom_separators?.join('\n') || ''}
                 onChange={(e) => handleConfigChange('custom_separators',
                   e.target.value.split('\n').filter(s => s.trim()))}
                 placeholder={`\\n\\n\n---\n===\n<!-- split -->\n### \n## `}
-                className="mt-2"
+                className="mt-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white font-manrope"
                 rows={6}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-manrope">
                 Enter separators that will be used to split your content into chunks
               </p>
             </div>
@@ -274,28 +274,28 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
       default:
         // Standard chunk size and overlap controls for other strategies
         return (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label>Chunk Size (characters)</Label>
+              <Label className="text-gray-700 dark:text-gray-300 font-manrope font-medium">Chunk Size (characters)</Label>
               <Slider
                 value={[chunkingConfig.chunk_size]}
                 onValueChange={([value]) => handleConfigChange('chunk_size', value)}
                 min={100} max={4000} step={100}
-                className="mt-2"
+                className="mt-3"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-manrope">
                 Current: {chunkingConfig.chunk_size} characters
               </p>
             </div>
             <div>
-              <Label>Chunk Overlap (characters)</Label>
+              <Label className="text-gray-700 dark:text-gray-300 font-manrope font-medium">Chunk Overlap (characters)</Label>
               <Slider
                 value={[chunkingConfig.chunk_overlap]}
                 onValueChange={([value]) => handleConfigChange('chunk_overlap', value)}
                 min={0} max={500} step={50}
-                className="mt-2"
+                className="mt-3"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-manrope">
                 Current: {chunkingConfig.chunk_overlap} characters
               </p>
             </div>
@@ -308,41 +308,49 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
   const qualityScore = getQualityScore();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Settings className="h-5 w-5" />
+    <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+        <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
+          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+            <Settings className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          </div>
           Chunking Configuration
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
           Configure how your content will be split into chunks for optimal retrieval
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 p-4 sm:p-6">
         {/* Presets */}
-        <div className="space-y-3">
-          <Label className="text-base font-medium">Choose a Preset</Label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="space-y-4">
+          <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Choose a Preset</Label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {presets.map((preset) => (
               <Card
                 key={preset.id}
-                className={`cursor-pointer transition-all ${
+                className={`cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md rounded-xl border ${
                   activePreset === preset.id
-                    ? 'ring-2 ring-primary bg-primary/5'
-                    : 'hover:bg-gray-50'
+                    ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 bg-white dark:bg-gray-800'
                 }`}
                 onClick={() => handlePresetSelect(preset.id)}
               >
-                <CardContent className="p-4">
-                  <div className="text-center space-y-2">
-                    <div className="text-2xl">{preset.icon}</div>
-                    <h3 className="font-medium">{preset.name}</h3>
-                    <p className="text-sm text-gray-600">{preset.description}</p>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="text-center space-y-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-xl flex items-center justify-center mx-auto">
+                      <span className="text-2xl">{preset.icon}</span>
+                    </div>
+                    <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{preset.name}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">{preset.description}</p>
 
-                    <div className="space-y-1">
+                    <div className="flex flex-wrap gap-1.5 justify-center">
                       {preset.benefits.map((benefit, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs">
+                        <Badge
+                          key={index}
+                          className="text-xs bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-manrope"
+                          variant="outline"
+                        >
                           {benefit}
                         </Badge>
                       ))}
@@ -355,16 +363,16 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
         </div>
 
         {/* Strategy Selection */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Label className="text-base font-medium">Chunking Strategy</Label>
+            <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Chunking Strategy</Label>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle className="h-4 w-4 text-gray-400" />
+                  <HelpCircle className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                 </TooltipTrigger>
-                <TooltipContent>
-                  <p>How content will be split into meaningful chunks</p>
+                <TooltipContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white">
+                  <p className="font-manrope">How content will be split into meaningful chunks</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -373,79 +381,104 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
           <RadioGroup
             value={chunkingConfig.strategy}
             onValueChange={(value) => handleConfigChange('strategy', value)}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
           >
             {strategies.map((strategy) => (
-              <div key={strategy.value} className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value={strategy.value} id={strategy.value} />
-                  <Label htmlFor={strategy.value} className="font-medium">
-                    {strategy.icon} {strategy.name}
-                  </Label>
+              <div
+                key={strategy.value}
+                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+              >
+                <div className="flex items-start space-x-3">
+                  <RadioGroupItem
+                    value={strategy.value}
+                    id={strategy.value}
+                    className="mt-0.5 flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <Label
+                      htmlFor={strategy.value}
+                      className="font-semibold text-gray-900 dark:text-white font-manrope cursor-pointer flex items-center gap-2"
+                    >
+                      <span>{strategy.icon}</span>
+                      <span>{strategy.name}</span>
+                    </Label>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope mt-1 leading-relaxed">
+                      {strategy.description}
+                    </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 font-manrope font-medium mt-1">
+                      {strategy.recommended}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 ml-6">{strategy.description}</p>
               </div>
             ))}
           </RadioGroup>
         </div>
 
         {/* Strategy-Specific Configuration */}
-        <div className="space-y-3">
-          <Label className="text-base font-medium">Strategy Configuration</Label>
-          {renderStrategyOptions()}
+        <div className="space-y-4">
+          <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Strategy Configuration</Label>
+          <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+            {renderStrategyOptions()}
+          </div>
         </div>
 
         {/* Advanced Settings - Hidden for NO_CHUNKING */}
         {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Minimum Chunk Size</Label>
-              <Input
-                type="number"
-                value={chunkingConfig.min_chunk_size}
-                onChange={(e) => handleConfigChange('min_chunk_size', parseInt(e.target.value) || 50)}
-                min="10"
-                max="500"
-              />
-            </div>
+          <div className="space-y-4">
+            <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Advanced Settings</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-manrope font-medium">Minimum Chunk Size</Label>
+                <Input
+                  type="number"
+                  value={chunkingConfig.min_chunk_size}
+                  onChange={(e) => handleConfigChange('min_chunk_size', parseInt(e.target.value) || 50)}
+                  min="10"
+                  max="500"
+                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white font-manrope"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label>Maximum Chunk Size</Label>
-              <Input
-                type="number"
-                value={chunkingConfig.max_chunk_size}
-                onChange={(e) => handleConfigChange('max_chunk_size', parseInt(e.target.value) || 2048)}
-                min="256"
-                max="4096"
-              />
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-manrope font-medium">Maximum Chunk Size</Label>
+                <Input
+                  type="number"
+                  value={chunkingConfig.max_chunk_size}
+                  onChange={(e) => handleConfigChange('max_chunk_size', parseInt(e.target.value) || 2048)}
+                  min="256"
+                  max="4096"
+                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white font-manrope"
+                />
+              </div>
             </div>
           </div>
         )}
 
         {/* Additional Options */}
-        <div className="space-y-3">
-          <Label className="text-base font-medium">Additional Options</Label>
-          <div className="space-y-3">
-            <div className="flex items-center space-x-2">
+        <div className="space-y-4">
+          <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Additional Options</Label>
+          <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600 space-y-4">
+            <div className="flex items-center space-x-3">
               <Checkbox
                 id="preserve-headings"
                 checked={chunkingConfig.preserve_headings}
                 onCheckedChange={(checked) => handleConfigChange('preserve_headings', checked)}
               />
-              <Label htmlFor="preserve-headings" className="text-sm">
+              <Label htmlFor="preserve-headings" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                 Preserve document headings and structure
               </Label>
             </div>
 
             {/* Only show remove duplicates for chunking strategies */}
             {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <Checkbox
                   id="remove-duplicates"
                   checked={chunkingConfig.remove_duplicates}
                   onCheckedChange={(checked) => handleConfigChange('remove_duplicates', checked)}
                 />
-                <Label htmlFor="remove-duplicates" className="text-sm">
+                <Label htmlFor="remove-duplicates" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                   Remove duplicate content across chunks
                 </Label>
               </div>
@@ -453,96 +486,96 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
 
             {/* Only show smart splitting for chunking strategies */}
             {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <Checkbox
                   id="smart-splitting"
                   checked={chunkingConfig.smart_splitting}
                   onCheckedChange={(checked) => handleConfigChange('smart_splitting', checked)}
                 />
-                <Label htmlFor="smart-splitting" className="text-sm">
+                <Label htmlFor="smart-splitting" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                   Enable smart splitting for code and tables
                 </Label>
               </div>
             )}
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               <Checkbox
                 id="preserve-code-blocks"
                 checked={chunkingConfig.preserve_code_blocks ?? true}
                 onCheckedChange={(checked) => handleConfigChange('preserve_code_blocks', checked)}
               />
-              <Label htmlFor="preserve-code-blocks" className="text-sm">
+              <Label htmlFor="preserve-code-blocks" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                 Preserve code blocks and formatting
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               <Checkbox
                 id="preserve-structure"
                 checked={chunkingConfig.preserve_structure ?? true}
                 onCheckedChange={(checked) => handleConfigChange('preserve_structure', checked)}
               />
-              <Label htmlFor="preserve-structure" className="text-sm">
+              <Label htmlFor="preserve-structure" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                 Preserve document structure and element boundaries
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
               <Checkbox
                 id="include-metadata"
                 checked={chunkingConfig.include_metadata ?? true}
                 onCheckedChange={(checked) => handleConfigChange('include_metadata', checked)}
               />
-              <Label htmlFor="include-metadata" className="text-sm">
+              <Label htmlFor="include-metadata" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                 Include structural metadata in chunks
               </Label>
             </div>
 
             {/* Only show adaptive sizing for chunking strategies */}
             {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <Checkbox
                   id="adaptive-sizing"
                   checked={chunkingConfig.adaptive_sizing ?? false}
                   onCheckedChange={(checked) => handleConfigChange('adaptive_sizing', checked)}
                 />
-                <Label htmlFor="adaptive-sizing" className="text-sm">
+                <Label htmlFor="adaptive-sizing" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
                   Enable adaptive sizing based on content type
                 </Label>
               </div>
             )}
-          </div>
 
-          {/* Context Window Setting - Only for chunking strategies */}
-          {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-            <div className="space-y-2">
-              <Label>Context Window (surrounding elements)</Label>
-              <div className="flex items-center space-x-4">
-                <Slider
-                  value={[chunkingConfig.context_window ?? 2]}
-                  onValueChange={([value]) => handleConfigChange('context_window', value)}
-                  min={0} max={5} step={1}
-                  className="flex-1"
-                />
-                <span className="text-sm text-gray-500 min-w-[60px]">
-                  {chunkingConfig.context_window ?? 2} elements
-                </span>
+            {/* Context Window Setting - Only for chunking strategies */}
+            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Context Window (surrounding elements)</Label>
+                <div className="flex items-center space-x-4">
+                  <Slider
+                    value={[chunkingConfig.context_window ?? 2]}
+                    onValueChange={([value]) => handleConfigChange('context_window', value)}
+                    min={0} max={5} step={1}
+                    className="flex-1"
+                  />
+                  <span className="text-sm text-gray-500 dark:text-gray-400 min-w-[60px] font-manrope">
+                    {chunkingConfig.context_window ?? 2} elements
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                  Number of surrounding elements to include for context
+                </p>
               </div>
-              <p className="text-xs text-gray-500">
-                Number of surrounding elements to include for context
-              </p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Estimation and Quality */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Alert>
-            <Info className="h-4 w-4" />
+          <Alert className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl">
+            <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <AlertDescription>
-              <div className="space-y-1">
-                <div className="font-medium">Estimated Results</div>
-                <div className="text-sm space-y-1">
+              <div className="space-y-2">
+                <div className="font-bold text-blue-900 dark:text-blue-100 font-manrope">Estimated Results</div>
+                <div className="text-sm space-y-1 text-blue-700 dark:text-blue-300 font-manrope">
                   <div>~{estimatedChunks.toLocaleString()} chunks will be created</div>
                   <div>Quality Score: {qualityScore}/100</div>
                 </div>
@@ -550,12 +583,12 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
             </AlertDescription>
           </Alert>
 
-          <Alert>
-            <Zap className="h-4 w-4" />
+          <Alert className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl">
+            <Zap className="h-4 w-4 text-green-600 dark:text-green-400" />
             <AlertDescription>
-              <div className="space-y-1">
-                <div className="font-medium">Performance Impact</div>
-                <div className="text-sm space-y-1">
+              <div className="space-y-2">
+                <div className="font-bold text-green-900 dark:text-green-100 font-manrope">Performance Impact</div>
+                <div className="text-sm space-y-1 text-green-700 dark:text-green-300 font-manrope">
                   {chunkingConfig.strategy === ChunkingStrategy.NO_CHUNKING ? (
                     <>
                       <div>Search speed: Depends on document size</div>
@@ -574,10 +607,11 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
         </div>
 
         {/* Reset Button */}
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-600">
           <Button
             variant="outline"
             onClick={() => handlePresetSelect('balanced')}
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
           >
             Reset to Defaults
           </Button>
