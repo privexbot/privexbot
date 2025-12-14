@@ -535,14 +535,14 @@ export function ProfilePage() {
     return (
       <DashboardLayout>
         <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
-          <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800">
+          <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
             <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
             <AlertDescription className="text-yellow-700 dark:text-yellow-300 font-manrope">
               Profile settings are only available in your personal organization. Please switch to your personal organization to access this page.
             </AlertDescription>
           </Alert>
           <div className="mt-4">
-            <Button onClick={() => navigate("/dashboard")} className="font-manrope">
+            <Button onClick={() => navigate("/dashboard")} className="font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Dashboard
             </Button>
@@ -565,7 +565,7 @@ export function ProfilePage() {
 
             {/* Card Skeletons */}
             {[1, 2, 3].map((i) => (
-              <Card key={i} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+              <Card key={i} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                 <CardContent className="p-6">
                   <div className="animate-pulse space-y-4">
                     <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-32"></div>
@@ -598,7 +598,7 @@ export function ProfilePage() {
 
         {/* Error Alert */}
         {error && (
-          <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+          <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl">
             <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
             <AlertDescription className="text-red-700 dark:text-red-300 font-manrope">
               {error}
@@ -607,7 +607,7 @@ export function ProfilePage() {
         )}
 
         {/* Profile Information */}
-        <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+        <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 font-manrope">
               <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -672,7 +672,7 @@ export function ProfilePage() {
                 <Button
                   type="submit"
                   disabled={!isDirty || isUpdating}
-                  className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white disabled:opacity-50"
+                  className="font-manrope bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 rounded-lg"
                 >
                   {isUpdating ? (
                     <>
@@ -692,7 +692,7 @@ export function ProfilePage() {
         </Card>
 
         {/* Authentication Methods */}
-        <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+        <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 font-manrope">
               <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -716,7 +716,7 @@ export function ProfilePage() {
                       return (
                         <div
                           key={index}
-                          className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/50"
+                          className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 shadow-sm"
                         >
                           <div className="flex items-center gap-3">
                             <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -730,7 +730,7 @@ export function ProfilePage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="secondary" className="text-xs font-manrope">
                               Linked {new Date(method.linked_at).toLocaleDateString()}
                             </Badge>
                             {userProfile.auth_methods && userProfile.auth_methods.length > 1 && (
@@ -738,7 +738,7 @@ export function ProfilePage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleUnlinkConfirm(method)}
-                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg"
                                 title="Remove this authentication method"
                                 disabled={isUnlinking}
                               >
@@ -776,14 +776,14 @@ export function ProfilePage() {
                   </div>
 
                   {showLinkingOptions && (
-                    <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50/50 dark:bg-gray-800/30">
+                    <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800/50 shadow-sm">
                       {/* Email Linking */}
                       {availableOptions.email && (
                         <div>
                           <Button
                             variant="outline"
                             onClick={() => setLinkingType(linkingType === "email" ? null : "email")}
-                            className="w-full justify-start font-manrope"
+                            className="w-full justify-start font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                             disabled={isLinking}
                           >
                             <Mail className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
@@ -795,7 +795,7 @@ export function ProfilePage() {
                               {emailVerificationStep === "code" ? (
                                 // Step 2: Verification Code
                                 <div className="space-y-3">
-                                  <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                  <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
                                     <p className="text-sm text-blue-800 dark:text-blue-200 font-manrope">
                                       We sent a verification code to <strong>{pendingEmailData?.email}</strong>
                                     </p>
@@ -810,7 +810,7 @@ export function ProfilePage() {
                                       type="text"
                                       value={verificationCode}
                                       onChange={(e) => setVerificationCode(e.target.value)}
-                                      className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 text-center text-lg tracking-widest"
+                                      className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                                       placeholder="Enter 6-digit code"
                                       maxLength={6}
                                       disabled={isLinking}
@@ -827,7 +827,7 @@ export function ProfilePage() {
                                     <Button
                                       onClick={handleEmailVerification}
                                       disabled={isLinking || !verificationCode.trim()}
-                                      className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
+                                      className="font-manrope bg-blue-600 hover:bg-blue-700  text-white rounded-lg"
                                     >
                                       {isLinking ? (
                                         <>
@@ -863,7 +863,7 @@ export function ProfilePage() {
                                       id="link-email"
                                       type="email"
                                       {...registerEmail("email")}
-                                      className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                      className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                                       placeholder="Enter your email address"
                                       disabled={isLinking}
                                     />
@@ -883,7 +883,7 @@ export function ProfilePage() {
                                         id="link-password"
                                         type={showPassword ? "text" : "password"}
                                         {...registerEmail("password")}
-                                        className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 pr-10"
+                                        className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                                         placeholder="Create a secure password"
                                         disabled={isLinking}
                                       />
@@ -902,7 +902,7 @@ export function ProfilePage() {
                                     )}
                                   </div>
 
-                                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
                                     <p className="text-sm text-yellow-800 dark:text-yellow-200 font-manrope">
                                       We'll send a verification code to this email address before linking it to your account.
                                     </p>
@@ -912,7 +912,7 @@ export function ProfilePage() {
                                     <Button
                                       type="submit"
                                       disabled={isLinking}
-                                      className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
+                                      className="font-manrope bg-blue-600 hover:bg-blue-700  text-white rounded-lg"
                                     >
                                       {isLinking ? (
                                         <>
@@ -953,7 +953,7 @@ export function ProfilePage() {
                           <Button
                             variant="outline"
                             onClick={() => setLinkingType(linkingType === "wallet" ? null : "wallet")}
-                            className="w-full justify-start font-manrope"
+                            className="w-full justify-start font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                             disabled={isLinking}
                           >
                             <Wallet className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
@@ -968,7 +968,7 @@ export function ProfilePage() {
                                   variant="outline"
                                   onClick={() => handleWalletLink(wallet.id)}
                                   disabled={isLinking}
-                                  className="w-full justify-start font-manrope text-left"
+                                  className="w-full justify-start font-manrope text-left border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                                 >
                                   {wallet.iconPath ? (
                                     <img
@@ -980,8 +980,8 @@ export function ProfilePage() {
                                     <span className="mr-2">{wallet.icon}</span>
                                   )}
                                   <div>
-                                    <div className="font-medium">{wallet.name}</div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                                    <div className="font-medium font-manrope">{wallet.name}</div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 capitalize font-manrope">
                                       {wallet.provider} • {wallet.detected ? "Installed" : "Not installed"}
                                     </div>
                                   </div>
@@ -996,7 +996,7 @@ export function ProfilePage() {
                                 variant="ghost"
                                 onClick={() => setLinkingType(null)}
                                 disabled={isLinking}
-                                className="w-full font-manrope text-gray-600 dark:text-gray-400"
+                                className="w-full font-manrope text-gray-600 dark:text-gray-400 rounded-lg"
                               >
                                 Cancel
                               </Button>
@@ -1021,7 +1021,7 @@ export function ProfilePage() {
         </Card>
 
         {/* Danger Zone */}
-        <Card className="bg-white dark:bg-gray-800/50 border border-red-200 dark:border-red-800">
+        <Card className="bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800 rounded-xl shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-red-800 dark:text-red-200 font-manrope">
               <AlertTriangle className="h-5 w-5" />
@@ -1032,7 +1032,7 @@ export function ProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-xl">
               <h4 className="text-sm font-medium text-red-800 dark:text-red-200 font-manrope mb-2">
                 Delete Account
               </h4>
@@ -1044,13 +1044,13 @@ export function ProfilePage() {
                 <DialogTrigger asChild>
                   <Button
                     variant="outline"
-                    className="font-manrope border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50"
+                    className="font-manrope border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete Account
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
                   <DialogHeader>
                     <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope">
                       Delete Account Permanently?
@@ -1068,7 +1068,7 @@ export function ProfilePage() {
                       <li>All authentication methods and login access</li>
                     </ul>
 
-                    <Alert className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+                    <Alert className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl">
                       <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
                       <AlertDescription className="text-red-700 dark:text-red-300 font-manrope">
                         <strong>Warning:</strong> This action is permanent and cannot be reversed.
@@ -1080,14 +1080,14 @@ export function ProfilePage() {
                         variant="outline"
                         onClick={() => setDeleteConfirmOpen(false)}
                         disabled={isDeleting}
-                        className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                       >
                         Cancel
                       </Button>
                       <Button
                         onClick={handleAccountDelete}
                         disabled={isDeleting}
-                        className="font-manrope bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 text-white"
+                        className="font-manrope bg-red-600 hover:bg-red-700  text-white rounded-lg"
                       >
                         {isDeleting ? (
                           <>
@@ -1111,7 +1111,7 @@ export function ProfilePage() {
 
         {/* Unlink Confirmation Dialog */}
         <Dialog open={unlinkConfirmOpen} onOpenChange={setUnlinkConfirmOpen}>
-          <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+          <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
             <DialogHeader>
               <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope">
                 Remove Authentication Method?
@@ -1129,7 +1129,7 @@ export function ProfilePage() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800">
+              <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
                 <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
                 <AlertDescription className="text-yellow-700 dark:text-yellow-300 font-manrope">
                   Make sure you have at least one other authentication method to access your account.
@@ -1141,14 +1141,14 @@ export function ProfilePage() {
                   variant="outline"
                   onClick={() => setUnlinkConfirmOpen(false)}
                   disabled={isUnlinking}
-                  className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleUnlink}
                   disabled={isUnlinking}
-                  className="font-manrope bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 text-white"
+                  className="font-manrope bg-red-600 hover:bg-red-700  text-white rounded-lg"
                 >
                   {isUnlinking ? (
                     <>
