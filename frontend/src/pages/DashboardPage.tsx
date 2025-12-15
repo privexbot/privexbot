@@ -29,9 +29,11 @@ import type { DashboardData, Activity } from "@/types/dashboard";
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { currentOrganization, currentWorkspace } = useApp();
+  const { currentWorkspace } = useApp();
 
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState("Last 7 days");
@@ -40,17 +42,15 @@ export function DashboardPage() {
   // Fetch dashboard data
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!currentOrganization?.id || !currentWorkspace?.id) {
+      if (!currentWorkspace?.id) {
         return;
       }
 
       try {
         setIsLoading(true);
         setError(null);
-        const data = await dashboardApi.getDashboardData(
-          currentOrganization.id,
-          currentWorkspace.id
-        );
+
+        const data = await dashboardApi.getDashboardData(currentWorkspace.id);
         setDashboardData(data);
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
@@ -61,7 +61,7 @@ export function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [currentOrganization?.id, currentWorkspace?.id]);
+  }, [currentWorkspace?.id]);
 
   // Navigation handlers
   const handleCreateChatbot = () => {
@@ -137,14 +137,16 @@ export function DashboardPage() {
 
         {/* Stats Cards - Separate Section */}
         <StatsCards
-          stats={dashboardData?.stats || {
-            total_chatbots: 0,
-            total_chatflows: 0,
-            total_knowledge_bases: 0,
-            total_leads: 0,
-            total_conversations: 0,
-            active_conversations: 0,
-          }}
+          stats={
+            dashboardData?.stats || {
+              total_chatbots: 0,
+              total_chatflows: 0,
+              total_knowledge_bases: 0,
+              total_leads: 0,
+              total_conversations: 0,
+              active_conversations: 0,
+            }
+          }
           isLoading={isLoading}
           timeRange={selectedTimeRange}
           customDateRange={customDateRange}
@@ -158,11 +160,12 @@ export function DashboardPage() {
 
       {/* Main Content Area */}
       <div className="px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 py-6">
-
         {/* Error State */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-            <p className="text-sm text-red-800 dark:text-red-300 font-manrope">{error}</p>
+            <p className="text-sm text-red-800 dark:text-red-300 font-manrope">
+              {error}
+            </p>
           </div>
         )}
 

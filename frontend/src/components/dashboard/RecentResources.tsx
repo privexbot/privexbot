@@ -18,7 +18,7 @@ import { Network, Book, MessageCircle, MoreVertical, Eye, Edit, Trash2, FileText
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/utils/time";
-import type { ChatbotSummary, ChatflowSummary, KnowledgeBaseSummary, ResourceStatus } from "@/types/dashboard";
+import type { ChatbotSummary, ChatflowSummary, KnowledgeBaseSummary } from "@/types/dashboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -59,14 +59,21 @@ export function RecentResources({
 }: RecentResourcesProps) {
   const [activeTab, setActiveTab] = useState<"chatbots" | "chatflows" | "knowledge_bases">("chatbots");
 
-  // Get status badge styling
-  const getStatusBadge = (status: ResourceStatus) => {
-    const statusConfig = {
+  // Get status badge styling for both ResourceStatus and KBStatus
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { label: string; className: string }> = {
+      // Generic ResourceStatus values (for chatbots/chatflows)
       active: { label: "Active", className: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" },
       inactive: { label: "Inactive", className: "bg-gray-100 dark:bg-gray-700/30 text-gray-700 dark:text-gray-400" },
       draft: { label: "Draft", className: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400" },
       deployed: { label: "Deployed", className: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" },
       archived: { label: "Archived", className: "bg-gray-100 dark:bg-gray-700/30 text-gray-700 dark:text-gray-400" },
+
+      // KB-specific status values (semantic and descriptive)
+      ready: { label: "Ready", className: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" },
+      processing: { label: "Processing", className: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" },
+      reindexing: { label: "Reindexing", className: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" },
+      failed: { label: "Failed", className: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
     };
 
     return statusConfig[status] || statusConfig.inactive;

@@ -5,6 +5,8 @@
  * HOW: TypeScript interfaces for dashboard components
  */
 
+import type { KBStatus } from "./knowledge-base";
+
 // Resource types in the platform
 export type ResourceType = "chatbot" | "chatflow" | "knowledge_base" | "lead";
 
@@ -99,7 +101,7 @@ export interface KnowledgeBaseSummary {
   id: string;
   name: string;
   description?: string;
-  status: ResourceStatus;
+  status: KBStatus; // Use proper KB status type for semantic accuracy
   documents_count: number;
   total_chunks: number;
   last_indexed_at?: string;
