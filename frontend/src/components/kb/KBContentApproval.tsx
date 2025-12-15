@@ -331,9 +331,7 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
       <Card className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
         <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
           <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
-            <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
+            <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
             Content Approval
           </CardTitle>
           <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
@@ -591,9 +589,7 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
           {/* No Content Message */}
           {allPages.length === 0 && (
             <div className="text-center py-12 px-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
-              <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-6">
-                <AlertCircle className="h-10 w-10 text-gray-400 dark:text-gray-500" />
-              </div>
+              <AlertCircle className="h-10 w-10 text-gray-400 dark:text-gray-500 mx-auto mb-6" />
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-manrope mb-2">No content available for approval</h3>
               <p className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed max-w-md mx-auto">
                 Go back to Content Review to extract content from your sources

@@ -102,12 +102,9 @@ export function IntegrationsModal({
             >
               <CardContent className="p-4 sm:p-6">
                 <div className="flex items-start gap-4 sm:gap-6">
-                  {/* Enhanced icon container with gradient background */}
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-2xl sm:text-3xl">
-                      {integration.icon}
-                    </span>
-                  </div>
+                  <span className="text-2xl sm:text-3xl flex-shrink-0">
+                    {integration.icon}
+                  </span>
 
                   <div className="flex-1 min-w-0">
                     {/* Title and status badge */}

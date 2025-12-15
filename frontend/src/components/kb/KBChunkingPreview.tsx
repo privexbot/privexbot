@@ -322,9 +322,7 @@ export function KBChunkingPreview() {
       <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
         <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
           <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
-            <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-              <Eye className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
+            <Eye className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
             Live Chunking Preview
           </CardTitle>
           <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
@@ -389,9 +387,7 @@ export function KBChunkingPreview() {
         <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
           <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
             <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
-              <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-                <BarChart3 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-              </div>
+              <BarChart3 className="h-5 w-5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
               <span className="truncate">Chunk Preview - {currentPreview.source_name}</span>
             </CardTitle>
 

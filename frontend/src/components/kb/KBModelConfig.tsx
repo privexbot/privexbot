@@ -330,9 +330,7 @@ export function KBModelConfig() {
       <Card className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
         <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
           <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl font-bold text-gray-900 dark:text-white font-manrope">
-            <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
-              <Database className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
+            <Database className="h-5 w-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
             Model & Vector Store Configuration
           </CardTitle>
           <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope text-base leading-relaxed">
@@ -362,9 +360,7 @@ export function KBModelConfig() {
                 >
                   <CardContent className="p-4 sm:p-6">
                     <div className="text-center space-y-3">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl flex items-center justify-center mx-auto">
-                        <span className="text-2xl sm:text-3xl">{preset.icon}</span>
-                      </div>
+                      <span className="text-2xl sm:text-3xl">{preset.icon}</span>
                       <div className="space-y-2">
                         <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{preset.name}</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">{preset.description}</p>
@@ -456,9 +452,7 @@ export function KBModelConfig() {
                         >
                           <CardContent className="p-4 sm:p-6">
                             <div className="flex items-center gap-3 mb-4">
-                              <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-lg flex items-center justify-center">
-                                <span className="text-xl">{provider.icon}</span>
-                              </div>
+                              <span className="text-xl flex-shrink-0">{provider.icon}</span>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{provider.name}</h3>
@@ -499,9 +493,7 @@ export function KBModelConfig() {
                   <Card className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 border border-blue-200 dark:border-blue-700 rounded-xl shadow-sm">
                     <CardHeader className="pb-4">
                       <CardTitle className="flex items-center gap-3 text-lg font-bold text-blue-900 dark:text-blue-100 font-manrope">
-                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-                          <Settings className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                        </div>
+                        <Settings className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                         Qdrant Configuration
                       </CardTitle>
                     </CardHeader>
@@ -703,9 +695,7 @@ export function KBModelConfig() {
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <Label className="text-lg font-semibold flex items-center gap-3 text-gray-900 dark:text-white font-manrope">
-                      <div className="w-8 h-8 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
-                        <Zap className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                      </div>
+                      <Zap className="h-4 w-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                       Processing Quality
                     </Label>
                     <p className="text-base text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
@@ -728,9 +718,7 @@ export function KBModelConfig() {
                           <RadioGroupItem value={IndexingMethod.FAST} />
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 rounded-lg flex items-center justify-center">
-                                <span className="text-lg">🚀</span>
-                              </div>
+                              <span className="text-lg flex-shrink-0">🚀</span>
                               <Label htmlFor={IndexingMethod.FAST} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
                                 Fast Processing
                               </Label>
@@ -764,9 +752,7 @@ export function KBModelConfig() {
                           <RadioGroupItem value={IndexingMethod.BALANCED} />
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-lg flex items-center justify-center">
-                                <span className="text-lg">⚖️</span>
-                              </div>
+                              <span className="text-lg flex-shrink-0">⚖️</span>
                               <div className="flex items-center gap-2">
                                 <Label htmlFor={IndexingMethod.BALANCED} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
                                   Balanced Processing
@@ -805,9 +791,7 @@ export function KBModelConfig() {
                           <RadioGroupItem value={IndexingMethod.HIGH_QUALITY} />
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center justify-center">
-                                <span className="text-lg">🏆</span>
-                              </div>
+                              <span className="text-lg flex-shrink-0">🏆</span>
                               <Label htmlFor={IndexingMethod.HIGH_QUALITY} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
                                 High Quality Processing
                               </Label>
@@ -840,9 +824,7 @@ export function KBModelConfig() {
           <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-lg">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-3 text-lg font-bold text-indigo-900 dark:text-indigo-100 font-manrope">
-                <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
-                  <Info className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                </div>
+                <Info className="h-4 w-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                 Storage Estimation
               </CardTitle>
               <p className="text-sm text-indigo-700 dark:text-indigo-300 font-manrope">

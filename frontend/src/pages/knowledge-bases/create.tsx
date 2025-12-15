@@ -567,9 +567,7 @@ export default function CreateKnowledgeBasePage() {
                     <div className="space-y-3">
                       <Label htmlFor="workspace" className="text-gray-900 dark:text-gray-100 font-manrope">Workspace</Label>
                       <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-                        <div className="p-1.5 bg-gray-100 dark:bg-gray-600 rounded-md">
-                          <Database className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                        </div>
+                        <Database className="h-4 w-4 text-gray-600 dark:text-gray-400 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
                             {currentWorkspace?.name || "Loading..."}
@@ -690,17 +688,15 @@ export default function CreateKnowledgeBasePage() {
                             >
                               <CardContent className="p-4 text-center">
                                 <div className="flex flex-col items-center space-y-3">
-                                  <div className="p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                                    <Icon
-                                      className={`h-6 w-6 ${
-                                        isAvailable
-                                          ? isActive
-                                            ? "text-blue-600 dark:text-blue-400"
-                                            : "text-gray-600 dark:text-gray-400"
-                                          : "text-gray-400 dark:text-gray-500"
-                                      }`}
-                                    />
-                                  </div>
+                                  <Icon
+                                    className={`h-6 w-6 ${
+                                      isAvailable
+                                        ? isActive
+                                          ? "text-blue-600 dark:text-blue-400"
+                                          : "text-gray-600 dark:text-gray-400"
+                                        : "text-gray-400 dark:text-gray-500"
+                                    }`}
+                                  />
                                   <div>
                                     <h3
                                       className={`font-semibold font-manrope ${

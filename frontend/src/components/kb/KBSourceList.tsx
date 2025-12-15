@@ -861,9 +861,11 @@ ${pages.map((page, index) => {
         <DialogContent className="w-[95vw] max-w-7xl h-[95vh] flex flex-col p-0 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl">
           <DialogHeader className="flex-shrink-0 p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
             <DialogTitle className="flex items-center gap-3 text-lg sm:text-xl font-semibold text-gray-900 dark:text-white font-manrope">
-              <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                {previewSource ? getSourceIcon(previewSource.type) : null}
-              </div>
+              {previewSource ? (
+                <div className="flex items-center justify-center">
+                  {getSourceIcon(previewSource.type)}
+                </div>
+              ) : null}
               Full Content Preview
             </DialogTitle>
             <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope mt-2">
