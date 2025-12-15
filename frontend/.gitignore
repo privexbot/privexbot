@@ -23,6 +23,24 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment files
+# Environment files (sensitive data)
 .env
 .env.dev
+.env.local
+.env.production
+.env.staging
+.env.secretvm
+.env.*.local
+.env.*
+!.env.example
+!.env.*.example
+
+# Build environment files
+.env.production.local
+.env.development.local
+
+# Deployment configurations (sensitive)
+deploy/
+config/production.json
+config/staging.json
+config/secretvm.json
