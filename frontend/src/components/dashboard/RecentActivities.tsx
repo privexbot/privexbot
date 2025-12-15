@@ -153,7 +153,7 @@ export function RecentActivities({
       className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm h-full flex flex-col"
     >
       {/* Header - No border divider for unified look */}
-      <div className="flex items-start justify-between p-5 sm:p-6 flex-shrink-0">
+      <div className="flex items-start justify-between p-5 sm:p-6 flex-shrink-0 bg-[#EAECEE] dark:bg-gray-800/80 rounded-t-xl">
         <div className="min-w-0 flex-1">
           <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-1 font-manrope">
             Recent Activities
