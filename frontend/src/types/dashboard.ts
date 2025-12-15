@@ -129,6 +129,7 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d" | "1y";
  * Dashboard Filters
  */
 export interface DashboardFilters {
-  time_range: TimeRange;
+  time_range?: TimeRange;
+  search?: string;
   resource_types?: ResourceType[];
 }

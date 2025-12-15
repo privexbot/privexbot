@@ -18,6 +18,8 @@ import type {
   ChatbotSummary,
   ChatflowSummary,
   KnowledgeBaseSummary,
+  DashboardFilters,
+  TimeRange,
 } from "@/types/dashboard";
 import type { KBSummary } from "@/types/knowledge-base";
 
@@ -31,7 +33,7 @@ function convertKBSummaryToDashboard(
     id: kbSummary.id,
     name: kbSummary.name,
     description: kbSummary.description,
-    status: kbSummary.status, // Direct KB status - no conversion needed
+    status: kbSummary.status,
     documents_count:
       kbSummary.total_documents ?? kbSummary.stats?.documents ?? 0,
     total_chunks: kbSummary.total_chunks ?? kbSummary.stats?.chunks ?? 0,
@@ -41,40 +43,120 @@ function convertKBSummaryToDashboard(
   };
 }
 
+/**
+ * Client-side filtering utilities
+ */
+function getDateRangeFilter(timeRange: TimeRange): Date {
+  const now = new Date();
+  let daysBack = 7; // default
+
+  switch (timeRange) {
+    case "24h":
+      daysBack = 1;
+      break;
+    case "7d":
+      daysBack = 7;
+      break;
+    case "30d":
+      daysBack = 30;
+      break;
+    case "90d":
+      daysBack = 90;
+      break;
+    case "1y":
+      daysBack = 365;
+      break;
+  }
+
+  return new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+}
+
+function filterKBsByTimeRange(
+  kbs: KBSummary[],
+  timeRange?: TimeRange
+): KBSummary[] {
+  if (!timeRange) return kbs;
+
+  const cutoffDate = getDateRangeFilter(timeRange);
+  return kbs.filter((kb) => {
+    const createdDate = new Date(kb.created_at);
+    return createdDate >= cutoffDate;
+  });
+}
+
+function filterKBsBySearch(kbs: KBSummary[], search?: string): KBSummary[] {
+  if (!search || typeof search !== 'string' || search.trim() === "") return kbs;
+
+  const searchTerm = search.toLowerCase().trim();
+  return kbs.filter(
+    (kb) =>
+      kb.name.toLowerCase().includes(searchTerm) ||
+      kb.description?.toLowerCase().includes(searchTerm)
+  );
+}
+
+function applyKBFilters(
+  kbs: KBSummary[],
+  filters?: DashboardFilters
+): KBSummary[] {
+  let filteredKBs = kbs;
+
+  // Apply time range filtering if provided
+  if (filters?.time_range) {
+    filteredKBs = filterKBsByTimeRange(filteredKBs, filters.time_range);
+  }
+
+  // Apply search filtering if provided and not empty
+  if (filters && 'search' in filters && filters.search) {
+    const searchQuery = filters.search;
+    if (typeof searchQuery === 'string' && searchQuery.trim() !== '') {
+      filteredKBs = filterKBsBySearch(filteredKBs, searchQuery);
+    }
+  }
+
+  return filteredKBs;
+}
+
 // Note: The KB API only supports workspace_id, context, status, page, and limit filters
 
 class DashboardApiClient {
   /**
    * Get complete dashboard data - Now uses real KB APIs
    */
-  async getDashboardData(workspaceId: string): Promise<DashboardData> {
+  async getDashboardData(
+    workspaceId: string,
+    filters?: DashboardFilters
+  ): Promise<DashboardData> {
     try {
-      // Use the same filters as the working KB store - only supported filters
+      // Use backend-supported filters only (client-side filtering applied after)
       const finalFilters = {
         workspace_id: workspaceId, // CRITICAL: Ensures only workspace-specific KBs are returned
         page: 1,
-        limit: 10, // Recent items for dashboard display
+        limit: 50, // Fetch more data to enable effective client-side filtering
       };
 
       const kbListResponse = await kbClient.kb.list(finalFilters);
 
-      // Handle response format the same way as KB store (items array or direct array)
-      const kbItems = kbListResponse.items || kbListResponse;
-      const kbArray = Array.isArray(kbItems) ? kbItems : [];
+      // Handle response format safely - extract items from paginated response
+      const kbArray: KBSummary[] = Array.isArray(kbListResponse)
+        ? kbListResponse
+        : kbListResponse.items;
 
       // Validate that returned data belongs to the correct workspace (defense in depth)
       const validatedKBs = kbArray.filter(
-        (kb: any) => kb.workspace_id === workspaceId
+        (kb: KBSummary) => kb.workspace_id === workspaceId
       );
 
-      // Convert validated KB data to dashboard format
-      const recentKnowledgeBases = validatedKBs.map(
-        convertKBSummaryToDashboard
-      );
+      // Apply client-side filtering (time range, search)
+      const filteredKBs = applyKBFilters(validatedKBs, filters);
 
-      // Calculate KB stats from real data (handle both paginated and direct responses)
-      const totalKnowledgeBases =
-        (kbListResponse as any).total || kbArray.length;
+      // Convert filtered KB data to dashboard format
+      const recentKnowledgeBases = filteredKBs
+        .slice(0, 10) // Limit to recent items for dashboard display
+        .map(convertKBSummaryToDashboard);
+
+      // Calculate KB stats from filtered data
+      const totalKnowledgeBases = filteredKBs.length;
 
       // For now, use fallback data for other resources until their APIs are ready
       await new Promise((resolve) => setTimeout(resolve, 300)); // Reduce delay since we have real data
@@ -271,16 +353,23 @@ class DashboardApiClient {
   /**
    * Get dashboard statistics only
    */
-  async getStats(workspaceId: string): Promise<DashboardStats> {
-    const data = await this.getDashboardData(workspaceId);
+  async getStats(
+    workspaceId: string,
+    filters?: DashboardFilters
+  ): Promise<DashboardStats> {
+    const data = await this.getDashboardData(workspaceId, filters);
     return data.stats;
   }
 
   /**
    * Get recent activities only
    */
-  async getActivities(workspaceId: string, limit = 10): Promise<Activity[]> {
-    const data = await this.getDashboardData(workspaceId);
+  async getActivities(
+    workspaceId: string,
+    filters?: DashboardFilters,
+    limit = 10
+  ): Promise<Activity[]> {
+    const data = await this.getDashboardData(workspaceId, filters);
     return data.recent_activities.slice(0, limit);
   }
 
@@ -359,7 +448,7 @@ class DashboardApiClient {
         id: "kb-fallback-1",
         name: "Product Documentation",
         description: "Complete product documentation and guides",
-        status: "active",
+        status: "ready",
         documents_count: 127,
         total_chunks: 3420,
         last_indexed_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),

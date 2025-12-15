@@ -39,6 +39,7 @@ interface DashboardHeaderProps {
   onTimeRangeChange?: (timeRange: string) => void;
   selectedTimeRange?: string;
   onCustomDateRangeChange?: (dateRange: string | null) => void;
+  onSearchChange?: (search: string) => void;
 }
 
 export function DashboardHeader({
@@ -49,6 +50,7 @@ export function DashboardHeader({
   onTimeRangeChange,
   selectedTimeRange: propSelectedTimeRange,
   onCustomDateRangeChange,
+  onSearchChange,
 }: DashboardHeaderProps) {
   const navigate = useNavigate();
   const [hasUnreadNotifications] = useState(true); // TODO: Get from API
@@ -75,17 +77,21 @@ export function DashboardHeader({
     setSearchExpanded(!searchExpanded);
     if (searchExpanded) {
       setSearchQuery("");
+      // Clear the search in parent component when closing search
+      onSearchChange?.("");
     }
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      // TODO: Implement search functionality
-      console.log("Searching for:", searchQuery);
-      setSearchExpanded(false);
-      setSearchQuery("");
-    }
+    const trimmedQuery = searchQuery.trim();
+
+    // Call the search callback with the query (empty string clears search)
+    onSearchChange?.(trimmedQuery);
+
+    // Collapse search input after submit
+    setSearchExpanded(false);
+    setSearchQuery("");
   };
 
   const handleNotifications = () => {

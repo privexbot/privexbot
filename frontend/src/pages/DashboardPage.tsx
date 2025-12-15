@@ -36,8 +36,9 @@ export function DashboardPage() {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTimeRange, setSelectedTimeRange] = useState("Last 7 days");
+  const [selectedTimeRange, setSelectedTimeRange] = useState("All");
   const [customDateRange, setCustomDateRange] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Fetch dashboard data
   useEffect(() => {
@@ -50,7 +51,23 @@ export function DashboardPage() {
         setIsLoading(true);
         setError(null);
 
-        const data = await dashboardApi.getDashboardData(currentWorkspace.id);
+        // Convert selectedTimeRange to API format - only apply if not "All"
+        let apiTimeRange: '24h' | '7d' | '30d' | '90d' | '1y' | undefined;
+        if (selectedTimeRange !== 'All' && selectedTimeRange !== 'All time') {
+          apiTimeRange =
+            selectedTimeRange === 'Last 24 hours' ? '24h' :
+            selectedTimeRange === 'Last 7 days' ? '7d' :
+            selectedTimeRange === 'Last 30 days' ? '30d' :
+            selectedTimeRange === 'Last 90 days' ? '90d' :
+            selectedTimeRange === 'Last year' ? '1y' : undefined;
+        }
+
+        const filters = {
+          time_range: apiTimeRange,
+          search: searchQuery && searchQuery.trim() !== '' ? searchQuery.trim() : undefined,
+        };
+
+        const data = await dashboardApi.getDashboardData(currentWorkspace.id, filters);
         setDashboardData(data);
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
@@ -60,8 +77,8 @@ export function DashboardPage() {
       }
     };
 
-    fetchDashboardData();
-  }, [currentWorkspace?.id]);
+    void fetchDashboardData();
+  }, [currentWorkspace?.id, selectedTimeRange, searchQuery]);
 
   // Navigation handlers
   const handleCreateChatbot = () => {
@@ -128,6 +145,7 @@ export function DashboardPage() {
           onTimeRangeChange={setSelectedTimeRange}
           selectedTimeRange={selectedTimeRange}
           onCustomDateRangeChange={setCustomDateRange}
+          onSearchChange={setSearchQuery}
         />
 
         {/* Horizontal Divider between Header and Stats */}
@@ -138,7 +156,7 @@ export function DashboardPage() {
         {/* Stats Cards - Separate Section */}
         <StatsCards
           stats={
-            dashboardData?.stats || {
+            dashboardData?.stats ?? {
               total_chatbots: 0,
               total_chatflows: 0,
               total_knowledge_bases: 0,
@@ -173,7 +191,7 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column: Recent Activities */}
           <RecentActivities
-            activities={dashboardData?.recent_activities || []}
+            activities={dashboardData?.recent_activities ?? []}
             onViewAll={handleViewAllActivities}
             onActivityClick={handleActivityClick}
             isLoading={isLoading}
@@ -181,9 +199,9 @@ export function DashboardPage() {
 
           {/* Right Column: Recent Resources */}
           <RecentResources
-            chatbots={dashboardData?.recent_chatbots || []}
-            chatflows={dashboardData?.recent_chatflows || []}
-            knowledgeBases={dashboardData?.recent_knowledge_bases || []}
+            chatbots={dashboardData?.recent_chatbots ?? []}
+            chatflows={dashboardData?.recent_chatflows ?? []}
+            knowledgeBases={dashboardData?.recent_knowledge_bases ?? []}
             onViewChatbots={handleViewChatbots}
             onViewChatflows={handleViewChatflows}
             onViewKnowledgeBases={handleViewKnowledgeBases}
