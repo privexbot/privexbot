@@ -51,9 +51,19 @@ export function DashboardPage() {
         setIsLoading(true);
         setError(null);
 
-        // Convert selectedTimeRange to API format - only apply if not "All"
+        // Handle time filtering - either preset ranges or custom date range
         let apiTimeRange: '24h' | '7d' | '30d' | '90d' | '1y' | undefined;
-        if (selectedTimeRange !== 'All' && selectedTimeRange !== 'All time') {
+        let customDateFilter: { start: string; end: string } | undefined;
+
+        if (customDateRange) {
+          // Parse custom date range from JSON string
+          try {
+            customDateFilter = JSON.parse(customDateRange) as { start: string; end: string };
+          } catch {
+            console.warn('Failed to parse custom date range:', customDateRange);
+          }
+        } else if (selectedTimeRange !== 'All' && selectedTimeRange !== 'All time' && selectedTimeRange) {
+          // Use preset time range
           apiTimeRange =
             selectedTimeRange === 'Last 24 hours' ? '24h' :
             selectedTimeRange === 'Last 7 days' ? '7d' :
@@ -64,6 +74,7 @@ export function DashboardPage() {
 
         const filters = {
           time_range: apiTimeRange,
+          custom_date_range: customDateFilter,
           search: searchQuery && searchQuery.trim() !== '' ? searchQuery.trim() : undefined,
         };
 
@@ -78,7 +89,7 @@ export function DashboardPage() {
     };
 
     void fetchDashboardData();
-  }, [currentWorkspace?.id, selectedTimeRange, searchQuery]);
+  }, [currentWorkspace?.id, selectedTimeRange, searchQuery, customDateRange]);
 
   // Navigation handlers
   const handleCreateChatbot = () => {

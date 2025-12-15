@@ -140,14 +140,18 @@ export function DashboardHeader({
       setSelectedDateRange(dateRangeStr);
       setIsCalendarOpen(false);
 
+      // Create ISO date strings for filtering
+      const customDateRange = {
+        start: calendarStartDate.toISOString().split('T')[0], // YYYY-MM-DD format
+        end: calendarEndDate.toISOString().split('T')[0]
+      };
+
       // Notify parent component about custom date range
-      onCustomDateRangeChange?.(dateRangeStr);
+      onCustomDateRangeChange?.(JSON.stringify(customDateRange));
 
-      // Clear the time range since we're using custom dates
+      // Clear the preset time range since we're using custom dates
+      setSelectedTimeRange("");
       onTimeRangeChange?.("");
-
-      // TODO: Fetch data for custom date range
-      console.log("Custom date range applied:", startStr, endStr);
     }
   };
 
@@ -404,6 +408,12 @@ export function DashboardHeader({
                           setCalendarStartDate(null);
                           setCalendarEndDate(null);
                           setSelectedDateRange(null);
+                          setIsCalendarOpen(false);
+                          // Notify parent to clear custom date range
+                          onCustomDateRangeChange?.(null);
+                          // Reset to default time range
+                          setSelectedTimeRange("All");
+                          onTimeRangeChange?.("All");
                         }}
                         className="flex-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 font-medium transition-colors font-manrope"
                       >

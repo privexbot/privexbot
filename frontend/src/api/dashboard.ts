@@ -84,6 +84,23 @@ function filterKBsByTimeRange(
   });
 }
 
+function filterKBsByCustomDateRange(
+  kbs: KBSummary[],
+  customDateRange?: { start: string; end: string }
+): KBSummary[] {
+  if (!customDateRange) return kbs;
+
+  const startDate = new Date(customDateRange.start);
+  const endDate = new Date(customDateRange.end);
+  // Set end date to end of day
+  endDate.setHours(23, 59, 59, 999);
+
+  return kbs.filter((kb) => {
+    const createdDate = new Date(kb.created_at);
+    return createdDate >= startDate && createdDate <= endDate;
+  });
+}
+
 function filterKBsBySearch(kbs: KBSummary[], search?: string): KBSummary[] {
   if (!search || typeof search !== 'string' || search.trim() === "") return kbs;
 
@@ -101,8 +118,12 @@ function applyKBFilters(
 ): KBSummary[] {
   let filteredKBs = kbs;
 
-  // Apply time range filtering if provided
-  if (filters?.time_range) {
+  // Apply time filtering - either preset range or custom date range
+  if (filters && 'custom_date_range' in filters && filters.custom_date_range) {
+    // Custom date range takes priority over preset time range
+    filteredKBs = filterKBsByCustomDateRange(filteredKBs, filters.custom_date_range);
+  } else if (filters?.time_range) {
+    // Use preset time range
     filteredKBs = filterKBsByTimeRange(filteredKBs, filters.time_range);
   }
 
