@@ -138,6 +138,74 @@ function applyKBFilters(
   return filteredKBs;
 }
 
+/**
+ * Calculate previous period date range based on current filters
+ */
+function getPreviousPeriodFilters(filters?: DashboardFilters): DashboardFilters | undefined {
+  if (!filters) return undefined;
+
+  // Handle custom date range
+  if (filters.custom_date_range) {
+    const startDate = new Date(filters.custom_date_range.start);
+    const endDate = new Date(filters.custom_date_range.end);
+
+    // Calculate the duration in milliseconds
+    const duration = endDate.getTime() - startDate.getTime();
+
+    // Shift back by the same duration
+    const prevEndDate = new Date(startDate.getTime() - 24 * 60 * 60 * 1000); // Day before start
+    const prevStartDate = new Date(prevEndDate.getTime() - duration);
+
+    return {
+      custom_date_range: {
+        start: prevStartDate.toISOString().split('T')[0],
+        end: prevEndDate.toISOString().split('T')[0]
+      },
+      search: filters.search
+    };
+  }
+
+  // Handle preset time ranges
+  if (filters.time_range) {
+    const now = new Date();
+    const timeRangeMap: Record<string, number> = {
+      '24h': 1,
+      '7d': 7,
+      '30d': 30,
+      '90d': 90,
+      '1y': 365
+    };
+
+    const days = timeRangeMap[filters.time_range];
+    if (!days) return undefined;
+
+    // Previous period: same duration, shifted back
+    const currentStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const prevEnd = new Date(currentStart.getTime() - 24 * 60 * 60 * 1000);
+    const prevStart = new Date(prevEnd.getTime() - days * 24 * 60 * 60 * 1000);
+
+    return {
+      custom_date_range: {
+        start: prevStart.toISOString().split('T')[0],
+        end: prevEnd.toISOString().split('T')[0]
+      },
+      search: filters.search
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * Calculate percentage change between current and previous values
+ */
+function calculateGrowthPercentage(current: number, previous: number): number {
+  if (previous === 0) {
+    return current > 0 ? 100 : 0; // 100% growth if we had none before, 0% if still none
+  }
+  return ((current - previous) / previous) * 100;
+}
+
 // Note: The KB API only supports workspace_id, context, status, page, and limit filters
 
 class DashboardApiClient {
@@ -179,6 +247,24 @@ class DashboardApiClient {
       // Calculate KB stats from filtered data
       const totalKnowledgeBases = filteredKBs.length;
 
+      // Calculate KB growth percentage (vs previous period)
+      let kbGrowthPercentage = 0;
+      try {
+        // Only calculate growth if we have filters (not showing "All" data)
+        if (filters && (filters.time_range || filters.custom_date_range)) {
+          const previousFilters = getPreviousPeriodFilters(filters);
+          if (previousFilters) {
+            // Get previous period data
+            const prevFilteredKBs = applyKBFilters(validatedKBs, previousFilters);
+            const previousKBCount = prevFilteredKBs.length;
+            kbGrowthPercentage = calculateGrowthPercentage(totalKnowledgeBases, previousKBCount);
+          }
+        }
+      } catch {
+        // If calculation fails, default to 0
+        kbGrowthPercentage = 0;
+      }
+
       // For now, use fallback data for other resources until their APIs are ready
       await new Promise((resolve) => setTimeout(resolve, 300)); // Reduce delay since we have real data
 
@@ -191,7 +277,7 @@ class DashboardApiClient {
         active_conversations: 0,
         chatbots_delta: 12.5,
         chatflows_delta: -5.2,
-        knowledge_bases_delta: 8.3, // TODO: Calculate real delta
+        knowledge_bases_delta: Number(kbGrowthPercentage.toFixed(1)),
         leads_delta: 24.7,
         conversations_delta: 15.8,
       };
@@ -355,7 +441,7 @@ class DashboardApiClient {
         active_conversations: 23,
         chatbots_delta: 12.5,
         chatflows_delta: -5.2,
-        knowledge_bases_delta: 8.3,
+        knowledge_bases_delta: 0, // No real data to calculate from
         leads_delta: 24.7,
         conversations_delta: 15.8,
       };
