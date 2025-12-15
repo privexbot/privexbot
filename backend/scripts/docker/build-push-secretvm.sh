@@ -184,9 +184,13 @@ else
     echo -e "  Target: ${DEPLOYMENT_TARGET}"
     echo ""
 
-    docker build \
+    # Build with compatibility for Secret VM's Docker version
+    # Disable provenance and SBOM attestations to avoid manifest schema issues
+    DOCKER_BUILDKIT=1 docker build \
         $NO_CACHE \
         --platform linux/amd64 \
+        --provenance=false \
+        --sbom=false \
         -f "${DOCKERFILE}" \
         --build-arg BUILD_DATE="${BUILD_DATE}" \
         --build-arg VCS_REF="${SHORT_SHA}" \

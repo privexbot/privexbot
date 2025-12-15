@@ -166,7 +166,11 @@ build_image() {
     log_info "  Target: ${DEPLOYMENT_TARGET}"
 
     # Build the image with Secret VM specific tags
-    docker build \
+    # Disable provenance and SBOM attestations for Secret VM compatibility
+    DOCKER_BUILDKIT=1 docker build \
+        --platform linux/amd64 \
+        --provenance=false \
+        --sbom=false \
         --file "Dockerfile" \
         --tag "$tag" \
         --tag "${FULL_IMAGE_NAME}:${version}-secretvm" \
