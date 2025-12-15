@@ -578,10 +578,9 @@ async def request_password_reset(
     # Try to send email but don't block on failure
     # This prevents timeout issues when SMTP is unreachable
     try:
-        from app.services.email_service import send_password_reset_email
-        # Attempt to send email with a very short timeout
-        # In production, this should be done via background task (Celery)
-        email_sent = send_password_reset_email(
+        from app.services.email_service_enhanced import send_password_reset_email_enhanced
+        # Send email with enhanced retry logic and port fallback
+        email_sent = send_password_reset_email_enhanced(
             to_email=email,
             reset_url=reset_link
         )
@@ -1032,9 +1031,22 @@ def send_email_verification_email(
         True if email sent successfully, False otherwise
     """
     try:
-        # Use the email service to send verification email
-        from app.services.email_service import send_email_verification_email as send_verification
-        return send_verification(to_email, username, verification_code)
+        # Use the enhanced email service with retry logic
+        from app.services.email_service_enhanced import send_email_with_retry
+
+        # Create HTML content for verification email
+        subject = f"Verify Your Email - PrivexBot"
+        html_content = f"""
+        <h2>Welcome to PrivexBot, {username}!</h2>
+        <p>Thank you for signing up. Please use the following code to verify your email address:</p>
+        <div style="font-size: 24px; font-weight: bold; color: #3b82f6; padding: 20px; background-color: #f3f4f6; border-radius: 8px; margin: 20px 0; text-align: center;">
+            {verification_code}
+        </div>
+        <p>This code will expire in 5 minutes.</p>
+        <p>If you didn't request this verification, please ignore this email.</p>
+        """
+
+        return send_email_with_retry(to_email, subject, html_content)
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
@@ -1250,9 +1262,9 @@ def send_email_link_verification_email(
         True if email sent successfully, False otherwise
     """
     try:
-        # Use the email service to send link verification email
-        from app.services.email_service import send_email_link_verification_email as send_link_verification
-        return send_link_verification(to_email, verification_code)
+        # Use the enhanced email service with retry logic for link verification
+        from app.services.email_service_enhanced import send_email_link_verification_enhanced
+        return send_email_link_verification_enhanced(to_email, verification_code)
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
