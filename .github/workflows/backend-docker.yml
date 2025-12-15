@@ -1,0 +1,413 @@
+name: Backend - Build and Push Docker Image
+
+# Trigger conditions
+on:
+  push:
+    branches:
+      - main        # Production builds
+      - dev         # Development builds
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-docker.yml'
+
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., 0.1.0, 0.2.0-rc.1)'
+        required: true
+        default: '0.1.0'
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+# Environment variables
+env:
+  DOCKER_USERNAME: privexbot
+  IMAGE_NAME: privexbot-backend
+  REGISTRY: docker.io
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    # Permissions for GitHub Actions
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for versioning
+
+      # Step 2: Set up Docker Buildx (for multi-platform builds)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Step 3: Login to Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Step 4: Determine version and tags
+      - name: Determine version and tags
+        id: meta
+        run: |
+          # Default prelaunch version (reserved: 1.0.0 for official launch)
+          DEFAULT_VERSION="0.1.0"
+
+          # Determine version
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          else
+            # Use default prelaunch version for all auto builds
+            VERSION="${DEFAULT_VERSION}"
+            BRANCH="${{ github.ref_name }}"
+
+            if [ "$BRANCH" == "main" ]; then
+              ENVIRONMENT="production"
+            else
+              ENVIRONMENT="development"
+            fi
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "git_sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+          echo "📦 Version: ${VERSION}"
+          echo "🌍 Environment: ${ENVIRONMENT}"
+          echo "🔖 Git SHA: ${GITHUB_SHA:0:7}"
+
+      # Step 5: Build and push Docker image
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          build-args: |
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            VCS_REF=${{ steps.meta.outputs.short_sha }}
+            VERSION=${{ steps.meta.outputs.version }}
+
+      # Step 6: Get image digest
+      - name: Get image digest
+        id: digest
+        run: |
+          # Get digest from the build output
+          DIGEST="${{ steps.build.outputs.digest }}"
+          FULL_IMAGE="${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
+          echo "full_image=${FULL_IMAGE}" >> $GITHUB_OUTPUT
+
+          echo "📍 Image Digest: ${DIGEST}"
+          echo "🎯 Full Image: ${FULL_IMAGE}"
+
+      # Step 7: Create deployment summary
+      - name: Create deployment summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## 🐳 Docker Image Build Summary
+
+          ### Image Information
+          - **Image Name**: \`${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}\`
+          - **Version**: \`${{ steps.meta.outputs.version }}\` (Prelaunch - 1.0.0 reserved for official launch)
+          - **Environment**: \`${{ steps.meta.outputs.environment }}\`
+          - **Build Date**: \`${{ steps.meta.outputs.build_date }}\`
+          - **Git SHA**: \`${{ steps.meta.outputs.short_sha }}\`
+
+          ### Docker Hub Tags
+          \`\`\`
+          ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          \`\`\`
+
+          ### 🎯 Image Digest (Use this for SecretVM)
+          \`\`\`
+          ${{ steps.digest.outputs.full_image }}
+          \`\`\`
+
+          ---
+
+          ## 🚀 Deployment Instructions
+
+          ### SecretVM Deployment (Primary - privexbot.com)
+
+          **1. Update \`docker-compose.secretvm.yml\`:**
+          \`\`\`yaml
+          services:
+            backend:
+              image: ${{ steps.digest.outputs.full_image }}
+          \`\`\`
+
+          **2. Deploy via SecretVM Dev Portal:**
+          \`\`\`bash
+          # On your local machine
+          cd backend
+
+          # Show updated compose file
+          ./scripts/docker/secretvm-deploy.sh show
+
+          # Copy the output and paste into SecretVM Dev Portal
+          # Then click "Deploy" in the portal
+          \`\`\`
+
+          **3. Test Backend:**
+          \`\`\`bash
+          # Health check
+          curl https://api.privexbot.com/health
+
+          # API status
+          curl https://api.privexbot.com/api/v1/status
+
+          # Or run comprehensive tests
+          cd backend
+          ./scripts/docker/secretvm-deploy.sh test
+          \`\`\`
+
+          ### Standalone Production Deployment
+
+          **Update \`docker-compose.yml\`:**
+          \`\`\`yaml
+          services:
+            backend:
+              image: ${{ steps.digest.outputs.full_image }}
+          \`\`\`
+
+          **Deploy:**
+          \`\`\`bash
+          docker compose pull
+          docker compose up -d
+          \`\`\`
+
+          ---
+
+          ### 🔗 Production Services
+          - [Backend API](https://api.privexbot.com)
+          - [API Documentation](https://api.privexbot.com/api/docs)
+          - [PgAdmin](https://pgadmin.privexbot.com)
+          - [Redis UI](https://redis-ui.privexbot.com)
+          - [Traefik Dashboard](https://traefik.privexbot.com/dashboard/)
+
+          ### 🔗 Resources
+          - [Docker Hub Image](https://hub.docker.com/r/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }})
+          - [Deployment Documentation](https://github.com/${{ github.repository}}/blob/main/backend/docs/DEPLOYMENT.md)
+          - [SecretVM Guide](https://github.com/${{ github.repository}}/blob/main/backend/docs/SECRETVM_DEPLOYMENT.md)
+          EOF
+
+      # Step 8: Save artifacts
+      - name: Save image information
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/image-info.json <<EOF
+          {
+            "image": "${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}",
+            "version": "${{ steps.meta.outputs.version }}",
+            "digest": "${{ steps.digest.outputs.digest }}",
+            "full_image": "${{ steps.digest.outputs.full_image }}",
+            "environment": "${{ steps.meta.outputs.environment }}",
+            "build_date": "${{ steps.meta.outputs.build_date }}",
+            "git_sha": "${{ steps.meta.outputs.git_sha }}",
+            "short_sha": "${{ steps.meta.outputs.short_sha }}",
+            "git_ref": "${{ github.ref }}",
+            "git_branch": "${{ github.ref_name }}"
+          }
+          EOF
+
+          cat > artifacts/deploy-instructions.md <<EOF
+          # PrivexBot Backend Deployment Instructions
+
+          ## Image Details
+          - **Version**: ${{ steps.meta.outputs.version }} (Prelaunch - 1.0.0 reserved for launch)
+          - **Environment**: ${{ steps.meta.outputs.environment }}
+          - **Git SHA**: ${{ steps.meta.outputs.short_sha }}
+          - **Full Image**: \`${{ steps.digest.outputs.full_image }}\`
+
+          ---
+
+          ## SecretVM Deployment (Primary - privexbot.com)
+
+          ### Step 1: Update docker-compose.secretvm.yml
+
+          \`\`\`yaml
+          services:
+            backend:
+              image: ${{ steps.digest.outputs.full_image }}
+          \`\`\`
+
+          ### Step 2: Deploy via SecretVM Dev Portal
+
+          \`\`\`bash
+          # On your local machine
+          cd backend
+
+          # Show updated compose file
+          ./scripts/docker/secretvm-deploy.sh show
+
+          # Copy the output to clipboard and paste into SecretVM Dev Portal
+          # Upload deploy/secretvm/.env file to portal
+          # Click "Deploy" button in portal
+          \`\`\`
+
+          ### Step 3: Verify Deployment
+
+          \`\`\`bash
+          # Run comprehensive tests
+          cd backend
+          ./scripts/docker/secretvm-deploy.sh test
+          \`\`\`
+
+          **Expected Results:**
+          - ✅ Backend Health: HTTP 200
+          - ✅ Backend Status: HTTP 200
+          - ✅ API Docs: HTTP 200
+          - ✅ PgAdmin: HTTP 302
+          - ✅ Redis UI: HTTP 200
+          - ✅ Traefik: HTTP 302
+
+          ---
+
+          ## Production Services
+
+          After deployment, services will be available at:
+
+          - **Backend API**: https://api.privexbot.com
+          - **API Docs**: https://api.privexbot.com/api/docs
+          - **PgAdmin**: https://pgadmin.privexbot.com
+          - **Redis UI**: https://redis-ui.privexbot.com
+          - **Traefik**: https://traefik.privexbot.com/dashboard/
+
+          ---
+
+          ## Standalone Production Deployment
+
+          ### Update docker-compose.yml
+
+          \`\`\`yaml
+          services:
+            backend:
+              image: ${{ steps.digest.outputs.full_image }}
+          \`\`\`
+
+          ### Deploy
+
+          \`\`\`bash
+          docker compose pull
+          docker compose up -d
+          docker compose ps
+          \`\`\`
+
+          ---
+
+          ## Environment Configuration
+
+          Ensure \`.env\` file is properly configured:
+
+          \`\`\`bash
+          # Copy template
+          cp .env.example .env
+
+          # Configure required variables
+          POSTGRES_PASSWORD=STRONG_PASSWORD_HERE
+          SECRET_KEY=RANDOM_SECRET_KEY_HERE
+          BACKEND_CORS_ORIGINS=https://privexbot.com,https://api.privexbot.com
+          \`\`\`
+
+          **Generate secure secrets:**
+          \`\`\`bash
+          # PostgreSQL password
+          openssl rand -base64 32
+
+          # JWT secret key
+          openssl rand -hex 32
+          \`\`\`
+
+          ---
+
+          ## Testing
+
+          **Health check:**
+          \`\`\`bash
+          curl https://api.privexbot.com/health
+          \`\`\`
+
+          **API status:**
+          \`\`\`bash
+          curl https://api.privexbot.com/api/v1/status
+          \`\`\`
+
+          **Interactive API docs:**
+          \`\`\`
+          https://api.privexbot.com/api/docs
+          \`\`\`
+
+          **Comprehensive tests:**
+          \`\`\`bash
+          cd backend
+          ./scripts/docker/secretvm-deploy.sh test
+          \`\`\`
+
+          ---
+
+          ## Docker Hub
+
+          View image: https://hub.docker.com/r/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
+
+          ---
+
+          ## Troubleshooting
+
+          If deployment fails:
+
+          1. Check SecretVM portal logs for errors
+          2. Verify .env file has correct configuration
+          3. Ensure all services are stopped before redeploying
+          4. Check network connectivity and DNS
+          5. Review backend/docs/TROUBLESHOOTING.md
+
+          For detailed troubleshooting, see:
+          - [Troubleshooting Guide](https://github.com/${{ github.repository}}/blob/main/backend/docs/TROUBLESHOOTING.md)
+          - [SecretVM Guide](https://github.com/${{ github.repository}}/blob/main/backend/docs/SECRETVM_DEPLOYMENT.md)
+          EOF
+
+      # Step 9: Upload artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-info-${{ steps.meta.outputs.version }}
+          path: artifacts/
+          retention-days: 90
+
+      # Step 10: Output summary
+      - name: Output summary
+        run: |
+          echo "✅ Build completed successfully"
+          echo "📦 Version: ${{ steps.meta.outputs.version }}"
+          echo "🎯 Image: ${{ steps.digest.outputs.full_image }}"
+          echo "🌐 Production: https://api.privexbot.com"
+          echo "📋 Check the Actions summary for full deployment instructions"

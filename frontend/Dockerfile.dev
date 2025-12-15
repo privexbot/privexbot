@@ -1,0 +1,30 @@
+# Development Dockerfile for PrivexBot Frontend
+# Purpose: Local development with hot reload and live code changes
+# Usage: docker compose -f docker-compose.dev.yml up --build
+
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies
+# Copy package files first for better layer caching
+COPY package.json package-lock.json ./
+
+# Install all dependencies (including devDependencies for development)
+# Use --legacy-peer-deps to handle React 19 compatibility with react-leaflet
+RUN npm ci --legacy-peer-deps
+
+# Copy all source code
+# Note: In dev, we'll override this with volume mount for live reload
+COPY . .
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Set environment to development
+ENV NODE_ENV=development
+
+# Run Vite dev server
+# --host 0.0.0.0 allows access from outside the container
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

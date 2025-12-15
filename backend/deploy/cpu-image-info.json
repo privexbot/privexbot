@@ -1,0 +1,11 @@
+{
+  "image": "harystyles/privexbot-backend",
+  "version": "0.0.1",
+  "digest": "sha256:fcc7eb8cadd2cc92697074b5291824c8d2754ef1eb296e1701a689056f7655d8",
+  "full_image": "harystyles/privexbot-backend@sha256:fcc7eb8cadd2cc92697074b5291824c8d2754ef1eb296e1701a689056f7655d8",
+  "cpu_tag": "0.0.1-cpu",
+  "build_date": "2025-12-02T01:17:14Z",
+  "git_sha": "45ab6b39b4f71f4ca2c30d8901a2d3842bd08163",
+  "short_sha": "45ab6b3",
+  "dockerfile": "Dockerfile.cpu"
+}

@@ -1,0 +1,489 @@
+/**
+ * PrivexBot Widget Styles
+ * Scoped to .privexbot-widget to avoid conflicts
+ */
+
+/* Reset for widget */
+.privexbot-widget,
+.privexbot-widget * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Widget Container */
+.privexbot-widget {
+  position: fixed;
+  z-index: 999999;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.privexbot-widget.bottom-right {
+  bottom: 20px;
+  right: 20px;
+}
+
+.privexbot-widget.bottom-left {
+  bottom: 20px;
+  left: 20px;
+}
+
+.privexbot-widget.top-right {
+  top: 20px;
+  right: 20px;
+}
+
+.privexbot-widget.top-left {
+  top: 20px;
+  left: 20px;
+}
+
+/* Chat Bubble (Closed State) */
+.privexbot-bubble {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
+}
+
+.privexbot-bubble:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.privexbot-bubble-icon {
+  width: 30px;
+  height: 30px;
+  fill: white;
+}
+
+.privexbot-bubble-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Chat Window (Open State) */
+.privexbot-window {
+  width: 400px;
+  height: 600px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header */
+.privexbot-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.privexbot-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.privexbot-header-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.privexbot-header-avatar svg {
+  width: 24px;
+  height: 24px;
+  fill: white;
+}
+
+.privexbot-header-text h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.privexbot-header-text p {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.privexbot-close-btn {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.privexbot-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.privexbot-close-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: white;
+}
+
+/* Messages Area */
+.privexbot-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: #f9fafb;
+}
+
+.privexbot-message {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.privexbot-message.user {
+  flex-direction: row-reverse;
+}
+
+.privexbot-message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.privexbot-message.bot .privexbot-message-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.privexbot-message.user .privexbot-message-avatar {
+  background: #6366f1;
+}
+
+.privexbot-message-avatar svg {
+  width: 18px;
+  height: 18px;
+  fill: white;
+}
+
+.privexbot-message-bubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  word-wrap: break-word;
+}
+
+.privexbot-message.bot .privexbot-message-bubble {
+  background: white;
+  color: #1f2937;
+  border-bottom-left-radius: 4px;
+}
+
+.privexbot-message.user .privexbot-message-bubble {
+  background: #6366f1;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.privexbot-message-time {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+/* Typing Indicator */
+.privexbot-typing {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+}
+
+.privexbot-typing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+  animation: typing 1.4s infinite;
+}
+
+.privexbot-typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.privexbot-typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Input Area */
+.privexbot-input-area {
+  padding: 16px;
+  background: white;
+  border-top: 1px solid #e5e7eb;
+}
+
+.privexbot-input-container {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.privexbot-input {
+  flex: 1;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  resize: none;
+  max-height: 100px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.privexbot-input:focus {
+  border-color: #6366f1;
+}
+
+.privexbot-send-btn {
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.privexbot-send-btn:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.privexbot-send-btn:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+}
+
+.privexbot-send-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: white;
+}
+
+/* Lead Form */
+.privexbot-lead-form {
+  padding: 20px;
+  background: white;
+}
+
+.privexbot-lead-form h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+.privexbot-lead-form p {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 20px;
+}
+
+.privexbot-form-group {
+  margin-bottom: 16px;
+}
+
+.privexbot-form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.privexbot-form-input {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.privexbot-form-input:focus {
+  border-color: #6366f1;
+}
+
+.privexbot-form-error {
+  color: #ef4444;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.privexbot-form-submit {
+  width: 100%;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.privexbot-form-submit:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.privexbot-form-submit:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+}
+
+.privexbot-form-skip {
+  width: 100%;
+  background: transparent;
+  color: #6b7280;
+  border: none;
+  padding: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 8px;
+  text-decoration: underline;
+}
+
+/* Branding */
+.privexbot-branding {
+  text-align: center;
+  padding: 12px;
+  font-size: 11px;
+  color: #9ca3af;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+}
+
+.privexbot-branding a {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.privexbot-branding a:hover {
+  text-decoration: underline;
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
+  .privexbot-window {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  .privexbot-widget.bottom-right,
+  .privexbot-widget.bottom-left,
+  .privexbot-widget.top-right,
+  .privexbot-widget.top-left {
+    bottom: 20px;
+    right: 20px;
+    top: auto;
+    left: auto;
+  }
+}
+
+/* Scrollbar Styling */
+.privexbot-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.privexbot-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.privexbot-messages::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.privexbot-messages::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

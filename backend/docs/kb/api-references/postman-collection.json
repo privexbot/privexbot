@@ -1,0 +1,809 @@
+{
+  "info": {
+    "name": "PrivexBot KB APIs",
+    "description": "Comprehensive collection of Knowledge Base API endpoints for PrivexBot Backend",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "draft_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "kb_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pipeline_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "workspace_id",
+      "value": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"TestPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/email/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "email", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', response.access_token);",
+                  "    pm.test('Login successful', () => {",
+                  "        pm.expect(response.access_token).to.exist;",
+                  "    });",
+                  "} else if (pm.response.code === 404) {",
+                  "    pm.test('User not found - will try signup', () => {",
+                  "        pm.expect(pm.response.code).to.equal(404);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"TestPassword123!\",\n  \"username\": \"testuser\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/email/signup",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "email", "signup"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', response.access_token);",
+                  "    pm.test('Signup successful', () => {",
+                  "        pm.expect(response.access_token).to.exist;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "KB Draft Management",
+      "item": [
+        {
+          "name": "Create KB Draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test API Documentation\",\n  \"description\": \"Test KB for API reference\",\n  \"workspace_id\": \"{{workspace_id}}\",\n  \"context\": \"both\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", ""]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('draft_id', response.draft_id);",
+                  "    pm.test('Draft created', () => {",
+                  "        pm.expect(response.draft_id).to.exist;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get KB Draft",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Add Web Source",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://docs.scrt.network/secret-network-documentation/introduction/secret-network-techstack/consensus-for-secret-transactions\",\n  \"config\": {\n    \"method\": \"scrape\",\n    \"max_pages\": 10,\n    \"max_depth\": 2,\n    \"stealth_mode\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/sources/web",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "sources", "web"]
+            }
+          }
+        },
+        {
+          "name": "Update Chunking Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"by_heading\",\n  \"chunk_size\": 1200,\n  \"chunk_overlap\": 150,\n  \"preserve_code_blocks\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/chunking",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "chunking"]
+            }
+          }
+        },
+        {
+          "name": "Single URL Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://docs.scrt.network/secret-network-documentation/introduction/secret-network-techstack/consensus-for-secret-transactions\",\n  \"strategy\": \"adaptive\",\n  \"chunk_size\": 1000,\n  \"chunk_overlap\": 200,\n  \"max_preview_chunks\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/preview",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "preview"]
+            }
+          }
+        },
+        {
+          "name": "Draft Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"by_heading\",\n  \"chunk_size\": 1000,\n  \"chunk_overlap\": 200,\n  \"max_preview_pages\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/preview",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "preview"]
+            }
+          }
+        },
+        {
+          "name": "Get Draft Pages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/pages",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "pages"]
+            }
+          }
+        },
+        {
+          "name": "Get Draft Chunks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/chunks?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "chunks"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Validate Draft",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/validate",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "validate"]
+            }
+          }
+        },
+        {
+          "name": "Finalize Draft",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/kb-drafts/{{draft_id}}/finalize",
+              "host": ["{{base_url}}"],
+              "path": ["kb-drafts", "{{draft_id}}", "finalize"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('kb_id', response.kb_id);",
+                  "    pm.collectionVariables.set('pipeline_id', response.pipeline_id);",
+                  "    pm.test('KB finalized', () => {",
+                  "        pm.expect(response.kb_id).to.exist;",
+                  "        pm.expect(response.pipeline_id).to.exist;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Content Enhancement",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/content-enhancement/health",
+              "host": ["{{base_url}}"],
+              "path": ["content-enhancement", "health"]
+            }
+          }
+        },
+        {
+          "name": "Enhance Content",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"🎉 Welcome to our API! 😍 Check out these links: https://tracker.example.com/ad?ref=123 and see the amazing features! This is great content! This is great content!\",\n  \"remove_emojis\": true,\n  \"filter_unwanted_links\": true,\n  \"enable_deduplication\": true,\n  \"normalize_whitespace\": true,\n  \"merge_short_lines\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/content-enhancement/enhance-content",
+              "host": ["{{base_url}}"],
+              "path": ["content-enhancement", "enhance-content"]
+            }
+          }
+        },
+        {
+          "name": "Extract Image Text (OCR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"![API Diagram](https://docs.example.com/images/api-flow.png)\\n\\nThe diagram above shows the API flow.\",\n  \"enabled\": true,\n  \"max_images\": 5,\n  \"min_confidence\": 50.0,\n  \"language\": \"eng\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/content-enhancement/extract-image-text",
+              "host": ["{{base_url}}"],
+              "path": ["content-enhancement", "extract-image-text"]
+            }
+          }
+        },
+        {
+          "name": "Recommend Strategy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"# API Documentation\\n\\n## Authentication\\n\\nOur API uses JWT tokens for authentication...\\n\\n## Endpoints\\n\\n### GET /users\\n\\nRetrieve user information...\",\n  \"url\": \"https://docs.example.com/api-reference\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/content-enhancement/recommend-strategy",
+              "host": ["{{base_url}}"],
+              "path": ["content-enhancement", "recommend-strategy"]
+            }
+          }
+        },
+        {
+          "name": "List Strategy Presets",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/content-enhancement/presets",
+              "host": ["{{base_url}}"],
+              "path": ["content-enhancement", "presets"]
+            }
+          }
+        },
+        {
+          "name": "Enhanced Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://docs.scrt.network/secret-network-documentation/introduction/secret-network-techstack/consensus-for-secret-transactions\",\n  \"apply_enhancement\": true,\n  \"apply_ocr\": false,\n  \"auto_strategy\": true,\n  \"chunk_size\": 1000,\n  \"chunk_overlap\": 200,\n  \"max_preview_chunks\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/content-enhancement/enhanced-preview",
+              "host": ["{{base_url}}"],
+              "path": ["content-enhancement", "enhanced-preview"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pipeline Processing",
+      "item": [
+        {
+          "name": "Get Pipeline Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-pipeline/{{pipeline_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["kb-pipeline", "{{pipeline_id}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get Pipeline Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-pipeline/{{pipeline_id}}/logs?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["kb-pipeline", "{{pipeline_id}}", "logs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Pipeline",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/kb-pipeline/{{pipeline_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["kb-pipeline", "{{pipeline_id}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Pipeline Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-pipeline/health",
+              "host": ["{{base_url}}"],
+              "path": ["kb-pipeline", "health"]
+            }
+          }
+        },
+        {
+          "name": "List Active Pipelines",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kb-pipeline/active?workspace_id={{workspace_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["kb-pipeline", "active"],
+              "query": [
+                {
+                  "key": "workspace_id",
+                  "value": "{{workspace_id}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "KB Management",
+      "item": [
+        {
+          "name": "List Knowledge Bases",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/?workspace_id={{workspace_id}}&status=ready",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", ""],
+              "query": [
+                {
+                  "key": "workspace_id",
+                  "value": "{{workspace_id}}"
+                },
+                {
+                  "key": "status",
+                  "value": "ready"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Knowledge Base",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get KB Statistics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}/stats",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Preview Re-chunking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"semantic\",\n  \"chunk_size\": 800,\n  \"chunk_overlap\": 100,\n  \"sample_documents\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}/preview-rechunk",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}", "preview-rechunk"]
+            }
+          }
+        },
+        {
+          "name": "Re-index KB",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}/reindex",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}", "reindex"]
+            }
+          }
+        },
+        {
+          "name": "List KB Documents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}/documents?page=1&limit=20&status=completed",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}", "documents"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "completed"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"API Rate Limiting\",\n  \"content\": \"# API Rate Limiting\\n\\n## Overview\\n\\nOur API implements rate limiting to ensure fair usage and maintain service quality.\\n\\n## Rate Limits\\n\\n- **Free tier**: 100 requests/hour\\n- **Pro tier**: 1,000 requests/hour\\n- **Enterprise**: Custom limits\\n\\n## Headers\\n\\nEvery API response includes rate limiting headers:\\n\\n- `X-RateLimit-Limit`: Your rate limit\\n- `X-RateLimit-Remaining`: Requests remaining\\n- `X-RateLimit-Reset`: Reset time (Unix timestamp)\",\n  \"source_type\": \"text_input\",\n  \"custom_metadata\": {\n    \"category\": \"api-limits\",\n    \"importance\": \"high\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}/documents",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}", "documents"]
+            }
+          }
+        },
+        {
+          "name": "List KB Chunks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/{{kb_id}}/chunks?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "{{kb_id}}", "chunks"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Testing Scenarios",
+      "item": [
+        {
+          "name": "Complete KB Creation Flow",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// This is a complete flow test scenario",
+                  "console.log('Starting complete KB creation flow test');",
+                  "",
+                  "// Set test variables",
+                  "pm.collectionVariables.set('test_url', 'https://docs.scrt.network/secret-network-documentation/introduction/secret-network-techstack/consensus-for-secret-transactions');",
+                  "pm.collectionVariables.set('test_kb_name', 'Test KB ' + Date.now());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "Error Scenarios - Invalid Token",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "invalid_token_12345",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", ""]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 401 for invalid token', () => {",
+                  "    pm.expect(pm.response.code).to.equal(401);",
+                  "});",
+                  "",
+                  "pm.test('Error response has correct format', () => {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.have.property('detail');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Scenarios - Nonexistent Resource",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/kbs/00000000-0000-0000-0000-000000000000",
+              "host": ["{{base_url}}"],
+              "path": ["kbs", "00000000-0000-0000-0000-000000000000"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404 for nonexistent resource', () => {",
+                  "    pm.expect(pm.response.code).to.equal(404);",
+                  "});",
+                  "",
+                  "pm.test('Error response has helpful message', () => {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.detail).to.include('not found');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Global pre-request script",
+          "console.log('Request: ' + request.method + ' ' + request.url.toString());",
+          "",
+          "// Check if we have a valid JWT token",
+          "const token = pm.collectionVariables.get('jwt_token');",
+          "if (!token && request.url.toString().includes('/auth/') === false) {",
+          "    console.log('Warning: No JWT token set. Authentication may be required.');",
+          "}",
+          "",
+          "// Add request timestamp",
+          "pm.collectionVariables.set('request_timestamp', new Date().toISOString());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "// Global test script",
+          "pm.test('Response time is reasonable', () => {",
+          "    pm.expect(pm.response.responseTime).to.be.below(30000);",
+          "});",
+          "",
+          "if (pm.response.code >= 400) {",
+          "    console.log('Error response:', pm.response.json());",
+          "}",
+          "",
+          "// Log response details for debugging",
+          "console.log('Response:', pm.response.code, pm.response.status);"
+        ]
+      }
+    }
+  ]
+}

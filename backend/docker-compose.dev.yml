@@ -1,0 +1,205 @@
+# Docker Compose for PrivexBot Backend - Development Environment
+# Purpose: Local development with hot reload, database, and Redis
+# Usage: docker compose -f docker-compose.dev.yml up
+
+services:
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: privexbot-backend-dev:latest  # Tag the image for reuse
+    container_name: privexbot-backend-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+      # Persist Playwright browsers to avoid repeated downloads
+      - playwright-browsers:/root/.cache/ms-playwright
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+    # Fix DNS resolution for external services (SMTP, APIs)
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    # Add extra hosts for better connectivity
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: privexbot-postgres-dev
+    ports:
+      - "5434:5432"  # Using 5434 on host to avoid conflict
+    environment:
+      - POSTGRES_USER=privexbot
+      - POSTGRES_PASSWORD=privexbot_dev
+      - POSTGRES_DB=privexbot_dev
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U privexbot -d privexbot_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: privexbot-redis-dev
+    ports:
+      - "6380:6379"  # Using 6380 on host to avoid conflict
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: privexbot-qdrant-dev
+    ports:
+      - "6335:6333"  # HTTP API (using 6335 on host to avoid conflict)
+      - "6336:6334"  # gRPC API (optional)
+    volumes:
+      - qdrant_data_dev:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  # Celery worker for background tasks (KB processing, embeddings, crawling)
+  celery-worker:
+    image: privexbot-backend-dev:latest  # Reuse the same image
+    container_name: privexbot-celery-dev
+    command: celery -A app.tasks.celery_worker worker --loglevel=info --queues=default,high_priority,low_priority --pool=solo
+    volumes:
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      # PyTorch/OpenMP compatibility with Celery
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - VECLIB_MAXIMUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
+    depends_on:
+      backend-dev:
+        condition: service_started  # Ensure image is built
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+    # Fix DNS resolution for external services (SMTP, APIs)
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Celery Beat for scheduled tasks (periodic re-indexing, maintenance)
+  celery-beat:
+    image: privexbot-backend-dev:latest  # Reuse the same image
+    container_name: privexbot-celery-beat-dev
+    command: celery -A app.tasks.celery_worker beat --loglevel=info
+    volumes:
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      backend-dev:
+        condition: service_started  # Ensure image is built
+      redis:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  # Flower for Celery monitoring (Web UI at http://localhost:5555)
+  flower:
+    image: privexbot-backend-dev:latest  # Reuse the same image
+    container_name: privexbot-flower-dev
+    command: celery -A app.tasks.celery_worker flower --port=5555 --basic_auth=admin:admin123
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./src:/app/src
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      backend-dev:
+        condition: service_started  # Ensure image is built
+      redis:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+networks:
+  privexbot-dev:
+    driver: bridge
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+  qdrant_data_dev:
+  playwright-browsers:  # Persistent browser cache to avoid repeated downloads

@@ -1,0 +1,20 @@
+# Standalone Production Deployment (without Traefik)
+# Usage: docker compose up -d
+# For SecretVM deployment with Traefik, use: docker-compose.secretvm.yml
+# harystyles/privexbot-frontend@sha256:e2f119bb23b0c58fa7f722940c8a205b85131b4dd9f083fce77ca7db27944982
+
+services:
+  frontend:
+    image: harystyles/privexbot-frontend@sha256:1da5dd2ef2bc64986b22d36dce1fe99a3e53a9115a57030ef72c17d2dce7c9fa
+    container_name: privexbot-frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    networks:
+      - privexbot
+
+networks:
+  privexbot:
+    driver: bridge

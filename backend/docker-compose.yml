@@ -1,0 +1,186 @@
+# Docker Compose for PrivexBot Backend - Production Environment
+# Purpose: Standalone production deployment without Traefik
+# Usage: docker compose up -d
+# For SecretVM deployment with Traefik, use: docker-compose.secretvm.yml
+#
+# IMPORTANT: Update image digests after building and pushing with:
+#   ./scripts/docker/build-push-cpu.sh 0.1.0
+#   Then update all services below with the output digest
+
+services:
+  backend:
+    # REPLACE THIS: Use digest from build-push-cpu.sh output
+    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    container_name: privexbot-backend-prod
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Celery worker for background tasks (KB processing, embeddings, crawling)
+  celery-worker:
+    # REPLACE THIS: Use same digest from build-push-cpu.sh output
+    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    container_name: privexbot-celery-prod
+    command: celery -A app.tasks.celery_worker worker --loglevel=info --queues=default,high_priority,low_priority --concurrency=2
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      # PyTorch/OpenMP compatibility with Celery
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - VECLIB_MAXIMUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+
+  # Celery beat for scheduled tasks (periodic re-indexing, maintenance)
+  celery-beat:
+    # REPLACE THIS: Use same digest from build-push-cpu.sh output
+    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    container_name: privexbot-celery-beat-prod
+    command: celery -A app.tasks.celery_worker beat --loglevel=info
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+
+  # Flower for Celery monitoring (optional in production)
+  flower:
+    # REPLACE THIS: Use same digest from build-push-cpu.sh output
+    image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
+    container_name: privexbot-flower-prod
+    command: celery -A app.tasks.celery_worker flower --port=5555 --basic_auth=admin:${FLOWER_PASSWORD}
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+    profiles:
+      - monitoring  # Optional service, enable with: docker compose --profile monitoring up
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: privexbot-postgres-prod
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=privexbot
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=privexbot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U privexbot -d privexbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: privexbot-redis-prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: privexbot-qdrant-prod
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  privexbot-prod:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:

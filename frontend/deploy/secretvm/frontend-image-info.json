@@ -1,0 +1,15 @@
+{
+  "deployment_target": "Secret VM (privexbot.com)",
+  "docker_username": "privexbot",
+  "image": "privexbot/privexbot-frontend",
+  "version": "0.0.1",
+  "digest": "privexbot/privexbot-frontend@sha256:89b1c4f699d4ce74038f4e2583ed6336f22aeddece859eaaf0cc6b04cc06f26b",
+  "secretvm_tag": "0.0.1-secretvm",
+  "build_date": "2025-12-15T12:52:38Z",
+  "git_sha": "849e4a851a87342182a874386f1ef25aed695eff",
+  "domain": "privexbot.com",
+  "endpoints": {
+    "frontend": "https://privexbot.com",
+    "api": "https://api.privexbot.com"
+  }
+}
