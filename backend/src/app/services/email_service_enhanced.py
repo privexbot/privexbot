@@ -21,6 +21,56 @@ from app.core.config import Settings
 logger = logging.getLogger(__name__)
 
 
+def _create_html_template(subject: str, heading: str, body_html: str) -> str:
+    """
+    Create a simple HTML email template.
+
+    WHY: Consistent email styling across all notifications
+    HOW: Basic responsive HTML template
+    """
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{subject}</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+        <table role="presentation" style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td align="center" style="padding: 40px 0;">
+                    <table role="presentation" style="width: 600px; max-width: 100%; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <!-- Header -->
+                        <tr>
+                            <td style="padding: 40px 40px 20px 40px; text-align: center; background-color: #3b82f6; border-radius: 8px 8px 0 0;">
+                                <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">PrivexBot</h1>
+                            </td>
+                        </tr>
+                        <!-- Body -->
+                        <tr>
+                            <td style="padding: 40px;">
+                                <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 20px; font-weight: 600;">{heading}</h2>
+                                {body_html}
+                            </td>
+                        </tr>
+                        <!-- Footer -->
+                        <tr>
+                            <td style="padding: 20px 40px; text-align: center; border-top: 1px solid #e5e7eb;">
+                                <p style="margin: 0; color: #6b7280; font-size: 12px;">
+                                    This is an automated email from PrivexBot. Please do not reply to this email.
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+
+
 def retry_on_network_error(max_retries: int = 3, delay: float = 2.0):
     """Decorator to retry function on network errors"""
     def decorator(func):
@@ -248,23 +298,39 @@ def send_invitation_email_enhanced(
     inviter_text = f" by {inviter_name}" if inviter_name else ""
     resource_text = "organization" if resource_type == "organization" else "workspace"
 
-    html_content = f"""
-        <h2>You're Invited!</h2>
-        <p>You've been invited{inviter_text} to join <strong>{organization_name}</strong> on PrivexBot as a <strong>{role}</strong>.</p>
-        <p>Click the button below to accept the invitation and gain access to this {resource_text}.</p>
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="{invitation_url}" style="display: inline-block; padding: 15px 30px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
-                Accept Invitation
-            </a>
-        </div>
-        <p style="color: #6b7280; font-size: 14px;">
-            Or copy and paste this link into your browser:<br>
-            <a href="{invitation_url}">{invitation_url}</a>
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            You've been invited{inviter_text} to join <strong>{organization_name}</strong> on PrivexBot as a <strong>{role}</strong>.
         </p>
-        <p style="color: #6b7280; font-size: 12px;">
-            This invitation link will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
+        <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Click the button below to accept the invitation and gain access to this {resource_text}.
+        </p>
+        <table role="presentation" style="margin: 0 0 24px 0;">
+            <tr>
+                <td>
+                    <a href="{invitation_url}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                        Accept Invitation
+                    </a>
+                </td>
+            </tr>
+        </table>
+        <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px; line-height: 1.5;">
+            Or copy and paste this link into your browser:
+        </p>
+        <p style="margin: 0 0 24px 0; color: #3b82f6; font-size: 14px; word-break: break-all;">
+            {invitation_url}
+        </p>
+        <p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 1.5;">
+            This invitation will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
         </p>
     """
+
+    # Create full HTML email using template
+    html_content = _create_html_template(
+        subject=subject,
+        heading=f"You've been invited to {organization_name}",
+        body_html=body_html
+    )
 
     return send_email_with_retry(to_email, subject, html_content)
 
@@ -276,28 +342,55 @@ def send_password_reset_email_enhanced(
     """
     Send password reset email with enhanced retry logic
     """
-    subject = "Reset Your PrivexBot Password"
+    subject = "Reset your PrivexBot password"
 
-    html_content = f"""
-        <h2>Password Reset Request</h2>
-        <p>You've requested to reset your password for your PrivexBot account.</p>
-        <p>Click the button below to create a new password:</p>
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="{reset_url}" style="display: inline-block; padding: 15px 30px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
-                Reset Password
-            </a>
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            We received a request to reset the password for your PrivexBot account associated with this email address.
+        </p>
+        <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Click the button below to reset your password. This link will expire in <strong>1 hour</strong>.
+        </p>
+        <table role="presentation" style="margin: 0 0 24px 0;">
+            <tr>
+                <td>
+                    <a href="{reset_url}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                        Reset Password
+                    </a>
+                </td>
+            </tr>
+        </table>
+        <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px; line-height: 1.5;">
+            Or copy and paste this link into your browser:
+        </p>
+        <p style="margin: 0 0 24px 0; color: #3b82f6; font-size: 14px; word-break: break-all;">
+            {reset_url}
+        </p>
+        <div style="padding: 16px; background-color: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #92400e; font-size: 14px; font-weight: 600;">
+                ⚠️ Security Notice
+            </p>
+            <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.5;">
+                If you didn't request this password reset, please ignore this email and your password will remain unchanged.
+                Someone may have entered your email address by mistake.
+            </p>
         </div>
-        <p style="color: #6b7280; font-size: 14px;">
-            Or copy and paste this link into your browser:<br>
-            <a href="{reset_url}">{reset_url}</a>
+        <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; line-height: 1.5;">
+            For security reasons:
         </p>
-        <p style="color: #dc2626; font-size: 14px;">
-            <strong>This link will expire in 1 hour.</strong>
-        </p>
-        <p style="color: #6b7280; font-size: 12px;">
-            If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
-        </p>
+        <ul style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 12px; line-height: 1.5;">
+            <li>This link expires in 1 hour</li>
+            <li>This link can only be used once</li>
+            <li>We will never ask for your password via email</li>
+        </ul>
     """
+
+    # Create full HTML email using template
+    html_content = _create_html_template(
+        subject=subject,
+        heading="Password Reset Request",
+        body_html=body_html
+    )
 
     return send_email_with_retry(to_email, subject, html_content)
 
@@ -309,20 +402,54 @@ def send_email_link_verification_enhanced(
     """
     Send email link verification code with enhanced retry logic
     """
-    subject = "Verify Email for Account Linking - PrivexBot"
+    subject = "Verify your email address for account linking"
 
-    html_content = f"""
-        <h2>Link Your Email Address</h2>
-        <p>You're adding this email address to your PrivexBot account.</p>
-        <p>Please use the following code to verify this email address:</p>
-        <div style="font-size: 24px; font-weight: bold; color: #3b82f6; padding: 20px; background-color: #f3f4f6; border-radius: 8px; margin: 20px 0; text-align: center;">
-            {verification_code}
-        </div>
-        <p>This code will expire in 5 minutes.</p>
-        <p style="color: #6b7280; font-size: 12px;">
-            If you didn't request this email linking, please ignore this email.
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            You've requested to link this email address to your existing <strong>PrivexBot</strong> account.
         </p>
+        <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            To complete the email linking process, please verify your email address using the verification code below:
+        </p>
+        <div style="text-align: center; margin: 24px 0;">
+            <div style="display: inline-block; padding: 20px 40px; background-color: #f3f4f6; border: 2px dashed #9ca3af; border-radius: 8px;">
+                <span style="font-size: 32px; font-weight: 700; color: #1f2937; letter-spacing: 4px; font-family: 'Courier New', monospace;">
+                    {verification_code}
+                </span>
+            </div>
+        </div>
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Enter this code in the verification form to complete the linking process.
+        </p>
+        <div style="padding: 16px; background-color: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #92400e; font-size: 14px; font-weight: 600;">
+                ⏰ Time Sensitive
+            </p>
+            <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.5;">
+                This verification code will expire in <strong>5 minutes</strong> for security reasons.
+            </p>
+        </div>
+        <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; line-height: 1.5;">
+            For security reasons:
+        </p>
+        <ul style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 12px; line-height: 1.5;">
+            <li>This code expires in 5 minutes</li>
+            <li>This code can only be used once</li>
+            <li>Don't share this code with anyone</li>
+        </ul>
+        <div style="margin: 24px 0; padding: 16px; background-color: #eff6ff; border: 1px solid #3b82f6; border-radius: 6px;">
+            <p style="margin: 0; color: #1e40af; font-size: 14px; line-height: 1.5;">
+                If you didn't request this email linking, please ignore this email and the verification code will expire automatically.
+            </p>
+        </div>
     """
+
+    # Create full HTML email using template
+    html_content = _create_html_template(
+        subject=subject,
+        heading="Verify Email for Account Linking",
+        body_html=body_html
+    )
 
     return send_email_with_retry(to_email, subject, html_content)
 
@@ -337,17 +464,36 @@ def send_invitation_accepted_email_enhanced(
     """
     Send invitation accepted notification with enhanced retry logic
     """
-    resource_text = "organization" if resource_type == "organization" else "workspace"
-    subject = f"Invitation Accepted - {accepter_email} joined your {resource_text}"
+    from app.core.config import settings
 
-    html_content = f"""
-        <h2>Invitation Accepted!</h2>
-        <p>Good news! <strong>{accepter_email}</strong> has accepted your invitation to join <strong>{organization_name}</strong> as a <strong>{role}</strong>.</p>
-        <p>They now have access to your {resource_text} and can start collaborating with your team.</p>
-        <p style="color: #6b7280; font-size: 12px;">
-            You're receiving this notification because you invited this user to your {resource_text}.
+    subject = f"{accepter_email} accepted your invitation to {organization_name}"
+
+    resource_text = "organization" if resource_type == "organization" else "workspace"
+
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Great news! <strong>{accepter_email}</strong> has accepted your invitation to join <strong>{organization_name}</strong>.
         </p>
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            They now have <strong>{role}</strong> access to the {resource_text}.
+        </p>
+        <table role="presentation" style="margin: 0 0 16px 0;">
+            <tr>
+                <td>
+                    <a href="{settings.FRONTEND_URL}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                        Go to Dashboard
+                    </a>
+                </td>
+            </tr>
+        </table>
     """
+
+    # Create full HTML email using template
+    html_content = _create_html_template(
+        subject=subject,
+        heading="Invitation Accepted",
+        body_html=body_html
+    )
 
     return send_email_with_retry(to_email, subject, html_content)
 
@@ -357,27 +503,41 @@ def send_role_changed_email_enhanced(
     organization_name: str,
     old_role: str,
     new_role: str,
-    changed_by_name: Optional[str] = None
+    resource_type: str = "organization"
 ) -> bool:
     """
     Send role change notification with enhanced retry logic
     """
-    subject = f"Role Updated in {organization_name}"
+    from app.core.config import settings
 
-    changed_by_text = f" by {changed_by_name}" if changed_by_name else ""
+    subject = f"Your role in {organization_name} has been updated"
 
-    html_content = f"""
-        <h2>Your Role Has Been Updated</h2>
-        <p>Your role in <strong>{organization_name}</strong> has been changed{changed_by_text}.</p>
-        <div style="padding: 20px; background-color: #f3f4f6; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 0;"><strong>Previous Role:</strong> {old_role}</p>
-            <p style="margin: 10px 0 0 0;"><strong>New Role:</strong> {new_role}</p>
-        </div>
-        <p>This change is effective immediately.</p>
-        <p style="color: #6b7280; font-size: 12px;">
-            If you have questions about this change, please contact your organization administrator.
+    resource_text = "organization" if resource_type == "organization" else "workspace"
+
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Your role in <strong>{organization_name}</strong> has been changed from <strong>{old_role}</strong> to <strong>{new_role}</strong>.
         </p>
+        <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            Your permissions in this {resource_text} have been updated accordingly.
+        </p>
+        <table role="presentation" style="margin: 0 0 16px 0;">
+            <tr>
+                <td>
+                    <a href="{settings.FRONTEND_URL}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                        Go to Dashboard
+                    </a>
+                </td>
+            </tr>
+        </table>
     """
+
+    # Create full HTML email using template
+    html_content = _create_html_template(
+        subject=subject,
+        heading="Role Updated",
+        body_html=body_html
+    )
 
     return send_email_with_retry(to_email, subject, html_content)
 
@@ -385,23 +545,29 @@ def send_role_changed_email_enhanced(
 def send_member_removed_email_enhanced(
     to_email: str,
     organization_name: str,
-    removed_by_name: Optional[str] = None
+    resource_type: str = "organization"
 ) -> bool:
     """
     Send member removal notification with enhanced retry logic
     """
-    subject = f"Access Removed from {organization_name}"
+    subject = f"You've been removed from {organization_name}"
 
-    removed_by_text = f" by {removed_by_name}" if removed_by_name else ""
+    resource_text = "organization" if resource_type == "organization" else "workspace"
 
-    html_content = f"""
-        <h2>Access Removed</h2>
-        <p>Your access to <strong>{organization_name}</strong> has been removed{removed_by_text}.</p>
-        <p>You will no longer be able to access this organization's resources.</p>
-        <p>If you believe this was done in error, please contact the organization administrator.</p>
-        <p style="color: #6b7280; font-size: 12px;">
-            This action is effective immediately.
+    body_html = f"""
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            You've been removed from <strong>{organization_name}</strong>.
+        </p>
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;">
+            You no longer have access to this {resource_text}. If you believe this was a mistake, please contact the {resource_text} administrator.
         </p>
     """
+
+    # Create full HTML email using template
+    html_content = _create_html_template(
+        subject=subject,
+        heading="Access Removed",
+        body_html=body_html
+    )
 
     return send_email_with_retry(to_email, subject, html_content)
