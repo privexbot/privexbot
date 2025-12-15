@@ -138,45 +138,6 @@ export function KBModelConfig() {
         'Batch upsert capability (100 chunks at a time)',
         'Stores content and metadata in payload'
       ]
-    },
-    {
-      id: VectorStoreProvider.FAISS,
-      name: 'FAISS',
-      description: 'Facebook AI Similarity Search (Coming Soon)',
-      icon: '🔶',
-      status: 'coming_soon',
-      features: [
-        'GPU acceleration support',
-        'Multiple index types (IVF, HNSW, PQ)',
-        'Memory-efficient for large datasets',
-        'Fast approximate search'
-      ]
-    },
-    {
-      id: VectorStoreProvider.WEAVIATE,
-      name: 'Weaviate',
-      description: 'Cloud-native vector database (Coming Soon)',
-      icon: '🔷',
-      status: 'coming_soon',
-      features: [
-        'GraphQL API',
-        'Multi-modal search capabilities',
-        'Automatic schema inference',
-        'Built-in machine learning'
-      ]
-    },
-    {
-      id: VectorStoreProvider.PINECONE,
-      name: 'Pinecone',
-      description: 'Managed vector database service (Coming Soon)',
-      icon: '🔺',
-      status: 'coming_soon',
-      features: [
-        'Fully managed service',
-        'Real-time updates',
-        'Metadata filtering',
-        'High availability'
-      ]
     }
   ];
 
@@ -431,7 +392,7 @@ export function KBModelConfig() {
                       Select the vector database that will store and search your embeddings
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 max-w-2xl">
                     {vectorStoreProviders.map((provider) => {
                       const isActive = provider.id === currentConfig.vector_store.provider;
                       const isAvailable = provider.status === 'active';
