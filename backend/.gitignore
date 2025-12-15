@@ -26,11 +26,27 @@ ENV/
 env/
 .venv
 
-# Environment variables
+# Environment variables (sensitive data)
 .env
 .env.dev
 .env.local
+.env.production
+.env.staging
+.env.secretvm
 .env.*.local
+.env.*
+!.env.example
+!.env.dev.example
+!.env.*.example
+
+# Deployment configurations (sensitive)
+deploy/secretvm/.env
+deploy/staging/.env
+deploy/production/.env
+deploy/*/.env
+deploy/*/config.json
+deploy/*/secrets.json
+docker-compose.secretvm-inline.yml
 
 # IDE
 .vscode/
@@ -69,3 +85,4 @@ celerybeat.pid
 .local/
 tmp/
 temp/
+
