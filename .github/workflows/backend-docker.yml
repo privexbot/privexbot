@@ -28,7 +28,7 @@ on:
 
 # Environment variables
 env:
-  DOCKER_USERNAME: harystyles
+  DOCKER_USERNAME: privexbot
   IMAGE_NAME: privexbot-backend
   REGISTRY: docker.io
 
@@ -156,7 +156,7 @@ jobs:
 
           ## 🚀 Deployment Instructions
 
-          ### SecretVM Deployment (Primary - harystyles.store)
+          ### SecretVM Deployment (Primary - privexbot.com)
 
           **1. Update \`docker-compose.secretvm.yml\`:**
           \`\`\`yaml
@@ -180,14 +180,14 @@ jobs:
           **3. Test Backend:**
           \`\`\`bash
           # Health check
-          curl https://api.harystyles.store/health
+          curl https://api.privexbot.com/health
 
           # API status
-          curl https://api.harystyles.store/api/v1/status
+          curl https://api.privexbot.com/api/v1/status
 
           # Or run comprehensive tests
           cd backend
-          ./scripts/test-secretvm.sh
+          ./scripts/docker/secretvm-deploy.sh test
           \`\`\`
 
           ### Standalone Production Deployment
@@ -208,11 +208,11 @@ jobs:
           ---
 
           ### 🔗 Production Services
-          - [Backend API](https://api.harystyles.store)
-          - [API Documentation](https://api.harystyles.store/api/docs)
-          - [PgAdmin](https://pgadmin.harystyles.store)
-          - [Redis UI](https://redis-ui.harystyles.store)
-          - [Traefik Dashboard](https://traefik.harystyles.store/dashboard/)
+          - [Backend API](https://api.privexbot.com)
+          - [API Documentation](https://api.privexbot.com/api/docs)
+          - [PgAdmin](https://pgadmin.privexbot.com)
+          - [Redis UI](https://redis-ui.privexbot.com)
+          - [Traefik Dashboard](https://traefik.privexbot.com/dashboard/)
 
           ### 🔗 Resources
           - [Docker Hub Image](https://hub.docker.com/r/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }})
@@ -250,7 +250,7 @@ jobs:
 
           ---
 
-          ## SecretVM Deployment (Primary - harystyles.store)
+          ## SecretVM Deployment (Primary - privexbot.com)
 
           ### Step 1: Update docker-compose.secretvm.yml
 
@@ -279,7 +279,7 @@ jobs:
           \`\`\`bash
           # Run comprehensive tests
           cd backend
-          ./scripts/test-secretvm.sh
+          ./scripts/docker/secretvm-deploy.sh test
           \`\`\`
 
           **Expected Results:**
@@ -296,11 +296,11 @@ jobs:
 
           After deployment, services will be available at:
 
-          - **Backend API**: https://api.harystyles.store
-          - **API Docs**: https://api.harystyles.store/api/docs
-          - **PgAdmin**: https://pgadmin.harystyles.store
-          - **Redis UI**: https://redis-ui.harystyles.store
-          - **Traefik**: https://traefik.harystyles.store/dashboard/
+          - **Backend API**: https://api.privexbot.com
+          - **API Docs**: https://api.privexbot.com/api/docs
+          - **PgAdmin**: https://pgadmin.privexbot.com
+          - **Redis UI**: https://redis-ui.privexbot.com
+          - **Traefik**: https://traefik.privexbot.com/dashboard/
 
           ---
 
@@ -335,7 +335,7 @@ jobs:
           # Configure required variables
           POSTGRES_PASSWORD=STRONG_PASSWORD_HERE
           SECRET_KEY=RANDOM_SECRET_KEY_HERE
-          BACKEND_CORS_ORIGINS=https://harystyles.store,https://api.harystyles.store
+          BACKEND_CORS_ORIGINS=https://privexbot.com,https://api.privexbot.com
           \`\`\`
 
           **Generate secure secrets:**
@@ -353,23 +353,23 @@ jobs:
 
           **Health check:**
           \`\`\`bash
-          curl https://api.harystyles.store/health
+          curl https://api.privexbot.com/health
           \`\`\`
 
           **API status:**
           \`\`\`bash
-          curl https://api.harystyles.store/api/v1/status
+          curl https://api.privexbot.com/api/v1/status
           \`\`\`
 
           **Interactive API docs:**
           \`\`\`
-          https://api.harystyles.store/api/docs
+          https://api.privexbot.com/api/docs
           \`\`\`
 
           **Comprehensive tests:**
           \`\`\`bash
           cd backend
-          ./scripts/test-secretvm.sh
+          ./scripts/docker/secretvm-deploy.sh test
           \`\`\`
 
           ---
@@ -409,5 +409,5 @@ jobs:
           echo "✅ Build completed successfully"
           echo "📦 Version: ${{ steps.meta.outputs.version }}"
           echo "🎯 Image: ${{ steps.digest.outputs.full_image }}"
-          echo "🌐 Production: https://api.harystyles.store"
+          echo "🌐 Production: https://api.privexbot.com"
           echo "📋 Check the Actions summary for full deployment instructions"

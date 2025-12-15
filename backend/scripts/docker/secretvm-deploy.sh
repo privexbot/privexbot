@@ -14,7 +14,8 @@ NC='\033[0m'
 
 # Configuration
 # SECRETVM_DOMAIN="sapphire-finch.vm.scrtlabs.com"
-SECRETVM_DOMAIN="harystyles.store"
+# SECRETVM_DOMAIN="harystyles.store"
+SECRETVM_DOMAIN="privexbot.com"
 COMPOSE_FILE="docker-compose.secretvm.yml"
 
 # Function to display usage
@@ -29,7 +30,7 @@ usage() {
     echo "  test        Test all SecretVM endpoints"
     echo ""
     echo "Deployment Workflow:"
-    echo "  1. Build & push image:  ./scripts/docker/build-push.sh 0.1.0"
+    echo "  1. Build & push image:  ./scripts/docker/build-push-secretvm.sh 0.1.0"
     echo "  2. Update digest in docker-compose.secretvm.yml"
     echo "  3. Prepare .env:        ./scripts/docker/secretvm-deploy.sh prepare"
     echo "  4. Show compose file:   ./scripts/docker/secretvm-deploy.sh show"
@@ -87,7 +88,7 @@ case $COMMAND in
         echo "     PGADMIN_PASSWORD=\$(openssl rand -base64 24)"
         echo ""
         echo "  2. Update CORS origins with your frontend domain:"
-        echo "     BACKEND_CORS_ORIGINS=https://harystyles.store,https://api.harystyles.store,https://pgadmin.harystyles.store,https://redis-ui.harystyles.store,https://traefik.harystyles.store,https://sapphire-finch.vm.scrtlabs.com,https://api.sapphire-finch.vm.scrtlabs.com,https://silver-hedgehog.vm.scrtlabs.com"
+        echo "     BACKEND_CORS_ORIGINS=https://privexbot.com,https://api.privexbot.com
         echo ""
         echo -e "${GREEN}Next step: Upload deploy/secretvm/.env to SecretVM Dev Portal${NC}"
         ;;
