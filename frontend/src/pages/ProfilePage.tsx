@@ -34,19 +34,24 @@ import {
   Plus,
   Unlink,
   Eye,
-  EyeOff
+  EyeOff,
 } from "lucide-react";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useApp } from "@/contexts/AppContext";
 import { authApi } from "@/api/auth";
-import type { UserProfile } from "@/types/auth";
+import type {
+  UserProfile,
+  AuthMethod,
+  WalletVerifyRequest,
+  CosmosWalletVerifyRequest
+} from "@/types/auth";
 import {
   updateProfileSchema,
   type UpdateProfileFormData,
   linkEmailSchema,
-  type LinkEmailFormData
+  type LinkEmailFormData,
 } from "@/api/schemas/user.schema";
 import {
   detectWallets,
@@ -57,11 +62,20 @@ import {
   signSolanaMessage,
   signCosmosMessage,
   type WalletInfo,
-  WALLET_CONFIGS
+  type EthereumProvider,
+  type SolanaProvider,
+  type CosmosProvider,
+  WALLET_CONFIGS,
 } from "@/lib/wallet-utils";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -75,6 +89,59 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/use-toast";
+
+// Error handling interfaces
+interface ApiErrorResponse {
+  detail: string | ValidationError[];
+  message?: string;
+}
+
+interface ValidationError {
+  msg: string;
+  type?: string;
+  loc?: (string | number)[];
+}
+
+type WalletProviderInstance = EthereumProvider | SolanaProvider | CosmosProvider;
+
+interface ApiError extends Error {
+  response?: {
+    data?: ApiErrorResponse;
+    status?: number;
+    statusText?: string;
+  };
+  config?: {
+    url?: string;
+    method?: string;
+    data?: unknown;
+  };
+}
+
+// Helper function to extract error message from API errors
+function getErrorMessage(error: unknown, defaultMessage: string): string {
+  if (error instanceof Error && 'response' in error) {
+    const apiError = error as ApiError;
+    if (apiError.response?.data?.detail) {
+      const detail = apiError.response.data.detail;
+      if (Array.isArray(detail)) {
+        // Handle Pydantic validation errors
+        return detail.map((e) => e.msg).join(", ");
+      } else if (typeof detail === "string") {
+        return detail;
+      }
+    }
+    if (apiError.response?.data?.message) {
+      return apiError.response.data.message;
+    }
+    if (apiError.message) {
+      return apiError.message;
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return defaultMessage;
+}
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -91,13 +158,17 @@ export function ProfilePage() {
   // Linking functionality state
   const [showLinkingOptions, setShowLinkingOptions] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
-  const [linkingType, setLinkingType] = useState<"email" | "wallet" | null>(null);
+  const [linkingType, setLinkingType] = useState<"email" | "wallet" | null>(
+    null
+  );
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [detectedWallets, setDetectedWallets] = useState<WalletInfo[]>([]);
 
   // Email verification state
-  const [emailVerificationStep, setEmailVerificationStep] = useState<"form" | "code" | null>(null);
+  const [emailVerificationStep, setEmailVerificationStep] = useState<
+    "form" | "code" | null
+  >(null);
   const [pendingEmailData, setPendingEmailData] = useState<{
     email: string;
     password: string;
@@ -158,8 +229,11 @@ export function ProfilePage() {
 
         // Detect available wallets
         const walletDetection = detectWallets();
-        setDetectedWallets([...walletDetection.installed, ...walletDetection.notInstalled]);
-      } catch (err: any) {
+        setDetectedWallets([
+          ...walletDetection.installed,
+          ...walletDetection.notInstalled,
+        ]);
+      } catch (err: unknown) {
         console.error("Failed to load profile:", err);
         setError("Failed to load profile information");
       } finally {
@@ -167,7 +241,7 @@ export function ProfilePage() {
       }
     };
 
-    loadProfile();
+    void loadProfile();
   }, [setValue, reset]);
 
   // Handle profile update
@@ -187,9 +261,13 @@ export function ProfilePage() {
         title: "Profile updated",
         description: "Your profile has been updated successfully.",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Profile update failed:", err);
-      const errorMessage = err.response?.data?.detail || "Failed to update profile";
+      const errorMessage = err instanceof Error && 'response' in err &&
+        typeof err.response === 'object' && err.response && 'data' in err.response &&
+        typeof err.response.data === 'object' && err.response.data && 'detail' in err.response.data
+        ? String(err.response.data.detail)
+        : "Failed to update profile";
       setError(errorMessage);
 
       toast({
@@ -217,9 +295,13 @@ export function ProfilePage() {
       // Clear local storage and redirect to home
       localStorage.clear();
       window.location.href = "/";
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Account deletion failed:", err);
-      const errorMessage = err.response?.data?.detail || "Failed to delete account";
+      const errorMessage = err instanceof Error && 'response' in err &&
+        typeof err.response === 'object' && err.response && 'data' in err.response &&
+        typeof err.response.data === 'object' && err.response.data && 'detail' in err.response.data
+        ? String(err.response.data.detail)
+        : "Failed to delete account";
 
       toast({
         title: "Deletion failed",
@@ -250,22 +332,9 @@ export function ProfilePage() {
         title: "Verification code sent",
         description: `Check your email ${data.email} for the verification code.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to send verification code:", err);
-      let errorMessage = "Failed to send verification code";
-
-      if (err.response?.data?.detail) {
-        if (Array.isArray(err.response.data.detail)) {
-          // Handle Pydantic validation errors (array format)
-          errorMessage = err.response.data.detail.map((e: any) => e.msg).join(", ");
-        } else if (typeof err.response.data.detail === 'string') {
-          errorMessage = err.response.data.detail;
-        } else {
-          errorMessage = JSON.stringify(err.response.data.detail);
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, "Failed to send verification code");
 
       setError(errorMessage);
 
@@ -313,22 +382,9 @@ export function ProfilePage() {
         title: "Email linked successfully",
         description: "You can now sign in with your email and password.",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Email verification failed:", err);
-      let errorMessage = "Invalid or expired verification code";
-
-      if (err.response?.data?.detail) {
-        if (Array.isArray(err.response.data.detail)) {
-          // Handle Pydantic validation errors (array format)
-          errorMessage = err.response.data.detail.map((e: any) => e.msg).join(", ");
-        } else if (typeof err.response.data.detail === 'string') {
-          errorMessage = err.response.data.detail;
-        } else {
-          errorMessage = JSON.stringify(err.response.data.detail);
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, "Invalid or expired verification code");
 
       setError(errorMessage);
 
@@ -353,38 +409,47 @@ export function ProfilePage() {
 
   // Handle wallet linking
   const handleWalletLink = async (walletId: string) => {
-    let walletConfig: any = null;
+    let walletConfig: typeof WALLET_CONFIGS[string] | undefined;
 
     try {
       setIsLinking(true);
       setError(null);
       setSelectedWallet(walletId);
 
-      walletConfig = WALLET_CONFIGS[walletId];
+      walletConfig = WALLET_CONFIGS[walletId] as typeof WALLET_CONFIGS[string] | undefined;
       if (!walletConfig) {
         throw new Error("Wallet configuration not found");
       }
 
       // Step 1: Connect to wallet
       let address: string;
-      let provider: any;
+      let provider: WalletProviderInstance;
       let publicKey: string | undefined;
 
-      if (walletConfig.provider === "evm") {
-        const connection = await connectEVMWallet(walletId);
-        address = connection.address;
-        provider = connection.provider;
-      } else if (walletConfig.provider === "solana") {
-        const connection = await connectSolanaWallet(walletId);
-        address = connection.address;
-        provider = connection.provider;
-      } else if (walletConfig.provider === "cosmos") {
-        const connection = await connectCosmosWallet(walletId);
-        address = connection.address;
-        provider = connection.provider;
-        publicKey = connection.publicKey;
-      } else {
-        throw new Error(`Unsupported wallet provider: ${walletConfig.provider}`);
+      switch (walletConfig.provider) {
+        case "evm": {
+          const connection = await connectEVMWallet(walletId);
+          address = connection.address;
+          provider = connection.provider;
+          break;
+        }
+        case "solana": {
+          const connection = await connectSolanaWallet(walletId);
+          address = connection.address;
+          provider = connection.provider;
+          break;
+        }
+        case "cosmos": {
+          const connection = await connectCosmosWallet(walletId);
+          address = connection.address;
+          provider = connection.provider;
+          publicKey = connection.publicKey;
+          break;
+        }
+        default:
+          throw new Error(
+            `Unsupported wallet provider: ${walletConfig.provider as string}`
+          );
       }
 
       // Step 2: Request challenge
@@ -395,43 +460,61 @@ export function ProfilePage() {
 
       // Step 3: Sign message
       let signature: string;
-      if (walletConfig.provider === "evm") {
-        signature = await signEVMMessage(provider, address, challengeResponse.message);
-      } else if (walletConfig.provider === "solana") {
-        signature = await signSolanaMessage(provider, challengeResponse.message);
-      } else if (walletConfig.provider === "cosmos") {
-        const signed = await signCosmosMessage(
-          provider,
-          "secret-4", // Default chain ID
-          address,
-          challengeResponse.message
-        );
-        signature = signed.signature;
-        publicKey = signed.publicKey;
-      } else {
-        throw new Error(`Unsupported wallet provider: ${walletConfig.provider}`);
+      switch (walletConfig.provider) {
+        case "evm":
+          signature = await signEVMMessage(
+            provider as EthereumProvider,
+            address,
+            challengeResponse.message
+          );
+          break;
+        case "solana":
+          signature = await signSolanaMessage(
+            provider as SolanaProvider,
+            challengeResponse.message
+          );
+          break;
+        case "cosmos": {
+          const signed = await signCosmosMessage(
+            provider as CosmosProvider,
+            "secret-4", // Default chain ID
+            address,
+            challengeResponse.message
+          );
+          signature = signed.signature;
+          publicKey = signed.publicKey;
+          break;
+        }
+        default:
+          throw new Error(
+            `Unsupported wallet provider: ${walletConfig.provider as string}`
+          );
       }
 
       // Step 4: Link wallet to account
-      const linkData: any = {
-        address,
-        signed_message: challengeResponse.message,
-        signature,
-      };
-
-      if (walletConfig.provider === "cosmos" && publicKey) {
-        linkData.public_key = publicKey;
-      }
+      const linkData: WalletVerifyRequest | CosmosWalletVerifyRequest =
+        walletConfig.provider === "cosmos" && publicKey
+          ? {
+              address,
+              signed_message: challengeResponse.message,
+              signature,
+              public_key: publicKey,
+            }
+          : {
+              address,
+              signed_message: challengeResponse.message,
+              signature,
+            };
 
       // Debug logging
-      console.log("[ProfilePage] Linking wallet with data:", {
+      console.error("[ProfilePage] Linking wallet with data:", {
         provider: walletConfig.provider,
         linkData: {
           address: linkData.address,
           signed_message: linkData.signed_message ? "[PRESENT]" : "[MISSING]",
           signature: linkData.signature ? "[PRESENT]" : "[MISSING]",
-          public_key: linkData.public_key ? "[PRESENT]" : "[NOT_REQUIRED]"
-        }
+          public_key: ("public_key" in linkData && linkData.public_key) ? "[PRESENT]" : "[NOT_REQUIRED]",
+        },
       });
 
       await authApi.linkWallet(walletConfig.provider, linkData);
@@ -449,47 +532,24 @@ export function ProfilePage() {
         title: `${walletConfig.name} linked successfully`,
         description: `You can now sign in with your ${walletConfig.name} wallet.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Wallet linking failed:", err);
 
       // Extract detailed error information from backend response
-      let errorMessage = "Failed to link wallet";
-      let isWalletConflict = false;
+      const errorMessage = getErrorMessage(err, "Failed to link wallet");
+      const isWalletConflict = errorMessage
+        .toLowerCase()
+        .includes("already linked to another account");
 
-      console.log("Raw error response:", err.response?.data);
+      console.error("Parsed error message:", errorMessage);
+      console.error("Is wallet conflict:", isWalletConflict);
 
-      if (err.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-        // Detect wallet already linked to another account
-        if (errorMessage.toLowerCase().includes("already linked to another account")) {
-          isWalletConflict = true;
-        }
-      } else if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-
-      console.log("Parsed error message:", errorMessage);
-      console.log("Is wallet conflict:", isWalletConflict);
-
-      // Log detailed error for debugging
-      console.error("Detailed error info:", {
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-        data: err.response?.data,
-        config: {
-          url: err.config?.url,
-          method: err.config?.method,
-          data: err.config?.data
-        }
-      });
 
       // Enhanced error messaging for wallet conflicts
       if (isWalletConflict) {
-        const walletName = walletConfig?.name || "wallet";
+        const walletName = walletConfig?.name ?? "wallet";
         const conflictMessage = `This ${walletName} wallet is already linked to another account.`;
-        console.log("Setting wallet conflict error:", conflictMessage);
+        console.error("Setting wallet conflict error:", conflictMessage);
         setError(conflictMessage);
 
         toast({
@@ -498,7 +558,7 @@ export function ProfilePage() {
           variant: "destructive",
         });
       } else {
-        console.log("Setting general error:", errorMessage);
+        console.error("Setting general error:", errorMessage);
         setError(errorMessage);
 
         toast({
@@ -514,7 +574,7 @@ export function ProfilePage() {
   };
 
   // Handle unlink confirmation
-  const handleUnlinkConfirm = (method: any) => {
+  const handleUnlinkConfirm = (method: AuthMethod) => {
     const { label } = getAuthMethodInfo(method.provider);
     setMethodToUnlink({
       provider: method.provider,
@@ -532,7 +592,10 @@ export function ProfilePage() {
       setIsUnlinking(true);
       setError(null);
 
-      await authApi.unlinkAuthMethod(methodToUnlink.provider, methodToUnlink.providerId);
+      await authApi.unlinkAuthMethod(
+        methodToUnlink.provider,
+        methodToUnlink.providerId
+      );
 
       // Refresh user profile to remove the unlinked method
       const updatedProfile = await authApi.getCurrentUser();
@@ -546,9 +609,9 @@ export function ProfilePage() {
         title: "Authentication method removed",
         description: `${methodToUnlink.label} has been successfully removed from your account.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Unlinking failed:", err);
-      const errorMessage = err.response?.data?.detail || "Failed to remove authentication method";
+      const errorMessage = getErrorMessage(err, "Failed to remove authentication method");
       setError(errorMessage);
 
       toast({
@@ -579,17 +642,21 @@ export function ProfilePage() {
 
   // Get available linking options based on current auth methods
   const getAvailableLinkingOptions = () => {
-    const currentProviders = new Set(userProfile?.auth_methods?.map(m => m.provider) || []);
+    const currentProviders = new Set(
+      userProfile?.auth_methods.map((m) => m.provider) ?? []
+    );
 
     const available = {
       email: !currentProviders.has("email"),
-      wallets: detectedWallets.filter(wallet => {
+      wallets: detectedWallets.filter((wallet) => {
         // Don't show wallets that are already linked
         const walletProvider = wallet.provider;
 
         // For wallets, check if any auth method matches this provider
-        return !userProfile?.auth_methods?.some(auth => auth.provider === walletProvider);
-      })
+        return !userProfile?.auth_methods.some(
+          (auth) => auth.provider === walletProvider
+        );
+      }),
     };
 
     return available;
@@ -601,15 +668,46 @@ export function ProfilePage() {
   if (!isPersonalOrg) {
     return (
       <DashboardLayout>
-        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
-          <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
-            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-            <AlertDescription className="text-yellow-700 dark:text-yellow-300 font-manrope">
-              Profile settings are only available in your personal organization. Please switch to your personal organization to access this page.
+        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6">
+          {/* Page Header */}
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100 font-manrope">
+              Profile Settings
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1 font-manrope">
+              Manage your personal account settings and authentication methods
+            </p>
+          </div>
+
+          {/* Access Restriction Alert */}
+          <Alert className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+            <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <AlertDescription className="text-blue-900 dark:text-blue-100 font-manrope">
+              <div className="space-y-3">
+                <p className="font-semibold">
+                  Profile settings are only available in your personal
+                  organization.
+                </p>
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  You're currently in{" "}
+                  <strong>
+                    {currentWorkspace?.name ?? "a shared workspace"} Workspace
+                  </strong>
+                  . Use the organization switcher in the top-left corner to
+                  switch to your personal workspace/organization.
+                </p>
+              </div>
             </AlertDescription>
           </Alert>
-          <div className="mt-4">
-            <Button onClick={() => navigate("/dashboard")} className="font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+
+          {/* Action Button */}
+          <div>
+            <Button
+              onClick={() => {
+                navigate("/dashboard");
+              }}
+              className="font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Dashboard
             </Button>
@@ -632,7 +730,10 @@ export function ProfilePage() {
 
             {/* Card Skeletons */}
             {[1, 2, 3].map((i) => (
-              <Card key={i} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <Card
+                key={i}
+                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm"
+              >
                 <CardContent className="p-6">
                   <div className="animate-pulse space-y-4">
                     <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-32"></div>
@@ -665,7 +766,10 @@ export function ProfilePage() {
 
         {/* Error Alert */}
         {error && (
-          <Alert variant="destructive" className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl">
+          <Alert
+            variant="destructive"
+            className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl"
+          >
             <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
             <AlertDescription className="text-red-700 dark:text-red-300 font-manrope">
               {error}
@@ -685,9 +789,15 @@ export function ProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit(handleProfileUpdate)} className="space-y-4">
+            <form
+              onSubmit={(data) => { void handleSubmit(handleProfileUpdate)(data); }}
+              className="space-y-4"
+            >
               <div>
-                <Label htmlFor="username" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                <Label
+                  htmlFor="username"
+                  className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope"
+                >
                   Username
                 </Label>
                 <Input
@@ -718,7 +828,10 @@ export function ProfilePage() {
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
                     Account Status
                   </span>
-                  <Badge variant="default" className="bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-200">
+                  <Badge
+                    variant="default"
+                    className="bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-200"
+                  >
                     <UserCheck className="h-3 w-3 mr-1" />
                     Active
                   </Badge>
@@ -730,7 +843,9 @@ export function ProfilePage() {
                   </span>
                   <span className="text-sm text-gray-600 dark:text-gray-400 font-manrope flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    {userProfile ? new Date(userProfile.created_at).toLocaleDateString() : "—"}
+                    {userProfile
+                      ? new Date(userProfile.created_at).toLocaleDateString()
+                      : "—"}
                   </span>
                 </div>
               </div>
@@ -777,9 +892,11 @@ export function ProfilePage() {
                   Connected Methods
                 </h4>
                 <div className="space-y-3">
-                  {userProfile?.auth_methods?.length ? (
+                  {userProfile?.auth_methods.length ? (
                     userProfile.auth_methods.map((method, index) => {
-                      const { icon: Icon, label } = getAuthMethodInfo(method.provider);
+                      const { icon: Icon, label } = getAuthMethodInfo(
+                        method.provider
+                      );
                       return (
                         <div
                           key={index}
@@ -797,21 +914,25 @@ export function ProfilePage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="text-xs font-manrope">
-                              Linked {new Date(method.linked_at).toLocaleDateString()}
+                            <Badge
+                              variant="secondary"
+                              className="text-xs font-manrope"
+                            >
+                              Linked{" "}
+                              {new Date(method.linked_at).toLocaleDateString()}
                             </Badge>
-                            {userProfile.auth_methods && userProfile.auth_methods.length > 1 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleUnlinkConfirm(method)}
-                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg"
-                                title="Remove this authentication method"
-                                disabled={isUnlinking}
-                              >
-                                <Unlink className="h-4 w-4" />
-                              </Button>
-                            )}
+                            {userProfile.auth_methods.length > 1 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => { handleUnlinkConfirm(method); }}
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg"
+                                  title="Remove this authentication method"
+                                  disabled={isUnlinking}
+                                >
+                                  <Unlink className="h-4 w-4" />
+                                </Button>
+                              )}
                           </div>
                         </div>
                       );
@@ -825,7 +946,8 @@ export function ProfilePage() {
               </div>
 
               {/* Add New Auth Method */}
-              {(availableOptions.email || availableOptions.wallets.length > 0) && (
+              {(availableOptions.email ||
+                availableOptions.wallets.length > 0) && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
@@ -834,7 +956,7 @@ export function ProfilePage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setShowLinkingOptions(!showLinkingOptions)}
+                      onClick={() => { setShowLinkingOptions(!showLinkingOptions); }}
                       className="font-manrope text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                     >
                       <Plus className="h-4 w-4 mr-1" />
@@ -849,7 +971,11 @@ export function ProfilePage() {
                         <div>
                           <Button
                             variant="outline"
-                            onClick={() => setLinkingType(linkingType === "email" ? null : "email")}
+                            onClick={() => {
+                              setLinkingType(
+                                linkingType === "email" ? null : "email"
+                              );
+                            }}
                             className="w-full justify-start font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                             disabled={isLinking}
                           >
@@ -864,19 +990,25 @@ export function ProfilePage() {
                                 <div className="space-y-3">
                                   <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
                                     <p className="text-sm text-blue-800 dark:text-blue-200 font-manrope">
-                                      We sent a verification code to <strong>{pendingEmailData?.email}</strong>
+                                      We sent a verification code to{" "}
+                                      <strong>{pendingEmailData?.email}</strong>
                                     </p>
                                   </div>
 
                                   <div>
-                                    <Label htmlFor="verification-code" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                                    <Label
+                                      htmlFor="verification-code"
+                                      className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope"
+                                    >
                                       Verification Code
                                     </Label>
                                     <Input
                                       id="verification-code"
                                       type="text"
                                       value={verificationCode}
-                                      onChange={(e) => setVerificationCode(e.target.value)}
+                                      onChange={(e) => {
+                                        setVerificationCode(e.target.value);
+                                      }}
                                       className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                                       placeholder="Enter 6-digit code"
                                       maxLength={6}
@@ -885,15 +1017,26 @@ export function ProfilePage() {
                                     />
                                     {codeExpiry && (
                                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                                        Code expires in {Math.max(0, Math.ceil((codeExpiry - Date.now()) / 1000 / 60))} minutes
+                                        Code expires in{" "}
+                                        {Math.max(
+                                          0,
+                                          Math.ceil(
+                                            (codeExpiry - Date.now()) /
+                                              1000 /
+                                              60
+                                          )
+                                        )}{" "}
+                                        minutes
                                       </p>
                                     )}
                                   </div>
 
                                   <div className="flex gap-2">
                                     <Button
-                                      onClick={handleEmailVerification}
-                                      disabled={isLinking || !verificationCode.trim()}
+                                      onClick={() => { void handleEmailVerification(); }}
+                                      disabled={
+                                        isLinking || !verificationCode.trim()
+                                      }
                                       className="font-manrope bg-blue-600 hover:bg-blue-700  text-white rounded-lg"
                                     >
                                       {isLinking ? (
@@ -921,9 +1064,15 @@ export function ProfilePage() {
                                 </div>
                               ) : (
                                 // Step 1: Email and Password Form
-                                <form onSubmit={handleSubmitEmail(handleEmailLink)} className="space-y-3">
+                                <form
+                                  onSubmit={(data) => { void handleSubmitEmail(handleEmailLink)(data); }}
+                                  className="space-y-3"
+                                >
                                   <div>
-                                    <Label htmlFor="link-email" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                                    <Label
+                                      htmlFor="link-email"
+                                      className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope"
+                                    >
                                       Email Address
                                     </Label>
                                     <Input
@@ -942,13 +1091,18 @@ export function ProfilePage() {
                                   </div>
 
                                   <div>
-                                    <Label htmlFor="link-password" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                                    <Label
+                                      htmlFor="link-password"
+                                      className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope"
+                                    >
                                       Password
                                     </Label>
                                     <div className="relative">
                                       <Input
                                         id="link-password"
-                                        type={showPassword ? "text" : "password"}
+                                        type={
+                                          showPassword ? "text" : "password"
+                                        }
                                         {...registerEmail("password")}
                                         className="mt-1 h-10 bg-white dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                                         placeholder="Create a secure password"
@@ -956,10 +1110,16 @@ export function ProfilePage() {
                                       />
                                       <button
                                         type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
+                                        onClick={() => {
+                                          setShowPassword(!showPassword);
+                                        }}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                       >
-                                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                        {showPassword ? (
+                                          <EyeOff className="h-4 w-4" />
+                                        ) : (
+                                          <Eye className="h-4 w-4" />
+                                        )}
                                       </button>
                                     </div>
                                     {emailErrors.password && (
@@ -971,7 +1131,9 @@ export function ProfilePage() {
 
                                   <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
                                     <p className="text-sm text-yellow-800 dark:text-yellow-200 font-manrope">
-                                      We'll send a verification code to this email address before linking it to your account.
+                                      We'll send a verification code to this
+                                      email address before linking it to your
+                                      account.
                                     </p>
                                   </div>
 
@@ -1019,7 +1181,11 @@ export function ProfilePage() {
                         <div>
                           <Button
                             variant="outline"
-                            onClick={() => setLinkingType(linkingType === "wallet" ? null : "wallet")}
+                            onClick={() => {
+                              setLinkingType(
+                                linkingType === "wallet" ? null : "wallet"
+                              );
+                            }}
                             className="w-full justify-start font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                             disabled={isLinking}
                           >
@@ -1038,14 +1204,17 @@ export function ProfilePage() {
                                   >
                                     <Button
                                       variant="outline"
-                                      onClick={() => handleWalletLink(wallet.id)}
+                                      onClick={() => {
+                                        void handleWalletLink(wallet.id);
+                                      }}
                                       disabled={isLinking}
                                       className={`w-full p-4 h-auto justify-start font-manrope text-left border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-200 ${
-                                        selectedWallet === wallet.id && isLinking
-                                          ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/30'
+                                        selectedWallet === wallet.id &&
+                                        isLinking
+                                          ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/30"
                                           : wallet.detected
-                                            ? 'border-green-200 dark:border-green-700 hover:border-green-300 dark:hover:border-green-600'
-                                            : 'border-gray-200 dark:border-gray-600'
+                                          ? "border-green-200 dark:border-green-700 hover:border-green-300 dark:hover:border-green-600"
+                                          : "border-gray-200 dark:border-gray-600"
                                       }`}
                                     >
                                       <div className="flex items-center w-full">
@@ -1092,14 +1261,15 @@ export function ProfilePage() {
                                       </div>
 
                                       {/* Loading Spinner Overlay */}
-                                      {selectedWallet === wallet.id && isLinking && (
-                                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                                          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium text-sm">
-                                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-blue-600 dark:border-t-blue-400"></div>
-                                            Connecting...
+                                      {selectedWallet === wallet.id &&
+                                        isLinking && (
+                                          <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                                            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium text-sm">
+                                              <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-blue-600 dark:border-t-blue-400"></div>
+                                              Connecting...
+                                            </div>
                                           </div>
-                                        </div>
-                                      )}
+                                        )}
                                     </Button>
                                   </div>
                                 ))}
@@ -1108,7 +1278,9 @@ export function ProfilePage() {
                               {/* Helper Text */}
                               <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
                                 <p className="text-sm text-blue-800 dark:text-blue-200 font-manrope">
-                                  <strong>Note:</strong> Make sure your wallet extension is installed and unlocked before connecting.
+                                  <strong>Note:</strong> Make sure your wallet
+                                  extension is installed and unlocked before
+                                  connecting.
                                 </p>
                               </div>
 
@@ -1123,14 +1295,18 @@ export function ProfilePage() {
                                       <p className="text-sm text-red-800 dark:text-red-200 font-manrope font-medium mb-2">
                                         {error}
                                       </p>
-                                      {error.includes("already linked to another account") && (
+                                      {error.includes(
+                                        "already linked to another account"
+                                      ) && (
                                         <div className="space-y-2">
                                           <p className="text-xs text-red-700 dark:text-red-300 font-manrope">
                                             <strong>What you can do:</strong>
                                           </p>
                                           <ul className="text-xs text-red-700 dark:text-red-300 font-manrope space-y-1 ml-4">
                                             <li className="flex items-start gap-2">
-                                              <span className="text-red-500 mt-1">•</span>
+                                              <span className="text-red-500 mt-1">
+                                                •
+                                              </span>
                                               <span>
                                                 <button
                                                   onClick={() => {
@@ -1140,17 +1316,28 @@ export function ProfilePage() {
                                                   className="text-red-700 dark:text-red-300 underline hover:text-red-800 dark:hover:text-red-200 font-medium"
                                                 >
                                                   Log out
-                                                </button>
-                                                {" "}and sign in with this wallet to access that account
+                                                </button>{" "}
+                                                and sign in with this wallet to
+                                                access that account
                                               </span>
                                             </li>
                                             <li className="flex items-start gap-2">
-                                              <span className="text-red-500 mt-1">•</span>
-                                              <span>Use a different wallet address for this account</span>
+                                              <span className="text-red-500 mt-1">
+                                                •
+                                              </span>
+                                              <span>
+                                                Use a different wallet address
+                                                for this account
+                                              </span>
                                             </li>
                                             <li className="flex items-start gap-2">
-                                              <span className="text-red-500 mt-1">•</span>
-                                              <span>Contact support if you believe this is an error</span>
+                                              <span className="text-red-500 mt-1">
+                                                •
+                                              </span>
+                                              <span>
+                                                Contact support if you believe
+                                                this is an error
+                                              </span>
                                             </li>
                                           </ul>
                                         </div>
@@ -1164,7 +1351,7 @@ export function ProfilePage() {
                               <div className="pt-2">
                                 <Button
                                   variant="ghost"
-                                  onClick={() => setLinkingType(null)}
+                                  onClick={() => { setLinkingType(null); }}
                                   disabled={isLinking}
                                   className="w-full font-manrope text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg"
                                 >
@@ -1180,13 +1367,15 @@ export function ProfilePage() {
                 </div>
               )}
 
-              {(!availableOptions.email && availableOptions.wallets.length === 0) && (
-                <div className="text-center py-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
-                    All available authentication methods are already linked to your account.
-                  </p>
-                </div>
-              )}
+              {!availableOptions.email &&
+                availableOptions.wallets.length === 0 && (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                      All available authentication methods are already linked to
+                      your account.
+                    </p>
+                  </div>
+                )}
             </div>
           </CardContent>
         </Card>
@@ -1208,10 +1397,14 @@ export function ProfilePage() {
                 Delete Account
               </h4>
               <p className="text-sm text-red-700 dark:text-red-300 font-manrope mb-4">
-                Permanently delete your account and all associated data. This action cannot be undone.
+                Permanently delete your account and all associated data. This
+                action cannot be undone.
               </p>
 
-              <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+              <Dialog
+                open={deleteConfirmOpen}
+                onOpenChange={setDeleteConfirmOpen}
+              >
                 <DialogTrigger asChild>
                   <Button
                     variant="outline"
@@ -1227,7 +1420,8 @@ export function ProfilePage() {
                       Delete Account Permanently?
                     </DialogTitle>
                     <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
-                      This action cannot be undone. This will permanently delete your account and all associated data including:
+                      This action cannot be undone. This will permanently delete
+                      your account and all associated data including:
                     </DialogDescription>
                   </DialogHeader>
 
@@ -1242,21 +1436,22 @@ export function ProfilePage() {
                     <Alert className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl">
                       <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
                       <AlertDescription className="text-red-700 dark:text-red-300 font-manrope">
-                        <strong>Warning:</strong> This action is permanent and cannot be reversed.
+                        <strong>Warning:</strong> This action is permanent and
+                        cannot be reversed.
                       </AlertDescription>
                     </Alert>
 
                     <div className="flex justify-end gap-3">
                       <Button
                         variant="outline"
-                        onClick={() => setDeleteConfirmOpen(false)}
+                        onClick={() => { setDeleteConfirmOpen(false); }}
                         disabled={isDeleting}
                         className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                       >
                         Cancel
                       </Button>
                       <Button
-                        onClick={handleAccountDelete}
+                        onClick={() => { void handleAccountDelete(); }}
                         disabled={isDeleting}
                         className="font-manrope bg-red-600 hover:bg-red-700  text-white rounded-lg"
                       >
@@ -1290,7 +1485,8 @@ export function ProfilePage() {
               <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
                 {methodToUnlink ? (
                   <>
-                    You are about to remove <strong>{methodToUnlink.label}</strong> from your account.
+                    You are about to remove{" "}
+                    <strong>{methodToUnlink.label}</strong> from your account.
                     This will prevent you from using this method to sign in.
                   </>
                 ) : (
@@ -1303,21 +1499,22 @@ export function ProfilePage() {
               <Alert className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
                 <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
                 <AlertDescription className="text-yellow-700 dark:text-yellow-300 font-manrope">
-                  Make sure you have at least one other authentication method to access your account.
+                  Make sure you have at least one other authentication method to
+                  access your account.
                 </AlertDescription>
               </Alert>
 
               <div className="flex justify-end gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setUnlinkConfirmOpen(false)}
+                  onClick={() => { setUnlinkConfirmOpen(false); }}
                   disabled={isUnlinking}
                   className="font-manrope border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                 >
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleUnlink}
+                  onClick={() => { void handleUnlink(); }}
                   disabled={isUnlinking}
                   className="font-manrope bg-red-600 hover:bg-red-700  text-white rounded-lg"
                 >
