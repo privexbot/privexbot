@@ -93,13 +93,13 @@ jobs:
           echo "🌍 Environment: ${ENVIRONMENT}"
           echo "🔖 Git SHA: ${GITHUB_SHA:0:7}"
 
-      # Step 5: Build and push Docker image
+      # Step 5: Build and push Docker image (CPU-optimized for Secret VM)
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: ./backend
-          file: ./backend/Dockerfile
+          file: ./backend/Dockerfile.cpu
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
@@ -108,6 +108,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           build-args: |
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
             VCS_REF=${{ steps.meta.outputs.short_sha }}
@@ -137,6 +139,7 @@ jobs:
           - **Image Name**: \`${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}\`
           - **Version**: \`${{ steps.meta.outputs.version }}\` (Prelaunch - 1.0.0 reserved for official launch)
           - **Environment**: \`${{ steps.meta.outputs.environment }}\`
+          - **Build Type**: CPU-optimized (Dockerfile.cpu) for Secret VM compatibility
           - **Build Date**: \`${{ steps.meta.outputs.build_date }}\`
           - **Git SHA**: \`${{ steps.meta.outputs.short_sha }}\`
 
@@ -245,6 +248,7 @@ jobs:
           ## Image Details
           - **Version**: ${{ steps.meta.outputs.version }} (Prelaunch - 1.0.0 reserved for launch)
           - **Environment**: ${{ steps.meta.outputs.environment }}
+          - **Build Type**: CPU-optimized (Dockerfile.cpu) for Secret VM compatibility
           - **Git SHA**: ${{ steps.meta.outputs.short_sha }}
           - **Full Image**: \`${{ steps.digest.outputs.full_image }}\`
 
