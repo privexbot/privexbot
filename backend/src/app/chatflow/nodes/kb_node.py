@@ -13,10 +13,15 @@ HOW:
 - Configure search parameters
 - Return sources with scores
 
+CONFIG PRIORITY:
+    1. Node Config (explicit in chatflow) - highest
+    2. KB-Level Config (kb.context_settings.retrieval_config)
+    3. Service Defaults - lowest
+
 PSEUDOCODE follows the existing codebase patterns.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
 
@@ -30,6 +35,9 @@ class KBNode(BaseNode):
 
     WHY: RAG - retrieve relevant context
     HOW: Search vector store with query
+
+    CONFIG PRIORITY:
+    - Node Config > KB Config > Service Defaults
     """
 
     async def execute(
@@ -43,11 +51,11 @@ class KBNode(BaseNode):
 
         CONFIG:
             {
-                "kb_id": "uuid",
-                "query": "{{input}}",
-                "top_k": 5,
-                "search_method": "hybrid",
-                "threshold": 0.7
+                "kb_id": "uuid",          # Required
+                "query": "{{input}}",     # Query template
+                "top_k": 5,               # Optional: None = use KB config
+                "search_method": "hybrid", # Optional: None = use KB config
+                "threshold": 0.7          # Optional: None = use KB config
             }
 
         INPUTS:
@@ -79,14 +87,22 @@ class KBNode(BaseNode):
                 **inputs
             })
 
-            # Retrieve from KB
+            # Get node config values (may be None to use KB config)
+            # Only pass values if explicitly set in node config
+            # None values tell retrieval_service to use KB's context_settings.retrieval_config
+            node_top_k = self.config.get("top_k")  # None if not set
+            node_search_method = self.config.get("search_method")  # None if not set
+            node_threshold = self.config.get("threshold")  # None if not set
+
+            # Retrieve from KB with config priority wiring
+            # If node config is None, retrieval_service uses KB config
             results = await retrieval_service.search(
                 db=db,
                 kb_id=UUID(kb_id),
                 query=query,
-                top_k=self.config.get("top_k", 5),
-                search_method=self.config.get("search_method", "hybrid"),
-                threshold=self.config.get("threshold", 0.7)
+                top_k=node_top_k,  # None = use KB config
+                search_method=node_search_method,  # None = use KB config
+                threshold=node_threshold  # None = use KB config
             )
 
             # Combine chunk content

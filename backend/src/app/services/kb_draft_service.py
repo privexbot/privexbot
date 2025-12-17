@@ -105,6 +105,225 @@ class KBDraftService:
 
         return source_id
 
+    async def add_file_source_to_draft(
+        self,
+        draft_id: str,
+        file_stream: Any,
+        filename: str,
+        file_size: int,
+        mime_type: str
+    ) -> Dict[str, Any]:
+        """
+        Add file upload to KB draft with Tika parsing.
+
+        WHY: Support PDF, DOCX, CSV, TXT, and 15+ file formats
+        HOW: Parse with Tika, store extracted content in Redis draft
+
+        PHASE: 1 (Draft Mode - Redis Only)
+
+        IMPORTANT: File content is stored ONLY in Redis draft
+                   When finalized, content goes ONLY to Qdrant (not PostgreSQL)
+                   PostgreSQL stores ONLY metadata
+
+        Args:
+            draft_id: KB draft ID
+            file_stream: File binary stream
+            filename: Original filename
+            file_size: File size in bytes
+            mime_type: MIME type (detected from file)
+
+        Returns:
+            {
+                "source_id": str,
+                "filename": str,
+                "file_size": int,
+                "mime_type": str,
+                "page_count": int,
+                "char_count": int,
+                "word_count": int,
+                "parsing_time_ms": int
+            }
+
+        Raises:
+            ValueError: If draft not found or file invalid
+            ConnectionError: If Tika service unavailable
+            RuntimeError: If parsing fails
+        """
+
+        from app.services.tika_service import tika_service
+
+        # Get draft
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise ValueError("KB draft not found")
+
+        print(f"[KB Draft] Parsing file upload: {filename} ({file_size / 1024:.1f} KB)")
+
+        # Parse file with Tika
+        parsed_file = await tika_service.parse_file(
+            file_stream=file_stream,
+            filename=filename,
+            metadata_only=False  # Extract full content
+        )
+
+        print(f"[KB Draft] Parsed {len(parsed_file.content)} characters from {filename}")
+
+        # Create source entry
+        source_id = str(uuid4())
+        source = {
+            "id": source_id,
+            "type": "file_upload",
+            "filename": filename,
+            "file_size": file_size,
+            "mime_type": mime_type,
+            "parsed_content": parsed_file.content,  # CRITICAL: Store in Redis draft only
+            "file_metadata": parsed_file.metadata,
+            "page_count": parsed_file.page_count,
+            "char_count": len(parsed_file.content),
+            "word_count": len(parsed_file.content.split()),
+            "parsing_time_ms": parsed_file.parsing_time_ms,
+            "added_at": datetime.utcnow().isoformat(),
+            "parsed_at": datetime.utcnow().isoformat()
+        }
+
+        # Add to sources
+        data = draft.get("data", {})
+        sources = data.get("sources", [])
+        sources.append(source)
+        data["sources"] = sources
+
+        # Update draft
+        draft_service.update_draft(
+            draft_type=DraftType.KB,
+            draft_id=draft_id,
+            updates={"data": data}
+        )
+
+        print(f"[KB Draft] Added file source {source_id} to draft {draft_id}")
+
+        return {
+            "source_id": source_id,
+            "filename": filename,
+            "file_size": file_size,
+            "mime_type": mime_type,
+            "page_count": parsed_file.page_count,
+            "char_count": len(parsed_file.content),
+            "word_count": len(parsed_file.content.split()),
+            "parsing_time_ms": parsed_file.parsing_time_ms
+        }
+
+    async def add_bulk_file_sources_to_draft(
+        self,
+        draft_id: str,
+        files: List[tuple[Any, str, int, str]]  # [(stream, filename, size, mime_type)]
+    ) -> Dict[str, Any]:
+        """
+        Add multiple file uploads to KB draft in batch.
+
+        WHY: Efficient bulk file upload processing
+        HOW: Parse all files with Tika concurrently, add atomically
+
+        PHASE: 1 (Draft Mode - Redis Only)
+
+        Args:
+            draft_id: KB draft ID
+            files: List of (file_stream, filename, file_size, mime_type) tuples
+
+        Returns:
+            {
+                "sources_added": int,
+                "source_ids": List[str],
+                "total_chars": int,
+                "total_pages": int,
+                "failed_files": List[dict],
+                "total_sources_after": int
+            }
+
+        Raises:
+            ValueError: If draft not found
+        """
+
+        from app.services.tika_service import tika_service
+
+        # Get draft
+        draft = draft_service.get_draft(DraftType.KB, draft_id)
+        if not draft:
+            raise ValueError("KB draft not found")
+
+        print(f"[KB Draft] Bulk parsing {len(files)} files")
+
+        # Parse all files concurrently
+        sources_added = []
+        source_ids = []
+        failed_files = []
+        total_chars = 0
+        total_pages = 0
+
+        for file_stream, filename, file_size, mime_type in files:
+            try:
+                # Parse file
+                parsed_file = await tika_service.parse_file(
+                    file_stream=file_stream,
+                    filename=filename,
+                    metadata_only=False
+                )
+
+                # Create source entry
+                source_id = str(uuid4())
+                source = {
+                    "id": source_id,
+                    "type": "file_upload",
+                    "filename": filename,
+                    "file_size": file_size,
+                    "mime_type": mime_type,
+                    "parsed_content": parsed_file.content,
+                    "file_metadata": parsed_file.metadata,
+                    "page_count": parsed_file.page_count,
+                    "char_count": len(parsed_file.content),
+                    "word_count": len(parsed_file.content.split()),
+                    "parsing_time_ms": parsed_file.parsing_time_ms,
+                    "added_at": datetime.utcnow().isoformat(),
+                    "added_via": "bulk_operation"
+                }
+
+                sources_added.append(source)
+                source_ids.append(source_id)
+                total_chars += len(parsed_file.content)
+                total_pages += parsed_file.page_count or 0
+
+                print(f"[KB Draft] Parsed {filename}: {len(parsed_file.content)} chars")
+
+            except Exception as e:
+                print(f"[KB Draft] Failed to parse {filename}: {e}")
+                failed_files.append({
+                    "filename": filename,
+                    "error": str(e)
+                })
+
+        # Add all valid sources atomically
+        if sources_added:
+            data = draft.get("data", {})
+            existing_sources = data.get("sources", [])
+            all_sources = existing_sources + sources_added
+            data["sources"] = all_sources
+
+            draft_service.update_draft(
+                draft_type=DraftType.KB,
+                draft_id=draft_id,
+                updates={"data": data}
+            )
+
+            print(f"[KB Draft] Added {len(sources_added)} file sources to draft {draft_id}")
+
+        return {
+            "sources_added": len(sources_added),
+            "source_ids": source_ids,
+            "total_chars": total_chars,
+            "total_pages": total_pages,
+            "failed_files": failed_files,
+            "total_sources_after": len(draft.get("data", {}).get("sources", [])) + len(sources_added)
+        }
+
     def remove_source_from_draft(
         self,
         draft_id: str,
@@ -394,14 +613,31 @@ class KBDraftService:
             errors.append("At least one source is required")
 
         # Validate sources
+        # Supported source types: web_scraping, file_upload, text_input, approved_content
+        SUPPORTED_SOURCE_TYPES = {"web_scraping", "file_upload", "text_input", "approved_content"}
+
         for i, source in enumerate(sources):
-            if source.get("type") != "web_scraping":
-                errors.append(f"Source {i}: Unsupported source type")
+            source_type = source.get("type")
+
+            if source_type not in SUPPORTED_SOURCE_TYPES:
+                errors.append(f"Source {i}: Unsupported source type '{source_type}'")
                 continue
 
-            url = source.get("url")
-            if not url or not url.startswith(("http://", "https://")):
-                errors.append(f"Source {i}: Invalid URL")
+            # Validate web_scraping sources require URL
+            if source_type == "web_scraping":
+                url = source.get("url")
+                if not url or not url.startswith(("http://", "https://")):
+                    errors.append(f"Source {i}: Invalid URL")
+
+            # Validate file_upload sources require parsed_content
+            elif source_type == "file_upload":
+                if not source.get("parsed_content"):
+                    errors.append(f"Source {i}: File upload missing parsed content")
+
+            # Validate text_input sources
+            elif source_type == "text_input":
+                if not source.get("content"):
+                    errors.append(f"Source {i}: Text input missing content")
 
         # Estimate processing duration
         total_pages = 0
@@ -491,22 +727,39 @@ class KBDraftService:
         if config_override:
             final_config.update(config_override)
 
+        # WIRING FIX: Merge retrieval_config into context_settings
+        # The model-config endpoint saves retrieval_config at data["retrieval_config"]
+        # But retrieval_service reads from kb.context_settings.retrieval_config
+        # So we need to wire them together during finalization
+        # Priority: config_override > data (draft)
+        final_context_settings = data.get("context_settings", {})
+        retrieval_config = (config_override or {}).get("retrieval_config") or data.get("retrieval_config")
+        if retrieval_config:
+            final_context_settings["retrieval_config"] = retrieval_config
+
+        # Get context value for KB creation
+        context_value = data.get("context", "both")
+
+        # Resolve embedding_config and vector_store_config (priority: config_override > data)
+        final_embedding_config = (config_override or {}).get("embedding_config") or data.get("embedding_config", {
+            "model": "all-MiniLM-L6-v2",
+            "device": "cpu"
+        })
+        final_vector_store_config = (config_override or {}).get("vector_store_config") or data.get("vector_store_config", {
+            "provider": "qdrant",
+            "collection_name_prefix": "kb"
+        })
+
         # Create KB record (status="processing")
         kb = KnowledgeBase(
             workspace_id=UUID(draft["workspace_id"]),
             name=data["name"],
             description=data.get("description"),
             config=final_config,  # Use merged config including chunking
-            context=data.get("context", "both"),  # chatbot, chatflow, or both
-            context_settings=data.get("context_settings", {}),
-            embedding_config=data.get("embedding_config", {
-                "model": "all-MiniLM-L6-v2",
-                "device": "cpu"
-            }),
-            vector_store_config=data.get("vector_store_config", {
-                "provider": "qdrant",
-                "collection_name_prefix": "kb"
-            }),
+            context=context_value,  # chatbot, chatflow, or both (use traced value)
+            context_settings=final_context_settings,  # NOW includes retrieval_config!
+            embedding_config=final_embedding_config,
+            vector_store_config=final_vector_store_config,
             indexing_method=final_config.get("indexing_method", "high_quality"),
             status="processing",  # Will be updated by background task
             created_by=UUID(draft["created_by"]),
@@ -763,53 +1016,129 @@ class KBDraftService:
                 print(f"✅ [FINALIZE_LEGACY_APPROVED] Created placeholder documents for approved pages from {len(sources_with_approved_pages)} sources")
             else:
                 # FALLBACK: Legacy compatibility for old draft format without approvals
-                print(f"🔄 [FINALIZE_LEGACY] No approved_content sources found, using legacy previewPages logic")
+                # Also handles file_upload and text_input sources
+                print(f"🔄 [FINALIZE_LEGACY] Processing {len(sources)} sources (file_upload, text_input, or legacy web)")
                 for source in sources:
-                    # CRITICAL FIX: Extract approved content for each individual source
+                    source_type = source.get("type", "unknown")
                     source_metadata = dict(source)  # Copy the original source metadata
-                    preview_pages = source.get("metadata", {}).get("previewPages", [])
 
-                    if preview_pages:
-                        # CRITICAL FIX: Extract approved/edited content from APPROVED preview pages only
-                        approved_sources = []
-                        for page in preview_pages:
-                            # Only process pages that were actually approved by the user
-                            if not page.get("is_approved", False):
-                                continue  # Skip non-approved pages
+                    # Handle file_upload sources
+                    if source_type == "file_upload":
+                        parsed_content = source.get("parsed_content", "")
+                        if not parsed_content.strip():
+                            print(f"⚠️ [FINALIZE_FILE] Skipping empty file upload: {source.get('filename')}")
+                            continue
 
-                            # For approved pages, use edited_content if available, otherwise original content
-                            approved_content = page.get("edited_content") or page.get("content", "")
-                            if approved_content.strip():
-                                approved_page = {
-                                    "url": page.get("url", source.get("url", "")),
-                                    "title": page.get("title", ""),
-                                    "content": approved_content,  # This is what user actually approved
-                                    "markdown": approved_content,
-                                    "is_edited": page.get("is_edited", False),
-                                    "source": "user_approved",
-                                    "metadata": page.get("metadata", {}),
-                                    "approved_at": page.get("approved_at"),
-                                    "approved_by": page.get("approved_by")
-                                }
-                                approved_sources.append(approved_page)
-
-                        # Add approved content to source metadata
+                        # Create approved_sources structure for file uploads
+                        approved_sources = [{
+                            "url": f"file://{source.get('filename', 'unknown')}",
+                            "title": source.get("filename", "Uploaded File"),
+                            "content": parsed_content,
+                            "markdown": parsed_content,
+                            "is_edited": False,
+                            "source": "file_upload",
+                            "metadata": source.get("file_metadata", {}),
+                            "approved_at": source.get("parsed_at"),
+                            "approved_by": draft.get("created_by")
+                        }]
                         source_metadata["approved_sources"] = approved_sources
-                        print(f"✅ [FINALIZE_LEGACY] Extracted {len(approved_sources)} approved pages for {source.get('url')}")
+                        print(f"✅ [FINALIZE_FILE] Created document for file: {source.get('filename')}")
 
-                    document = Document(
-                        kb_id=kb.id,
-                        workspace_id=kb.workspace_id,
-                        name=source.get("url", "Unnamed source"),
-                        source_type=source["type"],
-                        source_url=source.get("url"),
-                        source_metadata=source_metadata,  # Include approved content
-                        status="pending",  # Will be updated by background task
-                        created_by=UUID(draft["created_by"]),
-                        created_at=datetime.utcnow()
-                    )
-                    db.add(document)
-                    documents.append(document)
+                        document = Document(
+                            kb_id=kb.id,
+                            workspace_id=kb.workspace_id,
+                            name=source.get("filename", "Uploaded File"),
+                            source_type="file_upload",
+                            source_url=f"file:///{source.get('filename', 'unknown')}",  # Triple slash to match pipeline tasks
+                            source_metadata=source_metadata,
+                            content_full=None,  # OPTION A: Metadata-only storage for file uploads (content in Qdrant only)
+                            status="pending",
+                            created_by=UUID(draft["created_by"]),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(document)
+                        documents.append(document)
+
+                    # Handle text_input sources
+                    elif source_type == "text_input":
+                        content = source.get("content", "")
+                        if not content.strip():
+                            print(f"⚠️ [FINALIZE_TEXT] Skipping empty text input")
+                            continue
+
+                        approved_sources = [{
+                            "url": "text://direct-input",
+                            "title": source.get("name", "Direct Text Input"),
+                            "content": content,
+                            "markdown": content,
+                            "is_edited": False,
+                            "source": "text_input",
+                            "metadata": {},
+                            "approved_at": source.get("added_at"),
+                            "approved_by": draft.get("created_by")
+                        }]
+                        source_metadata["approved_sources"] = approved_sources
+
+                        document = Document(
+                            kb_id=kb.id,
+                            workspace_id=kb.workspace_id,
+                            name=source.get("name", "Direct Text Input"),
+                            source_type="text_input",
+                            source_url="text://direct-input",
+                            source_metadata=source_metadata,
+                            content_full=content,
+                            status="pending",
+                            created_by=UUID(draft["created_by"]),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(document)
+                        documents.append(document)
+
+                    # Handle web_scraping sources (legacy)
+                    else:
+                        preview_pages = source.get("metadata", {}).get("previewPages", [])
+
+                        if preview_pages:
+                            # CRITICAL FIX: Extract approved/edited content from APPROVED preview pages only
+                            approved_sources = []
+                            for page in preview_pages:
+                                # Only process pages that were actually approved by the user
+                                if not page.get("is_approved", False):
+                                    continue  # Skip non-approved pages
+
+                                # For approved pages, use edited_content if available, otherwise original content
+                                approved_content = page.get("edited_content") or page.get("content", "")
+                                if approved_content.strip():
+                                    approved_page = {
+                                        "url": page.get("url", source.get("url", "")),
+                                        "title": page.get("title", ""),
+                                        "content": approved_content,  # This is what user actually approved
+                                        "markdown": approved_content,
+                                        "is_edited": page.get("is_edited", False),
+                                        "source": "user_approved",
+                                        "metadata": page.get("metadata", {}),
+                                        "approved_at": page.get("approved_at"),
+                                        "approved_by": page.get("approved_by")
+                                    }
+                                    approved_sources.append(approved_page)
+
+                            # Add approved content to source metadata
+                            source_metadata["approved_sources"] = approved_sources
+                            print(f"✅ [FINALIZE_LEGACY] Extracted {len(approved_sources)} approved pages for {source.get('url')}")
+
+                        document = Document(
+                            kb_id=kb.id,
+                            workspace_id=kb.workspace_id,
+                            name=source.get("url", "Unnamed source"),
+                            source_type=source["type"],
+                            source_url=source.get("url"),
+                            source_metadata=source_metadata,  # Include approved content
+                            status="pending",  # Will be updated by background task
+                            created_by=UUID(draft["created_by"]),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(document)
+                        documents.append(document)
 
         # Commit to PostgreSQL
         db.commit()

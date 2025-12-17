@@ -528,29 +528,30 @@ export interface WebSourceConfig {
 
 /**
  * Chunking Configuration
+ *
+ * BACKEND-SUPPORTED FIELDS (sent to API and used by backend):
+ * - strategy, chunk_size, chunk_overlap
+ * - preserve_code_blocks, custom_separators, enable_enhanced_metadata
+ * - semantic_threshold (for semantic strategy)
+ *
+ * FRONTEND-ONLY FIELDS (stored locally, not used by backend):
+ * - min_chunk_size, max_chunk_size (UI display only)
  */
 export interface ChunkingConfig {
+  // Core parameters (REQUIRED - backend supported)
   strategy: ChunkingStrategy;
   chunk_size: number; // Characters per chunk (100-5000)
   chunk_overlap: number; // Overlap between chunks (0-1000)
 
-  // Backend-supported parameters (with UI controls)
-  preserve_code_blocks?: boolean; // API endpoint supports this
-  preserve_structure?: boolean; // Enhanced service supports this - maintain element boundaries
-  include_metadata?: boolean; // Enhanced service supports this - include structural metadata
-  adaptive_sizing?: boolean; // Enhanced service supports this - adjust size based on content type
-  context_window?: number; // Enhanced service supports this - surrounding elements for context (0-5)
-
-  // Legacy/frontend-only parameters (may not have backend support)
-  preserve_formatting?: boolean;
-  split_by_heading_level?: number; // For by_heading strategy
-  semantic_threshold?: number; // For semantic strategy (0-1)
+  // Backend-supported optional parameters
+  preserve_code_blocks?: boolean; // Keep code blocks intact during chunking
   custom_separators?: string[]; // For custom strategy - user-defined separators
-  min_chunk_size?: number; // Minimum chunk size (50-500)
-  max_chunk_size?: number; // Maximum chunk size (500-10000)
-  preserve_headings?: boolean;
-  remove_duplicates?: boolean;
-  smart_splitting?: boolean;
+  enable_enhanced_metadata?: boolean; // Add context_before/after, parent_heading to chunks
+  semantic_threshold?: number; // For semantic strategy (0-1)
+
+  // Frontend-only parameters (not sent to backend)
+  min_chunk_size?: number; // UI display only
+  max_chunk_size?: number; // UI display only
 }
 
 /**

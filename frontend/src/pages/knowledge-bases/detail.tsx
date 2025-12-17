@@ -701,23 +701,40 @@ export default function KBDetailPage() {
                   <div className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl p-6">
                     <h4 className="text-lg font-bold text-emerald-900 dark:text-emerald-100 font-manrope mb-4 flex items-center gap-3">
                       <span className="text-2xl">🤖</span>
-                      Model Configuration
+                      Model & Embedding Configuration
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
                         <label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 font-manrope block mb-2">Embedding Model</label>
                         <p className="text-gray-900 dark:text-gray-100 font-manrope">
-                          {(kb as any).config?.embedding?.model ||
+                          {(kb as any).config?.embedding_config?.model ||
                            kb.embedding_config?.model ||
                            'all-MiniLM-L6-v2'}
                         </p>
                       </div>
                       <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
                         <label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 font-manrope block mb-2">Vector Store</label>
-                        <p className="text-gray-900 dark:text-gray-100 font-manrope">
-                          {(kb as any).config?.vector_store?.provider ||
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope capitalize">
+                          {(kb as any).config?.vector_store_config?.provider ||
                            kb.vector_store_config?.provider ||
                            'qdrant'}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
+                        <label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 font-manrope block mb-2">Distance Metric</label>
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope capitalize">
+                          {(kb as any).config?.vector_store_config?.distance_metric ||
+                           kb.vector_store_config?.distance_metric ||
+                           (kb.vector_store_config?.settings as any)?.distance_metric ||
+                           'cosine'}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
+                        <label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 font-manrope block mb-2">HNSW M</label>
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope">
+                          {(kb as any).config?.vector_store_config?.hnsw_m ||
+                           (kb.vector_store_config?.settings as any)?.hnsw_m ||
+                           16}
                         </p>
                       </div>
                       <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
@@ -729,6 +746,47 @@ export default function KBDetailPage() {
                       <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-emerald-100 dark:border-emerald-800">
                         <label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 font-manrope block mb-2">Context</label>
                         <p className="capitalize text-gray-900 dark:text-gray-100 font-manrope">{kb.context || 'both'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-purple-50 to-violet-50 dark:from-purple-900/20 dark:to-violet-900/20 border border-purple-200 dark:border-purple-700 rounded-xl p-6">
+                    <h4 className="text-lg font-bold text-purple-900 dark:text-purple-100 font-manrope mb-4 flex items-center gap-3">
+                      <span className="text-2xl">🔍</span>
+                      Retrieval Configuration
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
+                        <label className="text-sm font-semibold text-purple-700 dark:text-purple-300 font-manrope block mb-2">Search Strategy</label>
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope capitalize">
+                          {((kb as any).config?.retrieval_config?.strategy ||
+                           (kb as any).context_settings?.retrieval_config?.strategy ||
+                           'hybrid_search').replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
+                        <label className="text-sm font-semibold text-purple-700 dark:text-purple-300 font-manrope block mb-2">Top K Results</label>
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope">
+                          {(kb as any).config?.retrieval_config?.top_k ||
+                           (kb as any).context_settings?.retrieval_config?.top_k ||
+                           5}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
+                        <label className="text-sm font-semibold text-purple-700 dark:text-purple-300 font-manrope block mb-2">Score Threshold</label>
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope">
+                          {(kb as any).config?.retrieval_config?.score_threshold ||
+                           (kb as any).context_settings?.retrieval_config?.score_threshold ||
+                           0.7}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
+                        <label className="text-sm font-semibold text-purple-700 dark:text-purple-300 font-manrope block mb-2">Reranking</label>
+                        <p className="text-gray-900 dark:text-gray-100 font-manrope">
+                          {(kb as any).config?.retrieval_config?.rerank_enabled ||
+                           (kb as any).context_settings?.retrieval_config?.rerank_enabled
+                           ? 'Enabled' : 'Disabled'}
+                        </p>
                       </div>
                     </div>
                   </div>

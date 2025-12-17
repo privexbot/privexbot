@@ -69,6 +69,17 @@ export default function PipelineMonitorPage() {
   const [isPolling, setIsPolling] = useState(false);
   const [errorRetryCount, setErrorRetryCount] = useState(0);
   const [kbDetails, setKbDetails] = useState<KnowledgeBase | null>(null);
+  const [retryStatus, setRetryStatus] = useState<{
+    can_retry: boolean;
+    reason: string;
+    kb_status: string;
+    pipeline_status: string | null;
+    pipeline_age_seconds: number | null;
+    is_stale: boolean;
+    stale_threshold_seconds: number;
+    retry_available_in_seconds: number | null;
+  } | null>(null);
+  const [retryLoading, setRetryLoading] = useState(false);
 
   const currentStatus = pipelineId ? activePipelines[pipelineId] : null;
 
@@ -88,7 +99,21 @@ export default function PipelineMonitorPage() {
       }
     };
 
+    // Fetch retry status to check if KB can be retried (handles stale queued pipelines)
+    const fetchRetryStatus = async () => {
+      try {
+        const status = await kbClient.kb.getRetryStatus(kbId);
+        setRetryStatus(status);
+      } catch (error) {
+        console.error('Failed to fetch retry status:', error);
+      }
+    };
+
     fetchKbDetails();
+    fetchRetryStatus();
+
+    // Poll retry status every 10 seconds to detect stale pipelines
+    const retryStatusInterval = setInterval(fetchRetryStatus, 10000);
 
     // Start polling for pipeline status
     setIsPolling(true);
@@ -96,13 +121,15 @@ export default function PipelineMonitorPage() {
       if (status.status === 'completed' || status.status === 'failed') {
         setIsPolling(false);
         stopPipelinePolling(pipelineId);
-        // Refresh KB details when pipeline completes/fails
+        // Refresh KB details and retry status when pipeline completes/fails
         fetchKbDetails();
+        fetchRetryStatus();
       }
     });
 
     // Cleanup on unmount
     return () => {
+      clearInterval(retryStatusInterval);
       if (pipelineId) {
         stopPipelinePolling(pipelineId);
       }
@@ -126,6 +153,7 @@ export default function PipelineMonitorPage() {
   const handleRetry = async () => {
     if (!kbId) return;
 
+    setRetryLoading(true);
     try {
       const result = await kbClient.kb.retryProcessing(kbId);
 
@@ -171,6 +199,8 @@ export default function PipelineMonitorPage() {
 
       // You could add a toast notification here if you have a toast system
       alert(`Failed to retry pipeline: ${errorMessage}`);
+    } finally {
+      setRetryLoading(false);
     }
   };
 
@@ -485,15 +515,57 @@ export default function PipelineMonitorPage() {
 
         {/* Actions */}
         <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6">
+          {/* Stale Pipeline Warning */}
+          {retryStatus?.is_stale && retryStatus?.pipeline_status === 'queued' && (
+            <Alert className="mb-4 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <AlertDescription className="flex-1">
+                  <strong className="text-amber-900 dark:text-amber-100 font-manrope">Pipeline Stuck in Queue</strong>
+                  <div className="text-amber-800 dark:text-amber-200 font-manrope mt-1">
+                    {retryStatus.reason}
+                  </div>
+                </AlertDescription>
+              </div>
+            </Alert>
+          )}
+
+          {/* Retry Available Soon Message */}
+          {retryStatus && !retryStatus.can_retry && retryStatus.retry_available_in_seconds && retryStatus.retry_available_in_seconds > 0 && (
+            <Alert className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <AlertDescription className="flex-1">
+                  <strong className="text-blue-900 dark:text-blue-100 font-manrope">Waiting for Pipeline</strong>
+                  <div className="text-blue-800 dark:text-blue-200 font-manrope mt-1">
+                    Retry will be available in {retryStatus.retry_available_in_seconds}s if pipeline doesn't start
+                  </div>
+                </AlertDescription>
+              </div>
+            </Alert>
+          )}
+
           <div className="flex justify-end gap-3">
-            {kbDetails?.status === 'failed' && (
+            {retryStatus?.can_retry && (
               <Button
                 onClick={handleRetry}
+                disabled={retryLoading}
                 variant="outline"
-                className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg"
+                className={cn(
+                  "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg",
+                  retryStatus.is_stale && "border-amber-300 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                )}
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry Pipeline
+                {retryLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                {retryStatus.is_stale ? 'Retry Stale Pipeline' : 'Retry Pipeline'}
               </Button>
             )}
             {currentStatus?.status === 'completed' && (

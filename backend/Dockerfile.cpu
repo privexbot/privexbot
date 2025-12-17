@@ -36,9 +36,17 @@ RUN pip install --no-cache-dir \
     torchvision==0.20.1+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install all other dependencies
-RUN uv pip install --system -r pyproject.toml --no-deps torch torchvision || \
-    uv pip install --system -r pyproject.toml
+# Copy source code (required for uv sync to work with editable install)
+COPY src/ ./src/
+
+# Install all other dependencies using uv sync (same as dev)
+# This properly resolves all sub-dependencies including pydantic_core
+RUN uv sync --system || \
+    uv pip install --system -e .
+
+# Install Playwright browsers in builder stage (before copying)
+RUN python -m playwright install chromium
+RUN python -m playwright install-deps
 
 # Production stage
 FROM python:3.11-slim
@@ -49,6 +57,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
+    libmagic1 \
     # Playwright browser dependencies
     libglib2.0-0 \
     libnss3 \
@@ -71,19 +80,16 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
+# Copy installed packages from builder (includes Playwright browsers)
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
 # Install production web server
 RUN pip install --no-cache-dir gunicorn uvicorn[standard]
 
-# Install Playwright and chromium browser
-# Do this as root before switching to appuser
+# Set Playwright browsers path
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
-RUN python -m playwright install chromium --with-deps && \
-    mkdir -p /home/appuser/.cache && \
-    mv /root/.cache/ms-playwright /home/appuser/.cache/ || true
 
 # Copy entrypoint script
 COPY scripts/docker/entrypoint-prod.sh /app/scripts/
@@ -95,10 +101,12 @@ COPY src/ ./src/
 # Set Python path to include src directory
 ENV PYTHONPATH=/app/src
 
-# Create non-root user and fix browser permissions
+# Create non-root user and fix permissions
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app && \
-    chown -R appuser:appuser /home/appuser/.cache || true
+    mkdir -p /home/appuser/.cache && \
+    mv /root/.cache/ms-playwright /home/appuser/.cache/ || true && \
+    chown -R appuser:appuser /home/appuser/.cache
 USER appuser
 
 # Expose port

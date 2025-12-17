@@ -21,7 +21,7 @@ import traceback
 
 from app.db.session import SessionLocal
 from app.services.crawl4ai_service import crawl4ai_service, CrawlConfig
-from app.services.embedding_service_local import embedding_service
+from app.services.embedding_service_local import embedding_service, multi_model_embedding_service
 from app.services.qdrant_service import qdrant_service, QdrantChunk
 from app.services.chunking_service import chunking_service
 from app.services.draft_service import draft_service
@@ -313,21 +313,36 @@ def process_web_kb_task(
 
         # Extract config
         chunking_config = config.get("chunking_config", {})
-        embedding_config = config.get("embedding_config", {})
+        embedding_config = config.get("embedding_config", {}) or kb.embedding_config or {}
         indexing_method = config.get("indexing_method", "high_quality")
+
+        # Extract embedding model (CRITICAL: user-configured model selection)
+        embedding_model = embedding_config.get("model") or embedding_config.get("model_name", "all-MiniLM-L6-v2")
+        embedding_batch_size = embedding_config.get("batch_size", 32)
+        print(f"🔧 [EMBEDDING] Using model: {embedding_model}, batch_size: {embedding_batch_size}")
+
+        # Extract vector_store_config from config or KB record
+        vector_store_config = config.get("vector_store_config", {}) or kb.vector_store_config or {}
+        # Handle nested "settings" structure from frontend
+        if "settings" in vector_store_config:
+            settings = vector_store_config.get("settings", {})
+            distance_metric = settings.get("distance_metric", "cosine")
+            hnsw_m = settings.get("hnsw_m", 16)
+            qdrant_batch_size = settings.get("batch_size", 100)
+        else:
+            # Flat structure (from model-config endpoint)
+            distance_metric = vector_store_config.get("distance_metric", "cosine")
+            hnsw_m = vector_store_config.get("hnsw_m", 16)
+            qdrant_batch_size = vector_store_config.get("batch_size", 100)
 
         chunk_strategy = chunking_config.get("strategy", "by_heading")
         chunk_size = chunking_config.get("chunk_size", 1000)
         chunk_overlap = chunking_config.get("chunk_overlap", 200)
+        custom_separators = chunking_config.get("custom_separators", None)  # For "custom" strategy
+        enable_enhanced_metadata = chunking_config.get("enable_enhanced_metadata", False)  # Rich metadata option
 
         # Map indexing_method to processing quality settings
         processing_quality = _get_processing_quality_settings(indexing_method)
-        print(f"🔧 [INDEXING] Using indexing_method: {indexing_method} -> {processing_quality}")
-
-        # CRITICAL DEBUG: Log the actual strategy being used
-        print(f"🔍 [STRATEGY DEBUG] chunking_config: {chunking_config}")
-        print(f"🔍 [STRATEGY DEBUG] Detected chunk_strategy: '{chunk_strategy}'")
-        print(f"🔍 [STRATEGY DEBUG] should_combine_all_sources will be: {chunk_strategy in ('no_chunking', 'full_content')}")
 
         # ========================================
         # STEP 1: CREATE QDRANT COLLECTION
@@ -345,13 +360,27 @@ def process_web_kb_task(
         asyncio.set_event_loop(loop)
 
         try:
+            # Map distance_metric to Qdrant format (cosine -> Cosine, euclidean -> Euclid, dot -> Dot)
+            qdrant_distance_map = {
+                "cosine": "Cosine",
+                "euclidean": "Euclid",
+                "dot": "Dot",
+                "dot_product": "Dot"
+            }
+            qdrant_distance = qdrant_distance_map.get(distance_metric.lower(), "Cosine")
+
+            # Get vector dimension for the configured embedding model
+            vector_dimension = multi_model_embedding_service.get_embedding_dimension(embedding_model)
+
             loop.run_until_complete(
                 qdrant_service.create_kb_collection(
                     kb_id=UUID(kb_id),
-                    vector_size=embedding_service.get_embedding_dimension()
+                    vector_size=vector_dimension,
+                    distance_metric=qdrant_distance,
+                    hnsw_m=int(hnsw_m)
                 )
             )
-            tracker.add_log("info", "Qdrant collection created successfully")
+            tracker.add_log("info", f"Qdrant collection created (model: {embedding_model}, dim: {vector_dimension}, distance: {qdrant_distance}, hnsw_m: {hnsw_m})")
         except Exception as e:
             tracker.add_log("warning", f"Qdrant collection creation warning: {str(e)}")
             # Collection might already exist, continue
@@ -368,11 +397,7 @@ def process_web_kb_task(
         # CRITICAL FIX: For no_chunking strategy, process ALL sources together into ONE document
         should_combine_all_sources = chunk_strategy in ("no_chunking", "full_content")
 
-        print(f"🔍 [PATH DEBUG] should_combine_all_sources: {should_combine_all_sources}")
-        print(f"🔍 [PATH DEBUG] Will take {'ALL_SOURCES' if should_combine_all_sources else 'INDIVIDUAL'} processing path")
-
         if should_combine_all_sources:
-            print(f"🔄 [ALL_SOURCES] Processing ALL {len(sources)} sources together for {chunk_strategy} strategy")
 
             # Collect ALL pages from ALL sources
             all_scraped_pages = []
@@ -400,7 +425,6 @@ def process_web_kb_task(
 
                     # Check for approved content first (same logic as individual processing)
                     # FIXED: Query for documents that belong to this source (handle both base URL and individual page URLs)
-                    print(f"🔍 [ALL_SOURCES QUERY DEBUG] Looking for approved documents for source: {source_url}")
                     doc_with_approved = db.query(Document).filter(
                         Document.kb_id == UUID(kb_id),
                         Document.status == "pending"
@@ -410,26 +434,9 @@ def process_web_kb_task(
                         (Document.source_url.like(f"{source_url}%"))
                     ).first()
 
-                    if doc_with_approved:
-                        print(f"✅ [ALL_SOURCES QUERY DEBUG] Found document: source_url={doc_with_approved.source_url}")
-                    else:
-                        print(f"❌ [ALL_SOURCES QUERY DEBUG] No approved document found for: {source_url}")
-                        # Debug: Show what documents do exist for this KB
-                        all_pending_docs = db.query(Document).filter(
-                            Document.kb_id == UUID(kb_id),
-                            Document.status == "pending"
-                        ).all()
-                        if all_pending_docs:
-                            print(f"📋 [DEBUG] Existing pending documents:")
-                            for doc in all_pending_docs[:5]:  # Show first 5
-                                print(f"   - {doc.source_url}")
-                        else:
-                            print(f"📋 [DEBUG] No pending documents found for KB {kb_id}")
-
                     if doc_with_approved and doc_with_approved.source_metadata:
                         approved_sources_in_doc = doc_with_approved.source_metadata.get("approved_sources", [])
                         if approved_sources_in_doc:
-                            print(f"🎯 [ALL_SOURCES] Found {len(approved_sources_in_doc)} APPROVED pages for {source_url}")
                             scraped_pages = []
                             for approved_page in approved_sources_in_doc:
                                 content = approved_page.get("content", "")
@@ -446,8 +453,37 @@ def process_web_kb_task(
                                     }
                                     scraped_pages.append(scraped_page)
 
+                    # CRITICAL: Check for FILE UPLOAD source type (combined processing)
+                    if not scraped_pages and source.get("type") == "file_upload":
+                        # File was already parsed by Tika in draft phase
+                        filename = source.get("filename", "Uploaded File")
+                        parsed_content = source.get("parsed_content", "")
+                        file_metadata = source.get("file_metadata", {})
+
+                        print(f"📄 [ALL_SOURCES FILE] Processing file: {filename}")
+
+                        if parsed_content.strip():
+                            scraped_page = {
+                                "url": f"file:///{filename}",
+                                "title": file_metadata.get("title", filename),
+                                "content": parsed_content,
+                                "markdown": parsed_content,
+                                "is_edited": False,
+                                "source": "file_upload",
+                                "source_name": filename,
+                                "metadata": {
+                                    "filename": filename,
+                                    "file_size": source.get("file_size"),
+                                    "mime_type": source.get("mime_type"),
+                                    "page_count": source.get("page_count"),
+                                    **file_metadata
+                                }
+                            }
+                            scraped_pages = [scraped_page]
+                            print(f"✅ [ALL_SOURCES FILE] Added {len(parsed_content)} chars from {filename}")
+
                     # Check approved_content sources
-                    if not scraped_pages and source.get("type") == "approved_content" and source.get("status") == "approved":
+                    elif not scraped_pages and source.get("type") == "approved_content" and source.get("status") == "approved":
                         approved_pages = source.get("approved_pages", [])
                         scraped_pages = []
                         for page in approved_pages:
@@ -572,9 +608,20 @@ def process_web_kb_task(
                     final_combined_content = "\n\n".join(combined_content)
 
                     if final_combined_content.strip():
+                        # OPTION A: Check if ALL sources are file uploads for metadata-only storage
+                        all_file_uploads = all(s.get("type") == "file_upload" for s in sources)
+
                         # Update the combined document
                         combined_doc.name = f"Combined Knowledge Base ({len(sources)} sources, {len(all_scraped_pages)} pages)"
-                        combined_doc.content_full = final_combined_content
+
+                        # OPTION A: Skip content_full for file uploads (Qdrant-only storage)
+                        if all_file_uploads:
+                            print(f"📁 [FILE_UPLOAD] All sources are file uploads - using metadata-only PostgreSQL storage")
+                            combined_doc.content_full = None  # Skip content storage for file uploads
+                            combined_doc.source_type = "file_upload"  # Update source type
+                        else:
+                            combined_doc.content_full = final_combined_content  # Store content for web scraping
+
                         combined_doc.content_preview = final_combined_content[:500] if len(final_combined_content) > 500 else final_combined_content
                         combined_doc.word_count = len(final_combined_content.split())
                         combined_doc.character_count = len(final_combined_content)
@@ -599,7 +646,8 @@ def process_web_kb_task(
                                 document=combined_doc,
                                 content=final_combined_content,
                                 kb=kb,
-                                user_config=user_chunking_config
+                                user_config=user_chunking_config,
+                                skip_postgres_chunks=all_file_uploads  # OPTION A: Skip PostgreSQL chunks for file uploads
                             )
                         )
 
@@ -612,35 +660,52 @@ def process_web_kb_task(
                             postgres_chunks = processing_result.get("postgres_chunks", [])
                             qdrant_chunks = processing_result.get("qdrant_chunks", [])
 
-                            print(f"📊 [ALL_SOURCES] Created {len(postgres_chunks)} postgres chunks, {len(qdrant_chunks)} qdrant chunks")
+                            # OPTION A: Log different storage strategies
+                            if all_file_uploads:
+                                print(f"📁 [FILE_UPLOAD] Qdrant-only storage: 0 postgres chunks, {len(qdrant_chunks)} qdrant chunks")
+                            else:
+                                print(f"📊 [ALL_SOURCES] Created {len(postgres_chunks)} postgres chunks, {len(qdrant_chunks)} qdrant chunks")
 
-                            # CRITICAL FIX: Save postgres chunks immediately and flush
-                            for postgres_chunk_data in postgres_chunks:
-                                chunk = Chunk(
-                                    id=UUID(postgres_chunk_data["id"]),
-                                    document_id=postgres_chunk_data["document_id"],
-                                    kb_id=postgres_chunk_data["kb_id"],
-                                    content=postgres_chunk_data["content"],
-                                    chunk_index=postgres_chunk_data["chunk_index"],
-                                    position=postgres_chunk_data["position"],
-                                    page_number=postgres_chunk_data.get("page_number"),
-                                    word_count=postgres_chunk_data.get("word_count", 0),
-                                    character_count=postgres_chunk_data.get("character_count", 0),
-                                    chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                            # Save postgres chunks (only for web scraping, skipped for file uploads)
+                            if postgres_chunks:
+                                for postgres_chunk_data in postgres_chunks:
+                                    chunk = Chunk(
+                                        id=UUID(postgres_chunk_data["id"]),
+                                        document_id=postgres_chunk_data["document_id"],
+                                        kb_id=postgres_chunk_data["kb_id"],
+                                        content=postgres_chunk_data["content"],
+                                        chunk_index=postgres_chunk_data["chunk_index"],
+                                        position=postgres_chunk_data["position"],
+                                        page_number=postgres_chunk_data.get("page_number"),
+                                        word_count=postgres_chunk_data.get("word_count", 0),
+                                        character_count=postgres_chunk_data.get("character_count", 0),
+                                        chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                                    )
+                                    db.add(chunk)
+                                db.flush()
+                                print(f"✅ [ALL_SOURCES] Added {len(postgres_chunks)} chunks to database session")
+                            else:
+                                print(f"📁 [FILE_UPLOAD] Skipped PostgreSQL chunks (metadata-only storage)")
+
+                            # Calculate document statistics - use qdrant_chunks for file uploads, postgres for web
+                            if all_file_uploads and qdrant_chunks:
+                                # File uploads: get stats from Qdrant chunk metadata
+                                total_doc_word_count = sum(
+                                    chunk.metadata.get("word_count", 0) for chunk in qdrant_chunks
                                 )
-                                db.add(chunk)
-
-                            # CRITICAL: Flush to ensure chunks are in session
-                            db.flush()
-                            print(f"✅ [ALL_SOURCES] Added {len(postgres_chunks)} chunks to database session")
-
-                            # Calculate document statistics from chunks
-                            total_doc_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
-                            total_doc_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+                                total_doc_char_count = sum(
+                                    chunk.metadata.get("character_count", 0) for chunk in qdrant_chunks
+                                )
+                                chunk_count = len(qdrant_chunks)
+                            else:
+                                # Web scraping: get stats from postgres chunks
+                                total_doc_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
+                                total_doc_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+                                chunk_count = len(postgres_chunks)
 
                             # Update document status and statistics
                             combined_doc.status = "processed"
-                            combined_doc.chunk_count = len(postgres_chunks)
+                            combined_doc.chunk_count = chunk_count
                             combined_doc.word_count = total_doc_word_count
                             combined_doc.character_count = total_doc_char_count
 
@@ -657,14 +722,17 @@ def process_web_kb_task(
                             db.commit()
                             print(f"✅ [ALL_SOURCES] Database commit successful for combined document")
 
-                            # VERIFICATION: Immediately verify chunks were committed (using saved ID)
-                            verification_chunks = db.query(Chunk).filter(
-                                Chunk.document_id == combined_doc_id
-                            ).count()
-                            print(f"🔍 [VERIFICATION] {verification_chunks} chunks confirmed in PostgreSQL after commit")
+                            # VERIFICATION: Verify chunks were committed (skip for file uploads)
+                            if postgres_chunks:
+                                verification_chunks = db.query(Chunk).filter(
+                                    Chunk.document_id == combined_doc_id
+                                ).count()
+                                print(f"🔍 [VERIFICATION] {verification_chunks} chunks confirmed in PostgreSQL after commit")
 
-                            if verification_chunks != len(postgres_chunks):
-                                print(f"❌ [VERIFICATION] CRITICAL: Expected {len(postgres_chunks)} chunks, found {verification_chunks}")
+                                if verification_chunks != len(postgres_chunks):
+                                    print(f"❌ [VERIFICATION] CRITICAL: Expected {len(postgres_chunks)} chunks, found {verification_chunks}")
+                            else:
+                                print(f"📁 [FILE_UPLOAD] PostgreSQL chunk verification skipped (Qdrant-only storage)")
 
                             # Index in Qdrant
                             try:
@@ -676,10 +744,10 @@ def process_web_kb_task(
                                 )
                                 print(f"✅ [ALL_SOURCES] Qdrant indexing successful")
 
-                                # Update stats
+                                # Update stats (use chunk_count for consistency)
                                 tracker.update_stats(
                                     pages_scraped=len(all_scraped_pages),
-                                    chunks_created=len(postgres_chunks),
+                                    chunks_created=chunk_count,
                                     embeddings_generated=len(qdrant_chunks),
                                     vectors_indexed=len(qdrant_chunks)
                                 )
@@ -732,26 +800,9 @@ def process_web_kb_task(
                         (Document.source_url.like(f"{source_url}%"))
                     ).first()
 
-                    if doc_with_approved:
-                        print(f"✅ [INDIVIDUAL QUERY DEBUG] Found document: source_url={doc_with_approved.source_url}")
-                    else:
-                        print(f"❌ [INDIVIDUAL QUERY DEBUG] No approved document found for: {source_url}")
-                        # Debug: Show what documents do exist for this KB
-                        all_pending_docs = db.query(Document).filter(
-                            Document.kb_id == UUID(kb_id),
-                            Document.status == "pending"
-                        ).all()
-                        if all_pending_docs:
-                            print(f"📋 [DEBUG] Existing pending documents:")
-                            for doc in all_pending_docs[:5]:  # Show first 5
-                                print(f"   - {doc.source_url}")
-                        else:
-                            print(f"📋 [DEBUG] No pending documents found for KB {kb_id}")
-
                     if doc_with_approved and doc_with_approved.source_metadata:
                         approved_sources_in_doc = doc_with_approved.source_metadata.get("approved_sources", [])
                         if approved_sources_in_doc:
-                            print(f"🎯 [SOURCE] Found {len(approved_sources_in_doc)} APPROVED pages in document metadata for {source_url}")
                             scraped_pages = []
                             found_approved_content = True
 
@@ -775,30 +826,61 @@ def process_web_kb_task(
                                                 page_metadata["page_index"] = idx
                                                 break
 
+                                    # OPTION A: Preserve original source type for file uploads
+                                    # This allows downstream processing to detect file uploads and apply metadata-only storage
+                                    original_source = approved_page.get("source", "user_approved")
+
                                     scraped_page = {
                                         "url": approved_page.get("url", source_url),
                                         "title": approved_page.get("title", ""),
                                         "content": content,
                                         "markdown": content,
                                         "is_edited": approved_page.get("is_edited", False),
-                                        "source": "user_approved",
+                                        "source": original_source,  # Preserve file_upload source type for Option A
                                         "metadata": page_metadata
                                     }
                                     scraped_pages.append(scraped_page)
 
                             tracker.add_log("info", f"Using {len(scraped_pages)} APPROVED pages from document for {source_url}")
-                            print(f"✅ [SOURCE] Using APPROVED content from document metadata")
 
-                            # DEBUG: Show what approved content was loaded
-                            for idx, approved_scraped_page in enumerate(scraped_pages):
-                                debug_url = approved_scraped_page.get("url", "no_url")
-                                debug_content_len = len(approved_scraped_page.get("content", ""))
-                                debug_source = approved_scraped_page.get("source", "no_source")
-                                print(f"🔍 [APPROVED CONTENT DEBUG] Page {idx}: {debug_url}")
-                                print(f"🔍 [APPROVED CONTENT DEBUG] Source: {debug_source}, Length: {debug_content_len}")
+                    # CRITICAL: Check for FILE UPLOAD source type
+                    if scraped_pages is None and source.get("type") == "file_upload":
+                        # File was already parsed by Tika in draft phase
+                        # Content is stored in source["parsed_content"]
+
+                        filename = source.get("filename", "Uploaded File")
+                        parsed_content = source.get("parsed_content", "")
+                        file_metadata = source.get("file_metadata", {})
+
+                        if not parsed_content.strip():
+                            raise ValueError(f"File {filename} has no extractable content")
+
+                        # Create scraped_pages format (single "page" = entire file)
+                        scraped_pages = [{
+                            "url": f"file:///{filename}",  # Pseudo-URL for file
+                            "title": file_metadata.get("title", filename),
+                            "content": parsed_content,
+                            "markdown": parsed_content,
+                            "is_edited": False,
+                            "source": "file_upload",
+                            "metadata": {
+                                "filename": filename,
+                                "file_size": source.get("file_size"),
+                                "mime_type": source.get("mime_type"),
+                                "page_count": source.get("page_count"),
+                                "char_count": source.get("char_count"),
+                                "word_count": source.get("word_count"),
+                                "parsed_at": source.get("parsed_at"),
+                                **file_metadata  # Include Tika metadata
+                            }
+                        }]
+
+                        found_approved_content = True  # Skip web scraping
+                        tracker.add_log("info", f"Processing file upload: {filename} ({len(parsed_content)} chars)")
+                        print(f"✅ [FILE UPLOAD] File ready for chunking and embedding")
 
                     # Check if this is an approved source with content (Phase 1C architecture)
-                    if scraped_pages is None and source.get("type") == "approved_content" and source.get("status") == "approved":
+                    elif scraped_pages is None and source.get("type") == "approved_content" and source.get("status") == "approved":
                         # Use approved content from sources (Phase 1C)
                         approved_pages = source.get("approved_pages", [])
                         scraped_pages = []
@@ -830,7 +912,6 @@ def process_web_kb_task(
                             scraped_pages.append(scraped_page)
 
                         tracker.add_log("info", f"Using {len(scraped_pages)} approved pages from source: {source.get('name')}")
-                        print(f"[DEBUG] Using {len(scraped_pages)} approved pages from source (no scraping needed)")
 
                     elif not found_approved_content and scraped_pages is None and preview_data and preview_data.get("pages"):
                         # Fallback: Use preview_data if no approved sources (legacy support)
@@ -853,7 +934,6 @@ def process_web_kb_task(
                             scraped_pages.append(scraped_page)
 
                         tracker.add_log("info", f"Using {len(scraped_pages)} pages from preview data (fallback mode)")
-                        print(f"[DEBUG] Using {len(scraped_pages)} pages from preview_data (fallback)")
 
                     if not found_approved_content and not scraped_pages:
                         # No preview data available, proceed with normal scraping
@@ -870,22 +950,17 @@ def process_web_kb_task(
 
                         # Scrape (single or crawl)
                         method = source_config.get("method", "single")
-
-                        print(f"[DEBUG] About to scrape: {source_url}, method={method}")
                         tracker.add_log("info", f"Starting scrape: {source_url} (method={method})")
 
                         if method == "crawl":
-                            print(f"[DEBUG] Calling crawl_website for {source_url}")
                             scraped_pages = loop.run_until_complete(
                                 crawl4ai_service.crawl_website(
                                     start_url=source_url,
                                     config=crawl_config
                                 )
                             )
-                            print(f"[DEBUG] Crawl completed, got {len(scraped_pages)} pages")
                         else:
                             # Single page scrape
-                            print(f"[DEBUG] Calling scrape_single_url for {source_url}")
                             scraped_page = loop.run_until_complete(
                                 crawl4ai_service.scrape_single_url(
                                     url=source_url,
@@ -893,7 +968,6 @@ def process_web_kb_task(
                                 )
                             )
                             scraped_pages = [scraped_page]
-                            print(f"[DEBUG] Single page scrape completed")
 
                     tracker.update_stats(pages_scraped=tracker.stats["pages_scraped"] + len(scraped_pages))
                     pages_source = "preview data with edits" if preview_data and preview_data.get("pages") else "live scraping"
@@ -909,7 +983,6 @@ def process_web_kb_task(
 
                     if should_combine_pages:
                         # COMBINE ALL PAGES INTO SINGLE DOCUMENT
-                        print(f"[DEBUG] Combining {len(scraped_pages)} pages into single document (no_chunking strategy)")
 
                         # Combine all page contents
                         combined_content = []
@@ -1030,13 +1103,24 @@ def process_web_kb_task(
                                     else:
                                         print(f"⚠️ [NO_CHUNKING] No approved_sources found, using scraped content")
 
+                                    # OPTION A: Check if this source is a file upload
+                                    is_file_upload_source = source.get("type") == "file_upload"
+
                                     # Update the document with combined content and metadata (preserve approved_sources)
                                     document.name = f"{source.get('name', 'Web Source')} (Combined {len(scraped_pages)} pages)"
                                     # Merge metadata to preserve approved_sources
                                     merged_metadata = {**existing_metadata, **serialize_metadata(combined_metadata)}
                                     document.source_metadata = merged_metadata
                                     document.status = "processing"
-                                    document.content_full = final_combined_content  # CRITICAL: Save full content
+
+                                    # OPTION A: Skip content_full for file uploads (Qdrant-only storage)
+                                    if is_file_upload_source:
+                                        print(f"📁 [NO_CHUNKING FILE_UPLOAD] Using metadata-only PostgreSQL storage")
+                                        document.content_full = None
+                                        document.source_type = "file_upload"
+                                    else:
+                                        document.content_full = final_combined_content
+
                                     document.content_preview = final_combined_content[:500] if len(final_combined_content) > 500 else final_combined_content
 
                                     # Update statistics
@@ -1068,7 +1152,8 @@ def process_web_kb_task(
                                         document=document,
                                         content=final_combined_content,
                                         kb=kb,
-                                        user_config=user_chunking_config  # Use consistent variable name
+                                        user_config=user_chunking_config,
+                                        skip_postgres_chunks=is_file_upload_source  # OPTION A: Skip PostgreSQL chunks for file uploads
                                     )
                                 )
 
@@ -1084,32 +1169,54 @@ def process_web_kb_task(
                                     postgres_chunks = processing_result.get("postgres_chunks", [])
                                     qdrant_chunks = processing_result.get("qdrant_chunks", [])
 
-                                    print(f"📊 [NO_CHUNKING] Postgres chunks created: {len(postgres_chunks)}")
-                                    print(f"📊 [NO_CHUNKING] Qdrant chunks created: {len(qdrant_chunks)}")
+                                    # OPTION A: Log different storage strategies
+                                    if is_file_upload_source:
+                                        print(f"📁 [NO_CHUNKING FILE_UPLOAD] Qdrant-only storage: 0 postgres chunks, {len(qdrant_chunks)} qdrant chunks")
+                                    else:
+                                        print(f"📊 [NO_CHUNKING] Postgres chunks created: {len(postgres_chunks)}")
+                                        print(f"📊 [NO_CHUNKING] Qdrant chunks created: {len(qdrant_chunks)}")
 
-                                    if len(postgres_chunks) == 0:
-                                        print(f"❌ [NO_CHUNKING] CRITICAL: No postgres chunks created despite success!")
-                                        print(f"❌ [NO_CHUNKING] chunking_decision: {processing_result.get('chunking_decision')}")
-                                        print(f"❌ [NO_CHUNKING] chunks_created: {processing_result.get('chunks_created', 0)}")
-                                        print(f"❌ [NO_CHUNKING] embeddings_generated: {processing_result.get('embeddings_generated', 0)}")
+                                        if len(postgres_chunks) == 0:
+                                            print(f"❌ [NO_CHUNKING] CRITICAL: No postgres chunks created despite success!")
+                                            print(f"❌ [NO_CHUNKING] chunking_decision: {processing_result.get('chunking_decision')}")
+                                            print(f"❌ [NO_CHUNKING] chunks_created: {processing_result.get('chunks_created', 0)}")
+                                            print(f"❌ [NO_CHUNKING] embeddings_generated: {processing_result.get('embeddings_generated', 0)}")
 
-                                    # CRITICAL FIX: Save postgres chunks to database (was missing!)
-                                    for postgres_chunk_data in postgres_chunks:
-                                        chunk = Chunk(
-                                            id=UUID(postgres_chunk_data["id"]),
-                                            document_id=postgres_chunk_data["document_id"],
-                                            kb_id=postgres_chunk_data["kb_id"],
-                                            content=postgres_chunk_data["content"],
-                                            chunk_index=postgres_chunk_data["chunk_index"],
-                                            position=postgres_chunk_data["position"],
-                                            page_number=postgres_chunk_data.get("page_number"),
-                                            word_count=postgres_chunk_data.get("word_count", 0),
-                                            character_count=postgres_chunk_data.get("character_count", 0),
-                                            chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                                    # Save postgres chunks (only for web scraping, skipped for file uploads)
+                                    if postgres_chunks:
+                                        for postgres_chunk_data in postgres_chunks:
+                                            chunk = Chunk(
+                                                id=UUID(postgres_chunk_data["id"]),
+                                                document_id=postgres_chunk_data["document_id"],
+                                                kb_id=postgres_chunk_data["kb_id"],
+                                                content=postgres_chunk_data["content"],
+                                                chunk_index=postgres_chunk_data["chunk_index"],
+                                                position=postgres_chunk_data["position"],
+                                                page_number=postgres_chunk_data.get("page_number"),
+                                                word_count=postgres_chunk_data.get("word_count", 0),
+                                                character_count=postgres_chunk_data.get("character_count", 0),
+                                                chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                                            )
+                                            db.add(chunk)
+                                        print(f"✅ [NO_CHUNKING] Added {len(postgres_chunks)} chunks to database session")
+                                    else:
+                                        print(f"📁 [NO_CHUNKING FILE_UPLOAD] Skipped PostgreSQL chunks (metadata-only storage)")
+
+                                    # Calculate document statistics - use qdrant_chunks for file uploads, postgres for web
+                                    if is_file_upload_source and qdrant_chunks:
+                                        # File uploads: get stats from Qdrant chunk metadata
+                                        total_word_count = sum(
+                                            chunk.metadata.get("word_count", 0) for chunk in qdrant_chunks
                                         )
-                                        db.add(chunk)
-
-                                    print(f"✅ [NO_CHUNKING] Added {len(postgres_chunks)} chunks to database session")
+                                        total_char_count = sum(
+                                            chunk.metadata.get("character_count", 0) for chunk in qdrant_chunks
+                                        )
+                                        chunk_count = len(qdrant_chunks)
+                                    else:
+                                        # Web scraping: get stats from postgres chunks
+                                        total_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
+                                        total_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+                                        chunk_count = len(postgres_chunks)
 
                                     # CRITICAL FIX: Update document metadata while preserving approved_sources
                                     current_metadata = document.source_metadata or {}
@@ -1117,19 +1224,16 @@ def process_web_kb_task(
                                     approved_sources = current_metadata.get("approved_sources", [])
                                     current_metadata.update({
                                         "chunking_decision": processing_result.get("chunking_decision").__dict__ if hasattr(processing_result.get("chunking_decision"), '__dict__') else str(processing_result.get("chunking_decision")),
-                                        "chunks_created": len(postgres_chunks),
+                                        "chunks_created": chunk_count,
                                         "processing_completed_at": datetime.utcnow().isoformat()
                                     })
                                     # Ensure approved_sources is preserved
                                     if approved_sources:
                                         current_metadata["approved_sources"] = approved_sources
                                         print(f"✅ [NO_CHUNKING] Preserved {len(approved_sources)} approved_sources in document metadata")
-                                    # Calculate document statistics from chunks
-                                    total_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
-                                    total_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
 
                                     document.source_metadata = current_metadata
-                                    document.chunk_count = len(postgres_chunks)
+                                    document.chunk_count = chunk_count
                                     document.word_count = total_word_count
                                     document.character_count = total_char_count
                                     document.status = "processed"
@@ -1145,19 +1249,8 @@ def process_web_kb_task(
 
                                     # Commit everything
                                     db.commit()
-                                    print(f"[DEBUG] Database commit successful, created {len(postgres_chunks)} chunks for combined document: {source_url}")
-
-                                    # VERIFICATION: Immediately verify chunks were committed (using saved ID)
-                                    verification_chunks = db.query(Chunk).filter(
-                                        Chunk.document_id == document_id
-                                    ).count()
-                                    print(f"🔍 [VERIFICATION] {verification_chunks} chunks confirmed in PostgreSQL after commit")
-
-                                    if verification_chunks != len(postgres_chunks):
-                                        print(f"❌ [VERIFICATION] CRITICAL: Expected {len(postgres_chunks)} chunks, found {verification_chunks}")
 
                                     # Index in Qdrant
-                                    print(f"[DEBUG] About to upsert {len(qdrant_chunks)} chunks to Qdrant for combined document: {source_url}")
 
                                     try:
                                         loop.run_until_complete(
@@ -1166,11 +1259,10 @@ def process_web_kb_task(
                                                 chunks=qdrant_chunks
                                             )
                                         )
-                                        print(f"[DEBUG] Qdrant upsert successful for {len(qdrant_chunks)} chunks")
 
-                                        # Update stats
+                                        # Update stats (use chunk_count for consistency)
                                         tracker.update_stats(
-                                            chunks_created=tracker.stats["chunks_created"] + len(postgres_chunks),
+                                            chunks_created=tracker.stats["chunks_created"] + chunk_count,
                                             embeddings_generated=tracker.stats["embeddings_generated"] + len(qdrant_chunks),
                                             vectors_indexed=tracker.stats["vectors_indexed"] + len(qdrant_chunks)
                                         )
@@ -1264,8 +1356,6 @@ def process_web_kb_task(
                                 # STEP 2c: CHECK FOR PLACEHOLDER OR CREATE DOCUMENT
                                 # ========================================
 
-                                print(f"[DEBUG] Looking for existing placeholder document for page: {page_url}")
-
                                 # CRITICAL FIX: Check if a placeholder document exists using metadata-based matching
                                 # This is more reliable than URL matching for approved content
                                 existing_doc = None
@@ -1278,7 +1368,6 @@ def process_web_kb_task(
 
                                     if source_id is not None:
                                         # Use metadata-based matching (most reliable)
-                                        print(f"🔍 [METADATA MATCH] Looking for document with source_id={source_id}, page_index={page_index}")
                                         existing_doc = db.query(Document).filter(
                                             Document.kb_id == UUID(kb_id),
                                             Document.status == "pending"
@@ -1288,57 +1377,31 @@ def process_web_kb_task(
                                             Document.source_metadata["page_index"].astext == str(page_index) if page_index is not None else True
                                         ).first()
 
-                                        if existing_doc:
-                                            print(f"✅ [METADATA MATCH] Found document by metadata: {existing_doc.id}")
-
                                 # Fallback: URL-based matching for legacy compatibility
                                 if not existing_doc:
-                                    print(f"🔍 [URL FALLBACK] Looking for document with URL: {page_url}")
                                     existing_doc = db.query(Document).filter(
                                         Document.kb_id == UUID(kb_id),
                                         Document.source_url == page_url,
                                         Document.status == "pending"
                                     ).first()
 
-                                    if existing_doc:
-                                        print(f"✅ [URL FALLBACK] Found document by URL: {existing_doc.id}")
-
-                                if not existing_doc:
-                                    print(f"❌ [NO MATCH] No existing document found for page: {page_url}")
+                                # OPTION A: Check if this scraped page is a file upload
+                                is_file_upload_page = (
+                                    isinstance(scraped_page, dict) and
+                                    scraped_page.get("source") == "file_upload"
+                                )
 
                                 if existing_doc:
                                     # Use existing placeholder document (likely has approved_sources)
                                     document = existing_doc
-                                    print(f"✅ [INDIVIDUAL] Found placeholder document: {document.id}, source_type={document.source_type}")
 
-                                    # Check if this document has approved content
-                                    doc_metadata = document.source_metadata or {}
-                                    if doc_metadata.get("approved_sources"):
-                                        print(f"🎯 [INDIVIDUAL] Document has approved_sources - content is from user approval")
-                                        # The page_content we have IS the approved content from scraped_page
-                                        # which was built from approved sources
-
-                                    # CRITICAL FIX: Final verification before storing - apply no_chunking success pattern
-                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Setting document.content_full for {page_url}")
-                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Content source was: {content_source}")
-                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Document ID: {document.id}")
-                                    print(f"🔍 [DOCUMENT STORAGE DEBUG] Content length being stored: {len(page_content) if page_content else 0}")
-
-                                    # FINAL SAFETY CHECK: Ensure we're storing approved content when available
-                                    if content_source in ("user_approved", "approved_content", "corrected_to_approved"):
-                                        print(f"✅ [FINAL VERIFICATION] STORING APPROVED CONTENT - source: {content_source}")
-                                        print(f"✅ [FINAL VERIFICATION] Content preview: {page_content[:150] if page_content else 'None'}...")
+                                    # OPTION A: Skip content_full for file uploads (Qdrant-only storage)
+                                    if is_file_upload_page:
+                                        document.content_full = None
+                                        document.source_type = "file_upload"
                                     else:
-                                        # Check document metadata to see if approved content should be available
-                                        doc_metadata = document.source_metadata or {}
-                                        if doc_metadata.get("approved_sources"):
-                                            print(f"🚨 [CRITICAL WARNING] Document has approved_sources but using {content_source} content!")
-                                            print(f"🚨 [CRITICAL WARNING] This indicates a logic error in content selection")
-                                            print(f"🚨 [CRITICAL WARNING] Content preview: {page_content[:150] if page_content else 'None'}...")
-                                        else:
-                                            print(f"ℹ️ [STORAGE INFO] Storing {content_source} content (no approved sources available)")
+                                        document.content_full = page_content  # Store the final content (should be approved if available)
 
-                                    document.content_full = page_content  # Store the final content (should be approved if available)
                                     document.content_preview = page_content[:500] if page_content else None
                                     document.word_count = len(page_content.split()) if page_content else 0
                                     document.character_count = len(page_content) if page_content else 0
@@ -1347,7 +1410,6 @@ def process_web_kb_task(
                                     db.flush()
                                 else:
                                     # No placeholder exists, create new document (legacy behavior)
-                                    print(f"[DEBUG] No placeholder found, creating new Document record for page: {page_url}")
 
                                     # Create basic Document record first (will be updated with chunking decision later)
                                     page_metadata = scraped_page.get("metadata") if isinstance(scraped_page, dict) else scraped_page.metadata
@@ -1357,17 +1419,17 @@ def process_web_kb_task(
                                     title = scraped_page.get("title") if isinstance(scraped_page, dict) else scraped_page.title
                                     scraped_at = scraped_page.get("scraped_at") if isinstance(scraped_page, dict) else scraped_page.scraped_at
 
-                                    print(f"🔍 [NEW DOCUMENT DEBUG] Creating new document for {page_url}")
-                                    print(f"🔍 [NEW DOCUMENT DEBUG] Content source was: {content_source}")
-                                    print(f"🔍 [NEW DOCUMENT DEBUG] Content length: {len(page_content) if page_content else 0}")
+                                    # OPTION A: Determine source type and content storage based on file upload
+                                    doc_source_type = "file_upload" if is_file_upload_page else "web_scraping"
+                                    doc_content_full = None if is_file_upload_page else page_content
 
                                     document = Document(
                                         kb_id=UUID(kb_id),
                                         workspace_id=kb.workspace_id,
                                         name=title or page_url,
-                                        source_type="web_scraping",
+                                        source_type=doc_source_type,
                                         source_url=page_url,
-                                        content_full=page_content,  # ALWAYS store full content
+                                        content_full=doc_content_full,  # OPTION A: Skip for file uploads
                                         content_preview=page_content[:500] if page_content else None,
                                         word_count=len(page_content.split()) if page_content else 0,
                                         character_count=len(page_content) if page_content else 0,
@@ -1394,52 +1456,45 @@ def process_web_kb_task(
                                             document=document,
                                             content=page_content,
                                             kb=kb,
-                                            user_config=user_chunking_config  # User's explicit preferences
+                                            user_config=user_chunking_config,
+                                            skip_postgres_chunks=is_file_upload_page  # OPTION A: Skip PostgreSQL chunks for file uploads
                                         )
                                     )
-                                    print(f"[DEBUG] smart_kb_service call completed successfully")
-                                    print(f"[DEBUG] processing_result keys: {list(processing_result.keys()) if processing_result else 'None'}")
 
                                     if "error" in processing_result:
-                                        print(f"[DEBUG] smart_kb_service returned error: {processing_result['error']}")
                                         tracker.add_log("warning", f"Processing failed for page {page_url}: {processing_result['error']}")
                                         continue
 
                                 except Exception as smart_service_error:
-                                    print(f"[ERROR] smart_kb_service call failed with exception: {str(smart_service_error)}")
-                                    print(f"[ERROR] Exception type: {type(smart_service_error).__name__}")
-                                    print(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
-
                                     # FALLBACK: Use legacy chunking as emergency fallback
-                                    print(f"[DEBUG] Using LEGACY CHUNKING as fallback for page: {page_url}")
                                     tracker.add_log("warning", f"Smart KB service failed, using legacy chunking for {page_url}: {str(smart_service_error)}")
 
                                     # Use chunking_service as fallback
-                                    fallback_strategy = user_chunking_config.get("strategy", "adaptive") if user_chunking_config else "adaptive"
-                                    fallback_chunk_size = user_chunking_config.get("chunk_size", 1200) if user_chunking_config else 1200
+                                    # IMPORTANT: Use same defaults as preview (by_heading/1000/200) for consistency
+                                    fallback_strategy = user_chunking_config.get("strategy", "by_heading") if user_chunking_config else "by_heading"
+                                    fallback_chunk_size = user_chunking_config.get("chunk_size", 1000) if user_chunking_config else 1000
                                     fallback_chunk_overlap = user_chunking_config.get("chunk_overlap", 200) if user_chunking_config else 200
+                                    fallback_separators = user_chunking_config.get("custom_separators", None) if user_chunking_config else None
 
-                                    print(f"[DEBUG] Fallback config: strategy={fallback_strategy}, size={fallback_chunk_size}, overlap={fallback_chunk_overlap}")
-
-                                    # Use legacy chunking service
+                                    # Use legacy chunking service with custom_separators support
                                     chunks_data = chunking_service.chunk_document(
                                         text=page_content,
                                         strategy=fallback_strategy,
                                         chunk_size=fallback_chunk_size,
-                                        chunk_overlap=fallback_chunk_overlap
+                                        chunk_overlap=fallback_chunk_overlap,
+                                        separators=fallback_separators  # Pass custom separators
                                     )
 
-                                    # Generate embeddings
+                                    # Generate embeddings using configured model
                                     chunk_texts = [chunk["content"] for chunk in chunks_data]
                                     # Apply processing quality settings to embedding generation
                                     embeddings = loop.run_until_complete(
-                                        embedding_service.generate_embeddings(
+                                        multi_model_embedding_service.generate_embeddings(
                                             chunk_texts,
-                                            batch_size=processing_quality["embedding_batch_size"]
+                                            model_name=embedding_model,
+                                            batch_size=embedding_batch_size or processing_quality["embedding_batch_size"]
                                         )
                                     )
-
-                                    print(f"[DEBUG] LEGACY FALLBACK: Created {len(chunks_data)} chunks, {len(embeddings)} embeddings")
 
                                     # Create processing_result compatible with main flow
                                     processing_result = {
@@ -1500,7 +1555,8 @@ def process_web_kb_task(
                                                 "document_id": str(document.id),
                                                 "kb_id": str(document.kb_id),
                                                 "workspace_id": str(document.workspace_id),
-                                                "context": kb.context,  # CRITICAL: Enable context-based filtering
+                                                "kb_context": kb.context,  # CRITICAL: Enable context-based filtering
+                                                "source_type": document.source_type,  # Include source type
                                                 "chunk_index": idx,
                                                 "strategy_used": fallback_strategy,
                                                 "fallback_processing": True
@@ -1513,42 +1569,66 @@ def process_web_kb_task(
                                 postgres_chunks = processing_result["postgres_chunks"]
                                 qdrant_chunks = processing_result["qdrant_chunks"]
 
-                                tracker.add_log("info",
-                                    f"Processed {page_url}: {len(postgres_chunks)} chunks using {chunking_decision.strategy} strategy. "
-                                    f"Reasoning: {chunking_decision.reasoning}"
-                                )
-                                tracker.update_stats(chunks_created=tracker.stats["chunks_created"] + len(postgres_chunks))
+                                # OPTION A: Log different storage strategies
+                                if is_file_upload_page:
+                                    tracker.add_log("info",
+                                        f"Processed {page_url}: {len(qdrant_chunks)} chunks (Qdrant-only) using {chunking_decision.strategy} strategy. "
+                                        f"Reasoning: {chunking_decision.reasoning}"
+                                    )
+                                    chunk_count = len(qdrant_chunks)
+                                else:
+                                    tracker.add_log("info",
+                                        f"Processed {page_url}: {len(postgres_chunks)} chunks using {chunking_decision.strategy} strategy. "
+                                        f"Reasoning: {chunking_decision.reasoning}"
+                                    )
+                                    chunk_count = len(postgres_chunks)
+
+                                tracker.update_stats(chunks_created=tracker.stats["chunks_created"] + chunk_count)
 
                                 # ========================================
                                 # STEP 2d: SAVE TO POSTGRESQL (NO REDUNDANT EMBEDDINGS)
                                 # ========================================
 
-                                # Create PostgreSQL Chunk records (NO EMBEDDING FIELD - avoid redundancy)
-                                for postgres_chunk_data in postgres_chunks:
-                                    chunk = Chunk(
-                                        id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
-                                        document_id=postgres_chunk_data["document_id"],
-                                        kb_id=postgres_chunk_data["kb_id"],
-                                        content=postgres_chunk_data["content"],
-                                        chunk_index=postgres_chunk_data["chunk_index"],
-                                        position=postgres_chunk_data["position"],
-                                        word_count=postgres_chunk_data.get("word_count", 0),  # CRITICAL FIX: Include word_count
-                                        character_count=postgres_chunk_data.get("character_count", 0),  # CRITICAL FIX: Include character_count
-                                        # NO embedding field - stored only in Qdrant
-                                        chunk_metadata=postgres_chunk_data["chunk_metadata"]
-                                    )
-                                    db.add(chunk)
+                                # Save PostgreSQL chunks (only for web scraping, skipped for file uploads)
+                                if postgres_chunks:
+                                    for postgres_chunk_data in postgres_chunks:
+                                        chunk = Chunk(
+                                            id=UUID(postgres_chunk_data["id"]),  # Use the UUID from smart_kb_service
+                                            document_id=postgres_chunk_data["document_id"],
+                                            kb_id=postgres_chunk_data["kb_id"],
+                                            content=postgres_chunk_data["content"],
+                                            chunk_index=postgres_chunk_data["chunk_index"],
+                                            position=postgres_chunk_data["position"],
+                                            word_count=postgres_chunk_data.get("word_count", 0),
+                                            character_count=postgres_chunk_data.get("character_count", 0),
+                                            # NO embedding field - stored only in Qdrant
+                                            chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                                        )
+                                        db.add(chunk)
+                                    print(f"✅ [INDIVIDUAL] Added {len(postgres_chunks)} chunks to database session")
+                                else:
+                                    print(f"📁 [INDIVIDUAL FILE_UPLOAD] Skipped PostgreSQL chunks (metadata-only storage)")
 
-                                # Calculate document statistics from chunks
-                                total_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
-                                total_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
+                                # Calculate document statistics - use qdrant_chunks for file uploads, postgres for web
+                                if is_file_upload_page and qdrant_chunks:
+                                    # File uploads: get stats from Qdrant chunk metadata
+                                    total_word_count = sum(
+                                        chunk.metadata.get("word_count", 0) for chunk in qdrant_chunks
+                                    )
+                                    total_char_count = sum(
+                                        chunk.metadata.get("character_count", 0) for chunk in qdrant_chunks
+                                    )
+                                else:
+                                    # Web scraping: get stats from postgres chunks
+                                    total_word_count = sum(chunk_data.get("word_count", 0) for chunk_data in postgres_chunks)
+                                    total_char_count = sum(chunk_data.get("character_count", 0) for chunk_data in postgres_chunks)
 
                                 # CRITICAL: Update document statistics and status after processing
-                                document.chunk_count = len(postgres_chunks)
+                                document.chunk_count = chunk_count
                                 document.word_count = total_word_count
                                 document.character_count = total_char_count
                                 document.status = "processed"
-                                print(f"✅ [NO_CHUNKING] Updated document {document.id}: {len(postgres_chunks)} chunks, status=processed")
+                                print(f"✅ [INDIVIDUAL] Updated document {document.id}: {chunk_count} chunks, status=processed")
 
                                 # Update tracking stats
                                 tracker.update_stats(
@@ -1559,7 +1639,6 @@ def process_web_kb_task(
                                 # STEP 2e: UPDATE DOCUMENT WITH CHUNKING DECISION
                                 # ========================================
 
-                                print(f"[DEBUG] Updating Document record with chunking decision: {page_url}")
                                 # CRITICAL FIX: Update document metadata while preserving approved_sources
                                 current_metadata = document.source_metadata or {}
                                 # Preserve approved_sources that were set during finalization
@@ -1573,7 +1652,6 @@ def process_web_kb_task(
                                 # Ensure approved_sources is preserved
                                 if approved_sources:
                                     current_metadata["approved_sources"] = approved_sources
-                                    print(f"✅ [INDIVIDUAL] Preserved {len(approved_sources)} approved_sources in document metadata")
                                 document.source_metadata = current_metadata
                                 document.status = "processed"
 
@@ -1588,22 +1666,10 @@ def process_web_kb_task(
 
                                 # Commit everything
                                 db.commit()
-                                print(f"[DEBUG] Database commit successful, created {len(qdrant_chunks)} chunks for page: {page_url}")
-
-                                # VERIFICATION: Immediately verify chunks were committed (using saved ID)
-                                verification_chunks = db.query(Chunk).filter(
-                                    Chunk.document_id == document_id
-                                ).count()
-                                print(f"🔍 [VERIFICATION] {verification_chunks} chunks confirmed in PostgreSQL after commit")
-
-                                if verification_chunks != len(qdrant_chunks):
-                                    print(f"❌ [VERIFICATION] CRITICAL: Expected {len(qdrant_chunks)} chunks, found {verification_chunks}")
 
                                 # ========================================
                                 # STEP 2f: INDEX IN QDRANT
                                 # ========================================
-
-                                print(f"[DEBUG] About to upsert {len(qdrant_chunks)} chunks to Qdrant for page: {page_url}")
 
                                 try:
                                     loop.run_until_complete(
@@ -1612,11 +1678,8 @@ def process_web_kb_task(
                                             chunks=qdrant_chunks
                                         )
                                     )
-                                    print(f"[DEBUG] Qdrant upsert successful for {len(qdrant_chunks)} chunks")
                                 except Exception as qdrant_error:
-                                    print(f"[ERROR] Qdrant upsert failed: {str(qdrant_error)}")
-                                    print(f"[ERROR] Qdrant error type: {type(qdrant_error).__name__}")
-                                    print(f"[ERROR] Traceback:\n{traceback.format_exc()}")
+                                    tracker.add_log("error", f"Qdrant upsert failed: {str(qdrant_error)}")
                                     raise  # Re-raise to be caught by outer exception handler
 
                                 tracker.update_stats(
@@ -1744,8 +1807,26 @@ def process_web_kb_task(
             print(f"⚠️ [WARNING] Could not verify Qdrant vectors: {str(e)}")
             actual_vectors_count = 0
 
+        # OPTION A: Check if all sources were file uploads (Qdrant-only storage)
+        all_sources_file_upload = all(s.get("type") == "file_upload" for s in sources) if sources else False
+
         # CRITICAL: Only report success if ALL data exists
-        if actual_chunks_count == 0:
+        # For Option A (file uploads), chunks are stored ONLY in Qdrant, not PostgreSQL
+        if all_sources_file_upload:
+            # Option A: File uploads use Qdrant-only storage
+            if actual_vectors_count == 0:
+                print("❌ [CRITICAL ERROR] No vectors found in Qdrant for file upload!")
+                kb.status = "failed"
+                kb.error_message = "Processing failed: No vectors were indexed in vector store"
+                tracker.update_status(
+                    status="failed",
+                    current_stage="Failed - No vectors in Qdrant",
+                    progress_percentage=100,
+                    error="No vectors were indexed in vector store"
+                )
+            else:
+                print(f"✅ [SUCCESS] Option A (file upload) verified - {actual_vectors_count} vectors in Qdrant (no PostgreSQL chunks expected)")
+        elif actual_chunks_count == 0:
             print("❌ [CRITICAL ERROR] No chunks found in database despite reported success!")
             kb.status = "failed"
             kb.error_message = "Processing failed: No chunks were created in database"
@@ -1769,22 +1850,27 @@ def process_web_kb_task(
             print("✅ [SUCCESS] Data consistency verified - using ACTUAL counts")
 
         # Update KB metadata with ACTUAL counts (not planned counts)
+        # OPTION A: For file uploads, use vector count as chunk count (since chunks are only in Qdrant)
+        effective_chunk_count = actual_vectors_count if all_sources_file_upload else actual_chunks_count
+
         kb.stats = {
             "total_documents": actual_documents_count,
-            "total_chunks": actual_chunks_count,  # Use ACTUAL count from DB
+            "total_chunks": effective_chunk_count,  # Use vectors for file uploads, chunks for web
             "total_vectors": actual_vectors_count,  # Use ACTUAL count from Qdrant
             "total_size_bytes": total_size_bytes,  # Total content size in bytes
             "processing_duration_seconds": int(duration),
             # Keep page stats for reference
             "pages_scraped": tracker.stats.get("pages_scraped", 0),
             "pages_failed": tracker.stats.get("pages_failed", 0),
+            # OPTION A: Storage type indicator
+            "storage_type": "qdrant_only" if all_sources_file_upload else "hybrid",
             # Add verification timestamp
             "verified_at": datetime.utcnow().isoformat()
         }
 
         # Also update integer columns for compatibility
         kb.total_documents = actual_documents_count
-        kb.total_chunks = actual_chunks_count  # Use ACTUAL count
+        kb.total_chunks = effective_chunk_count  # Use vectors for file uploads, chunks for web
 
         # Final commit
         db.commit()
@@ -1893,6 +1979,43 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
         strategy = chunking_config.get('strategy', 'recursive')
         chunk_size = chunking_config.get('chunk_size', 1000)
         chunk_overlap = chunking_config.get('chunk_overlap', 200)
+        custom_separators = chunking_config.get('custom_separators', None)  # Support custom separators in reindex
+
+        # Extract embedding config from new_config or KB record
+        if new_config and new_config.get('embedding_config'):
+            embedding_config = new_config['embedding_config']
+        else:
+            embedding_config = kb.embedding_config or {}
+
+        # Extract embedding model (CRITICAL: user-configured model selection)
+        embedding_model = embedding_config.get("model") or embedding_config.get("model_name", "all-MiniLM-L6-v2")
+        embedding_batch_size = embedding_config.get("batch_size", 32)
+        print(f"🔧 [REINDEX] Using embedding model: {embedding_model}, batch_size: {embedding_batch_size}")
+
+        # Extract vector_store_config from new_config or KB record
+        if new_config and new_config.get('vector_store_config'):
+            vector_store_config = new_config['vector_store_config']
+        else:
+            vector_store_config = kb.vector_store_config or {}
+
+        # Handle nested "settings" structure from frontend
+        if "settings" in vector_store_config:
+            settings = vector_store_config.get("settings", {})
+            distance_metric = settings.get("distance_metric", "cosine")
+            hnsw_m = settings.get("hnsw_m", 16)
+        else:
+            # Flat structure (from model-config endpoint)
+            distance_metric = vector_store_config.get("distance_metric", "cosine")
+            hnsw_m = vector_store_config.get("hnsw_m", 16)
+
+        # Map distance_metric to Qdrant format
+        qdrant_distance_map = {
+            "cosine": "Cosine",
+            "euclidean": "Euclid",
+            "dot": "Dot",
+            "dot_product": "Dot"
+        }
+        qdrant_distance = qdrant_distance_map.get(distance_metric.lower(), "Cosine")
 
         # Update KB status
         kb.status = "reindexing"
@@ -1909,16 +2032,23 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
         ).delete()
         db.commit()
 
-        # Delete and recreate Qdrant collection
+        # Delete and recreate Qdrant collection with user-configured parameters
         loop.run_until_complete(
             qdrant_service.delete_kb_collection(UUID(kb_id))
         )
+
+        # Get vector dimension for the configured embedding model
+        vector_dimension = multi_model_embedding_service.get_embedding_dimension(embedding_model)
+
         loop.run_until_complete(
             qdrant_service.create_kb_collection(
                 kb_id=UUID(kb_id),
-                vector_size=embedding_service.get_embedding_dimension()
+                vector_size=vector_dimension,
+                distance_metric=qdrant_distance,
+                hnsw_m=int(hnsw_m)
             )
         )
+        print(f"🔧 [REINDEX] Qdrant collection recreated (model: {embedding_model}, dim: {vector_dimension}, distance: {qdrant_distance}, hnsw_m: {hnsw_m})")
 
         # Re-process each document
         total_chunks = 0
@@ -1928,21 +2058,22 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             if not document.content:
                 continue
 
-            # Chunk content using determined configuration
+            # Chunk content using determined configuration with custom_separators support
             chunks_data = chunking_service.chunk_document(
                 text=document.content,
                 strategy=strategy,
                 chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap
+                chunk_overlap=chunk_overlap,
+                separators=custom_separators  # Pass custom separators for "custom" strategy
             )
 
-            # Generate embeddings
+            # Generate embeddings using configured model
             chunk_texts = [chunk["content"] for chunk in chunks_data]
-            # Apply processing quality settings to embedding generation
             embeddings = loop.run_until_complete(
-                embedding_service.generate_embeddings(
+                multi_model_embedding_service.generate_embeddings(
                     chunk_texts,
-                    batch_size=processing_quality["embedding_batch_size"]
+                    model_name=embedding_model,
+                    batch_size=embedding_batch_size or processing_quality["embedding_batch_size"]
                 )
             )
 
@@ -1989,6 +2120,8 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                             "document_id": str(document.id),
                             "kb_id": kb_id,
                             "workspace_id": str(kb.workspace_id),
+                            "kb_context": kb.context,  # CRITICAL: Enable context-based filtering
+                            "source_type": document.source_type,  # Include source type (web_scraping, file_upload, etc.)
                             "chunk_index": chunk_idx
                         }
                     )

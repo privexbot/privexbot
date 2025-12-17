@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     ca-certificates \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency management
@@ -31,6 +32,9 @@ RUN pip install --no-cache-dir \
     torch==2.5.1+cpu \
     torchvision==0.20.1+cpu \
     --index-url https://download.pytorch.org/whl/cpu
+
+# Copy source code (required for uv sync to work with editable install)
+COPY src/ ./src/
 
 # Install all other dependencies using uv sync
 RUN uv sync --system || \

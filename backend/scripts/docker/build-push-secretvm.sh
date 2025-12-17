@@ -24,7 +24,7 @@ NC='\033[0m' # No Color
 DOCKER_USERNAME="privexbot"
 IMAGE_NAME="privexbot-backend"
 DEFAULT_VERSION="0.1.0"
-DOCKERFILE="Dockerfile.cpu"  # Use CPU-only Dockerfile
+DOCKERFILE="Dockerfile.dev"
 DEPLOYMENT_TARGET="Secret VM (privexbot.com)"
 
 # Parse arguments

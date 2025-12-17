@@ -212,26 +212,20 @@ const initialFormData = {
 };
 
 const initialChunkingConfig: ChunkingConfig = {
-  // Required parameters (user-configurable via UI)
+  // Core parameters (backend-supported)
   strategy: ChunkingStrategy.BY_HEADING,
   chunk_size: 1000, // User can modify via slider (100-4000)
   chunk_overlap: 200, // User can modify via slider (0-500)
 
-  // Backend-supported parameters (user-configurable via UI)
-  preserve_code_blocks: true, // User can modify via checkbox - API supports this
-  preserve_structure: true, // User can modify via checkbox - Enhanced service supports this
-  include_metadata: true, // User can modify via checkbox - Enhanced service supports this
-  adaptive_sizing: false, // User can modify via checkbox - Enhanced service supports this
-  context_window: 2, // User can modify via slider (0-5) - Enhanced service supports this
+  // Backend-supported optional parameters
+  preserve_code_blocks: true, // Keep code blocks intact during chunking
+  custom_separators: undefined, // User-defined separators for custom strategy
+  enable_enhanced_metadata: false, // Add context_before/after, parent_heading to chunks
+  semantic_threshold: 0.7, // For semantic strategy (0-1)
 
-  // Additional parameters (user-configurable via UI - mixed backend support)
-  semantic_threshold: 0.7, // User can modify via slider for semantic strategy (0-1)
-  custom_separators: ['\n\n', '\n'], // User can modify via textarea for custom strategy
-  min_chunk_size: 50, // User can modify via input (10-500)
-  max_chunk_size: 2048, // User can modify via input (256-4096)
-  preserve_headings: true, // User can modify via checkbox
-  remove_duplicates: false, // User can modify via checkbox
-  smart_splitting: true, // User can modify via checkbox
+  // Frontend-only parameters (for UI display)
+  min_chunk_size: 50,
+  max_chunk_size: 2048
 };
 
 const initialModelConfig: ModelConfig = {
@@ -894,23 +888,15 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             // Save all current configurations to Redis before finalization
             // This prevents the race condition where frontend state differs from Redis state
 
-            // 1. Save chunking configuration
+            // 1. Save chunking configuration (only backend-supported fields)
             const completeChunkingConfig = {
               strategy: chunkingConfig.strategy,
               chunk_size: chunkingConfig.chunk_size,
               chunk_overlap: chunkingConfig.chunk_overlap,
-              preserve_code_blocks: chunkingConfig.preserve_code_blocks,
-              preserve_structure: chunkingConfig.preserve_structure,
-              include_metadata: chunkingConfig.include_metadata,
-              adaptive_sizing: chunkingConfig.adaptive_sizing,
-              context_window: chunkingConfig.context_window,
-              preserve_headings: chunkingConfig.preserve_headings,
-              min_chunk_size: chunkingConfig.min_chunk_size,
-              max_chunk_size: chunkingConfig.max_chunk_size,
-              semantic_threshold: chunkingConfig.semantic_threshold,
+              preserve_code_blocks: chunkingConfig.preserve_code_blocks ?? true,
               custom_separators: chunkingConfig.custom_separators,
-              remove_duplicates: chunkingConfig.remove_duplicates,
-              smart_splitting: chunkingConfig.smart_splitting
+              enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata ?? false,
+              semantic_threshold: chunkingConfig.semantic_threshold
             };
             await kbClient.draft.updateChunking(currentDraft.draft_id, {
               chunking_config: completeChunkingConfig
@@ -939,15 +925,15 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
             await kbClient.draft.configureModels(currentDraft.draft_id, modelConfigRequest);
 
-            // Now finalize with the saved configurations
+            // Now finalize with the saved configurations (only backend-supported fields)
             const finalizeRequest: FinalizeRequest = {
               chunking_config: {
                 strategy: chunkingConfig.strategy,
                 chunk_size: chunkingConfig.chunk_size,
                 chunk_overlap: chunkingConfig.chunk_overlap,
-                preserve_headings: chunkingConfig.preserve_headings,
-                min_chunk_size: chunkingConfig.min_chunk_size,
-                max_chunk_size: chunkingConfig.max_chunk_size
+                preserve_code_blocks: chunkingConfig.preserve_code_blocks ?? true,
+                custom_separators: chunkingConfig.custom_separators,
+                enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata ?? false
               },
               embedding_config: {
                 model: modelConfig.embedding.model,

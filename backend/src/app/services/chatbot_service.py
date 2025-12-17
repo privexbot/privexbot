@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.models.chatbot import Chatbot
 from app.services.inference_service import inference_service
 from app.services.session_service import session_service
+from app.services.retrieval_service import retrieval_service
 from app.services.draft_service import DraftType
 
 
@@ -44,6 +45,7 @@ class ChatbotService:
         """
         self.inference_service = inference_service
         self.session_service = session_service
+        self.retrieval_service = retrieval_service
 
 
     async def process_message(
@@ -194,6 +196,11 @@ class ChatbotService:
         WHY: RAG - augment AI with relevant information
         HOW: Query each KB, combine results
 
+        CONFIG PRIORITY:
+            1. Chatbot Override (override_retrieval in kb_config) - highest
+            2. KB-Level Config (kb.context_settings.retrieval_config)
+            3. Service Defaults - lowest
+
         RETURNS:
             {
                 "context": "Combined text from all chunks",
@@ -210,30 +217,39 @@ class ChatbotService:
 
             kb_id = kb_config["kb_id"]
 
-            # Get retrieval settings (KB-level or chatbot override)
-            retrieval_settings = kb_config.get("override_retrieval", {})
-            top_k = retrieval_settings.get("top_k", 5)
-            search_method = retrieval_settings.get("search_method", "hybrid")
-            threshold = retrieval_settings.get("similarity_threshold", 0.7)
+            # Get chatbot-level override settings (if any)
+            # If override is specified, use it; otherwise pass None to use KB config
+            override_settings = kb_config.get("override_retrieval", {})
 
-            # Retrieve from this KB (placeholder - requires retrieval_service)
-            # results = await self.retrieval_service.search(
-            #     kb_id=kb_id,
-            #     query=query,
-            #     top_k=top_k,
-            #     search_method=search_method,
-            #     threshold=threshold
-            # )
+            # Determine what to pass to retrieval service
+            # None = let retrieval service use KB config or defaults
+            caller_top_k = override_settings.get("top_k") if override_settings else None
+            caller_search_method = override_settings.get("search_method") if override_settings else None
+            caller_threshold = override_settings.get("similarity_threshold") if override_settings else None
 
-            # Placeholder for now
-            results = []
+            try:
+                # Call retrieval service with KB config wiring
+                # If caller values are None, retrieval service will use KB's context_settings.retrieval_config
+                results = await self.retrieval_service.search(
+                    db=db,
+                    kb_id=UUID(kb_id) if isinstance(kb_id, str) else kb_id,
+                    query=query,
+                    top_k=caller_top_k,  # None = use KB config
+                    search_method=caller_search_method,  # None = use KB config
+                    threshold=caller_threshold  # None = use KB config
+                )
 
-            # Add to sources
-            all_sources.extend(results)
+                # Add to sources
+                all_sources.extend(results)
 
-            # Add to context
-            for result in results:
-                context_parts.append(result["content"])
+                # Add to context
+                for result in results:
+                    context_parts.append(result["content"])
+
+            except Exception as e:
+                # Log error but continue with other KBs
+                print(f"[ChatbotService] Error retrieving from KB {kb_id}: {e}")
+                continue
 
         # Combine context
         context = "\n\n".join(context_parts)

@@ -21,6 +21,7 @@ services:
       - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
+      - TIKA_URL=http://tika:9998
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     depends_on:
@@ -30,6 +31,11 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      tika:
+        condition: service_healthy
+    environment:
+      # Tika URL for document parsing
+      - TIKA_URL=http://tika:9998
     networks:
       - privexbot-prod
     restart: unless-stopped
@@ -72,6 +78,11 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      tika:
+        condition: service_healthy
+    environment:
+      # Tika URL for document parsing
+      - TIKA_URL=http://tika:9998
     networks:
       - privexbot-prod
     restart: unless-stopped
@@ -175,6 +186,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  tika:
+    image: apache/tika:latest-full
+    container_name: privexbot-tika-prod
+    command: ["-noFork"]  # Run in no-fork mode for Docker (single process)
+    ports:
+      - "9998:9998"
+    environment:
+      - OCR_STRATEGY=ocr_and_text  # Enable OCR for scanned documents
+    networks:
+      - privexbot-prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9998/tika || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 networks:
   privexbot-prod:

@@ -26,8 +26,111 @@ from app.models.user import User
 from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document
 from app.models.chunk import Chunk
+from app.services.draft_service import draft_service
 
 router = APIRouter(prefix="/kbs", tags=["knowledge_bases"])
+
+
+# ========================================
+# STALE PIPELINE DETECTION
+# ========================================
+
+STALE_PIPELINE_THRESHOLD_SECONDS = 120  # 2 minutes - pipeline is considered stale if queued longer
+
+def get_pipeline_status_for_kb(kb_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Find the most recent pipeline status for a KB.
+
+    WHY: Need to check pipeline status independently of KB status
+    HOW: Scan Redis for pipeline keys matching this KB
+
+    Returns:
+        Pipeline status dict or None if not found
+    """
+    import json
+
+    try:
+        # Find all pipeline keys for this KB
+        pattern = f"pipeline:{kb_id}:*:status"
+        keys = list(draft_service.redis_client.scan_iter(match=pattern, count=100))
+
+        if not keys:
+            # Try alternative pattern (pipeline_id format is kb_id:timestamp)
+            pattern = f"pipeline:{kb_id}*:status"
+            keys = list(draft_service.redis_client.scan_iter(match=pattern, count=100))
+
+        if not keys:
+            return None
+
+        # Get most recent pipeline (by timestamp in key)
+        most_recent = None
+        most_recent_time = 0
+
+        for key in keys:
+            key_str = key.decode() if isinstance(key, bytes) else key
+            # Extract timestamp from key (format: pipeline:kb_id:timestamp:status)
+            parts = key_str.split(":")
+            if len(parts) >= 3:
+                try:
+                    timestamp = int(parts[2]) if parts[2].isdigit() else 0
+                    if timestamp > most_recent_time:
+                        most_recent_time = timestamp
+                        most_recent = key
+                except (ValueError, IndexError):
+                    continue
+
+        if most_recent:
+            data = draft_service.redis_client.get(most_recent)
+            if data:
+                return json.loads(data)
+
+        return None
+
+    except Exception as e:
+        print(f"[get_pipeline_status_for_kb] Error: {e}")
+        return None
+
+
+def is_pipeline_stale(pipeline_status: Dict[str, Any], threshold_seconds: int = STALE_PIPELINE_THRESHOLD_SECONDS) -> bool:
+    """
+    Check if a queued pipeline is stale (exceeded threshold).
+
+    WHY: Detect pipelines that got stuck in queue due to worker issues
+    HOW: Compare created_at timestamp with current time
+
+    Args:
+        pipeline_status: Pipeline status dict from Redis
+        threshold_seconds: Seconds after which queued pipeline is stale
+
+    Returns:
+        True if pipeline is queued and stale, False otherwise
+    """
+    if pipeline_status.get("status") != "queued":
+        return False
+
+    created_at = pipeline_status.get("created_at")
+    if not created_at:
+        return True  # No timestamp = assume stale
+
+    try:
+        created_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        age_seconds = (datetime.utcnow() - created_time.replace(tzinfo=None)).total_seconds()
+        return age_seconds > threshold_seconds
+    except (ValueError, TypeError):
+        return True  # Invalid timestamp = assume stale
+
+
+def get_pipeline_age_seconds(pipeline_status: Dict[str, Any]) -> Optional[float]:
+    """Get age of pipeline in seconds since creation."""
+    created_at = pipeline_status.get("created_at")
+    if not created_at:
+        return None
+
+    try:
+        created_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return (datetime.utcnow() - created_time.replace(tzinfo=None)).total_seconds()
+    except (ValueError, TypeError):
+        return None
 
 
 # ========================================
@@ -98,6 +201,7 @@ class KBResponse(BaseModel):
     description: Optional[str]
     workspace_id: str
     status: str
+    context: str = "both"  # chatbot, chatflow, or both
     stats: dict
     total_documents: int = 0  # Legacy field for frontend compatibility
     total_chunks: int = 0     # Legacy field for frontend compatibility
@@ -117,6 +221,7 @@ class KBDetailResponse(BaseModel):
     description: Optional[str]
     workspace_id: str
     status: str
+    context: str = "both"  # chatbot, chatflow, or both
     config: dict
     embedding_config: dict
     vector_store_config: dict
@@ -220,6 +325,7 @@ async def list_kbs(
             description=kb.description,
             workspace_id=str(kb.workspace_id),
             status=kb.status,
+            context=kb.context or "both",  # Include context field
             stats=kb.stats or {},
             # CRITICAL FIX: Populate legacy fields from stats for frontend compatibility
             total_documents=(kb.stats or {}).get("total_documents", kb.total_documents or 0),
@@ -268,6 +374,7 @@ async def get_kb(
         description=kb.description,
         workspace_id=str(kb.workspace_id),
         status=kb.status,
+        context=kb.context or "both",  # Include context field
         config=kb.config or {},
         embedding_config=kb.embedding_config or {},
         vector_store_config=kb.vector_store_config or {},
@@ -494,6 +601,100 @@ class RetryRequest(BaseModel):
     preserve_existing_chunks: bool = Field(False, description="Whether to preserve existing chunks and only retry failed operations")
     retry_stages: Optional[List[str]] = Field(None, description="Specific stages to retry: ['scraping', 'chunking', 'embedding', 'indexing']")
 
+
+@router.get("/{kb_id}/retry-status")
+async def get_kb_retry_status(
+    kb_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the retry status for a KB - whether it can be retried and why.
+
+    WHY: Frontend needs to know when to show retry button
+    HOW: Check KB status and pipeline status for staleness
+
+    Returns:
+        {
+            "can_retry": bool,
+            "reason": str,
+            "kb_status": str,
+            "pipeline_status": str | null,
+            "pipeline_age_seconds": int | null,
+            "is_stale": bool,
+            "stale_threshold_seconds": int,
+            "retry_available_in_seconds": int | null
+        }
+    """
+    kb = get_kb_with_deletion_check(kb_id, db)
+
+    # Check KB status
+    kb_status = kb.status
+    pipeline_status = None
+    pipeline_age = None
+    is_stale = False
+    can_retry = False
+    reason = ""
+    retry_available_in = None
+
+    # Direct retry states
+    if kb_status in ["failed", "error", "processing_failed"]:
+        can_retry = True
+        reason = f"KB failed with status: {kb_status}"
+    elif kb_status == "ready":
+        can_retry = False
+        reason = "KB is ready - no retry needed"
+    elif kb_status == "deleting":
+        can_retry = False
+        reason = "KB is being deleted"
+    elif kb_status == "processing":
+        # Check pipeline status
+        pipeline_data = get_pipeline_status_for_kb(str(kb_id))
+        if pipeline_data:
+            pipeline_status = pipeline_data.get("status")
+            pipeline_age = get_pipeline_age_seconds(pipeline_data)
+
+            if pipeline_status == "queued":
+                is_stale = is_pipeline_stale(pipeline_data)
+                if is_stale:
+                    can_retry = True
+                    reason = f"Pipeline stuck in queue for {int(pipeline_age or 0)}s (threshold: {STALE_PIPELINE_THRESHOLD_SECONDS}s)"
+                else:
+                    can_retry = False
+                    retry_available_in = max(0, STALE_PIPELINE_THRESHOLD_SECONDS - int(pipeline_age or 0))
+                    reason = f"Pipeline queued for {int(pipeline_age or 0)}s - retry available in {retry_available_in}s"
+            elif pipeline_status == "running":
+                can_retry = False
+                reason = "Pipeline is currently running"
+            elif pipeline_status in ["completed", "failed"]:
+                # Pipeline finished but KB not updated - stale state
+                can_retry = True
+                is_stale = True
+                reason = f"Pipeline {pipeline_status} but KB status not updated"
+            else:
+                can_retry = False
+                reason = f"Unknown pipeline status: {pipeline_status}"
+        else:
+            # No pipeline found - orphaned KB
+            can_retry = True
+            is_stale = True
+            reason = "No pipeline found - orphaned KB in processing state"
+    else:
+        can_retry = False
+        reason = f"Unknown KB status: {kb_status}"
+
+    return {
+        "can_retry": can_retry,
+        "reason": reason,
+        "kb_status": kb_status,
+        "pipeline_status": pipeline_status,
+        "pipeline_age_seconds": int(pipeline_age) if pipeline_age else None,
+        "is_stale": is_stale,
+        "stale_threshold_seconds": STALE_PIPELINE_THRESHOLD_SECONDS,
+        "retry_available_in_seconds": retry_available_in
+    }
+
+
 @router.post("/{kb_id}/retry-processing")
 async def retry_kb_processing(
     kb_id: UUID,
@@ -556,11 +757,51 @@ async def retry_kb_processing(
     # TODO: Add proper workspace membership check if needed
 
     # Check if KB is in a retryable state
-    if kb.status not in ["failed", "error", "processing_failed"]:
+    # ENHANCED: Also allow retry for stale queued pipelines (KB status "processing" but pipeline stuck in "queued")
+    is_stale_queued = False
+    pipeline_age = None
+
+    if kb.status == "processing":
+        # Check if pipeline is stale (queued for too long)
+        pipeline_status = get_pipeline_status_for_kb(str(kb_id))
+        if pipeline_status:
+            is_stale_queued = is_pipeline_stale(pipeline_status)
+            pipeline_age = get_pipeline_age_seconds(pipeline_status)
+
+            if not is_stale_queued:
+                # Pipeline exists and is not stale - check if it's still actively queued
+                if pipeline_status.get("status") == "queued":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "message": f"Pipeline is still queued (age: {int(pipeline_age or 0)}s). Wait {STALE_PIPELINE_THRESHOLD_SECONDS}s before retry.",
+                            "kb_status": kb.status,
+                            "pipeline_status": pipeline_status.get("status"),
+                            "pipeline_age_seconds": int(pipeline_age or 0),
+                            "stale_threshold_seconds": STALE_PIPELINE_THRESHOLD_SECONDS,
+                            "retry_available_in_seconds": max(0, STALE_PIPELINE_THRESHOLD_SECONDS - int(pipeline_age or 0))
+                        }
+                    )
+                elif pipeline_status.get("status") == "running":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Pipeline is currently running. Cannot retry while processing is in progress."
+                    )
+        else:
+            # No pipeline found - KB is in processing state but no pipeline tracking
+            # This is an orphaned KB - allow retry
+            is_stale_queued = True
+            print(f"[retry_kb_processing] KB {kb_id} has no pipeline tracking - treating as stale/orphaned")
+
+    if kb.status not in ["failed", "error", "processing_failed"] and not is_stale_queued:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot retry KB with status '{kb.status}'. Only failed KBs can be retried."
+            detail=f"Cannot retry KB with status '{kb.status}'. Only failed or stale KBs can be retried."
         )
+
+    # Log retry reason
+    if is_stale_queued:
+        print(f"[retry_kb_processing] Retrying stale queued KB {kb_id} (age: {pipeline_age}s, status: {kb.status})")
 
     # Extract configuration overrides for enhanced retry
     config_overrides = None

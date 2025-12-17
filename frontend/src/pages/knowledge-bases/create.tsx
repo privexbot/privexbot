@@ -371,7 +371,7 @@ export default function CreateKnowledgeBasePage() {
 
       toast({
         title: "Knowledge Base Created",
-        description: `Processing started. Estimated time: ${validation.estimated_duration_minutes} minutes`,
+        description: `Processing started. Estimated time: ${validation.estimated_duration || 1} minutes`,
       });
 
       // Navigate to pipeline monitoring page

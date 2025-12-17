@@ -51,12 +51,22 @@ interface PreviewMetrics {
   context_quality: 'low' | 'medium' | 'high';
 }
 
+interface ChunkingDecision {
+  strategy: string;
+  chunk_size: number;
+  chunk_overlap: number;
+  user_preference: boolean;
+  adaptive_suggestion: string;
+  reasoning: string;
+}
+
 interface SourcePreview {
   source_id: string;
   source_name: string;
   chunks: ChunkPreview[];
   metrics: PreviewMetrics;
   original_content?: string;
+  chunking_decision?: ChunkingDecision;
 }
 
 export function KBChunkingPreview() {
@@ -109,6 +119,7 @@ export function KBChunkingPreview() {
         context_quality: 'high'
       };
       let originalContentForPreview = '';
+      let chunkingDecision: ChunkingDecision | undefined;
 
       if (isNoChunkingStrategy) {
         // For no_chunking, combine ALL sources into single content (matches backend)
@@ -144,6 +155,8 @@ export function KBChunkingPreview() {
               chunk_overlap: chunkingConfig.chunk_overlap,
               include_metrics: true,
               custom_separators: chunkingConfig.custom_separators,
+              enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata,
+              title: currentDraft.name || 'Combined Sources',
               max_chunks: maxChunks
             }
           );
@@ -154,6 +167,7 @@ export function KBChunkingPreview() {
           }));
 
           combinedMetrics = response.metrics;
+          chunkingDecision = response.chunking_decision;
 
           // Update preview limitation state
           setPreviewLimited(response.preview_limited || false);
@@ -188,9 +202,14 @@ export function KBChunkingPreview() {
                 chunk_overlap: chunkingConfig.chunk_overlap,
                 include_metrics: true,
                 custom_separators: chunkingConfig.custom_separators,
+                enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata,
+                title: sourceName,
                 max_chunks: maxChunks
               }
             );
+
+            // Use chunking_decision from last response
+            chunkingDecision = response.chunking_decision;
 
             // Add source info to each chunk and adjust indices
             const sourceChunks = response.chunks.map((chunk: any, index: number) => ({
@@ -241,7 +260,8 @@ export function KBChunkingPreview() {
           : `All Sources (${approvedSources.length} sources)`,
         chunks: allChunks,
         metrics: combinedMetrics,
-        original_content: originalContentForPreview // Store combined content for no chunking display
+        original_content: originalContentForPreview, // Store combined content for no chunking display
+        chunking_decision: chunkingDecision
       };
 
       setPreviews(prev => new Map(prev).set(`combined-${currentStrategy}`, preview));
@@ -451,6 +471,54 @@ export function KBChunkingPreview() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Chunking Decision Info - Shows what adaptive logic was applied */}
+              {currentPreview.chunking_decision && !isNoChunking && (
+                <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-blue-900 dark:text-blue-100 font-manrope">
+                          Chunking Decision
+                        </span>
+                        {currentPreview.chunking_decision.user_preference ? (
+                          <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 text-xs font-manrope">
+                            User Config
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 text-xs font-manrope">
+                            Adaptive
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div className="p-2 bg-white dark:bg-gray-800/50 rounded-lg border border-blue-100 dark:border-blue-800">
+                          <span className="text-gray-500 dark:text-gray-400 font-manrope text-xs">Strategy</span>
+                          <div className="font-semibold text-blue-700 dark:text-blue-300 font-manrope">
+                            {currentPreview.chunking_decision.strategy}
+                          </div>
+                        </div>
+                        <div className="p-2 bg-white dark:bg-gray-800/50 rounded-lg border border-blue-100 dark:border-blue-800">
+                          <span className="text-gray-500 dark:text-gray-400 font-manrope text-xs">Chunk Size</span>
+                          <div className="font-semibold text-blue-700 dark:text-blue-300 font-manrope">
+                            {currentPreview.chunking_decision.chunk_size} chars
+                          </div>
+                        </div>
+                        <div className="p-2 bg-white dark:bg-gray-800/50 rounded-lg border border-blue-100 dark:border-blue-800">
+                          <span className="text-gray-500 dark:text-gray-400 font-manrope text-xs">Overlap</span>
+                          <div className="font-semibold text-blue-700 dark:text-blue-300 font-manrope">
+                            {currentPreview.chunking_decision.chunk_overlap} chars
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope leading-relaxed">
+                        <span className="font-medium">Reasoning:</span> {currentPreview.chunking_decision.reasoning}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Chunk Preview Controls */}
               {!isNoChunking && (

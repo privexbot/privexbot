@@ -227,6 +227,8 @@ export const kbDraftApi = {
   /**
    * Preview chunks with different strategies (live preview)
    * POST /api/v1/kb-drafts/{draft_id}/preview-chunks-live
+   *
+   * Returns chunks with chunking_decision metadata for preview/production parity
    */
   async previewChunks(draftId: string, params: {
     source_id?: string;
@@ -236,8 +238,24 @@ export const kbDraftApi = {
     chunk_overlap: number;
     include_metrics?: boolean;
     custom_separators?: string[];
+    enable_enhanced_metadata?: boolean;
+    title?: string;
     max_chunks?: number;
-  }): Promise<any> {
+  }): Promise<{
+    chunks: any[];
+    metrics: any;
+    total_chunks: number;
+    preview_limited: boolean;
+    chunks_shown: number;
+    chunking_decision?: {
+      strategy: string;
+      chunk_size: number;
+      chunk_overlap: number;
+      user_preference: boolean;
+      adaptive_suggestion: string;
+      reasoning: string;
+    };
+  }> {
     try {
       const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params);
       return response.data;
@@ -934,6 +952,42 @@ export const kbApi = {
         note?: string;
       }>(`/kbs/${kbId}/retry-processing`, requestBody);
 
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Get retry status for a KB - whether it can be retried and why
+   * GET /api/v1/kbs/{kb_id}/retry-status
+   *
+   * Returns information about whether the KB can be retried:
+   * - Failed KBs: immediate retry available
+   * - Processing KBs with stale queued pipelines: retry available
+   * - Processing KBs with active pipelines: retry not available yet
+   */
+  async getRetryStatus(kbId: string): Promise<{
+    can_retry: boolean;
+    reason: string;
+    kb_status: string;
+    pipeline_status: string | null;
+    pipeline_age_seconds: number | null;
+    is_stale: boolean;
+    stale_threshold_seconds: number;
+    retry_available_in_seconds: number | null;
+  }> {
+    try {
+      const response = await apiClient.get<{
+        can_retry: boolean;
+        reason: string;
+        kb_status: string;
+        pipeline_status: string | null;
+        pipeline_age_seconds: number | null;
+        is_stale: boolean;
+        stale_threshold_seconds: number;
+        retry_available_in_seconds: number | null;
+      }>(`/kbs/${kbId}/retry-status`);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
