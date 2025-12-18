@@ -67,7 +67,8 @@ function getConfigValue(
 /**
  * Application Configuration
  *
- * These values are accessible throughout the application
+ * IMPORTANT: Uses getter functions for lazy evaluation to handle runtime config loading
+ * This ensures window.ENV_CONFIG is checked each time, not just at module load time
  */
 export const config = {
   /**
@@ -77,46 +78,65 @@ export const config = {
    * - Staging: https://staging-api.company.com/api/v1
    * - Production: https://api.company.com/api/v1
    */
-  API_BASE_URL: getConfigValue(
-    'API_BASE_URL',
-    import.meta.env.VITE_API_BASE_URL,
-    'http://localhost:8000/api/v1'
-  ),
+  get API_BASE_URL() {
+    return getConfigValue(
+      'API_BASE_URL',
+      import.meta.env.VITE_API_BASE_URL,
+      'http://localhost:8000/api/v1'
+    );
+  },
 
   /**
    * Widget CDN URL
    * Where the chat widget JavaScript is hosted
    */
-  WIDGET_CDN_URL: getConfigValue(
-    'WIDGET_CDN_URL',
-    import.meta.env.VITE_WIDGET_CDN_URL,
-    'http://localhost:8080'
-  ),
+  get WIDGET_CDN_URL() {
+    return getConfigValue(
+      'WIDGET_CDN_URL',
+      import.meta.env.VITE_WIDGET_CDN_URL,
+      'http://localhost:8080'
+    );
+  },
 
   /**
    * Environment name
    * Used for debugging and feature flags
    */
-  ENVIRONMENT: getConfigValue(
-    'ENVIRONMENT',
-    import.meta.env.VITE_ENV,
-    'development'
-  ),
+  get ENVIRONMENT() {
+    return getConfigValue(
+      'ENVIRONMENT',
+      import.meta.env.VITE_ENV,
+      'development'
+    );
+  },
 
   /**
    * Is production environment?
    */
-  IS_PRODUCTION: getConfigValue('ENVIRONMENT', import.meta.env.VITE_ENV, 'development') === 'production',
+  get IS_PRODUCTION() {
+    return this.ENVIRONMENT === 'production';
+  },
 
   /**
    * Is development environment?
    */
-  IS_DEVELOPMENT: getConfigValue('ENVIRONMENT', import.meta.env.VITE_ENV, 'development') === 'development',
+  get IS_DEVELOPMENT() {
+    return this.ENVIRONMENT === 'development';
+  },
 } as const;
 
 // Log configuration in development (helps debugging)
-if (config.IS_DEVELOPMENT) {
-  console.log('🔧 App Configuration:', config);
-}
+// Use setTimeout to ensure DOM and runtime config are loaded
+setTimeout(() => {
+  if (config.IS_DEVELOPMENT) {
+    console.log('🔧 App Configuration:', {
+      API_BASE_URL: config.API_BASE_URL,
+      WIDGET_CDN_URL: config.WIDGET_CDN_URL,
+      ENVIRONMENT: config.ENVIRONMENT,
+      IS_PRODUCTION: config.IS_PRODUCTION,
+      IS_DEVELOPMENT: config.IS_DEVELOPMENT,
+    });
+  }
+}, 0);
 
 export default config;

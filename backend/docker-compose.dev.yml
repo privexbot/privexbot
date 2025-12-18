@@ -18,6 +18,8 @@ services:
       - ./uv.lock:/app/uv.lock
       # Persist Playwright browsers to avoid repeated downloads
       - playwright-browsers:/root/.cache/ms-playwright
+      # Persist embedding model downloads (shared with Celery)
+      - huggingface_cache:/root/.cache/huggingface
     env_file:
       - .env.dev
     environment:
@@ -125,13 +127,14 @@ services:
 
   # Celery worker for background tasks (KB processing, embeddings, crawling)
   celery-worker:
-    image: privexbot-backend-dev:latest  
+    image: privexbot-backend-dev:latest
     container_name: privexbot-celery-dev
     command: celery -A app.tasks.celery_worker worker --loglevel=info --queues=default,high_priority,low_priority --pool=solo
     volumes:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
+      - huggingface_cache:/root/.cache/huggingface  # Persist model downloads
     env_file:
       - .env.dev
     environment:
@@ -172,9 +175,11 @@ services:
 
   # Celery Beat for scheduled tasks (periodic re-indexing, maintenance)
   celery-beat:
-    image: privexbot-backend-dev:latest 
+    image: privexbot-backend-dev:latest
     container_name: privexbot-celery-beat-dev
-    command: celery -A app.tasks.celery_worker beat --loglevel=info
+    working_dir: /app/src
+    # Use exec form for proper signal handling
+    command: ["celery", "-A", "app.tasks.celery_worker", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid", "--schedule=/tmp/celerybeat-schedule"]
     volumes:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
@@ -185,11 +190,13 @@ services:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PYTHONPATH=/app/src
     depends_on:
       backend-dev:
-        condition: service_started 
+        condition: service_started
       redis:
         condition: service_healthy
     networks:
@@ -228,3 +235,4 @@ volumes:
   redis_data_dev:
   qdrant_data_dev:
   playwright-browsers:
+  huggingface_cache:  # Persist embedding model downloads (avoid re-downloading ~470MB)

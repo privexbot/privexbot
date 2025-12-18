@@ -24,7 +24,7 @@ NC='\033[0m' # No Color
 DOCKER_USERNAME="privexbot"
 IMAGE_NAME="privexbot-backend"
 DEFAULT_VERSION="0.1.0"
-DOCKERFILE="Dockerfile.dev"
+DOCKERFILE="Dockerfile.cpu"  # Use CPU-only Dockerfile
 DEPLOYMENT_TARGET="Secret VM (privexbot.com)"
 
 # Parse arguments
@@ -228,8 +228,9 @@ echo ""
 # Get image digest for immutable deployments
 echo -e "${YELLOW}🔍 Getting image digest for immutable deployments...${NC}"
 
-# Get the manifest digest
-DIGEST=$(docker manifest inspect "${DOCKER_USERNAME}/${IMAGE_NAME}:${VERSION}" | grep -o '"digest": *"[^"]*"' | head -n1 | sed 's/"digest": *"\(.*\)"/\1/')
+# Get the repository digest from push output
+# Parse the digest from the actual Docker Hub repository
+DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKER_USERNAME}/${IMAGE_NAME}:${VERSION}" 2>/dev/null | sed 's/.*@//')
 
 if [ -z "$DIGEST" ]; then
     echo -e "${YELLOW}⚠️  Could not extract digest, trying alternative method...${NC}"

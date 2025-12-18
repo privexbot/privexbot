@@ -151,9 +151,9 @@ build_image() {
     # Change to frontend directory (where Dockerfile is)
     cd "$(dirname "$0")/../.."
 
-    # Ensure .env.secretvm is copied to .env.production for the build
-    log_info "Preparing Secret VM environment configuration..."
-    cp .env.secretvm .env.production
+    # Environment configuration is now handled by Dockerfile
+    # .env.secretvm is copied to .env.production during Docker build
+    log_info "Building with Secret VM environment configuration..."
 
     # Get current timestamp and git info
     BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
@@ -167,11 +167,12 @@ build_image() {
 
     # Build the image with Secret VM specific tags
     # Disable provenance and SBOM attestations for Secret VM compatibility
+    # IMPORTANT: Use Dockerfile.secretvm for SecretVM-specific build
     DOCKER_BUILDKIT=1 docker build \
         --platform linux/amd64 \
         --provenance=false \
         --sbom=false \
-        --file "Dockerfile" \
+        --file "Dockerfile.secretvm" \
         --tag "$tag" \
         --tag "${FULL_IMAGE_NAME}:${version}-secretvm" \
         --tag "${FULL_IMAGE_NAME}:latest-secretvm" \

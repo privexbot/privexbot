@@ -132,6 +132,17 @@ export default function KBDocumentViewPage() {
     }
   };
 
+  /**
+   * Check if document can be edited
+   * File upload documents cannot be edited since content is in Qdrant only
+   */
+  const canEditDocument = (): boolean => {
+    if (!document) return false;
+    if (document.source_type === 'file_upload') return false;
+    if ((document as any).processing_metadata?.chunk_storage_location === 'qdrant_only') return false;
+    return true;
+  };
+
   const handleDownload = async () => {
     if (!document || !kbId) return;
 
@@ -241,10 +252,17 @@ export default function KBDocumentViewPage() {
                 </Button>
                 {hasPermission('kb:edit') && (
                   <>
-                    <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="font-manrope">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
+                    {canEditDocument() ? (
+                      <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="font-manrope">
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                    ) : (
+                      <Button variant="outline" disabled className="font-manrope text-gray-400 dark:text-gray-500 cursor-not-allowed">
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit (File Upload)
+                      </Button>
+                    )}
                     <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} className="font-manrope">
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete

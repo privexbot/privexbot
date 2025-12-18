@@ -24,6 +24,11 @@ services:
       - TIKA_URL=http://tika:9998
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      # Playwright configuration
+      - PLAYWRIGHT_BROWSERS_PATH=/app/cache/ms-playwright
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      # HuggingFace cache for embedding models
+      - HF_HOME=/app/cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,9 +38,11 @@ services:
         condition: service_healthy
       tika:
         condition: service_healthy
-    environment:
-      # Tika URL for document parsing
-      - TIKA_URL=http://tika:9998
+    volumes:
+      # Persist Playwright browsers for web scraping
+      - playwright_browsers:/app/cache/ms-playwright
+      # Persist HuggingFace embedding models (avoids ~470MB re-download)
+      - huggingface_cache:/app/cache/huggingface
     networks:
       - privexbot-prod
     restart: unless-stopped
@@ -65,12 +72,18 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - QDRANT_URL=http://qdrant:6333
+      - TIKA_URL=http://tika:9998
       # PyTorch/OpenMP compatibility with Celery
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
       - VECLIB_MAXIMUM_THREADS=1
       - NUMEXPR_NUM_THREADS=1
+      # Playwright configuration
+      - PLAYWRIGHT_BROWSERS_PATH=/app/cache/ms-playwright
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      # HuggingFace cache for embedding models
+      - HF_HOME=/app/cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,9 +93,11 @@ services:
         condition: service_healthy
       tika:
         condition: service_healthy
-    environment:
-      # Tika URL for document parsing
-      - TIKA_URL=http://tika:9998
+    volumes:
+      # Persist Playwright browsers (Celery tasks need browsers for web scraping)
+      - playwright_browsers:/app/cache/ms-playwright
+      # Persist HuggingFace embedding models (shared with backend)
+      - huggingface_cache:/app/cache/huggingface
     networks:
       - privexbot-prod
     restart: unless-stopped
@@ -92,16 +107,23 @@ services:
     # REPLACE THIS: Use same digest from build-push-cpu.sh output
     image: harystyles/privexbot-backend@sha256:sha256:fc9fb923bc6eabf1fabef3ee187203224df2ea4610a0b746feac8fd583b549d3
     container_name: privexbot-celery-beat-prod
-    command: celery -A app.tasks.celery_worker beat --loglevel=info
+    working_dir: /app/src
+    # Use exec form for proper signal handling
+    command: ["celery", "-A", "app.tasks.celery_worker", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid", "--schedule=/tmp/celerybeat-schedule"]
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PYTHONPATH=/app/src
     depends_on:
+      # CRITICAL: Wait for backend to ensure database is ready and migrations complete
+      backend:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -213,3 +235,5 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  playwright_browsers:    # Persistent Playwright browser cache
+  huggingface_cache:      # Persistent embedding model cache (~470MB)

@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { ArrowLeft, Save, Eye, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Eye, AlertCircle, FileText, Upload } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { KnowledgeBase, KBDocument, formatDocumentSourceType } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
@@ -180,6 +180,73 @@ export default function KBDocumentEditPage() {
               Document not found.
             </AlertDescription>
           </Alert>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  /**
+   * Check if document is a file upload - file uploads cannot be edited
+   * because their content is stored only in Qdrant, not PostgreSQL
+   */
+  const isFileUploadDocument = document.source_type === 'file_upload' ||
+    (document as any).processing_metadata?.chunk_storage_location === 'qdrant_only';
+
+  // Show error message for file upload documents
+  if (isFileUploadDocument) {
+    return (
+      <DashboardLayout>
+        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-8">
+          <Button
+            variant="ghost"
+            onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+            className="mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Document
+          </Button>
+
+          <div className="flex items-center justify-center min-h-[40vh]">
+            <Card className="max-w-lg bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-700 rounded-xl shadow-lg">
+              <CardContent className="p-8 text-center">
+                <div className="bg-amber-100 dark:bg-amber-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Upload className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+                </div>
+                <h2 className="text-xl font-bold text-amber-900 dark:text-amber-100 font-manrope mb-3">
+                  File Upload Document
+                </h2>
+                <p className="text-amber-700 dark:text-amber-300 font-manrope mb-4 leading-relaxed">
+                  This document was created from a file upload. File upload documents cannot be edited directly because their content is stored in the vector database for optimal performance and privacy.
+                </p>
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-amber-200 dark:border-amber-700 mb-6">
+                  <div className="flex items-center gap-3 justify-center text-sm text-amber-800 dark:text-amber-200 font-manrope">
+                    <FileText className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    <span className="font-medium">{document.name}</span>
+                  </div>
+                </div>
+                <p className="text-sm text-amber-600 dark:text-amber-400 font-manrope mb-6">
+                  To update this document, please delete it and upload a new file.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}`)}
+                    className="font-manrope"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Document
+                  </Button>
+                  <Button
+                    onClick={() => navigate(`/knowledge-bases/${kbId}/documents`)}
+                    className="font-manrope bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Documents
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </DashboardLayout>
     );

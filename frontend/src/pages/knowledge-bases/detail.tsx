@@ -125,6 +125,17 @@ export default function KBDetailPage() {
     return hasFileUploads || hasQdrantOnlyMeta;
   };
 
+  /**
+   * Check if a document can be edited
+   * File upload documents cannot be edited since content is in Qdrant only
+   */
+  const canEditDocument = (doc: KBDocument): boolean => {
+    // File upload documents cannot be edited - content is in Qdrant only
+    if (doc.source_type === 'file_upload') return false;
+    // Qdrant-only storage documents cannot be edited
+    if ((doc as any).processing_metadata?.chunk_storage_location === 'qdrant_only') return false;
+    return true;
+  };
 
   useEffect(() => {
     if (kbId && currentWorkspace) {
@@ -547,16 +558,29 @@ export default function KBDetailPage() {
           <TabsContent value="documents">
             <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
               <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border-b border-emerald-200 dark:border-emerald-700 rounded-t-xl p-6">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <CardTitle className="text-xl font-bold text-emerald-900 dark:text-emerald-100 font-manrope">
-                      Documents ({Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0})
-                    </CardTitle>
-                    <CardDescription className="text-emerald-700 dark:text-emerald-300 font-manrope mt-1">
-                      All documents in this knowledge base
-                    </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <CardTitle className="text-xl font-bold text-emerald-900 dark:text-emerald-100 font-manrope">
+                        Documents ({Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0})
+                      </CardTitle>
+                      <CardDescription className="text-emerald-700 dark:text-emerald-300 font-manrope mt-1">
+                        All documents in this knowledge base
+                      </CardDescription>
+                    </div>
                   </div>
+
+                  {/* Manage Documents button - navigates to dedicated documents page */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+                    onClick={() => navigate(`/knowledge-bases/${kbId}/documents`)}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Manage Documents
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="p-6">
@@ -658,13 +682,23 @@ export default function KBDetailPage() {
                                 <Eye className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-3" />
                                 View Content
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => navigate(`/knowledge-bases/${kbId}/documents/${doc.id}/edit`)}
-                                className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-gray-700 dark:text-gray-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors duration-200 rounded-lg mx-1 my-1"
-                              >
-                                <Edit className="h-4 w-4 text-emerald-600 dark:text-emerald-400 mr-3" />
-                                Edit
-                              </DropdownMenuItem>
+                              {canEditDocument(doc) ? (
+                                <DropdownMenuItem
+                                  onSelect={() => navigate(`/knowledge-bases/${kbId}/documents/${doc.id}/edit`)}
+                                  className="hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-gray-700 dark:text-gray-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors duration-200 rounded-lg mx-1 my-1"
+                                >
+                                  <Edit className="h-4 w-4 text-emerald-600 dark:text-emerald-400 mr-3" />
+                                  Edit
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  disabled
+                                  className="text-gray-400 dark:text-gray-500 cursor-not-allowed rounded-lg mx-1 my-1"
+                                >
+                                  <Edit className="h-4 w-4 text-gray-400 dark:text-gray-500 mr-3" />
+                                  Edit (File Upload)
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>

@@ -455,7 +455,7 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
         <div className="space-y-4">
           <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Processing Options</Label>
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600 space-y-4">
-            {/* Preserve Code Blocks - Backend supported */}
+            {/* Preserve Code Blocks - Backend IMPLEMENTED: Protects code blocks from being split during chunking */}
             <div className="flex items-center space-x-3">
               <Checkbox
                 id="preserve-code-blocks"

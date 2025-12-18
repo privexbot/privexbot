@@ -125,7 +125,7 @@ function UnifiedStatsCard({ stats }: { stats: any }) {
 }
 
 // Modern KB Card Component
-function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
+function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, index }: any) {
   const getStatusColor = (status: KBStatus) => {
     switch (status) {
       case KBStatus.READY:
@@ -250,7 +250,7 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -259,6 +259,15 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
             >
               <Eye className="h-3 w-3 mr-1" />
               View
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onViewDocuments(kb.id)}
+              className="font-manrope rounded-lg border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+            >
+              <FileText className="h-3 w-3 mr-1" />
+              Docs
             </Button>
             <Button
               variant="outline"
@@ -326,6 +335,7 @@ export default function KnowledgeBasesPage() {
 
   const handleCreateKB = () => navigate('/knowledge-bases/create');
   const handleViewKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}`);
+  const handleViewDocuments = (kbId: string) => navigate(`/knowledge-bases/${kbId}/documents`);
   const handleEditKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}/edit`);
 
   const handleDeleteKB = async (kbId: string) => {
@@ -489,6 +499,7 @@ export default function KnowledgeBasesPage() {
                       kb={kb}
                       index={index}
                       onView={handleViewKB}
+                      onViewDocuments={handleViewDocuments}
                       onEdit={handleEditKB}
                       onDelete={setDeleteKBId}
                     />
@@ -550,6 +561,15 @@ export default function KnowledgeBasesPage() {
                               >
                                 <Eye className="h-4 w-4 mr-1" />
                                 View
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewDocuments(kb.id)}
+                                className="flex-1 sm:flex-none font-manrope rounded-lg border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                Docs
                               </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

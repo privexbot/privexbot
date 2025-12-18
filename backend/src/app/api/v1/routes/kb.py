@@ -19,6 +19,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
+import json
 
 from app.db.session import get_db
 from app.api.v1.dependencies import get_current_user
@@ -1603,6 +1604,19 @@ async def create_kb_document(
             detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
         )
 
+    # CRITICAL: Check if this is a file-upload-only KB
+    # File-upload KBs should only accept file uploads, not text documents
+    existing_docs = db.query(Document).filter(Document.kb_id == kb_id).all()
+    is_file_upload_kb = len(existing_docs) > 0 and all(
+        doc.source_type == "file_upload" for doc in existing_docs
+    )
+
+    if is_file_upload_kb:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This knowledge base was created with file uploads. Text documents cannot be added. Please use the file upload feature instead."
+        )
+
     # Create document record
     try:
         new_document = Document(
@@ -1727,66 +1741,115 @@ async def upload_kb_document(
     # Verify user has edit access
     kb = verify_kb_access(db, kb_id, current_user.id, "edit")
 
-    # File validation
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    # File validation - basic checks
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No filename provided"
         )
 
-    # Read file content
+    # Read file content first
     try:
         content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File too large (max {MAX_FILE_SIZE / 1024 / 1024}MB)"
-            )
 
         if len(content) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Empty file"
             )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to read file: {str(e)}"
         )
 
-    # Simple content extraction for supported file types
+    # Check document limit per KB
+    MAX_DOCUMENTS_PER_KB = 10000
+    doc_count = db.query(Document).filter(Document.kb_id == kb_id).count()
+    if doc_count >= MAX_DOCUMENTS_PER_KB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
+        )
+
+    # CRITICAL: Detect if this KB is a file-upload-only KB BEFORE parsing
+    # This determines which parsing strategy and file size limit to use:
+    # - File-upload KBs: Use Tika for robust parsing (PDF, Word, etc.), 50MB limit
+    # - Web URL KBs: Use simple parsing (.txt, .md, .json, .csv), 10MB limit
+    existing_docs = db.query(Document).filter(Document.kb_id == kb_id).all()
+    is_file_upload_kb = len(existing_docs) > 0 and all(
+        doc.source_type == "file_upload" for doc in existing_docs
+    )
+
+    # File size validation - different limits based on KB type
+    MAX_FILE_SIZE_WEB_URL = 10 * 1024 * 1024   # 10MB for web URL KBs
+    MAX_FILE_SIZE_FILE_UPLOAD = 50 * 1024 * 1024  # 50MB for file-upload KBs
+    max_file_size = MAX_FILE_SIZE_FILE_UPLOAD if is_file_upload_kb else MAX_FILE_SIZE_WEB_URL
+
+    if len(content) > max_file_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large (max {max_file_size / 1024 / 1024:.0f}MB for {'file upload' if is_file_upload_kb else 'web URL'} knowledge bases)"
+        )
+
+    file_extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+    document_title = file.filename.rsplit('.', 1)[0] if '.' in file.filename else file.filename
+
+    # Content extraction - strategy depends on KB type
     try:
-        file_extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+        if is_file_upload_kb:
+            # ROBUST PARSING: File-upload-only KBs use Tika for 15+ formats
+            # This matches the original KB creation flow
+            from app.services.tika_service import tika_service
+            from io import BytesIO
 
-        if file_extension in ['txt', 'md']:
-            # Plain text files
-            parsed_content = content.decode('utf-8', errors='ignore')
-            document_title = file.filename.rsplit('.', 1)[0]
+            try:
+                parsed_file = await tika_service.parse_file(
+                    file_stream=BytesIO(content),
+                    filename=file.filename,
+                    metadata_only=False
+                )
+                parsed_content = parsed_file.content
+                document_title = parsed_file.metadata.get("title", document_title) or document_title
 
-        elif file_extension == 'json':
-            # JSON files
-            import json
-            json_data = json.loads(content.decode('utf-8'))
-            parsed_content = json.dumps(json_data, indent=2)
-            document_title = file.filename.rsplit('.', 1)[0]
-
-        elif file_extension == 'csv':
-            # CSV files
-            import csv
-            import io
-
-            csv_content = content.decode('utf-8', errors='ignore')
-            csv_reader = csv.reader(io.StringIO(csv_content))
-            parsed_content = "\n".join([", ".join(row) for row in csv_reader])
-            document_title = file.filename.rsplit('.', 1)[0]
-
+                print(f"[KB Upload] Tika parsed file: {file.filename}, {len(parsed_content)} chars")
+            except Exception as tika_error:
+                print(f"[KB Upload] Tika parsing failed: {tika_error}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to parse file with Tika: {str(tika_error)}"
+                )
         else:
-            # Unsupported file type - provide clear guidance
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported file format: .{file_extension}. Currently supported: .txt, .md, .json, .csv"
-            )
+            # SIMPLE PARSING: Web URL KBs use simple text extraction
+            # Only supports .txt, .md, .json, .csv
+            if file_extension in ['txt', 'md']:
+                # Plain text files
+                parsed_content = content.decode('utf-8', errors='ignore')
+
+            elif file_extension == 'json':
+                # JSON files
+                json_data = json.loads(content.decode('utf-8'))
+                parsed_content = json.dumps(json_data, indent=2)
+
+            elif file_extension == 'csv':
+                # CSV files
+                import csv
+                import io
+
+                csv_content = content.decode('utf-8', errors='ignore')
+                csv_reader = csv.reader(io.StringIO(csv_content))
+                parsed_content = "\n".join([", ".join(row) for row in csv_reader])
+
+            else:
+                # Unsupported file type for web URL KBs
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unsupported file format for web URL knowledge bases: .{file_extension}. "
+                           f"Supported formats: .txt, .md, .json, .csv. "
+                           f"For more file formats (PDF, Word, etc.), create a new KB using file upload."
+                )
 
         if len(parsed_content.strip()) < 50:
             raise HTTPException(
@@ -1812,33 +1875,47 @@ async def upload_kb_document(
             detail=f"Failed to parse file: {str(e)}"
         )
 
-    # Check document limit per KB
-    MAX_DOCUMENTS_PER_KB = 10000
-    doc_count = db.query(Document).filter(Document.kb_id == kb_id).count()
-    if doc_count >= MAX_DOCUMENTS_PER_KB:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
-        )
+    # Create approved_sources structure for file uploads (matches finalization flow)
+    approved_sources = [{
+        "url": f"file://{file.filename}",
+        "title": document_title,
+        "content": parsed_content,
+        "markdown": parsed_content,
+        "is_edited": False,
+        "source": "file_upload",
+        "metadata": {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "file_size": len(content),
+        },
+        "approved_at": datetime.utcnow().isoformat(),
+        "approved_by": str(current_user.id)
+    }]
 
-    # Create document record
+    # Create document record with proper storage pattern based on KB type
+    # - Web URL KBs: Store content in PostgreSQL (consistent with text documents)
+    # - File Upload KBs: No content in PostgreSQL (Qdrant-only for privacy)
     try:
         new_document = Document(
             kb_id=kb_id,
             workspace_id=kb.workspace_id,
             name=document_title,
             source_type="file_upload",
-            source_url=None,
+            source_url=f"file:///{file.filename}",  # Triple slash to match pipeline tasks
             source_metadata={
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "file_size": len(content),
                 "uploaded_by": str(current_user.id),
                 "created_via": "api",
-                "method": "file_upload"
+                "method": "file_upload",
+                "approved_sources": approved_sources  # Store content in metadata for processing
             },
-            content_full=parsed_content,
-            content_preview=parsed_content[:500] if len(parsed_content) > 500 else parsed_content,
+            # Storage pattern based on KB type:
+            # - Web URL KBs: Store content (like text documents) for consistency
+            # - File Upload KBs: No content in PostgreSQL (Qdrant-only)
+            content_full=parsed_content if not is_file_upload_kb else None,
+            content_preview=(parsed_content[:500] if len(parsed_content) > 500 else parsed_content) if not is_file_upload_kb else None,
             status="processing",
             processing_progress=0,
             word_count=len(parsed_content.split()),
@@ -1855,14 +1932,18 @@ async def upload_kb_document(
         db.commit()
         db.refresh(new_document)
 
-        # Queue background processing using same task as text documents
-        from app.tasks.document_processing_tasks import process_document_task
+        # Queue background processing with file upload flow
+        # Use the same task that handles file uploads with KB config inheritance
+        from app.tasks.document_processing_tasks import process_file_upload_document_task
 
-        task = process_document_task.apply_async(
+        task = process_file_upload_document_task.apply_async(
             kwargs={
                 "document_id": str(new_document.id),
                 "content": parsed_content,
-                "kb_config": kb.config or {}
+                "kb_config": kb.config or {},
+                "chunking_config": kb.config.get("chunking_config", {}) if kb.config else {},
+                "embedding_config": kb.embedding_config or {},
+                "skip_postgres_chunks": is_file_upload_kb  # Metadata-only storage for file upload KBs
             },
             queue="default"
         )

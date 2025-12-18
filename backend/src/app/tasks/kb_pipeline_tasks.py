@@ -381,6 +381,7 @@ def process_web_kb_task(
         chunk_overlap = chunking_config.get("chunk_overlap", 200)
         custom_separators = chunking_config.get("custom_separators", None)  # For "custom" strategy
         enable_enhanced_metadata = chunking_config.get("enable_enhanced_metadata", False)  # Rich metadata option
+        preserve_code_blocks = chunking_config.get("preserve_code_blocks", True)  # Keep code blocks intact (default: True)
 
         # Map indexing_method to processing quality settings
         processing_quality = _get_processing_quality_settings(indexing_method)
@@ -1573,13 +1574,15 @@ def process_web_kb_task(
                                     fallback_chunk_overlap = user_chunking_config.get("chunk_overlap", 200) if user_chunking_config else 200
                                     fallback_separators = user_chunking_config.get("custom_separators", None) if user_chunking_config else None
 
-                                    # Use legacy chunking service with custom_separators support
+                                    # Use legacy chunking service with code block preservation
+                                    fallback_preserve_code_blocks = user_chunking_config.get("preserve_code_blocks", True) if user_chunking_config else True
                                     chunks_data = chunking_service.chunk_document(
                                         text=page_content,
                                         strategy=fallback_strategy,
                                         chunk_size=fallback_chunk_size,
                                         chunk_overlap=fallback_chunk_overlap,
-                                        separators=fallback_separators  # Pass custom separators
+                                        separators=fallback_separators,  # Pass custom separators
+                                        preserve_code_blocks=fallback_preserve_code_blocks  # Pass user's config
                                     )
 
                                     # Generate embeddings using configured model
@@ -2174,18 +2177,33 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
         # Re-process each document
         total_chunks = 0
         total_vectors = 0
+        file_upload_skipped = 0
 
         for document in documents:
-            if not document.content:
+            # CRITICAL FIX: Use content_full instead of non-existent .content attribute
+            # For file uploads, content_full is None - we cannot reindex these
+            # File upload content is only in Qdrant, not PostgreSQL
+            document_content = document.content_full
+
+            # Skip file uploads - their content is in Qdrant only, not PostgreSQL
+            # Reindexing file uploads would require re-parsing the original files
+            if document.source_type == "file_upload":
+                print(f"⏭️ [REINDEX] Skipping file upload document: {document.name} (content in Qdrant only)")
+                file_upload_skipped += 1
                 continue
 
-            # Chunk content using determined configuration with custom_separators support
+            if not document_content:
+                print(f"⏭️ [REINDEX] Skipping document with no content: {document.name}")
+                continue
+
+            # Chunk content using determined configuration with code block preservation
             chunks_data = chunking_service.chunk_document(
-                text=document.content,
+                text=document_content,
                 strategy=strategy,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
-                separators=custom_separators  # Pass custom separators for "custom" strategy
+                separators=custom_separators,  # Pass custom separators for "custom" strategy
+                preserve_code_blocks=preserve_code_blocks  # Pass user's config
             )
 
             # Generate embeddings using configured model
@@ -2268,6 +2286,9 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
         ).scalar()
         total_size_bytes = total_size_result or 0
 
+        # Calculate processed documents (excluding file uploads)
+        processed_documents = len(documents) - file_upload_skipped
+
         # Update KB status
         kb.status = "ready"
         kb.updated_at = datetime.utcnow()
@@ -2276,7 +2297,9 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             "total_chunks": total_chunks,
             "total_vectors": total_vectors,
             "total_size_bytes": total_size_bytes,
-            "reindexed_at": datetime.utcnow().isoformat()
+            "reindexed_at": datetime.utcnow().isoformat(),
+            "file_upload_documents": file_upload_skipped,
+            "reindexed_documents": processed_documents
         }
 
         # Also update integer columns for compatibility
@@ -2286,12 +2309,18 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
 
         db.commit()
 
+        # Log file upload warning if any were skipped
+        if file_upload_skipped > 0:
+            print(f"⚠️ [REINDEX] {file_upload_skipped} file upload document(s) skipped - their content is stored in Qdrant only")
+
         return {
             "kb_id": kb_id,
             "status": "completed",
             "configuration_applied": configuration_applied,
             "stats": {
                 "documents": len(documents),
+                "documents_reindexed": processed_documents,
+                "file_uploads_skipped": file_upload_skipped,
                 "chunks": total_chunks,
                 "vectors": total_vectors,
                 "chunking_config": {
@@ -2299,7 +2328,10 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                     "chunk_size": chunk_size,
                     "chunk_overlap": chunk_overlap
                 }
-            }
+            },
+            "warnings": [
+                f"{file_upload_skipped} file upload document(s) were skipped - their content is stored in Qdrant only and cannot be reindexed from PostgreSQL"
+            ] if file_upload_skipped > 0 else []
         }
 
     except Exception as e:

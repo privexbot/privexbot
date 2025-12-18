@@ -531,6 +531,7 @@ class SmartKBService:
         user_config = user_config or {}
         custom_separators = user_config.get("custom_separators", None)
         enable_enhanced_metadata = user_config.get("enable_enhanced_metadata", False)
+        preserve_code_blocks = user_config.get("preserve_code_blocks", True)  # Default: True
 
         # ENHANCED CHUNKING: Use enhanced_chunking_service for rich metadata when enabled
         if enable_enhanced_metadata:
@@ -547,13 +548,14 @@ class SmartKBService:
             # Convert to standard format for pipeline compatibility
             chunks_data = [chunk.to_dict() for chunk in enhanced_chunks]
         else:
-            # Use standard chunking service with custom_separators support (BACKWARD COMPATIBLE)
+            # Use standard chunking service with code block preservation (BACKWARD COMPATIBLE)
             chunks_data = chunking_service.chunk_document(
                 text=content,
                 strategy=chunking_decision.strategy,
                 chunk_size=chunking_decision.chunk_size,
                 chunk_overlap=chunking_decision.chunk_overlap,
-                separators=custom_separators  # NOW WIRED: Pass custom separators for "custom" strategy
+                separators=custom_separators,  # NOW WIRED: Pass custom separators for "custom" strategy
+                preserve_code_blocks=preserve_code_blocks  # NOW WIRED: Pass user's config
             )
 
         if not chunks_data:

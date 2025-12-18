@@ -120,7 +120,8 @@ class ChunkingService:
         chunk_size: int = None,
         chunk_overlap: int = None,
         separators: Optional[List[str]] = None,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        preserve_code_blocks: bool = True
     ) -> List[dict]:
         """
         Chunk document text.
@@ -135,6 +136,7 @@ class ChunkingService:
             chunk_overlap: Overlap between chunks (None = use config default)
             separators: Custom separators (for recursive)
             config: Optional config dict to override defaults (e.g., {"semantic_threshold": 0.7})
+            preserve_code_blocks: If True, avoid splitting in the middle of code blocks (default: True)
 
         RETURNS:
             [
@@ -156,41 +158,130 @@ class ChunkingService:
         chunk_size = chunk_size if chunk_size is not None else effective_config.default_chunk_size
         chunk_overlap = chunk_overlap if chunk_overlap is not None else effective_config.default_chunk_overlap
 
+        # PRESERVE CODE BLOCKS: Pre-process text to protect code blocks
+        code_block_map = {}
+        processed_text = text
+        if preserve_code_blocks:
+            processed_text, code_block_map = self._protect_code_blocks(text, chunk_size)
+
+        # Perform chunking on processed text
         if strategy == "recursive":
-            return self._recursive_chunk(text, chunk_size, chunk_overlap, separators)
+            chunks = self._recursive_chunk(processed_text, chunk_size, chunk_overlap, separators)
 
         elif strategy in ("sentence", "sentence_based", "by_sentence"):
-            return self._sentence_chunk(text, chunk_size, chunk_overlap)
+            chunks = self._sentence_chunk(processed_text, chunk_size, chunk_overlap)
 
         elif strategy in ("no_chunking", "full_content"):
-            return self._full_content_chunk(text)
+            chunks = self._full_content_chunk(processed_text)
 
         elif strategy == "token":
-            return self._token_chunk(text, chunk_size, chunk_overlap, effective_config)
+            chunks = self._token_chunk(processed_text, chunk_size, chunk_overlap, effective_config)
 
         elif strategy == "semantic":
-            return self._semantic_chunk(text, chunk_size, chunk_overlap, effective_config)
+            chunks = self._semantic_chunk(processed_text, chunk_size, chunk_overlap, effective_config)
 
         elif strategy in ("by_heading", "heading"):
-            return self._heading_chunk(text, chunk_size, chunk_overlap)
+            chunks = self._heading_chunk(processed_text, chunk_size, chunk_overlap)
 
         elif strategy in ("by_section", "section"):
-            return self._section_chunk(text, chunk_size, chunk_overlap)
+            chunks = self._section_chunk(processed_text, chunk_size, chunk_overlap)
 
         elif strategy in ("paragraph_based", "by_paragraph"):
-            return self._paragraph_chunk(text, chunk_size, chunk_overlap)
+            chunks = self._paragraph_chunk(processed_text, chunk_size, chunk_overlap)
 
         elif strategy == "adaptive":
-            return self._adaptive_chunk(text, chunk_size, chunk_overlap, effective_config)
+            chunks = self._adaptive_chunk(processed_text, chunk_size, chunk_overlap, effective_config)
 
         elif strategy == "hybrid":
-            return self._hybrid_chunk(text, chunk_size, chunk_overlap, effective_config)
+            chunks = self._hybrid_chunk(processed_text, chunk_size, chunk_overlap, effective_config)
 
         elif strategy == "custom":
-            return self._custom_chunk(text, chunk_size, chunk_overlap, separators)
+            chunks = self._custom_chunk(processed_text, chunk_size, chunk_overlap, separators)
 
         else:
             raise ValueError(f"Unknown chunking strategy: {strategy}")
+
+        # PRESERVE CODE BLOCKS: Post-process to restore code blocks
+        if preserve_code_blocks and code_block_map:
+            chunks = self._restore_code_blocks(chunks, code_block_map)
+
+        return chunks
+
+    def _protect_code_blocks(self, text: str, chunk_size: int) -> tuple:
+        """
+        Protect code blocks from being split during chunking.
+
+        WHY: Code blocks should remain intact for readability
+        HOW: Replace code blocks with placeholders, track for restoration
+
+        STRATEGY:
+        1. Find all fenced code blocks (```...```)
+        2. For blocks smaller than chunk_size: replace with single-line placeholder
+        3. For blocks larger than chunk_size: keep as-is (will be in own chunk)
+
+        Returns:
+            Tuple of (processed_text, code_block_map)
+        """
+        import uuid
+
+        code_block_pattern = re.compile(r'```[\s\S]*?```', re.MULTILINE)
+        code_block_map = {}
+
+        def replace_code_block(match):
+            code_block = match.group(0)
+            block_id = f"__CODE_BLOCK_{uuid.uuid4().hex[:8]}__"
+
+            # If code block is small enough, protect it
+            # If it's larger than chunk_size, we'll let it be its own chunk
+            if len(code_block) <= chunk_size * 1.5:
+                code_block_map[block_id] = code_block
+                # Use a placeholder that won't be split (single line, no separators)
+                return f"\n{block_id}\n"
+            else:
+                # Large code blocks - keep them but mark boundaries
+                # They'll likely become their own chunks
+                return f"\n\n{code_block}\n\n"
+
+        processed_text = code_block_pattern.sub(replace_code_block, text)
+
+        return processed_text, code_block_map
+
+    def _restore_code_blocks(self, chunks: List[dict], code_block_map: Dict[str, str]) -> List[dict]:
+        """
+        Restore code blocks from placeholders in chunks.
+
+        WHY: Replace placeholders with original code blocks
+        HOW: Find placeholders in chunk content and replace with original
+
+        Returns:
+            List of chunks with code blocks restored
+        """
+        restored_chunks = []
+
+        for chunk in chunks:
+            content = chunk["content"]
+
+            # Restore all code blocks in this chunk
+            for block_id, code_block in code_block_map.items():
+                if block_id in content:
+                    content = content.replace(block_id, code_block)
+
+            # Update chunk with restored content
+            restored_chunk = chunk.copy()
+            restored_chunk["content"] = content
+
+            # Recalculate metadata
+            restored_chunk["metadata"] = {
+                "word_count": len(content.split()) if content else 0,
+                "chunk_length": len(content) if content else 0,
+                "character_count": len(content) if content else 0,
+                "has_code_block": "```" in content
+            }
+            restored_chunk["token_count"] = len(content) // 4 if content else 0
+
+            restored_chunks.append(restored_chunk)
+
+        return restored_chunks
 
     def _get_effective_config(self, request_config: Optional[Dict[str, Any]]) -> ChunkingConfig:
         """
@@ -1020,7 +1111,8 @@ class ChunkingService:
             text=content,
             strategy=strategy,
             chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
+            chunk_overlap=chunk_overlap,
+            preserve_code_blocks=preserve_code_blocks  # Now properly passed!
         )
         # Extract just the content strings
         return [chunk_data["content"] for chunk_data in chunks_data]
