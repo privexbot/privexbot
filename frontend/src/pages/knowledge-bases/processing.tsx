@@ -319,69 +319,81 @@ export default function KBProcessingPage() {
           </CardContent>
         </Card>
 
-        {/* Statistics */}
-        {pipelineStatus.stats && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Cpu className="h-5 w-5" />
-                Processing Statistics
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {pipelineStatus.stats.pages_discovered}
+        {/* Statistics - Source-type aware labels */}
+        {pipelineStatus.stats && (() => {
+          // Determine labels based on source type
+          const sourceType = pipelineStatus.stats.source_type || 'web_scraping';
+          const isFileUpload = sourceType === 'file_upload';
+          const isMixed = sourceType === 'mixed';
+
+          // Dynamic labels based on source type
+          const discoveredLabel = isFileUpload ? 'Docs Added' : isMixed ? 'Sources' : 'Pages Discovered';
+          const processedLabel = isFileUpload ? 'Docs Parsed' : isMixed ? 'Processed' : 'Pages Scraped';
+          const failedLabel = isFileUpload ? 'Docs Failed' : 'Pages Failed';
+
+          return (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cpu className="h-5 w-5" />
+                  Processing Statistics
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {pipelineStatus.stats.pages_discovered}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {discoveredLabel}
+                    </div>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    Pages Discovered
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {pipelineStatus.stats.pages_scraped}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {processedLabel}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-600">
+                      {pipelineStatus.stats.pages_failed}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {failedLabel}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {pipelineStatus.stats.chunks_created}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Chunks Created
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-indigo-600">
+                      {pipelineStatus.stats.embeddings_generated}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Embeddings Generated
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {pipelineStatus.stats.vectors_indexed}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Vectors Indexed
+                    </div>
                   </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {pipelineStatus.stats.pages_scraped}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Pages Scraped
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">
-                    {pipelineStatus.stats.pages_failed}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Pages Failed
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">
-                    {pipelineStatus.stats.chunks_created}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Chunks Created
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-indigo-600">
-                    {pipelineStatus.stats.embeddings_generated}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Embeddings Generated
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">
-                    {pipelineStatus.stats.vectors_indexed}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Vectors Indexed
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Error Display */}
         {pipelineStatus.error && (

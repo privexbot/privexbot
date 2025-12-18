@@ -170,20 +170,89 @@ class KBDraftService:
 
         # Create source entry
         source_id = str(uuid4())
+        content = parsed_file.content
+
+        # CRITICAL: Normalize content to remove leading/trailing whitespace and excessive blank lines
+        # This prevents empty space appearing before content in preview
+        import re
+
+        def normalize_content(text: str) -> str:
+            """Normalize content by removing excessive whitespace and blank lines."""
+            if not text:
+                return ""
+            # Strip leading/trailing whitespace
+            text = text.strip()
+            # Replace 3+ consecutive newlines with 2
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            return text
+
+        # Apply normalization to main content
+        content = normalize_content(content)
+
+        # CRITICAL: Create preview_pages BEFORE storing source in Redis
+        # This ensures preview_pages persist and are available for Content Approval
+        preview_pages = []
+
+        # For files with page count, split by page markers or use full content
+        if parsed_file.page_count and parsed_file.page_count > 1:
+            # Try to split by page markers (common in PDFs parsed by Tika)
+            page_splits = content.split('\x0c')  # Form feed character
+            if len(page_splits) > 1:
+                for i, page_content in enumerate(page_splits):
+                    # CRITICAL: Normalize each page's content to remove whitespace
+                    page_content = normalize_content(page_content)
+                    if page_content:
+                        preview_pages.append({
+                            "url": f"file:///{filename}#page={i+1}",
+                            "title": f"{filename} - Page {i+1}",
+                            "content": page_content,
+                            "word_count": len(page_content.split()),
+                            "char_count": len(page_content),
+                            "source_id": source_id,
+                            "page_index": i
+                        })
+            else:
+                # No page markers, use full content as single page
+                preview_pages.append({
+                    "url": f"file:///{filename}",
+                    "title": filename,
+                    "content": content,
+                    "word_count": len(content.split()),
+                    "char_count": len(content),
+                    "source_id": source_id,
+                    "page_index": 0
+                })
+        else:
+            # Single page or unknown page count
+            preview_pages.append({
+                "url": f"file:///{filename}",
+                "title": filename,
+                "content": content,
+                "word_count": len(content.split()),
+                "char_count": len(content),
+                "source_id": source_id,
+                "page_index": 0
+            })
+
+        print(f"[KB Draft] Created {len(preview_pages)} preview pages for {filename}")
+
+        # Create source entry with preview_pages included
         source = {
             "id": source_id,
             "type": "file_upload",
             "filename": filename,
             "file_size": file_size,
             "mime_type": mime_type,
-            "parsed_content": parsed_file.content,  # CRITICAL: Store in Redis draft only
+            "parsed_content": content,  # CRITICAL: Store in Redis draft only
             "file_metadata": parsed_file.metadata,
-            "page_count": parsed_file.page_count,
-            "char_count": len(parsed_file.content),
-            "word_count": len(parsed_file.content.split()),
+            "page_count": parsed_file.page_count or len(preview_pages),
+            "char_count": len(content),
+            "word_count": len(content.split()),
             "parsing_time_ms": parsed_file.parsing_time_ms,
             "added_at": datetime.utcnow().isoformat(),
-            "parsed_at": datetime.utcnow().isoformat()
+            "parsed_at": datetime.utcnow().isoformat(),
+            # CRITICAL: Store preview_pages in Redis for Content Approval step
+            "preview_pages": preview_pages
         }
 
         # Add to sources
@@ -199,17 +268,18 @@ class KBDraftService:
             updates={"data": data}
         )
 
-        print(f"[KB Draft] Added file source {source_id} to draft {draft_id}")
+        print(f"[KB Draft] Added file source {source_id} to draft {draft_id} with {len(preview_pages)} preview pages")
 
         return {
             "source_id": source_id,
             "filename": filename,
             "file_size": file_size,
             "mime_type": mime_type,
-            "page_count": parsed_file.page_count,
-            "char_count": len(parsed_file.content),
-            "word_count": len(parsed_file.content.split()),
-            "parsing_time_ms": parsed_file.parsing_time_ms
+            "page_count": parsed_file.page_count or len(preview_pages),
+            "char_count": len(content),
+            "word_count": len(content.split()),
+            "parsing_time_ms": parsed_file.parsing_time_ms,
+            "preview_pages": preview_pages  # Include for content approval step
         }
 
     async def add_bulk_file_sources_to_draft(

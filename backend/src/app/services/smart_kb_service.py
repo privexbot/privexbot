@@ -503,6 +503,21 @@ class SmartKBService:
             user_config: Optional chunking configuration override
             skip_postgres_chunks: If True, skip PostgreSQL chunk creation (for file uploads)
         """
+        import re
+
+        # CRITICAL: Normalize content to match preview processing
+        # This ensures database chunk count matches preview chunk count
+        def normalize_content(text: str) -> str:
+            """Normalize content by removing excessive whitespace and blank lines."""
+            if not text:
+                return ""
+            # Strip leading/trailing whitespace
+            text = text.strip()
+            # Replace 3+ consecutive newlines with 2
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            return text
+
+        content = normalize_content(content)
 
         # Make chunking decision respecting user preferences
         chunking_decision = self.make_chunking_decision(
@@ -589,6 +604,33 @@ class SmartKBService:
             # PostgreSQL chunk (content + metadata, NO EMBEDDING)
             # SKIP for file uploads when skip_postgres_chunks=True
             if not skip_postgres_chunks:
+                postgres_chunk_metadata = {
+                    "token_count": token_count,
+                    "strategy": chunking_decision.strategy,
+                    "chunk_size": chunking_decision.chunk_size,
+                    "user_preference": chunking_decision.user_preference,
+                    "adaptive_suggestion": chunking_decision.adaptive_suggestion,
+                    "reasoning": chunking_decision.reasoning,
+                    "workspace_id": str(document.workspace_id),
+                    "created_at": datetime.utcnow().isoformat(),
+                    "word_count": word_count,
+                    "character_count": character_count
+                }
+
+                # CRITICAL: Include enhanced metadata from enhanced_chunking_service when enabled
+                # This preserves context_before, context_after, parent_heading, section_title
+                if enable_enhanced_metadata and chunk_metadata:
+                    # Enhanced metadata fields that should be stored in PostgreSQL
+                    enhanced_fields = [
+                        "context_before", "context_after",
+                        "parent_heading", "section_title",
+                        "document_analysis", "structure_score"
+                    ]
+                    for field in enhanced_fields:
+                        if field in chunk_metadata:
+                            postgres_chunk_metadata[field] = chunk_metadata[field]
+                    postgres_chunk_metadata["enhanced_metadata_enabled"] = True
+
                 postgres_chunk_data = {
                     "id": chunk_id,
                     "document_id": document.id,
@@ -598,18 +640,7 @@ class SmartKBService:
                     "position": idx,
                     "word_count": word_count,
                     "character_count": character_count,
-                    "chunk_metadata": {
-                        "token_count": token_count,
-                        "strategy": chunking_decision.strategy,
-                        "chunk_size": chunking_decision.chunk_size,
-                        "user_preference": chunking_decision.user_preference,
-                        "adaptive_suggestion": chunking_decision.adaptive_suggestion,
-                        "reasoning": chunking_decision.reasoning,
-                        "workspace_id": str(document.workspace_id),
-                        "created_at": datetime.utcnow().isoformat(),
-                        "word_count": word_count,
-                        "character_count": character_count
-                    }
+                    "chunk_metadata": postgres_chunk_metadata
                 }
                 postgres_chunks.append(postgres_chunk_data)
 
@@ -648,6 +679,20 @@ class SmartKBService:
                 "storage_location": storage_location,
                 "indexed_at": datetime.utcnow().isoformat()
             }
+
+            # CRITICAL: Include enhanced metadata from enhanced_chunking_service when enabled
+            # This preserves context_before, context_after, parent_heading, section_title in Qdrant
+            if enable_enhanced_metadata and chunk_metadata:
+                # Enhanced metadata fields for better retrieval context
+                if "context_before" in chunk_metadata:
+                    qdrant_metadata["context_before"] = chunk_metadata["context_before"]
+                if "context_after" in chunk_metadata:
+                    qdrant_metadata["context_after"] = chunk_metadata["context_after"]
+                if "parent_heading" in chunk_metadata:
+                    qdrant_metadata["parent_heading"] = chunk_metadata["parent_heading"]
+                if "section_title" in chunk_metadata:
+                    qdrant_metadata["section_title"] = chunk_metadata["section_title"]
+                qdrant_metadata["enhanced_metadata_enabled"] = True
 
             qdrant_chunk = QdrantChunk(
                 id=chunk_id,

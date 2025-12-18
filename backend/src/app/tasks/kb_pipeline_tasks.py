@@ -102,22 +102,39 @@ class PipelineProgressTracker:
 
     WHY: Real-time progress updates for frontend polling
     HOW: Update Redis key with current stage, stats, timestamps
+
+    SOURCE-TYPE AWARE METRICS:
+    - For web sources: "pages_discovered", "pages_scraped"
+    - For file uploads: "documents_discovered", "documents_parsed"
+    - Frontend uses source_type to display appropriate labels
     """
 
-    def __init__(self, pipeline_id: str, kb_id: str):
+    def __init__(self, pipeline_id: str, kb_id: str, source_type: str = "web_scraping"):
         self.pipeline_id = pipeline_id
         self.kb_id = kb_id
         self.redis_key = f"pipeline:{pipeline_id}:status"
+        self.source_type = source_type  # "web_scraping" | "file_upload" | "mixed"
 
-        # Initialize stats
+        # Initialize stats with source-type aware metrics
+        # IMPORTANT: Backend uses generic names, frontend interprets based on source_type
         self.stats = {
-            "pages_discovered": 0,
-            "pages_scraped": 0,
-            "pages_failed": 0,
+            "pages_discovered": 0,      # For web: pages found; For files: documents added
+            "pages_scraped": 0,         # For web: pages scraped; For files: documents parsed
+            "pages_failed": 0,          # For web: pages failed; For files: documents failed
             "chunks_created": 0,
             "embeddings_generated": 0,
-            "vectors_indexed": 0
+            "vectors_indexed": 0,
+            # NEW: Source type info for frontend to display appropriate labels
+            "source_type": source_type,
+            "total_sources": 0,
+            "file_sources": 0,
+            "web_sources": 0
         }
+
+    def set_source_type(self, source_type: str):
+        """Update source type (call after analyzing sources)."""
+        self.source_type = source_type
+        self.stats["source_type"] = source_type
 
     def update_status(
         self,
@@ -270,7 +287,31 @@ def process_web_kb_task(
 
     db = SessionLocal()
     start_time = datetime.utcnow()
-    tracker = PipelineProgressTracker(pipeline_id, kb_id)
+
+    # ========================================
+    # EARLY SOURCE TYPE DETECTION (before tracker initialization)
+    # ========================================
+    # Count file uploads vs web sources to determine appropriate metric labels
+    file_sources_count = sum(1 for s in sources if s.get("type") == "file_upload")
+    web_sources_count = sum(1 for s in sources if s.get("type") in ("web_scraping", "approved_content"))
+
+    # Determine overall source type for metrics display
+    if file_sources_count > 0 and web_sources_count > 0:
+        source_type_for_metrics = "mixed"
+    elif file_sources_count > 0:
+        source_type_for_metrics = "file_upload"
+    else:
+        source_type_for_metrics = "web_scraping"
+
+    print(f"📊 [SOURCE TYPES EARLY] {file_sources_count} file uploads, {web_sources_count} web sources → {source_type_for_metrics}")
+
+    # Initialize tracker WITH correct source type from the start
+    tracker = PipelineProgressTracker(pipeline_id, kb_id, source_type=source_type_for_metrics)
+    tracker.update_stats(
+        total_sources=len(sources),
+        file_sources=file_sources_count,
+        web_sources=web_sources_count
+    )
 
     # Import smart KB service at function level to avoid scoping issues
     from app.services.smart_kb_service import smart_kb_service
@@ -343,6 +384,9 @@ def process_web_kb_task(
 
         # Map indexing_method to processing quality settings
         processing_quality = _get_processing_quality_settings(indexing_method)
+
+        # NOTE: Source type detection moved to early initialization (before tracker creation)
+        # This ensures correct source_type is set from the very first update_status() call
 
         # ========================================
         # STEP 1: CREATE QDRANT COLLECTION
@@ -618,11 +662,11 @@ def process_web_kb_task(
                         if all_file_uploads:
                             print(f"📁 [FILE_UPLOAD] All sources are file uploads - using metadata-only PostgreSQL storage")
                             combined_doc.content_full = None  # Skip content storage for file uploads
+                            combined_doc.content_preview = None  # Skip preview storage for file uploads
                             combined_doc.source_type = "file_upload"  # Update source type
                         else:
                             combined_doc.content_full = final_combined_content  # Store content for web scraping
-
-                        combined_doc.content_preview = final_combined_content[:500] if len(final_combined_content) > 500 else final_combined_content
+                            combined_doc.content_preview = final_combined_content[:500] if len(final_combined_content) > 500 else final_combined_content
                         combined_doc.word_count = len(final_combined_content.split())
                         combined_doc.character_count = len(final_combined_content)
                         combined_doc.page_count = len(all_scraped_pages)
@@ -708,6 +752,34 @@ def process_web_kb_task(
                             combined_doc.chunk_count = chunk_count
                             combined_doc.word_count = total_doc_word_count
                             combined_doc.character_count = total_doc_char_count
+
+                            # ========================================
+                            # CRITICAL: Update processing_metadata with storage info
+                            # This allows frontend to know where chunks are stored
+                            # ========================================
+                            storage_strategy = processing_result.get("storage_strategy", "dual_storage")
+                            skip_postgres = processing_result.get("skip_postgres_chunks", False) or all_file_uploads
+
+                            combined_doc.processing_metadata = {
+                                "processed_at": datetime.utcnow().isoformat(),
+                                "chunks_created": chunk_count,
+                                "embeddings_generated": len(qdrant_chunks),
+                                # CRITICAL: Storage location info for frontend
+                                "storage_strategy": storage_strategy,
+                                "chunk_storage_location": "qdrant_only" if skip_postgres else "postgresql_and_qdrant",
+                                "postgres_chunks_created": 0 if skip_postgres else chunk_count,
+                                "qdrant_chunks_created": chunk_count,
+                                # Enhanced metadata flags
+                                "enhanced_metadata_enabled": enable_enhanced_metadata,
+                                # Chunking decision summary
+                                "chunking_strategy": chunking_decision.strategy if chunking_decision else "no_chunking",
+                                "chunk_size": chunking_decision.chunk_size if chunking_decision else 0,
+                                "chunk_overlap": chunking_decision.chunk_overlap if chunking_decision else 0,
+                                # Combined document info
+                                "is_combined_document": True,
+                                "sources_count": len(sources),
+                                "pages_count": len(all_scraped_pages),
+                            }
 
                             # Update Qdrant chunks with metadata
                             for qdrant_chunk in qdrant_chunks:
@@ -1117,11 +1189,11 @@ def process_web_kb_task(
                                     if is_file_upload_source:
                                         print(f"📁 [NO_CHUNKING FILE_UPLOAD] Using metadata-only PostgreSQL storage")
                                         document.content_full = None
+                                        document.content_preview = None  # Skip preview storage for file uploads
                                         document.source_type = "file_upload"
                                     else:
                                         document.content_full = final_combined_content
-
-                                    document.content_preview = final_combined_content[:500] if len(final_combined_content) > 500 else final_combined_content
+                                        document.content_preview = final_combined_content[:500] if len(final_combined_content) > 500 else final_combined_content
 
                                     # Update statistics
                                     document.word_count = len(final_combined_content.split())
@@ -1237,6 +1309,30 @@ def process_web_kb_task(
                                     document.word_count = total_word_count
                                     document.character_count = total_char_count
                                     document.status = "processed"
+
+                                    # ========================================
+                                    # CRITICAL: Update processing_metadata with storage info
+                                    # This allows frontend to know where chunks are stored
+                                    # ========================================
+                                    storage_strategy = processing_result.get("storage_strategy", "dual_storage")
+                                    skip_postgres = processing_result.get("skip_postgres_chunks", False) or is_file_upload_source
+
+                                    document.processing_metadata = {
+                                        "processed_at": datetime.utcnow().isoformat(),
+                                        "chunks_created": chunk_count,
+                                        "embeddings_generated": len(qdrant_chunks),
+                                        # CRITICAL: Storage location info for frontend
+                                        "storage_strategy": storage_strategy,
+                                        "chunk_storage_location": "qdrant_only" if skip_postgres else "postgresql_and_qdrant",
+                                        "postgres_chunks_created": 0 if skip_postgres else chunk_count,
+                                        "qdrant_chunks_created": chunk_count,
+                                        # Enhanced metadata flags
+                                        "enhanced_metadata_enabled": enable_enhanced_metadata,
+                                        # Chunking decision summary (from processing_result)
+                                        "chunking_strategy": processing_result.get("chunking_decision").strategy if processing_result.get("chunking_decision") else "no_chunking",
+                                        "chunk_size": processing_result.get("chunking_decision").chunk_size if processing_result.get("chunking_decision") else 0,
+                                        "chunk_overlap": processing_result.get("chunking_decision").chunk_overlap if processing_result.get("chunking_decision") else 0,
+                                    }
 
                                     # Update Qdrant chunks with document metadata
                                     for qdrant_chunk in qdrant_chunks:
@@ -1398,11 +1494,11 @@ def process_web_kb_task(
                                     # OPTION A: Skip content_full for file uploads (Qdrant-only storage)
                                     if is_file_upload_page:
                                         document.content_full = None
+                                        document.content_preview = None  # Skip preview storage for file uploads
                                         document.source_type = "file_upload"
                                     else:
                                         document.content_full = page_content  # Store the final content (should be approved if available)
-
-                                    document.content_preview = page_content[:500] if page_content else None
+                                        document.content_preview = page_content[:500] if page_content else None
                                     document.word_count = len(page_content.split()) if page_content else 0
                                     document.character_count = len(page_content) if page_content else 0
                                     document.status = "processing"
@@ -1422,6 +1518,7 @@ def process_web_kb_task(
                                     # OPTION A: Determine source type and content storage based on file upload
                                     doc_source_type = "file_upload" if is_file_upload_page else "web_scraping"
                                     doc_content_full = None if is_file_upload_page else page_content
+                                    doc_content_preview = None if is_file_upload_page else (page_content[:500] if page_content else None)
 
                                     document = Document(
                                         kb_id=UUID(kb_id),
@@ -1430,7 +1527,7 @@ def process_web_kb_task(
                                         source_type=doc_source_type,
                                         source_url=page_url,
                                         content_full=doc_content_full,  # OPTION A: Skip for file uploads
-                                        content_preview=page_content[:500] if page_content else None,
+                                        content_preview=doc_content_preview,  # OPTION A: Skip preview for file uploads too
                                         word_count=len(page_content.split()) if page_content else 0,
                                         character_count=len(page_content) if page_content else 0,
                                         source_metadata={
@@ -1629,6 +1726,30 @@ def process_web_kb_task(
                                 document.character_count = total_char_count
                                 document.status = "processed"
                                 print(f"✅ [INDIVIDUAL] Updated document {document.id}: {chunk_count} chunks, status=processed")
+
+                                # ========================================
+                                # CRITICAL: Update processing_metadata with storage info
+                                # This allows frontend to know where chunks are stored
+                                # ========================================
+                                storage_strategy = processing_result.get("storage_strategy", "dual_storage")
+                                skip_postgres = processing_result.get("skip_postgres_chunks", False)
+
+                                document.processing_metadata = {
+                                    "processed_at": datetime.utcnow().isoformat(),
+                                    "chunks_created": chunk_count,
+                                    "embeddings_generated": processing_result.get("embeddings_generated", 0),
+                                    # CRITICAL: Storage location info for frontend
+                                    "storage_strategy": storage_strategy,
+                                    "chunk_storage_location": "qdrant_only" if skip_postgres else "postgresql_and_qdrant",
+                                    "postgres_chunks_created": 0 if skip_postgres else chunk_count,
+                                    "qdrant_chunks_created": chunk_count,
+                                    # Enhanced metadata flags
+                                    "enhanced_metadata_enabled": enable_enhanced_metadata,
+                                    # Chunking decision summary
+                                    "chunking_strategy": chunking_decision.strategy,
+                                    "chunk_size": chunking_decision.chunk_size,
+                                    "chunk_overlap": chunking_decision.chunk_overlap,
+                                }
 
                                 # Update tracking stats
                                 tracker.update_stats(

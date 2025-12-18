@@ -47,6 +47,84 @@ export default function KBDetailPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  /**
+   * Calculate effective chunk count from multiple sources
+   * Priority: kb.total_chunks > sum of document chunk_counts > PostgreSQL chunks
+   */
+  const getEffectiveChunkCount = (): number => {
+    // Priority 1: Use total_chunks from KB if available
+    if (kb && (kb as any).total_chunks && (kb as any).total_chunks > 0) {
+      return (kb as any).total_chunks;
+    }
+
+    // Priority 2: Sum from documents' chunk_count
+    if (Array.isArray(documents) && documents.length > 0) {
+      const totalFromDocs = documents.reduce(
+        (sum: number, doc: KBDocument) => sum + (doc.chunk_count || 0), 0
+      );
+      if (totalFromDocs > 0) return totalFromDocs;
+    }
+
+    // Priority 3: Fallback to PostgreSQL chunks
+    return Array.isArray(chunks) ? chunks.length : 0;
+  };
+
+  /**
+   * Calculate average chunk size
+   * Uses PostgreSQL chunks if available, otherwise estimates from document metadata
+   */
+  const getAverageChunkSize = (): number => {
+    // If we have PostgreSQL chunks with character counts
+    if (Array.isArray(chunks) && chunks.length > 0) {
+      const totalChars = chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0);
+      return Math.round(totalChars / chunks.length);
+    }
+
+    // For Qdrant-only storage, estimate from documents
+    const effectiveChunkCount = getEffectiveChunkCount();
+    if (effectiveChunkCount > 0 && Array.isArray(documents) && documents.length > 0) {
+      // Check for processing metadata with chunk_size info
+      const processingMeta = documents.find(
+        (doc: KBDocument) => (doc as any).processing_metadata?.chunk_size
+      );
+
+      if (processingMeta && (processingMeta as any).processing_metadata?.chunk_size) {
+        // Use configured chunk size from processing metadata
+        return (processingMeta as any).processing_metadata.chunk_size;
+      }
+
+      // Sum total characters from all documents
+      const totalChars = documents.reduce((acc: number, doc: KBDocument) => {
+        // Use character_count if available, otherwise estimate from word_count
+        const charCount = doc.character_count || ((doc.word_count || 0) * 5);
+        return acc + charCount;
+      }, 0);
+
+      // Calculate average (with safety check)
+      if (totalChars > 0) {
+        return Math.round(totalChars / effectiveChunkCount);
+      }
+    }
+
+    return 0;
+  };
+
+  /**
+   * Check if this KB uses Qdrant-only storage (file uploads)
+   */
+  const isQdrantOnlyStorage = (): boolean => {
+    if (!Array.isArray(documents) || documents.length === 0) return false;
+
+    const hasFileUploads = documents.some(
+      (doc: KBDocument) => doc.source_type === 'file_upload'
+    );
+    const hasQdrantOnlyMeta = documents.some(
+      (doc: KBDocument) => (doc as any).processing_metadata?.chunk_storage_location === 'qdrant_only'
+    );
+
+    return hasFileUploads || hasQdrantOnlyMeta;
+  };
+
 
   useEffect(() => {
     if (kbId && currentWorkspace) {
@@ -237,7 +315,8 @@ export default function KBDetailPage() {
                     {Array.isArray(documents) ? documents.length : (kb as any).total_documents || 0} documents
                   </span>
                   <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-3 py-1 rounded-lg">
-                    {Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0} chunks
+                    {getEffectiveChunkCount().toLocaleString()} chunks
+                    {isQdrantOnlyStorage() && <span className="ml-1 text-xs opacity-75">(vector DB)</span>}
                   </span>
                 </div>
               </div>
@@ -290,7 +369,7 @@ export default function KBDetailPage() {
                   <span className="text-xs font-medium text-green-700 dark:text-green-300 font-manrope">Chunks</span>
                 </div>
                 <span className="text-xl font-bold text-green-900 dark:text-green-100 font-manrope">
-                  {Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0}
+                  {getEffectiveChunkCount().toLocaleString()}
                 </span>
               </div>
             </div>
@@ -316,10 +395,7 @@ export default function KBDetailPage() {
                   <span className="text-xs font-medium text-amber-700 dark:text-amber-300 font-manrope">Avg Chunk</span>
                 </div>
                 <span className="text-xl font-bold text-amber-900 dark:text-amber-100 font-manrope">
-                  {Array.isArray(chunks) && chunks.length > 0
-                    ? Math.round(chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0) / chunks.length)
-                    : 0
-                  }
+                  {getAverageChunkSize().toLocaleString()}
                 </span>
               </div>
             </div>
@@ -348,8 +424,11 @@ export default function KBDetailPage() {
                   <div>
                     <p className="text-sm font-medium text-green-700 dark:text-green-300 font-manrope">Chunks</p>
                     <p className="text-2xl font-bold text-green-900 dark:text-green-100 font-manrope">
-                      {Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0}
+                      {getEffectiveChunkCount().toLocaleString()}
                     </p>
+                    {isQdrantOnlyStorage() && (
+                      <p className="text-xs text-green-600 dark:text-green-400 font-manrope">Vector DB</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -378,11 +457,11 @@ export default function KBDetailPage() {
                   <div>
                     <p className="text-sm font-medium text-amber-700 dark:text-amber-300 font-manrope">Avg Chunk Size</p>
                     <p className="text-2xl font-bold text-amber-900 dark:text-amber-100 font-manrope">
-                      {Array.isArray(chunks) && chunks.length > 0
-                        ? Math.round(chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0) / chunks.length)
-                        : 0
-                      }
+                      {getAverageChunkSize().toLocaleString()}
                     </p>
+                    {isQdrantOnlyStorage() && getAverageChunkSize() > 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-manrope">chars (estimated)</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -516,11 +595,54 @@ export default function KBDetailPage() {
                             {(doc as any).content_preview && (
                               <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-manrope bg-white dark:bg-gray-800 p-3 rounded-lg border">{(doc as any).content_preview || 'No preview available'}</p>
                             )}
-                            <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400 font-manrope">
                               <span className="bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded">{(doc as any).word_count || 0} words</span>
                               <span className="bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded">{doc.chunk_count || 0} chunks</span>
                               <span className="bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded">{new Date(doc.created_at).toLocaleString()}</span>
+                              {/* Storage location indicator */}
+                              {(doc as any).processing_metadata?.chunk_storage_location === 'qdrant_only' && (
+                                <Badge variant="outline" className="bg-cyan-50 dark:bg-cyan-900/30 border-cyan-200 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300">
+                                  Qdrant Only
+                                </Badge>
+                              )}
+                              {/* Enhanced metadata indicator */}
+                              {(doc as any).processing_metadata?.enhanced_metadata_enabled && (
+                                <Badge variant="outline" className="bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300">
+                                  Enhanced Metadata
+                                </Badge>
+                              )}
                             </div>
+                            {/* Processing metadata details */}
+                            {(doc as any).processing_metadata && (
+                              <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 text-xs">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                  <div>
+                                    <span className="text-gray-500 dark:text-gray-400">Strategy:</span>
+                                    <span className="ml-1 font-medium text-gray-700 dark:text-gray-300">
+                                      {((doc as any).processing_metadata?.chunking_strategy || 'N/A').replace(/_/g, ' ')}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 dark:text-gray-400">Chunk Size:</span>
+                                    <span className="ml-1 font-medium text-gray-700 dark:text-gray-300">
+                                      {(doc as any).processing_metadata?.chunk_size || 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 dark:text-gray-400">Overlap:</span>
+                                    <span className="ml-1 font-medium text-gray-700 dark:text-gray-300">
+                                      {(doc as any).processing_metadata?.chunk_overlap || 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 dark:text-gray-400">Embeddings:</span>
+                                    <span className="ml-1 font-medium text-gray-700 dark:text-gray-300">
+                                      {(doc as any).processing_metadata?.embeddings_generated || 0}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -561,7 +683,12 @@ export default function KBDetailPage() {
                   <Database className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
                   <div>
                     <CardTitle className="text-xl font-bold text-cyan-900 dark:text-cyan-100 font-manrope">
-                      Chunks ({Array.isArray(chunks) ? chunks.length : (kb as any).total_chunks || 0})
+                      Chunks ({getEffectiveChunkCount().toLocaleString()})
+                      {isQdrantOnlyStorage() && (
+                        <Badge variant="outline" className="ml-2 text-xs bg-cyan-50 dark:bg-cyan-900/30 border-cyan-200 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300">
+                          Vector DB
+                        </Badge>
+                      )}
                     </CardTitle>
                     <CardDescription className="text-cyan-700 dark:text-cyan-300 font-manrope mt-1">
                       Text chunks used for search and retrieval
@@ -571,13 +698,65 @@ export default function KBDetailPage() {
               </CardHeader>
               <CardContent className="p-6">
                 {!Array.isArray(chunks) || chunks.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No chunks yet</h3>
-                    <p className="text-muted-foreground">
-                      Chunks will appear here after document processing
-                    </p>
-                  </div>
+                  (() => {
+                    // Get storage info from documents for enhanced metadata display
+                    const storageInfo = documents.find(
+                      (doc: KBDocument) => (doc as any).processing_metadata?.chunk_storage_location
+                    )?.processing_metadata as Record<string, any> | undefined;
+
+                    // Use helper function to check Qdrant-only storage
+                    if (isQdrantOnlyStorage() || storageInfo?.chunk_storage_location === 'qdrant_only') {
+                      return (
+                        <div className="text-center py-8">
+                          <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/30 dark:to-blue-900/30 rounded-xl p-6 mx-auto max-w-lg border border-cyan-200 dark:border-cyan-700">
+                            <Database className="h-12 w-12 mx-auto text-cyan-600 dark:text-cyan-400 mb-4" />
+                            <h3 className="text-lg font-bold text-cyan-900 dark:text-cyan-100 mb-2 font-manrope">
+                              Chunks Stored in Vector Database
+                            </h3>
+                            <p className="text-cyan-700 dark:text-cyan-300 font-manrope mb-4">
+                              This knowledge base uses file uploads. Chunks are stored directly in the vector database (Qdrant) for optimal performance and privacy.
+                            </p>
+                            <div className="grid grid-cols-3 gap-4 mt-4">
+                              <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-cyan-100 dark:border-cyan-800">
+                                <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 font-manrope">
+                                  {getEffectiveChunkCount().toLocaleString()}
+                                </p>
+                                <p className="text-xs text-cyan-700 dark:text-cyan-300 font-manrope">Total Chunks</p>
+                              </div>
+                              <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-cyan-100 dark:border-cyan-800">
+                                <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 font-manrope">
+                                  {documents.length}
+                                </p>
+                                <p className="text-xs text-cyan-700 dark:text-cyan-300 font-manrope">Documents</p>
+                              </div>
+                              <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-cyan-100 dark:border-cyan-800">
+                                <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 font-manrope">
+                                  {getAverageChunkSize().toLocaleString()}
+                                </p>
+                                <p className="text-xs text-cyan-700 dark:text-cyan-300 font-manrope">Avg Size</p>
+                              </div>
+                            </div>
+                            {storageInfo?.enhanced_metadata_enabled && (
+                              <Badge className="mt-4 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 font-manrope">
+                                Enhanced Metadata Enabled
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Regular empty state for web scraping KBs without chunks
+                    return (
+                      <div className="text-center py-8">
+                        <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No chunks yet</h3>
+                        <p className="text-muted-foreground">
+                          Chunks will appear here after document processing
+                        </p>
+                      </div>
+                    );
+                  })()
                 ) : (
                   <div className="space-y-4">
                     {Array.isArray(chunks) && chunks.slice(0, 20).map((chunk, index) => (

@@ -136,7 +136,42 @@ interface KBStoreActions {
   addFileSource: (
     file: File,
     config?: Record<string, unknown>
-  ) => Promise<void>;
+  ) => Promise<{
+    source_id: string;
+    filename: string;
+    file_size: number;
+    mime_type: string;
+    page_count: number;
+    char_count: number;
+    word_count: number;
+    parsing_time_ms: number;
+    message: string;
+    preview_pages?: Array<{
+      url: string;
+      title: string;
+      content: string;
+      word_count: number;
+      char_count: number;
+      source_id: string;
+      page_index: number;
+    }>;
+  }>;
+  addFileSourcesBulk: (files: File[]) => Promise<{
+    total_files: number;
+    successful: number;
+    failed: number;
+    sources: Array<{
+      source_id: string;
+      filename: string;
+      file_size: number;
+      mime_type: string;
+      page_count: number;
+      char_count: number;
+      word_count: number;
+    }>;
+    failures: Array<{ filename: string; error: string }>;
+    message: string;
+  }>;
   addTextSource: (content: string, title?: string) => Promise<void>;
   updateSource: (sourceId: string, updates: Partial<DraftSource>) => void;
   removeSource: (sourceId: string) => void;
@@ -696,14 +731,136 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
           }
         },
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         addFileSource: async (file: File, _config?: Record<string, unknown>) => {
-          // File upload feature is not yet implemented
-          const error = new Error("📄 File Upload - Coming Soon!\n\nFile upload functionality is currently under development. Please use web URLs for now, or check back soon for file upload support.");
-          set((state) => {
-            state.draftError = "File upload feature is coming soon! Please use web URLs for now.";
-          });
-          throw error;
+          const { currentDraft } = get();
+          if (!currentDraft) throw new Error("No draft available");
+
+          try {
+            // Clear any previous errors
+            set((state) => {
+              state.draftError = null;
+            });
+
+            // Upload file to backend (Tika parses it)
+            const result = await kbClient.draft.addFileSource(
+              currentDraft.draft_id,
+              file
+            );
+
+            // Debug: Log the API response to verify preview_pages is included
+            console.log('📁 File upload API response:', {
+              source_id: result.source_id,
+              filename: result.filename,
+              file_size: result.file_size,
+              mime_type: result.mime_type,
+              page_count: result.page_count,
+              char_count: result.char_count,
+              word_count: result.word_count,
+              parsing_time_ms: result.parsing_time_ms,
+              has_preview_pages: !!result.preview_pages,
+              preview_pages_count: result.preview_pages?.length || 0
+            });
+
+            // Create DraftSource for the uploaded file
+            const newSource: DraftSource = {
+              source_id: result.source_id,
+              type: SourceType.FILE,
+              url: `file:///${result.filename}`, // Pseudo-URL for display
+              status: "completed", // File is already parsed by Tika
+              created_at: new Date().toISOString(),
+              metadata: {
+                filename: result.filename,
+                file_size: result.file_size,
+                mime_type: result.mime_type,
+                page_count: result.page_count,
+                char_count: result.char_count,
+                word_count: result.word_count,
+                parsing_time_ms: result.parsing_time_ms,
+                parsed_at: new Date().toISOString(),
+                // Include preview pages for content approval step (consistent with web sources)
+                previewPages: result.preview_pages,
+              },
+            };
+
+            // Debug: Log the DraftSource being created
+            console.log('📁 Creating DraftSource:', {
+              source_id: newSource.source_id,
+              type: newSource.type,
+              hasMetadata: !!newSource.metadata,
+              metadataFilename: newSource.metadata?.filename,
+              hasPreviewPages: !!newSource.metadata?.previewPages,
+              previewPagesCount: (newSource.metadata?.previewPages as any[])?.length || 0
+            });
+
+            // Add to store
+            set((state) => {
+              state.draftSources = [...state.draftSources, newSource];
+              state.isDraftDirty = true;
+            });
+
+            // Save to local storage
+            get().saveDraftToLocalStorage();
+
+            return result;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to upload file";
+            set((state) => {
+              state.draftError = message;
+            });
+            throw error;
+          }
+        },
+
+        addFileSourcesBulk: async (files: File[]) => {
+          const { currentDraft } = get();
+          if (!currentDraft) throw new Error("No draft available");
+
+          try {
+            // Clear any previous errors
+            set((state) => {
+              state.draftError = null;
+            });
+
+            // Upload files to backend (Tika parses them)
+            const result = await kbClient.draft.addFileSourcesBulk(
+              currentDraft.draft_id,
+              files
+            );
+
+            // Create DraftSources for successful uploads
+            const newSources: DraftSource[] = result.sources.map((source) => ({
+              source_id: source.source_id,
+              type: SourceType.FILE,
+              url: `file:///${source.filename}`,
+              status: "completed" as const,
+              created_at: new Date().toISOString(),
+              metadata: {
+                filename: source.filename,
+                file_size: source.file_size,
+                mime_type: source.mime_type,
+                page_count: source.page_count,
+                char_count: source.char_count,
+                word_count: source.word_count,
+              },
+            }));
+
+            // Add to store
+            set((state) => {
+              state.draftSources = [...state.draftSources, ...newSources];
+              state.isDraftDirty = true;
+            });
+
+            // Save to local storage
+            get().saveDraftToLocalStorage();
+
+            return result;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to upload files";
+            set((state) => {
+              state.draftError = message;
+            });
+            throw error;
+          }
         },
 
         addTextSource: async (content: string, title?: string) => {
@@ -1132,7 +1289,10 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             // Process each selected page and group by source
             pageIndices.forEach(globalIndex => {
               const page = allPages[globalIndex];
-              if (!page?.sourceId) return;
+              if (!page?.sourceId) {
+                console.log(`⚠️ APPROVAL: Page at index ${globalIndex} has no sourceId, skipping`);
+                return;
+              }
 
               if (!sourceGroups.has(page.sourceId)) {
                 sourceGroups.set(page.sourceId, {
@@ -1144,9 +1304,16 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
               const group = sourceGroups.get(page.sourceId)!;
 
-              // Find the page index within this specific source
-              const sourcePages = allPages.filter(p => p.sourceId === page.sourceId);
-              const sourcePageIndex = sourcePages.findIndex(p => p.originalIndex === page.originalIndex);
+              // CRITICAL FIX: Use pageInSourceIndex directly if available, otherwise calculate
+              // pageInSourceIndex is set by KBContentApproval when aggregating pages
+              const sourcePageIndex = page.pageInSourceIndex !== undefined
+                ? page.pageInSourceIndex
+                : (() => {
+                    const sourcePages = allPages.filter(p => p.sourceId === page.sourceId);
+                    return sourcePages.findIndex(p => p.originalIndex === page.originalIndex);
+                  })();
+
+              console.log(`📝 APPROVAL: Page ${globalIndex} -> sourceId=${page.sourceId}, sourcePageIndex=${sourcePageIndex}, is_edited=${page.is_edited}`);
 
               if (sourcePageIndex !== -1) {
                 group.approved_page_indices.push(sourcePageIndex);
@@ -1170,6 +1337,13 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
 
             // Convert map to array for API call
             const sourceApprovals = Array.from(sourceGroups.values());
+
+            // Debug: Log what we're sending to the backend
+            console.log('🚀 APPROVAL REQUEST:', sourceApprovals.map(s => ({
+              source_id: s.source_id,
+              approved_page_indices: s.approved_page_indices,
+              page_updates_count: s.page_updates.length
+            })));
 
             // Call the new source-centric API
             const result = await kbClient.draft.approveSources(

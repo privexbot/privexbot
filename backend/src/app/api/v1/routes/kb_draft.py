@@ -912,6 +912,22 @@ async def preview_chunks_live(
     max_chunks = request.get("max_chunks", None)  # Allow frontend to control chunk limit
     enable_enhanced_metadata = request.get("enable_enhanced_metadata", False)
 
+    # CRITICAL: Normalize content to match pipeline processing
+    # This ensures preview chunk count matches what gets stored in database
+    import re
+
+    def normalize_content(text: str) -> str:
+        """Normalize content by removing excessive whitespace and blank lines."""
+        if not text:
+            return ""
+        # Strip leading/trailing whitespace
+        text = text.strip()
+        # Replace 3+ consecutive newlines with 2
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text
+
+    content = normalize_content(content)
+
     # Get draft context for adaptive logic ("chatbots", "chatflows", or "both")
     draft_context = draft.get("context", "both")
     source_title = request.get("title", draft.get("name", "Untitled"))
@@ -1855,6 +1871,9 @@ async def approve_sources_with_edits(
             page_updates = approval.get("page_updates", [])
             print(f"  Source {i}: id={source_id}, approving_pages={page_indices}, updates_count={len(page_updates)}")
 
+        if not source_approvals:
+            print("⚠️ WARNING: source_approvals is empty - no sources to approve")
+
         # Get draft data
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
@@ -1865,6 +1884,15 @@ async def approve_sources_with_edits(
 
         data = draft.get("data", {})
         sources = data.get("sources", [])
+
+        # DEBUG: Log sources in draft
+        print(f"📦 DRAFT SOURCES: {len(sources)} sources in draft")
+        for i, s in enumerate(sources):
+            src_id = s.get("id", "no-id")
+            src_type = s.get("type", "unknown")
+            has_preview_pages = len(s.get("preview_pages", [])) > 0
+            has_metadata_preview = len(s.get("metadata", {}).get("previewPages", [])) > 0
+            print(f"  Source {i}: id={src_id}, type={src_type}, has_preview_pages={has_preview_pages}, has_metadata_preview={has_metadata_preview}")
 
         if not sources:
             raise HTTPException(
@@ -1882,22 +1910,40 @@ async def approve_sources_with_edits(
             approved_page_indices = approval_data.get("approved_page_indices", [])
             page_updates = approval_data.get("page_updates", [])
 
+            print(f"\n🔍 PROCESSING: source_id={source_id}, page_indices={approved_page_indices}")
+
             # Find the source
             source_index = next((i for i, s in enumerate(sources) if s.get("id") == source_id), None)
             if source_index is None:
+                print(f"  ❌ Source NOT FOUND in draft. Looking for id={source_id}")
+                print(f"  📋 Available source ids: {[s.get('id') for s in sources]}")
                 continue  # Skip if source not found
+
+            print(f"  ✅ Found source at index {source_index}")
 
             source = sources[source_index]
 
-            # Get source preview pages
+            # Get source preview pages - handle both storage locations
+            # Web sources: metadata.previewPages
+            # File sources: preview_pages (direct on source object)
             source_metadata = source.get("metadata", {})
             preview_pages = source_metadata.get("previewPages", [])
 
+            # CRITICAL FIX: For file uploads, preview_pages is stored directly on source
             if not preview_pages:
+                preview_pages = source.get("preview_pages", [])
+                print(f"  📁 Using direct preview_pages for file source: {len(preview_pages)} pages found")
+
+            if not preview_pages:
+                print(f"  ⚠️ No preview pages found for source {source_id}")
                 continue  # Skip if no preview pages
 
             # Update pages with edits and approval status
+            print(f"  📄 Processing {len(approved_page_indices)} page indices: {approved_page_indices}")
+            print(f"  📋 Preview pages available: {len(preview_pages)}")
+
             for page_idx in approved_page_indices:
+                print(f"    🔎 Checking page index {page_idx}...")
                 if page_idx < len(preview_pages):
                     page = preview_pages[page_idx]
 
@@ -1905,13 +1951,17 @@ async def approve_sources_with_edits(
                     page_is_approved = page.get("is_approved", False)
                     has_page_updates = any(pu.get("page_index") == page_idx for pu in page_updates)
 
+                    print(f"    📊 Page {page_idx}: is_approved={page_is_approved}, has_updates={has_page_updates}")
+
                     # Logic: If frontend is sending updates for this page, allow re-approval
                     if page_is_approved and has_page_updates:
                         # Clear approval status to allow re-approval
+                        print(f"    🔄 Re-approving page {page_idx} (has updates)")
                         page["is_approved"] = False
                         page["approved_at"] = None
                         page["approved_by"] = None
                     elif page_is_approved:
+                        print(f"    ⏭️ SKIPPING page {page_idx} - already approved, no updates")
                         continue  # Skip this page entirely
 
                     # Apply edits if provided

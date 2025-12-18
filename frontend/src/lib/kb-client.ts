@@ -121,6 +121,283 @@ export const kbDraftApi = {
   },
 
   /**
+   * Calculate adaptive timeout based on file size and type
+   *
+   * Formula: base (60s) + (file_size_mb * 30s) + OCR_multiplier
+   * - PDFs and images get 3x multiplier for potential OCR
+   * - Large files (>10MB) get additional time
+   * - Max timeout: 10 minutes
+   */
+  calculateAdaptiveTimeout(file: File): number {
+    const fileSizeMB = file.size / (1024 * 1024);
+    const baseTimeout = 60000; // 60 seconds base
+    const perMBTimeout = 30000; // 30 seconds per MB
+
+    // MIME types that may require OCR (slower processing)
+    const ocrTypes = [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'image/tiff',
+      'image/bmp'
+    ];
+
+    // Calculate base timeout
+    let timeout = baseTimeout + (fileSizeMB * perMBTimeout);
+
+    // Apply OCR multiplier for PDFs and images
+    if (ocrTypes.some(type => file.type.includes(type) || file.name.toLowerCase().endsWith('.pdf'))) {
+      timeout *= 3; // OCR can be 3x slower
+    }
+
+    // Large file bonus
+    if (fileSizeMB > 10) {
+      timeout += 60000; // Extra minute for large files
+    }
+    if (fileSizeMB > 30) {
+      timeout += 120000; // Extra 2 minutes for very large files
+    }
+
+    // Clamp to max 10 minutes
+    const maxTimeout = 600000; // 10 minutes
+    const minTimeout = 60000; // 1 minute minimum
+
+    return Math.min(Math.max(timeout, minTimeout), maxTimeout);
+  },
+
+  /**
+   * Analyze file complexity before upload (for user feedback)
+   */
+  analyzeFileComplexity(file: File): {
+    complexity: 'low' | 'medium' | 'high' | 'very_high';
+    estimatedSeconds: number;
+    warnings: string[];
+    canProcess: boolean;
+  } {
+    const fileSizeMB = file.size / (1024 * 1024);
+    const warnings: string[] = [];
+    let complexity: 'low' | 'medium' | 'high' | 'very_high' = 'low';
+    let estimatedSeconds = 5;
+
+    // Fast parse types
+    const fastTypes = ['text/plain', 'text/csv', 'text/markdown', 'application/json', 'text/html'];
+    const ocrTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
+
+    const isFastType = fastTypes.some(t => file.type.includes(t));
+    const isOcrType = ocrTypes.some(t => file.type.includes(t) || file.name.toLowerCase().endsWith('.pdf'));
+
+    // Estimate processing time
+    if (isFastType) {
+      estimatedSeconds = Math.ceil(2 + fileSizeMB * 0.5);
+      complexity = 'low';
+    } else if (isOcrType) {
+      estimatedSeconds = Math.ceil(10 + fileSizeMB * 8); // OCR is slow
+      complexity = fileSizeMB > 5 ? 'high' : 'medium';
+      warnings.push('PDF/Image files may require OCR, which can take several minutes');
+    } else {
+      estimatedSeconds = Math.ceil(5 + fileSizeMB * 2);
+      complexity = 'medium';
+    }
+
+    // Size-based warnings
+    if (fileSizeMB > 20) {
+      warnings.push(`Large file (${fileSizeMB.toFixed(1)} MB) - processing may take longer`);
+      complexity = complexity === 'low' ? 'medium' : complexity === 'medium' ? 'high' : 'very_high';
+    }
+    if (fileSizeMB > 50) {
+      warnings.push('Very large file - consider splitting into smaller documents');
+      complexity = 'very_high';
+    }
+
+    // Check max size (100MB)
+    const canProcess = fileSizeMB <= 100;
+    if (!canProcess) {
+      warnings.push('File exceeds maximum size of 100MB');
+    }
+
+    return {
+      complexity,
+      estimatedSeconds,
+      warnings,
+      canProcess
+    };
+  },
+
+  /**
+   * Upload single file to draft
+   * POST /api/v1/kb-drafts/{draft_id}/sources/file
+   *
+   * File is parsed by Apache Tika on the backend (supports 15+ formats)
+   * Returns source info including parsed content metadata
+   *
+   * ROBUSTNESS FEATURES:
+   * - Adaptive timeout based on file size and type
+   * - Up to 10 minutes for very large/complex files with OCR
+   * - Detailed error messages with suggestions
+   */
+  async addFileSource(
+    draftId: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    source_id: string;
+    filename: string;
+    file_size: number;
+    mime_type: string;
+    page_count: number;
+    char_count: number;
+    word_count: number;
+    parsing_time_ms: number;
+    message: string;
+    warnings?: string[];
+    preview_pages?: Array<{
+      url: string;
+      title: string;
+      content: string;
+      word_count: number;
+      char_count: number;
+      source_id: string;
+      page_index: number;
+    }>;
+  }> {
+    try {
+      // Analyze file complexity for logging
+      const complexity = this.analyzeFileComplexity(file);
+      console.log(`📄 Uploading file: ${file.name}`);
+      console.log(`   Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`   Complexity: ${complexity.complexity}`);
+      console.log(`   Est. time: ${complexity.estimatedSeconds}s`);
+
+      if (complexity.warnings.length > 0) {
+        console.log(`   Warnings: ${complexity.warnings.join(', ')}`);
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Calculate adaptive timeout based on file characteristics
+      const timeout = this.calculateAdaptiveTimeout(file);
+      console.log(`   Timeout: ${timeout / 1000}s`);
+
+      const response = await apiClient.post(
+        `/kb-drafts/${draftId}/sources/file`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          // Adaptive timeout for robust file processing
+          timeout: timeout,
+          onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
+            if (onProgress && progressEvent.total) {
+              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress(progress);
+            }
+          },
+        }
+      );
+
+      console.log(`✅ File parsed successfully: ${file.name}`);
+      return response.data;
+    } catch (error) {
+      // Provide detailed error messages
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ECONNABORTED') {
+        const fileSizeMB = file.size / (1024 * 1024);
+        const isPDF = file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf');
+
+        let errorMessage = 'File parsing timed out.';
+
+        if (isPDF && fileSizeMB > 10) {
+          errorMessage += '\n\nThis appears to be a large PDF that may contain scanned images requiring OCR.';
+          errorMessage += '\n\nSuggestions:';
+          errorMessage += '\n• Try splitting the PDF into smaller parts';
+          errorMessage += '\n• If the PDF contains scanned images, try using a clearer scan';
+          errorMessage += '\n• Convert to a searchable PDF using Adobe Acrobat or similar';
+        } else if (fileSizeMB > 30) {
+          errorMessage += '\n\nThe file is very large.';
+          errorMessage += '\n\nSuggestions:';
+          errorMessage += '\n• Split the document into smaller parts (< 20MB each)';
+          errorMessage += '\n• Compress the file if possible';
+        } else {
+          errorMessage += '\n\nThe file may be complex or corrupted.';
+          errorMessage += '\n\nSuggestions:';
+          errorMessage += '\n• Try opening and re-saving the file';
+          errorMessage += '\n• Ensure the file is not password-protected';
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Upload multiple files to draft (bulk upload)
+   * POST /api/v1/kb-drafts/{draft_id}/sources/files/bulk
+   *
+   * Uploads up to 20 files at once, each parsed by Tika
+   * Returns summary with per-file results
+   */
+  async addFileSourcesBulk(
+    draftId: string,
+    files: File[],
+    onProgress?: (progress: number, currentFile: string) => void
+  ): Promise<{
+    total_files: number;
+    successful: number;
+    failed: number;
+    total_chars: number;
+    total_words: number;
+    total_pages: number;
+    sources: Array<{
+      source_id: string;
+      filename: string;
+      file_size: number;
+      mime_type: string;
+      page_count: number;
+      char_count: number;
+      word_count: number;
+    }>;
+    failures: Array<{
+      filename: string;
+      error: string;
+    }>;
+    message: string;
+  }> {
+    try {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      const response = await apiClient.post(
+        `/kb-drafts/${draftId}/sources/files/bulk`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          // Extended timeout for bulk files with OCR (10 minutes)
+          timeout: 600000,
+          onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
+            if (onProgress && progressEvent.total) {
+              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress(progress, 'Uploading files...');
+            }
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ECONNABORTED') {
+        throw new Error('Bulk file parsing timed out. Try uploading fewer files or smaller files.');
+      }
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
    * Remove source from draft
    * DELETE /api/v1/kb-drafts/{draft_id}/sources/{source_id}
    */

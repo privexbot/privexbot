@@ -494,6 +494,11 @@ export interface PipelineStatusResponse {
     chunks_created: number;
     embeddings_generated: number;
     vectors_indexed: number;
+    // Source-type aware metrics
+    source_type?: 'web_scraping' | 'file_upload' | 'mixed';
+    total_sources?: number;
+    file_sources?: number;
+    web_sources?: number;
   };
 }
 
