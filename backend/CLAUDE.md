@@ -453,6 +453,45 @@ process_web_kb_task.apply_async(
 - KB status: For determining if retry is needed
 - Always check actual KB status (from database) when determining business logic
 
+### KB Cancel Flow Architecture (CRITICAL)
+
+**Three Cancel Points with Different Behaviors**:
+
+| Operation | Phase | Backend Type | Cancel Mechanism |
+|-----------|-------|--------------|------------------|
+| **Cancel Preview** | Draft (Phase 1) | Sync HTTP | Delete temp draft from Redis |
+| **Cancel File Upload** | Draft (Phase 1) | Sync HTTP | Disabled during upload (Tika is fast) |
+| **Cancel Pipeline** | Processing (Phase 3) | Celery Task | Revoke task + set KB status to failed |
+
+**Cancel Preview** (Frontend: `KBWebSourceForm.tsx`):
+- Creates a TEMPORARY draft for scraping preview
+- On cancel: Deletes the temporary draft via `DELETE /api/v1/kb-drafts/{draft_id}`
+- Backend scraping may continue briefly but draft won't exist to save to
+- Aligned with reject/approve behavior which also cleanup draft
+
+**Cancel File Upload** (Frontend: `KBFileUploadForm.tsx`):
+- Adds sources to EXISTING main draft (not temporary)
+- Cancel button disabled during upload (Tika parsing is fast <5s for most files)
+- Successfully uploaded files remain in draft (user explicitly uploaded them)
+- User can remove sources later via `removeSource()` action
+
+**Cancel Pipeline** (Backend: `kb_pipeline.py`):
+```python
+# Proper Celery task cancellation
+celery_app.control.revoke(celery_task_id, terminate=True, signal='SIGTERM')
+
+# Update pipeline and KB status
+pipeline_status["status"] = "cancelled"
+kb.status = "failed"
+kb.error_message = "Pipeline cancelled by user"
+```
+
+**Key Design Principles**:
+1. Preview creates temp draft → Cancel = delete temp draft
+2. File upload adds to main draft → Cancel disabled during upload, files stay after
+3. Pipeline uses Celery → Cancel = revoke task (proper background job cancellation)
+4. All cancels are consistent with their phase (draft vs processing)
+
 ### 1. Secret AI Integration (Backend-Only)
 
 **CRITICAL**: Secret AI is NEVER exposed to frontend/widget. All AI inference happens on backend.

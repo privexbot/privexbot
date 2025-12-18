@@ -60,6 +60,8 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
   const [previewProgress, setPreviewProgress] = useState<string>('');
   const [canCancelPreview, setCanCancelPreview] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  // Store preview draft ID for cancellation cleanup
+  const [currentPreviewDraftId, setCurrentPreviewDraftId] = useState<string | null>(null);
 
   // Cleanup function to delete temporary preview draft
   const cleanupPreviewDraft = async (draftId: string) => {
@@ -93,6 +95,8 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
       if (previewData.draftId) {
         await cleanupPreviewDraft(previewData.draftId);
       }
+      // Clear tracked draft ID
+      setCurrentPreviewDraftId(null);
 
       // Close preview
       setShowPreview(false);
@@ -120,6 +124,8 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
     if (previewData.draftId) {
       await cleanupPreviewDraft(previewData.draftId);
     }
+    // Clear tracked draft ID
+    setCurrentPreviewDraftId(null);
 
     // Close preview
     setShowPreview(false);
@@ -238,6 +244,8 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
           workspace_id: currentWorkspace?.id || 'default_workspace',
           context: context // Use dynamic context from props
         });
+        // Store draft ID for cancellation cleanup immediately
+        setCurrentPreviewDraftId(previewDraft.draft_id);
         console.log('Created preview draft:', previewDraft.draft_id);
       } catch (draftError) {
         console.error('Failed to create preview draft:', draftError);
@@ -515,6 +523,9 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
       setIsLoadingPreview(false);
       setPreviewProgress('');
       setCanCancelPreview(false);
+      // Clear draft ID on any exit - errors already cleanup draft in catch blocks,
+      // and success path sets previewData which has draftId for approve/reject handlers
+      setCurrentPreviewDraftId(null);
     }
   };
 
@@ -1801,13 +1812,18 @@ https://docs.example.com
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
+                    onClick={async () => {
+                      // Cleanup preview draft from backend (aligns with pipeline cancel behavior)
+                      if (currentPreviewDraftId) {
+                        await cleanupPreviewDraft(currentPreviewDraftId);
+                        setCurrentPreviewDraftId(null);
+                      }
                       setIsLoadingPreview(false);
                       setPreviewProgress('');
                       setCanCancelPreview(false);
                       toast({
                         title: 'Preview Cancelled',
-                        description: 'Preview operation was cancelled by user'
+                        description: 'Preview operation was cancelled and draft cleaned up'
                       });
                     }}
                     className="h-11 px-4 border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-manrope whitespace-nowrap"

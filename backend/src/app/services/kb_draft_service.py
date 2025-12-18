@@ -1269,6 +1269,14 @@ class KBDraftService:
             queue="default"  # Using default queue (web_scraping queue needs to be configured)
         )
 
+        # Store Celery task ID in pipeline status for cancellation support
+        pipeline_data["celery_task_id"] = task.id
+        draft_service.redis_client.setex(
+            f"pipeline:{pipeline_id}:status",
+            86400,  # 24 hour TTL
+            json.dumps(pipeline_data)
+        )
+
         # Delete draft from Redis (cleanup)
         draft_service.delete_draft(DraftType.KB, draft_id)
 
@@ -1276,6 +1284,7 @@ class KBDraftService:
         return {
             "kb_id": str(kb.id),
             "pipeline_id": pipeline_id,
+            "celery_task_id": task.id,  # Include for frontend reference
             "status": "processing",
             "message": "KB created successfully. Processing in background.",
             "tracking_url": f"/api/v1/pipelines/{pipeline_id}/status",

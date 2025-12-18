@@ -33,6 +33,7 @@ import {
   Brain,
   Cpu,
   RefreshCw,
+  XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PipelineStatusResponse } from '@/types/knowledge-base';
@@ -80,6 +81,7 @@ export default function PipelineMonitorPage() {
     retry_available_in_seconds: number | null;
   } | null>(null);
   const [retryLoading, setRetryLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const currentStatus = pipelineId ? activePipelines[pipelineId] : null;
 
@@ -204,6 +206,43 @@ export default function PipelineMonitorPage() {
     }
   };
 
+  const handleCancel = async () => {
+    if (!pipelineId) return;
+
+    // Confirm before cancelling
+    const confirmed = confirm(
+      'Are you sure you want to cancel this pipeline? This will stop all processing and the KB will need to be recreated or retried.'
+    );
+    if (!confirmed) return;
+
+    setCancelLoading(true);
+    try {
+      await kbClient.pipeline.cancel(pipelineId);
+
+      // Stop polling since pipeline is cancelled
+      stopPipelinePolling(pipelineId);
+      setIsPolling(false);
+
+      // Refresh status to show cancelled state
+      await fetchPipelineStatus(pipelineId);
+
+      // Refresh KB details and retry status
+      if (kbId) {
+        const kb = await kbClient.kb.get(kbId);
+        setKbDetails(kb);
+        const status = await kbClient.kb.getRetryStatus(kbId);
+        setRetryStatus(status);
+      }
+
+      console.log('✅ Pipeline cancelled successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to cancel pipeline:', error);
+      alert(`Failed to cancel pipeline: ${error.message || 'Unknown error'}`);
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
   const handleBackToList = () => {
     navigate('/knowledge-bases');
   };
@@ -273,7 +312,10 @@ export default function PipelineMonitorPage() {
         return 'text-green-600';
       case 'failed':
         return 'text-red-600';
+      case 'cancelled':
+        return 'text-amber-600';
       case 'running':
+      case 'processing':
         return 'text-blue-600';
       default:
         return 'text-gray-600';
@@ -286,7 +328,10 @@ export default function PipelineMonitorPage() {
         return 'default'; // Using default instead of 'success'
       case 'failed':
         return 'destructive';
+      case 'cancelled':
+        return 'outline'; // Use outline for cancelled
       case 'running':
+      case 'processing':
         return 'default';
       default:
         return 'secondary';
@@ -525,6 +570,23 @@ export default function PipelineMonitorPage() {
           </Alert>
         )}
 
+        {/* Cancelled Alert */}
+        {currentStatus?.status === 'cancelled' && (
+          <Alert className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-700 rounded-xl shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
+                <XCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <AlertDescription className="flex-1">
+                <strong className="text-amber-900 dark:text-amber-100 font-manrope">Pipeline Cancelled</strong>
+                <div className="text-amber-800 dark:text-amber-200 font-manrope mt-1">
+                  The pipeline was cancelled by user request. You can retry processing using the Retry button.
+                </div>
+              </AlertDescription>
+            </div>
+          </Alert>
+        )}
+
         {/* Actions */}
         <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6">
           {/* Stale Pipeline Warning */}
@@ -562,6 +624,22 @@ export default function PipelineMonitorPage() {
           )}
 
           <div className="flex justify-end gap-3">
+            {/* Cancel button - only show when pipeline is actively running or queued */}
+            {currentStatus && ['running', 'queued', 'processing'].includes(currentStatus.status) && (
+              <Button
+                onClick={handleCancel}
+                disabled={cancelLoading}
+                variant="outline"
+                className="bg-white dark:bg-gray-800 border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg"
+              >
+                {cancelLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4 mr-2" />
+                )}
+                Cancel Pipeline
+              </Button>
+            )}
             {retryStatus?.can_retry && (
               <Button
                 onClick={handleRetry}
