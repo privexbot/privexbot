@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
   ArrowLeft,
@@ -21,7 +21,8 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  XCircle
+  XCircle,
+  Search
 } from 'lucide-react';
 import kbClient from '@/lib/kb-client';
 import { useApp } from '@/contexts/AppContext';
@@ -34,17 +35,22 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
+import { KBTestSearch } from '@/components/kb/KBTestSearch';
 
 export default function KBDetailPage() {
   const { kbId } = useParams<{ kbId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentWorkspace, workspaces } = useApp();
+
+  // Read initial tab from URL query parameter (e.g., ?tab=test-search)
+  const initialTab = searchParams.get('tab') || 'overview';
 
   const [kb, setKb] = useState<KnowledgeBase | null>(null);
   const [documents, setDocuments] = useState<KBDocument[]>([]);
   const [chunks, setChunks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   /**
@@ -507,6 +513,13 @@ export default function KBDetailPage() {
                 className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
               >
                 Settings
+              </TabsTrigger>
+              <TabsTrigger
+                value="test-search"
+                className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+              >
+                <Search className="h-4 w-4 mr-1" />
+                Test Search
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1027,6 +1040,14 @@ export default function KBDetailPage() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="test-search">
+            <KBTestSearch
+              kbId={kbId || ''}
+              kbName={kb.name}
+              kbStatus={kb.status}
+            />
           </TabsContent>
         </Tabs>
 

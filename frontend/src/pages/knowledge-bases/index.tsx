@@ -125,7 +125,7 @@ function UnifiedStatsCard({ stats }: { stats: any }) {
 }
 
 // Modern KB Card Component
-function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, index }: any) {
+function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, index }: any) {
   const getStatusColor = (status: KBStatus) => {
     switch (status) {
       case KBStatus.READY:
@@ -272,7 +272,8 @@ function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, index }: any) {
             <Button
               variant="outline"
               size="sm"
-              className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              onClick={() => onTest(kb.id)}
+              className="font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
             >
               <Activity className="h-3 w-3 mr-1" />
               Test
@@ -337,6 +338,7 @@ export default function KnowledgeBasesPage() {
   const handleViewKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}`);
   const handleViewDocuments = (kbId: string) => navigate(`/knowledge-bases/${kbId}/documents`);
   const handleEditKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}/edit`);
+  const handleTestKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}?tab=test-search`);
 
   const handleDeleteKB = async (kbId: string) => {
     try {
@@ -502,6 +504,7 @@ export default function KnowledgeBasesPage() {
                       onViewDocuments={handleViewDocuments}
                       onEdit={handleEditKB}
                       onDelete={setDeleteKBId}
+                      onTest={handleTestKB}
                     />
                   ))}
                 </motion.div>
@@ -570,6 +573,15 @@ export default function KnowledgeBasesPage() {
                               >
                                 <FileText className="h-4 w-4 mr-1" />
                                 Docs
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleTestKB(kb.id)}
+                                className="flex-1 sm:flex-none font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                              >
+                                <Activity className="h-4 w-4 mr-1" />
+                                Test
                               </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
