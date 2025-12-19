@@ -53,7 +53,7 @@ class Credential(Base):
         PLAINTEXT STRUCTURE (before encryption):
         {
             # For api_key type
-            "api_key": "sk_live_abc123..."
+            "api_key": "secrettt-key_live_abc123..."
 
             # For oauth2 type
             "access_token": "ya29.a0AfH6...",

@@ -3,40 +3,43 @@ Models package - SQLAlchemy ORM models
 
 This file imports all models to ensure they are registered with SQLAlchemy's
 metadata for Alembic migrations to work properly.
-
-NOTE: Only importing models that have actual implementations.
-Other models are still pseudocode and will be imported once implemented.
 """
 
-# Core user and authentication models (IMPLEMENTED)
+# Core user and authentication models
 from app.models.user import User
 from app.models.auth_identity import AuthIdentity
 
-# Multi-tenancy models (IMPLEMENTED)
+# Multi-tenancy models
 from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
 from app.models.invitation import Invitation
 
-# Knowledge Base models (IMPLEMENTED)
+# Knowledge Base models
 from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document
 from app.models.chunk import Chunk
 
-# KB RBAC, Audit, Notifications, Analytics (IMPLEMENTED)
+# KB RBAC, Audit, Notifications, Analytics
 from app.models.kb_member import KBMember
 from app.models.kb_audit_log import KBAuditLog
 from app.models.kb_notification import KBNotification
 from app.models.kb_analytics import KBAnalyticsEvent
 
+# Chatbot models
+from app.models.chatbot import Chatbot, ChatbotStatus
+
+# Chat session and message models
+from app.models.chat_session import ChatSession, SessionStatus, BotType
+from app.models.chat_message import ChatMessage, MessageRole, ContentType
+
+# API Key model
+from app.models.api_key import APIKey, KeyScopeType, create_api_key
+
 # NOTE: The following models are still pseudocode and not imported yet:
-# - Chatbot
 # - Chatflow
-# - ChatSession
-# - ChatMessage
 # - Lead
-# - APIKey
 # - Credential
 
 __all__ = [
@@ -58,4 +61,18 @@ __all__ = [
     "KBAuditLog",
     "KBNotification",
     "KBAnalyticsEvent",
+    # Chatbot
+    "Chatbot",
+    "ChatbotStatus",
+    # Chat Session/Message
+    "ChatSession",
+    "SessionStatus",
+    "BotType",
+    "ChatMessage",
+    "MessageRole",
+    "ContentType",
+    # API Key
+    "APIKey",
+    "KeyScopeType",
+    "create_api_key",
 ]

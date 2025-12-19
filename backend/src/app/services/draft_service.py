@@ -328,13 +328,14 @@ class UnifiedDraftService:
         if not data.get("system_prompt"):
             errors.append("System prompt is required")
 
-        # At least one deployment channel
+        # Check deployment channels (optional - API access is always available)
         deployment = data.get("deployment", {})
         channels = deployment.get("channels", [])
         enabled_channels = [c for c in channels if c.get("enabled")]
 
         if not enabled_channels:
-            errors.append("At least one deployment channel must be enabled")
+            # Just a warning - API access is always available
+            warnings.append("No deployment channels configured - chatbot will only be accessible via API")
 
         # Warnings
         if not data.get("knowledge_bases"):
@@ -469,32 +470,71 @@ class UnifiedDraftService:
             {
                 "chatbot_id": "uuid",
                 "status": "deployed",
+                "api_key": "secrettt-key_live_...",  # Only shown once
                 "channels": {...}
             }
         """
 
-        from app.models.chatbot import Chatbot
-        from app.models.api_key import APIKey
+        from app.models.chatbot import Chatbot, ChatbotStatus
+        from app.models.api_key import create_api_key
 
         data = draft["data"]
 
-        # Create chatbot record
+        # Create chatbot record with proper column mapping
         chatbot = Chatbot(
             workspace_id=UUID(draft["workspace_id"]),
             name=data["name"],
-            config=data,  # Store entire config as JSONB (includes deployment config)
-            created_by=UUID(draft["created_by"])
+            description=data.get("description"),
+            status=ChatbotStatus.ACTIVE,
+            # AI configuration
+            ai_config=data.get("ai_config", {
+                "provider": "secret_ai",
+                "model": data.get("model", "secret-ai-v1"),
+                "temperature": data.get("temperature", 0.7),
+                "max_tokens": data.get("max_tokens", 2000)
+            }),
+            # Prompt configuration
+            prompt_config={
+                "system_prompt": data.get("system_prompt", "You are a helpful assistant."),
+                "persona": data.get("persona", {}),
+                "instructions": data.get("instructions", []),
+                "restrictions": data.get("restrictions", []),
+                "messages": data.get("messages", {})
+            },
+            # Knowledge base integration
+            kb_config={
+                "enabled": bool(data.get("knowledge_bases")),
+                "knowledge_bases": data.get("knowledge_bases", [])
+            },
+            # Branding
+            branding_config=data.get("appearance", data.get("branding", {})),
+            # Deployment
+            deployment_config=data.get("deployment", {}),
+            # Behavior
+            behavior_config={
+                "memory": data.get("memory", {"enabled": True, "max_messages": 20}),
+                "response": data.get("response", {"typing_indicator": True})
+            },
+            # Lead capture
+            lead_capture_config=data.get("lead_capture", {}),
+            # Analytics
+            analytics_config=data.get("analytics", {"track_conversations": True}),
+            # Audit
+            created_by=UUID(draft["created_by"]),
+            deployed_at=datetime.utcnow()
         )
 
         db.add(chatbot)
         db.flush()  # Get chatbot.id without committing
 
-        # Generate primary API key
-        api_key = APIKey(
+        # Generate primary API key using helper function
+        api_key, plain_key = create_api_key(
             workspace_id=chatbot.workspace_id,
+            name=f"API Key for {chatbot.name}",
             entity_type="chatbot",
             entity_id=chatbot.id,
-            created_by=chatbot.created_by
+            created_by=chatbot.created_by,
+            permissions=["read", "execute"]
         )
 
         db.add(api_key)
@@ -505,9 +545,13 @@ class UnifiedDraftService:
             entity_id=chatbot.id,
             entity_type="chatbot",
             deployment_config=data.get("deployment", {}),
-            api_key=api_key.key,
+            api_key=plain_key,  # Use plain key for embed code
             db=db
         )
+
+        # Add API key to response (only shown once)
+        deployment_results["api_key"] = plain_key
+        deployment_results["api_key_prefix"] = api_key.key_prefix
 
         return deployment_results
 

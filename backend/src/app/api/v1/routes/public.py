@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_db
 
 
-router = APIRouter(prefix="/v1/public", tags=["public"])
+router = APIRouter(prefix="/public", tags=["public"])
 
 
 class ChatRequest(BaseModel):
@@ -269,7 +269,7 @@ async def _validate_api_key_and_get_bot(
     Validate API key and return bot.
 
     WHY: Security - ensure valid API key
-    HOW: Check API key matches bot
+    HOW: Hash incoming key and compare with stored hash
 
     RETURNS:
         (bot_type, bot, workspace_id)
@@ -277,11 +277,13 @@ async def _validate_api_key_and_get_bot(
 
     from app.models.api_key import APIKey
     from app.models.chatbot import Chatbot
-    from app.models.chatflow import Chatflow
 
-    # Validate API key
+    # Hash the incoming API key
+    key_hash = APIKey.hash_key(api_key)
+
+    # Look up by hash
     api_key_obj = db.query(APIKey).filter(
-        APIKey.key == api_key,
+        APIKey.key_hash == key_hash,
         APIKey.entity_id == bot_id,
         APIKey.is_active == True
     ).first()
@@ -289,15 +291,27 @@ async def _validate_api_key_and_get_bot(
     if not api_key_obj:
         raise HTTPException(401, "Invalid API key")
 
+    # Check if key is valid (not expired, not revoked)
+    if not api_key_obj.is_valid:
+        if api_key_obj.is_expired:
+            raise HTTPException(401, "API key expired")
+        if api_key_obj.is_revoked:
+            raise HTTPException(401, "API key revoked")
+        raise HTTPException(401, "API key inactive")
+
+    # Record usage
+    api_key_obj.record_usage()
+    db.commit()
+
     # Get bot
     if api_key_obj.entity_type == "chatbot":
-        bot = db.query(Chatbot).get(bot_id)
+        bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
         if not bot:
             raise HTTPException(404, "Chatbot not found")
+        if not bot.is_active:
+            raise HTTPException(400, "Chatbot is not active")
         return "chatbot", bot, bot.workspace_id
 
     else:  # chatflow
-        bot = db.query(Chatflow).get(bot_id)
-        if not bot:
-            raise HTTPException(404, "Chatflow not found")
-        return "chatflow", bot, bot.workspace_id
+        # Chatflow support coming soon
+        raise HTTPException(501, "Chatflow support not yet implemented")

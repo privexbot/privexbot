@@ -174,7 +174,7 @@ WHY: Keep relevant context without overwhelming LLM
 HOW: Rolling window of recent messages
 
 def get_context_messages(session, max_messages=10):
-    """Get recent messages for LLM context."""
+    '''Get recent messages for LLM context.'''
 
     messages = session.messages.order_by(
         ChatMessage.created_at.desc()

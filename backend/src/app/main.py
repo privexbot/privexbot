@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, public
 
 
 @asynccontextmanager
@@ -115,6 +115,20 @@ app.include_router(
 app.include_router(
     enhanced_search.router,
     prefix=settings.API_V1_PREFIX
+)
+
+# Chatbot routes (draft creation, deployment, management)
+app.include_router(
+    chatbot.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["chatbots"]
+)
+
+# Public API routes (unified bot access for widgets and integrations)
+app.include_router(
+    public.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["public"]
 )
 
 

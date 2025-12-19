@@ -119,6 +119,26 @@ class Settings(BaseSettings):
         description="Frontend application URL for generating invitation links"
     )
 
+    # Secret AI Settings
+    SECRET_AI_API_KEY: str = Field(
+        default="",
+        description="Secret AI API key for LLM inference"
+    )
+    SECRET_AI_BASE_URL: str = Field(
+        default="https://api.secret.ai/v1",
+        description="Secret AI API base URL"
+    )
+
+    # Deployment URLs
+    API_BASE_URL: str = Field(
+        default="http://localhost:8000/api/v1",
+        description="Base URL for API webhooks (e.g., Telegram, Discord)"
+    )
+    WIDGET_CDN_URL: str = Field(
+        default="http://localhost:8000/widget",
+        description="CDN URL for widget JavaScript"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env.dev" if os.getenv("ENVIRONMENT") != "production" else None,
         env_file_encoding="utf-8",

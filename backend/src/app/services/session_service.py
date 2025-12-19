@@ -32,6 +32,20 @@ class SessionService:
     Works for BOTH chatbots and chatflows.
     """
 
+    def _parse_or_generate_session_uuid(self, session_id: str) -> UUID:
+        """
+        Parse session_id as UUID or generate a deterministic UUID from the string.
+
+        WHY: session_id can be a UUID or a string like "preview_xxx", "web_xxx"
+        HOW: Try UUID parse first, then use uuid5 for deterministic generation
+        """
+        try:
+            return UUID(session_id)
+        except (ValueError, AttributeError):
+            # Generate deterministic UUID from string using uuid5
+            import uuid as uuid_module
+            return uuid_module.uuid5(uuid_module.NAMESPACE_DNS, session_id)
+
     def get_or_create_session(
         self,
         db: Session,
@@ -51,7 +65,7 @@ class SessionService:
             db: Database session
             bot_type: "chatbot" or "chatflow"
             bot_id: ID of chatbot or chatflow
-            session_id: Client-provided session ID
+            session_id: Client-provided session ID (can be UUID or string like "preview_xxx")
             workspace_id: Workspace ID (for isolation)
             channel_context: Channel-specific data
 
@@ -59,9 +73,12 @@ class SessionService:
             ChatSession instance
         """
 
+        # Parse session_id to UUID (handles both UUID strings and arbitrary strings)
+        session_uuid = self._parse_or_generate_session_uuid(session_id)
+
         # Try to get existing session
         session = db.query(ChatSession).filter(
-            ChatSession.id == UUID(session_id),
+            ChatSession.id == session_uuid,
             ChatSession.workspace_id == workspace_id,
             ChatSession.status != SessionStatus.EXPIRED
         ).first()
@@ -73,13 +90,16 @@ class SessionService:
             db.commit()
             return session
 
-        # Create new session
+        # Create new session with parsed UUID
         session = ChatSession(
-            id=UUID(session_id),
+            id=session_uuid,
             bot_type=BotType(bot_type),
             bot_id=bot_id,
             workspace_id=workspace_id,
-            session_metadata=channel_context or {},
+            session_metadata={
+                **(channel_context or {}),
+                "original_session_id": session_id  # Store original for debugging
+            },
             status=SessionStatus.ACTIVE,
             expires_at=datetime.utcnow() + timedelta(hours=24)
         )
