@@ -704,6 +704,8 @@ def process_web_kb_task(
                         else:
                             postgres_chunks = processing_result.get("postgres_chunks", [])
                             qdrant_chunks = processing_result.get("qdrant_chunks", [])
+                            # CRITICAL FIX: Extract chunking_decision from processing_result
+                            chunking_decision = processing_result.get("chunking_decision")
 
                             # OPTION A: Log different storage strategies
                             if all_file_uploads:
@@ -2092,8 +2094,10 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             # Use new chunking configuration
             chunking_config = new_config['chunking_config']
         else:
-            # Use existing KB chunking configuration or defaults
-            chunking_config = kb.chunking_config or {
+            # Use existing KB chunking configuration from kb.config (not kb.chunking_config)
+            # The chunking config is stored inside the 'config' JSONB column
+            kb_config = kb.config or {}
+            chunking_config = kb_config.get('chunking_config') or {
                 "strategy": "recursive",
                 "chunk_size": 1000,
                 "chunk_overlap": 200
@@ -2104,6 +2108,8 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
         chunk_size = chunking_config.get('chunk_size', 1000)
         chunk_overlap = chunking_config.get('chunk_overlap', 200)
         custom_separators = chunking_config.get('custom_separators', None)  # Support custom separators in reindex
+        preserve_code_blocks = chunking_config.get('preserve_code_blocks', True)  # Keep code blocks intact (default: True)
+        semantic_threshold = chunking_config.get('semantic_threshold', 0.65)  # For semantic chunking strategy
 
         # Extract embedding config from new_config or KB record
         if new_config and new_config.get('embedding_config'):
@@ -2125,21 +2131,28 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
         # Handle nested "settings" structure from frontend
         if "settings" in vector_store_config:
             settings = vector_store_config.get("settings", {})
-            distance_metric = settings.get("distance_metric", "cosine")
+            distance_metric = settings.get("distance_metric", "Cosine")
             hnsw_m = settings.get("hnsw_m", 16)
+            ef_construct = settings.get("ef_construct", 100)
         else:
-            # Flat structure (from model-config endpoint)
-            distance_metric = vector_store_config.get("distance_metric", "cosine")
+            # Flat structure (from model-config endpoint or KBVectorStoreSettings)
+            distance_metric = vector_store_config.get("distance_metric", "Cosine")
             hnsw_m = vector_store_config.get("hnsw_m", 16)
+            ef_construct = vector_store_config.get("ef_construct", 100)
 
-        # Map distance_metric to Qdrant format
+        # Map distance_metric to Qdrant format (handles both lowercase and capitalized)
         qdrant_distance_map = {
             "cosine": "Cosine",
             "euclidean": "Euclid",
+            "euclid": "Euclid",
             "dot": "Dot",
             "dot_product": "Dot"
         }
-        qdrant_distance = qdrant_distance_map.get(distance_metric.lower(), "Cosine")
+        # If already in Qdrant format (capitalized), use as-is; otherwise map
+        if distance_metric in ["Cosine", "Euclid", "Dot"]:
+            qdrant_distance = distance_metric
+        else:
+            qdrant_distance = qdrant_distance_map.get(distance_metric.lower(), "Cosine")
 
         # Update KB status
         kb.status = "reindexing"
@@ -2169,10 +2182,11 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                 kb_id=UUID(kb_id),
                 vector_size=vector_dimension,
                 distance_metric=qdrant_distance,
-                hnsw_m=int(hnsw_m)
+                hnsw_m=int(hnsw_m),
+                ef_construct=int(ef_construct)
             )
         )
-        print(f"🔧 [REINDEX] Qdrant collection recreated (model: {embedding_model}, dim: {vector_dimension}, distance: {qdrant_distance}, hnsw_m: {hnsw_m})")
+        print(f"🔧 [REINDEX] Qdrant collection recreated (model: {embedding_model}, dim: {vector_dimension}, distance: {qdrant_distance}, hnsw_m: {hnsw_m}, ef_construct: {ef_construct})")
 
         # Re-process each document
         total_chunks = 0
@@ -2203,6 +2217,7 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 separators=custom_separators,  # Pass custom separators for "custom" strategy
+                config={"semantic_threshold": semantic_threshold},  # Pass semantic threshold for semantic strategy
                 preserve_code_blocks=preserve_code_blocks  # Pass user's config
             )
 
@@ -2212,7 +2227,7 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                 multi_model_embedding_service.generate_embeddings(
                     chunk_texts,
                     model_name=embedding_model,
-                    batch_size=embedding_batch_size or processing_quality["embedding_batch_size"]
+                    batch_size=embedding_batch_size or 32  # Default batch size if not configured
                 )
             )
 
@@ -2226,14 +2241,15 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                 chunk_character_count = len(chunk_content) if chunk_content else 0
 
                 # Create Chunk in PostgreSQL
+                # NOTE: Chunk model does NOT have workspace_id - it's inherited from KB via kb_id
                 chunk = Chunk(
                     document_id=document.id,
                     kb_id=UUID(kb_id),
-                    workspace_id=kb.workspace_id,
                     content=chunk_content,
                     chunk_index=chunk_idx,
-                    word_count=chunk_word_count,  # CRITICAL FIX: Include word_count for re-indexing
-                    character_count=chunk_character_count,  # CRITICAL FIX: Include character_count for re-indexing
+                    position=chunk_idx,  # Position within document
+                    word_count=chunk_word_count,
+                    character_count=chunk_character_count,
                     embedding=embedding,
                     chunk_metadata={
                         "token_count": chunk_data.get("token_count", 0),

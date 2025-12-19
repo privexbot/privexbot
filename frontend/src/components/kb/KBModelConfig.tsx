@@ -275,9 +275,9 @@ export function KBModelConfig() {
     if (!chunkingConfig || draftSources.length === 0) {
       return {
         chunks: 0,
-        vectorStorage: 0,
-        metadataStorage: 0,
-        totalStorage: 0
+        vectorStorageKB: 0,
+        metadataStorageKB: 0,
+        totalStorageKB: 0
       };
     }
 
@@ -285,15 +285,16 @@ export function KBModelConfig() {
     if (chunkingConfig.strategy === ChunkingStrategy.NO_CHUNKING) {
       const chunks = draftSources.length;
       const vectorSize = currentConfig.embedding.dimensions;
-      const vectorStorage = chunks * vectorSize * 4; // 4 bytes per float
+      const vectorStorageBytes = chunks * vectorSize * 4; // 4 bytes per float
       const avgMetadataPerChunk = 150; // Estimated metadata per chunk (source info, etc.)
-      const metadataStorage = chunks * avgMetadataPerChunk;
+      const metadataStorageBytes = chunks * avgMetadataPerChunk;
+      const totalStorageBytes = vectorStorageBytes + metadataStorageBytes;
 
       return {
         chunks,
-        vectorStorage: Math.round(vectorStorage / 1024 / 1024 * 100) / 100, // MB
-        metadataStorage: Math.round(metadataStorage / 1024 * 100) / 100, // KB
-        totalStorage: Math.round((vectorStorage + metadataStorage) / 1024 / 1024 * 100) / 100 // MB
+        vectorStorageKB: Math.round(vectorStorageBytes / 1024 * 100) / 100, // KB
+        metadataStorageKB: Math.round(metadataStorageBytes / 1024 * 100) / 100, // KB
+        totalStorageKB: Math.round(totalStorageBytes / 1024 * 100) / 100 // KB
       };
     }
 
@@ -321,9 +322,9 @@ export function KBModelConfig() {
     if (totalContent === 0) {
       return {
         chunks: 0,
-        vectorStorage: 0,
-        metadataStorage: 0,
-        totalStorage: 0
+        vectorStorageKB: 0,
+        metadataStorageKB: 0,
+        totalStorageKB: 0
       };
     }
 
@@ -332,18 +333,27 @@ export function KBModelConfig() {
     const chunks = Math.max(1, Math.ceil(totalContent / effectiveChunkSize));
 
     const vectorSize = currentConfig.embedding.dimensions;
-    const vectorStorage = chunks * vectorSize * 4; // 4 bytes per float
+    const vectorStorageBytes = chunks * vectorSize * 4; // 4 bytes per float
 
     // Calculate metadata storage based on actual chunk count and content
     const avgMetadataPerChunk = 120 + Math.min(200, totalContent / chunks * 0.1); // Base metadata + proportional to content
-    const metadataStorage = chunks * avgMetadataPerChunk;
+    const metadataStorageBytes = chunks * avgMetadataPerChunk;
+    const totalStorageBytes = vectorStorageBytes + metadataStorageBytes;
 
     return {
       chunks,
-      vectorStorage: Math.round(vectorStorage / 1024 / 1024 * 100) / 100, // MB
-      metadataStorage: Math.round(metadataStorage / 1024 * 100) / 100, // KB
-      totalStorage: Math.round((vectorStorage + metadataStorage) / 1024 / 1024 * 100) / 100 // MB
+      vectorStorageKB: Math.round(vectorStorageBytes / 1024 * 100) / 100, // KB
+      metadataStorageKB: Math.round(metadataStorageBytes / 1024 * 100) / 100, // KB
+      totalStorageKB: Math.round(totalStorageBytes / 1024 * 100) / 100 // KB
     };
+  };
+
+  // Helper to format storage with appropriate unit (KB or MB)
+  const formatStorage = (kb: number): { value: string; unit: string } => {
+    if (kb >= 1024) {
+      return { value: (kb / 1024).toFixed(2), unit: 'MB' };
+    }
+    return { value: kb.toFixed(2), unit: 'KB' };
   };
 
   const storageEstimate = getStorageEstimate();
@@ -879,26 +889,26 @@ export function KBModelConfig() {
                 </div>
                 <div className="bg-white dark:bg-gray-800/50 border border-blue-100 dark:border-blue-800 rounded-xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope mb-1">
-                    {storageEstimate.vectorStorage}
+                    {formatStorage(storageEstimate.vectorStorageKB).value}
                   </div>
                   <p className="text-sm text-blue-700 dark:text-blue-300 font-manrope font-medium">
-                    Vector Storage (MB)
+                    Vector Storage ({formatStorage(storageEstimate.vectorStorageKB).unit})
                   </p>
                 </div>
                 <div className="bg-white dark:bg-gray-800/50 border border-green-100 dark:border-green-800 rounded-xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope mb-1">
-                    {storageEstimate.metadataStorage}
+                    {formatStorage(storageEstimate.metadataStorageKB).value}
                   </div>
                   <p className="text-sm text-green-700 dark:text-green-300 font-manrope font-medium">
-                    Metadata Storage (KB)
+                    Metadata Storage ({formatStorage(storageEstimate.metadataStorageKB).unit})
                   </p>
                 </div>
                 <div className="bg-white dark:bg-gray-800/50 border border-purple-100 dark:border-purple-800 rounded-xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 font-manrope mb-1">
-                    {storageEstimate.totalStorage}
+                    {formatStorage(storageEstimate.totalStorageKB).value}
                   </div>
                   <p className="text-sm text-purple-700 dark:text-purple-300 font-manrope font-medium">
-                    Total Storage (MB)
+                    Total Storage ({formatStorage(storageEstimate.totalStorageKB).unit})
                   </p>
                 </div>
               </div>

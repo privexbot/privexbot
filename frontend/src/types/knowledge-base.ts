@@ -87,18 +87,22 @@ export type CrawlMethod = (typeof CrawlMethod)[keyof typeof CrawlMethod];
 
 /**
  * Chunking Strategies
+ *
+ * BACKEND ALIGNMENT: Uses chunking_service.py ChunkingStrategy enum
+ * Backend accepts aliases: "sentence_based" -> "by_sentence", "paragraph_based" -> "by_paragraph"
+ * NOTE: Use these exact string values when sending to backend API
  */
 export const ChunkingStrategy = {
-  NO_CHUNKING: "no_chunking",         // Keep content as complete documents
+  RECURSIVE: "recursive",             // Default - splits text recursively on separators
+  ADAPTIVE: "adaptive",               // Auto-selects strategy based on content structure
+  BY_HEADING: "by_heading",           // Split on markdown headings (# ## ###)
+  BY_PARAGRAPH: "paragraph_based",    // Split on paragraph breaks (backend alias: paragraph_based)
+  BY_SENTENCE: "sentence_based",      // Split on sentence boundaries (backend alias: sentence_based)
+  SEMANTIC: "semantic",               // Split on meaning/topic boundaries
+  HYBRID: "hybrid",                   // Combines multiple strategies
+  NO_CHUNKING: "no_chunking",         // Keep documents whole (small docs only)
   FULL_CONTENT: "full_content",       // Alias for no_chunking (backward compatibility)
-  BY_SENTENCE: "by_sentence",         // Split on sentence boundaries
-  BY_PARAGRAPH: "by_paragraph",       // Split on paragraph breaks
-  BY_HEADING: "by_heading",           // Split on markdown headings
-  SEMANTIC: "semantic",               // Split on meaning boundaries
-  ADAPTIVE: "adaptive",               // Dynamic chunking based on content
-  HYBRID: "hybrid",                   // Combination approach
-  CUSTOM: "custom",                   // User-defined separators
-  RECURSIVE: "recursive",             // Recursive text splitting (default)
+  CUSTOM: "custom",                   // User-defined separators (requires custom_separators)
 } as const;
 
 export type ChunkingStrategy =
@@ -120,12 +124,16 @@ export type VectorStoreProvider =
 
 /**
  * Distance Metrics
+ *
+ * BACKEND ALIGNMENT: Qdrant uses capitalized metric names
+ * - "Cosine" (not "cosine")
+ * - "Euclid" (not "euclidean")
+ * - "Dot" (not "dot_product")
  */
 export const DistanceMetric = {
-  COSINE: "cosine",
-  EUCLIDEAN: "euclidean",
-  DOT_PRODUCT: "dot",
-  MANHATTAN: "manhattan",
+  COSINE: "Cosine",     // Qdrant uses "Cosine"
+  EUCLIDEAN: "Euclid",  // Qdrant uses "Euclid" (not "Euclidean")
+  DOT_PRODUCT: "Dot",   // Qdrant uses "Dot"
 } as const;
 
 export type DistanceMetric =
@@ -561,10 +569,18 @@ export interface ChunkingConfig {
 
 /**
  * Embedding Configuration
+ *
+ * BACKEND ALIGNMENT: Uses embedding_service_local.py configuration
+ * - device: "cpu" only (multi_model_embedding_service hardcodes CPU)
+ * - Models: Local sentence-transformers only (no OpenAI)
+ *
+ * NOTE: While the config schema allows "cuda", the actual pipeline
+ * (multi_model_embedding_service) hardcodes device="cpu" at line 521.
+ * GPU support is not currently implemented in the pipeline.
  */
 export interface EmbeddingConfig {
   model: string; // e.g., 'all-MiniLM-L6-v2'
-  device: "cpu" | "gpu";
+  device: "cpu"; // Backend hardcodes CPU in multi_model_embedding_service
   batch_size?: number;
   normalize?: boolean;
 }
@@ -704,12 +720,19 @@ export interface KBSummary {
  */
 export interface KnowledgeBase extends KBSummary {
   sources: AnySource[];
-  chunking_config: ChunkingConfig;
+  // NOTE: Backend returns chunking_config inside 'config' dict, not at top level
+  // Use config?.chunking_config to access it
+  config?: Record<string, any>;  // Raw config dict from backend (contains chunking_config)
+  chunking_config?: ChunkingConfig;  // May be undefined - check config.chunking_config instead
   embedding_config: EmbeddingConfig;
   vector_store_config: VectorStoreConfig;
   created_by: string;
   last_processed_at?: string;
   processing_logs?: PipelineLogEntry[];
+  // Reindexing capability fields (populated by backend based on document source types)
+  source_types?: string[];  // Unique source types in KB (file_upload, web_scraping, text_input)
+  can_reindex?: boolean;    // Whether KB can be reindexed (false if all file uploads)
+  reindex_warning?: string; // Warning message if partial/no reindexing available
 }
 
 /**

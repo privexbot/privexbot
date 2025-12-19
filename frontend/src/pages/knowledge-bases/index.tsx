@@ -171,10 +171,6 @@ function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, index }
                   <Settings className="h-4 w-4 mr-2" />
                   Edit Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Re-chunk
-                </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
                 <DropdownMenuItem onClick={() => onDelete(kb.id)} className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">
                   <Trash2 className="h-4 w-4 mr-2" />

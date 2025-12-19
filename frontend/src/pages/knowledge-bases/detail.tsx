@@ -338,17 +338,24 @@ export default function KBDetailPage() {
                 </div>
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:border-purple-300 dark:hover:border-purple-600 flex-shrink-0 transition-all duration-200">
-                    <MoreHorizontal className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="font-manrope bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 rounded-xl shadow-lg backdrop-blur-sm min-w-[160px]">
-                  <DropdownMenuItem onClick={() => setActiveTab('settings')} className="hover:bg-purple-50 dark:hover:bg-purple-900/30 text-gray-700 dark:text-gray-300 hover:text-purple-700 dark:hover:text-purple-300 transition-colors duration-200 rounded-lg mx-1 my-1">
-                    <Settings className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-3" />
-                    Settings
-                  </DropdownMenuItem>
+              <div className="flex items-center gap-2">
+                {/* Direct Settings Button */}
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/knowledge-bases/${kbId}/edit`)}
+                  className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:border-purple-300 dark:hover:border-purple-600 flex-shrink-0 transition-all duration-200 font-manrope"
+                >
+                  <Settings className="h-4 w-4 mr-2 text-purple-600 dark:text-purple-400" />
+                  Settings
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:border-purple-300 dark:hover:border-purple-600 flex-shrink-0 transition-all duration-200">
+                      <MoreHorizontal className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="font-manrope bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 rounded-xl shadow-lg backdrop-blur-sm min-w-[160px]">
                   <DropdownMenuItem onClick={loadKBData} className="hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-700 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-300 transition-colors duration-200 rounded-lg mx-1 my-1">
                     <RefreshCw className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-3" />
                     Refresh
@@ -361,6 +368,7 @@ export default function KBDetailPage() {
               </DropdownMenu>
             </div>
           </div>
+        </div>
         </div>
 
         {/* Statistics Overview */}
@@ -1004,14 +1012,6 @@ export default function KBDetailPage() {
                           {(kb as any).config?.retrieval_config?.score_threshold ||
                            (kb as any).context_settings?.retrieval_config?.score_threshold ||
                            0.7}
-                        </p>
-                      </div>
-                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
-                        <label className="text-sm font-semibold text-purple-700 dark:text-purple-300 font-manrope block mb-2">Reranking</label>
-                        <p className="text-gray-900 dark:text-gray-100 font-manrope">
-                          {(kb as any).config?.retrieval_config?.rerank_enabled ||
-                           (kb as any).context_settings?.retrieval_config?.rerank_enabled
-                           ? 'Enabled' : 'Disabled'}
                         </p>
                       </div>
                     </div>

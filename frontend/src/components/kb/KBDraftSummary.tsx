@@ -208,12 +208,6 @@ export default function KBDraftSummary({ draftData }: KBDraftSummaryProps) {
               {draftData.indexing_config.enable_hybrid_search ? 'Enabled' : 'Disabled'}
             </p>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">AI Reranking</p>
-            <p className="font-medium">
-              {draftData.indexing_config.enable_reranking ? 'Enabled' : 'Disabled'}
-            </p>
-          </div>
         </div>
       </div>
 

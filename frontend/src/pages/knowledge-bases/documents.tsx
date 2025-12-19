@@ -19,8 +19,7 @@ import {
   MoreHorizontal,
   AlertCircle,
   CheckCircle,
-  Clock,
-  Download
+  Clock
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { KnowledgeBase, KBDocument, formatDocumentSourceType, formatDocumentSource } from '@/types/knowledge-base';
@@ -736,10 +735,6 @@ export default function KBDocumentsPage() {
                             >
                               <Eye className="h-4 w-4 mr-3 text-blue-600 dark:text-blue-400" />
                               View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="font-manrope hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                              <Download className="h-4 w-4 mr-3 text-green-600 dark:text-green-400" />
-                              Download
                             </DropdownMenuItem>
                             {canEditDocument(document) ? (
                               <DropdownMenuItem

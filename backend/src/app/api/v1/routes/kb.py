@@ -14,8 +14,9 @@ HOW:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -234,6 +235,10 @@ class KBDetailResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
     created_by: str
+    # Reindexing capability fields
+    source_types: List[str] = []  # Unique source types in KB (file_upload, web_scraping, text_input)
+    can_reindex: bool = True  # Whether KB can be reindexed (false if all file uploads)
+    reindex_warning: Optional[str] = None  # Warning message if partial reindexing
 
     class Config:
         from_attributes = True
@@ -244,6 +249,13 @@ class ReindexRequest(BaseModel):
     chunking_config: Optional[dict] = Field(None, description="Optional new chunking configuration to apply")
     embedding_config: Optional[dict] = Field(None, description="Optional new embedding configuration")
     vector_store_config: Optional[dict] = Field(None, description="Optional new vector store configuration")
+
+
+class UpdateKBRequest(BaseModel):
+    """Request model for updating KB general settings"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255, description="KB name")
+    description: Optional[str] = Field(None, max_length=2000, description="KB description")
+    context: Optional[str] = Field(None, description="Usage context: chatbot, chatflow, or both")
 
 
 # ========================================
@@ -369,6 +381,21 @@ async def get_kb(
     # Extract stats for both new stats field and legacy compatibility fields
     kb_stats = kb.stats or {}
 
+    # Query document source types for reindexing capability
+    documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+    source_types = list(set(doc.source_type for doc in documents if doc.source_type))
+
+    # Determine reindexing capability based on source types
+    # File uploads cannot be reindexed because content_full is None (Qdrant-only storage)
+    file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
+    total_docs = len(documents)
+
+    # Reindexing is only allowed when ALL documents are web/text sources (no file uploads)
+    # File uploads cannot be rechunked because content_full is None (Qdrant-only storage)
+    # Mixed sources are also not allowed to maintain consistency across all chunks
+    can_reindex = file_upload_count == 0
+    reindex_warning = None
+
     return KBDetailResponse(
         id=str(kb.id),
         name=kb.name,
@@ -387,7 +414,11 @@ async def get_kb(
         error_message=kb.error_message,
         created_at=kb.created_at.isoformat(),
         updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
-        created_by=str(kb.created_by)
+        created_by=str(kb.created_by),
+        # Reindexing capability
+        source_types=source_types,
+        can_reindex=can_reindex,
+        reindex_warning=reindex_warning
     )
 
 
@@ -485,6 +516,101 @@ async def delete_kb(
         )
 
 
+@router.patch("/{kb_id}", response_model=KBDetailResponse)
+async def update_kb(
+    kb_id: UUID,
+    request: UpdateKBRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update KB general settings (name, description, context).
+
+    NOTE: This does NOT trigger reindexing. For configuration changes
+    that require reprocessing (chunking, embedding, vector store),
+    use the /reindex endpoint instead.
+
+    Returns:
+        Updated KB details
+    """
+
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id
+    ).first()
+
+    if not kb:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found"
+        )
+
+    # Update fields if provided
+    if request.name is not None:
+        kb.name = request.name.strip()
+
+    if request.description is not None:
+        kb.description = request.description.strip() if request.description else None
+
+    if request.context is not None:
+        valid_contexts = ["chatbot", "chatflow", "both"]
+        if request.context not in valid_contexts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid context. Must be one of: {valid_contexts}"
+            )
+        kb.context = request.context
+
+    kb.updated_at = datetime.utcnow()
+
+    try:
+        db.commit()
+        db.refresh(kb)
+
+        # Match GET endpoint response structure exactly
+        kb_stats = kb.stats or {}
+
+        # Query document source types for reindexing capability (same logic as GET)
+        documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+        source_types = list(set(doc.source_type for doc in documents if doc.source_type))
+
+        file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
+        total_docs = len(documents)
+
+        # Reindexing only allowed when ALL documents are web/text sources (no file uploads)
+        can_reindex = file_upload_count == 0
+        reindex_warning = None
+
+        return KBDetailResponse(
+            id=str(kb.id),
+            name=kb.name,
+            description=kb.description,
+            workspace_id=str(kb.workspace_id),
+            status=kb.status,
+            context=kb.context or "both",
+            config=kb.config or {},
+            embedding_config=kb.embedding_config or {},
+            vector_store_config=kb.vector_store_config or {},
+            indexing_method=kb.indexing_method or "by_heading",
+            stats=kb_stats,
+            total_documents=kb_stats.get("total_documents", kb.total_documents or 0),
+            total_chunks=kb_stats.get("total_chunks", kb.total_chunks or 0),
+            error_message=kb.error_message,
+            created_at=kb.created_at.isoformat() if kb.created_at else None,
+            updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
+            created_by=str(kb.created_by),
+            source_types=source_types,
+            can_reindex=can_reindex,
+            reindex_warning=reindex_warning
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update KB: {str(e)}"
+        )
+
+
 # ========================================
 # MANAGEMENT ENDPOINTS
 # ========================================
@@ -543,17 +669,32 @@ async def reindex_kb(
     # TODO: Add proper workspace membership check if needed
 
     # Check if KB is in re-indexable state
-    if kb.status not in ["ready", "ready_with_warnings", "failed"]:
+    # Include "reindexing" to allow retry when tasks crash/fail silently
+    if kb.status not in ["ready", "ready_with_warnings", "failed", "reindexing"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot re-index KB with status '{kb.status}'. Wait for current processing to complete."
         )
 
+    # Check if KB has any file uploads - reindexing not allowed
+    # File uploads don't store content_full in PostgreSQL, so they cannot be rechunked
+    documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+    file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
+    if file_upload_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot reindex KB containing file uploads. File content is stored in vectors only and cannot be rechunked."
+        )
+
     # Update configuration if provided
+    # NOTE: chunking_config is stored inside kb.config, not as a direct attribute
     configuration_updated = False
     if request:
         if request.chunking_config:
-            kb.chunking_config = request.chunking_config
+            # Store chunking_config inside kb.config dict
+            if kb.config is None:
+                kb.config = {}
+            kb.config = {**kb.config, "chunking_config": request.chunking_config}
             configuration_updated = True
         if request.embedding_config:
             kb.embedding_config = request.embedding_config
@@ -2314,6 +2455,127 @@ async def delete_kb_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete document: {str(e)}"
         )
+
+
+@router.get("/{kb_id}/documents/{doc_id}/download")
+async def download_kb_document(
+    kb_id: UUID,
+    doc_id: UUID,
+    format: Literal["txt", "md", "json"] = Query("txt", description="Download format: txt, md (markdown), or json"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Download document content in specified format.
+
+    WHY: Export document for backup or external use
+    HOW: Return content with appropriate Content-Type headers
+
+    FORMATS:
+    - txt: Plain text content
+    - md: Markdown with title and metadata
+    - json: Structured JSON with all fields
+    """
+    from app.services.kb_rbac_service import verify_kb_access
+
+    # Verify user has access to KB
+    kb = verify_kb_access(db, kb_id, current_user.id, "view")
+
+    # Get document
+    document = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.kb_id == kb_id
+    ).first()
+
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Check if this is a file upload - content is in Qdrant only, not PostgreSQL
+    # File uploads have: content_full=NULL, chunk_storage_location="qdrant_only"
+    is_file_upload = document.source_type == "file_upload"
+    storage_location = (document.processing_metadata or {}).get("chunk_storage_location", "")
+
+    if is_file_upload or storage_location == "qdrant_only":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Download not available for file uploads. File content is stored in vector database only and cannot be exported."
+        )
+
+    # Get document content
+    # Priority: content_full > reconstructed from chunks (skip content_preview - it's truncated)
+    content = document.content_full
+
+    if not content:
+        # Reconstruct from chunks (only works for web sources where chunks are in PostgreSQL)
+        chunks = db.query(Chunk).filter(
+            Chunk.document_id == doc_id
+        ).order_by(Chunk.chunk_index).all()
+
+        if chunks:
+            content = "\n\n".join([c.content for c in chunks if c.content])
+        else:
+            content = "No content available for this document."
+
+    # Generate safe filename
+    safe_name = "".join(c for c in document.name if c.isalnum() or c in "._- ").strip()
+    if not safe_name:
+        safe_name = f"document_{doc_id}"
+
+    # Format content based on requested format
+    if format == "txt":
+        # Plain text
+        output = content
+        content_type = "text/plain; charset=utf-8"
+        filename = f"{safe_name}.txt"
+
+    elif format == "md":
+        # Markdown with metadata header
+        output = f"""# {document.name}
+
+**Source Type:** {document.source_type}
+**Status:** {document.status}
+**Created:** {document.created_at.isoformat() if document.created_at else 'N/A'}
+**Word Count:** {document.word_count or 0}
+**Chunks:** {document.chunk_count or 0}
+
+---
+
+{content}
+"""
+        content_type = "text/markdown; charset=utf-8"
+        filename = f"{safe_name}.md"
+
+    else:  # json
+        # Structured JSON
+        output_data = {
+            "id": str(document.id),
+            "name": document.name,
+            "source_type": document.source_type,
+            "source_url": document.source_url,
+            "status": document.status,
+            "content": content,
+            "word_count": document.word_count or 0,
+            "character_count": document.character_count or 0,
+            "chunk_count": document.chunk_count or 0,
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+            "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+            "source_metadata": document.source_metadata or {},
+            "custom_metadata": document.custom_metadata or {},
+        }
+        output = json.dumps(output_data, indent=2, ensure_ascii=False)
+        content_type = "application/json; charset=utf-8"
+        filename = f"{safe_name}.json"
+
+    return Response(
+        content=output,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 # ========================================

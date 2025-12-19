@@ -472,35 +472,33 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
               </div>
             </div>
 
-            {/* Enable Enhanced Metadata - Backend supported */}
-            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-start space-x-3 pt-2 border-t border-gray-200 dark:border-gray-600">
-                <Checkbox
-                  id="enable-enhanced-metadata"
-                  checked={chunkingConfig.enable_enhanced_metadata ?? false}
-                  onCheckedChange={(checked) => handleConfigChange('enable_enhanced_metadata', checked)}
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <Label htmlFor="enable-enhanced-metadata" className="text-sm text-gray-700 dark:text-gray-300 font-manrope cursor-pointer flex items-center gap-2">
-                    Enable enhanced chunk metadata
-                    <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 text-xs font-manrope">
-                      Advanced
-                    </Badge>
-                  </Label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1 leading-relaxed">
-                    Adds rich metadata to each chunk including context from surrounding chunks, parent headings, and document structure analysis. Improves retrieval quality but increases processing time.
-                  </p>
-                  {chunkingConfig.enable_enhanced_metadata && (
-                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
-                      <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope">
-                        <strong>Enhanced metadata includes:</strong> context_before, context_after, parent_heading, document_analysis
-                      </p>
-                    </div>
-                  )}
-                </div>
+            {/* Enable Enhanced Metadata - Backend supported - Available for ALL strategies including NO_CHUNKING */}
+            <div className="flex items-start space-x-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+              <Checkbox
+                id="enable-enhanced-metadata"
+                checked={chunkingConfig.enable_enhanced_metadata ?? false}
+                onCheckedChange={(checked) => handleConfigChange('enable_enhanced_metadata', checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <Label htmlFor="enable-enhanced-metadata" className="text-sm text-gray-700 dark:text-gray-300 font-manrope cursor-pointer flex items-center gap-2">
+                  Enable enhanced chunk metadata
+                  <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 text-xs font-manrope">
+                    Advanced
+                  </Badge>
+                </Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1 leading-relaxed">
+                  Adds rich metadata to each chunk including context from surrounding chunks, parent headings, and document structure analysis. Improves retrieval quality but increases processing time.
+                </p>
+                {chunkingConfig.enable_enhanced_metadata && (
+                  <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                    <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope">
+                      <strong>Enhanced metadata includes:</strong> context_before, context_after, parent_heading, document_analysis
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
 

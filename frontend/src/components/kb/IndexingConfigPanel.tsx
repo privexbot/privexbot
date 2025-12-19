@@ -209,28 +209,6 @@ export default function IndexingConfigPanel({ config, onChange }: IndexingConfig
         </div>
       </div>
 
-      {/* Reranking */}
-      <div className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="reranking" className="text-lg font-semibold text-gray-900 dark:text-white font-manrope flex items-center gap-2">
-              <div className="w-6 h-6 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700 rounded-lg flex items-center justify-center">
-                <span className="text-xs">🎯</span>
-              </div>
-              Enable AI Reranking
-            </Label>
-            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
-              Use AI to rerank search results for improved relevance (slower but more accurate)
-            </p>
-          </div>
-          <Switch
-            id="reranking"
-            checked={config.enable_reranking}
-            onCheckedChange={(checked) => updateConfig({ enable_reranking: checked })}
-          />
-        </div>
-      </div>
-
       {/* Performance Impact */}
       <div className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border border-cyan-200 dark:border-cyan-700 rounded-xl p-4 sm:p-6 shadow-sm">
         <h4 className="text-lg font-bold text-cyan-900 dark:text-cyan-100 font-manrope mb-4 flex items-center gap-2">
@@ -249,17 +227,13 @@ export default function IndexingConfigPanel({ config, onChange }: IndexingConfig
           <div className="bg-white dark:bg-gray-800/50 border border-cyan-100 dark:border-cyan-800 rounded-xl p-4 text-center shadow-sm">
             <div className="text-cyan-600 dark:text-cyan-400 text-sm font-medium font-manrope mb-1">Search Latency</div>
             <div className="text-xl font-bold text-cyan-800 dark:text-cyan-200 font-manrope">
-              {config.enable_reranking ? '+100-200ms' : '~50ms'}
+              ~50ms
             </div>
           </div>
           <div className="bg-white dark:bg-gray-800/50 border border-cyan-100 dark:border-cyan-800 rounded-xl p-4 text-center shadow-sm">
             <div className="text-cyan-600 dark:text-cyan-400 text-sm font-medium font-manrope mb-1">Search Quality</div>
             <div className="text-xl font-bold text-cyan-800 dark:text-cyan-200 font-manrope">
-              {config.enable_hybrid_search && config.enable_reranking
-                ? 'Excellent'
-                : config.enable_hybrid_search
-                ? 'Very Good'
-                : 'Good'}
+              {config.enable_hybrid_search ? 'Very Good' : 'Good'}
             </div>
           </div>
         </div>

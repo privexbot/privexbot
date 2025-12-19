@@ -33,6 +33,11 @@ declare global {
   }
 }
 
+// Type-safe accessor for Vite env variables
+function getViteEnv(key: string): string | undefined {
+  return import.meta.env[key] as string | undefined;
+}
+
 /**
  * Get configuration value with fallback priority:
  * 1. Runtime config (window.ENV_CONFIG) - Production
@@ -81,7 +86,7 @@ export const config = {
   get API_BASE_URL() {
     return getConfigValue(
       'API_BASE_URL',
-      import.meta.env.VITE_API_BASE_URL,
+      getViteEnv('VITE_API_BASE_URL'),
       'http://localhost:8000/api/v1'
     );
   },
@@ -93,7 +98,7 @@ export const config = {
   get WIDGET_CDN_URL() {
     return getConfigValue(
       'WIDGET_CDN_URL',
-      import.meta.env.VITE_WIDGET_CDN_URL,
+      getViteEnv('VITE_WIDGET_CDN_URL'),
       'http://localhost:8080'
     );
   },
@@ -105,7 +110,7 @@ export const config = {
   get ENVIRONMENT() {
     return getConfigValue(
       'ENVIRONMENT',
-      import.meta.env.VITE_ENV,
+      getViteEnv('VITE_ENV'),
       'development'
     );
   },
@@ -129,7 +134,8 @@ export const config = {
 // Use setTimeout to ensure DOM and runtime config are loaded
 setTimeout(() => {
   if (config.IS_DEVELOPMENT) {
-    console.log('🔧 App Configuration:', {
+    // eslint-disable-next-line no-console
+    console.info('🔧 App Configuration:', {
       API_BASE_URL: config.API_BASE_URL,
       WIDGET_CDN_URL: config.WIDGET_CDN_URL,
       ENVIRONMENT: config.ENVIRONMENT,

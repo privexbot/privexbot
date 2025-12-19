@@ -116,7 +116,8 @@ services:
       # Enable OCR for scanned documents
       - OCR_STRATEGY=ocr_and_text
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9998/tika || exit 1"]
+      # Use GET request instead of HEAD (--spider) to avoid Tika INFO log noise
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://localhost:9998/tika || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

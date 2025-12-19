@@ -1149,6 +1149,22 @@ export const kbApi = {
   },
 
   /**
+   * Download KB document in specified format
+   * GET /api/v1/kbs/{kb_id}/documents/{doc_id}/download?format={format}
+   */
+  async downloadDocument(kbId: string, docId: string, format: 'txt' | 'md' | 'json' = 'txt'): Promise<Blob> {
+    try {
+      const response = await apiClient.get(`/kbs/${kbId}/documents/${docId}/download`, {
+        params: { format },
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
    * List KB chunks
    * GET /api/v1/kbs/{kb_id}/chunks
    */
