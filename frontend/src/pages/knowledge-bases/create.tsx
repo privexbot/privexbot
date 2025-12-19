@@ -13,10 +13,8 @@ import {
   BookOpen,
   FileText,
   Globe,
-  Type,
   Database,
   Cloud,
-  Link,
   CheckCircle2,
   Settings,
   Brain,
@@ -463,22 +461,6 @@ export default function CreateKnowledgeBasePage() {
       available: true,
     },
     {
-      type: SourceType.TEXT,
-      icon: Type,
-      title: "Text",
-      description: "Paste content directly",
-      subtitle: "Coming Soon",
-      available: false,
-    },
-    {
-      type: SourceType.COMBINE,
-      icon: Link,
-      title: "Combine",
-      description: "Merge multiple sources",
-      subtitle: "Coming Soon",
-      available: false,
-    },
-    {
       type: "integrations" as const,
       icon: Cloud,
       title: "Integrations",
@@ -758,22 +740,6 @@ export default function CreateKnowledgeBasePage() {
                             setActiveSourceType(null);
                           }}
                           onCancel={() => setActiveSourceType(null)}
-                        />
-                      </div>
-                    )}
-
-                    {activeSourceType === SourceType.TEXT && (
-                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
-                        <ComingSoon
-                          title="Text Input"
-                          description="Add content by directly pasting or typing text"
-                          icon={<Type className="h-8 w-8" />}
-                          features={[
-                            "Rich text formatting",
-                            "Markdown support",
-                            "Content templates",
-                            "Auto-save drafts",
-                          ]}
                         />
                       </div>
                     )}
