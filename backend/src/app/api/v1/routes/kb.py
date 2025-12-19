@@ -14,11 +14,13 @@ HOW:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
+import json
 
 from app.db.session import get_db
 from app.api.v1.dependencies import get_current_user
@@ -26,8 +28,111 @@ from app.models.user import User
 from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document
 from app.models.chunk import Chunk
+from app.services.draft_service import draft_service
 
 router = APIRouter(prefix="/kbs", tags=["knowledge_bases"])
+
+
+# ========================================
+# STALE PIPELINE DETECTION
+# ========================================
+
+STALE_PIPELINE_THRESHOLD_SECONDS = 120  # 2 minutes - pipeline is considered stale if queued longer
+
+def get_pipeline_status_for_kb(kb_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Find the most recent pipeline status for a KB.
+
+    WHY: Need to check pipeline status independently of KB status
+    HOW: Scan Redis for pipeline keys matching this KB
+
+    Returns:
+        Pipeline status dict or None if not found
+    """
+    import json
+
+    try:
+        # Find all pipeline keys for this KB
+        pattern = f"pipeline:{kb_id}:*:status"
+        keys = list(draft_service.redis_client.scan_iter(match=pattern, count=100))
+
+        if not keys:
+            # Try alternative pattern (pipeline_id format is kb_id:timestamp)
+            pattern = f"pipeline:{kb_id}*:status"
+            keys = list(draft_service.redis_client.scan_iter(match=pattern, count=100))
+
+        if not keys:
+            return None
+
+        # Get most recent pipeline (by timestamp in key)
+        most_recent = None
+        most_recent_time = 0
+
+        for key in keys:
+            key_str = key.decode() if isinstance(key, bytes) else key
+            # Extract timestamp from key (format: pipeline:kb_id:timestamp:status)
+            parts = key_str.split(":")
+            if len(parts) >= 3:
+                try:
+                    timestamp = int(parts[2]) if parts[2].isdigit() else 0
+                    if timestamp > most_recent_time:
+                        most_recent_time = timestamp
+                        most_recent = key
+                except (ValueError, IndexError):
+                    continue
+
+        if most_recent:
+            data = draft_service.redis_client.get(most_recent)
+            if data:
+                return json.loads(data)
+
+        return None
+
+    except Exception as e:
+        print(f"[get_pipeline_status_for_kb] Error: {e}")
+        return None
+
+
+def is_pipeline_stale(pipeline_status: Dict[str, Any], threshold_seconds: int = STALE_PIPELINE_THRESHOLD_SECONDS) -> bool:
+    """
+    Check if a queued pipeline is stale (exceeded threshold).
+
+    WHY: Detect pipelines that got stuck in queue due to worker issues
+    HOW: Compare created_at timestamp with current time
+
+    Args:
+        pipeline_status: Pipeline status dict from Redis
+        threshold_seconds: Seconds after which queued pipeline is stale
+
+    Returns:
+        True if pipeline is queued and stale, False otherwise
+    """
+    if pipeline_status.get("status") != "queued":
+        return False
+
+    created_at = pipeline_status.get("created_at")
+    if not created_at:
+        return True  # No timestamp = assume stale
+
+    try:
+        created_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        age_seconds = (datetime.utcnow() - created_time.replace(tzinfo=None)).total_seconds()
+        return age_seconds > threshold_seconds
+    except (ValueError, TypeError):
+        return True  # Invalid timestamp = assume stale
+
+
+def get_pipeline_age_seconds(pipeline_status: Dict[str, Any]) -> Optional[float]:
+    """Get age of pipeline in seconds since creation."""
+    created_at = pipeline_status.get("created_at")
+    if not created_at:
+        return None
+
+    try:
+        created_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return (datetime.utcnow() - created_time.replace(tzinfo=None)).total_seconds()
+    except (ValueError, TypeError):
+        return None
 
 
 # ========================================
@@ -98,6 +203,7 @@ class KBResponse(BaseModel):
     description: Optional[str]
     workspace_id: str
     status: str
+    context: str = "both"  # chatbot, chatflow, or both
     stats: dict
     total_documents: int = 0  # Legacy field for frontend compatibility
     total_chunks: int = 0     # Legacy field for frontend compatibility
@@ -117,6 +223,7 @@ class KBDetailResponse(BaseModel):
     description: Optional[str]
     workspace_id: str
     status: str
+    context: str = "both"  # chatbot, chatflow, or both
     config: dict
     embedding_config: dict
     vector_store_config: dict
@@ -128,6 +235,10 @@ class KBDetailResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
     created_by: str
+    # Reindexing capability fields
+    source_types: List[str] = []  # Unique source types in KB (file_upload, web_scraping, text_input)
+    can_reindex: bool = True  # Whether KB can be reindexed (false if all file uploads)
+    reindex_warning: Optional[str] = None  # Warning message if partial reindexing
 
     class Config:
         from_attributes = True
@@ -138,6 +249,13 @@ class ReindexRequest(BaseModel):
     chunking_config: Optional[dict] = Field(None, description="Optional new chunking configuration to apply")
     embedding_config: Optional[dict] = Field(None, description="Optional new embedding configuration")
     vector_store_config: Optional[dict] = Field(None, description="Optional new vector store configuration")
+
+
+class UpdateKBRequest(BaseModel):
+    """Request model for updating KB general settings"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255, description="KB name")
+    description: Optional[str] = Field(None, max_length=2000, description="KB description")
+    context: Optional[str] = Field(None, description="Usage context: chatbot, chatflow, or both")
 
 
 # ========================================
@@ -220,6 +338,7 @@ async def list_kbs(
             description=kb.description,
             workspace_id=str(kb.workspace_id),
             status=kb.status,
+            context=kb.context or "both",  # Include context field
             stats=kb.stats or {},
             # CRITICAL FIX: Populate legacy fields from stats for frontend compatibility
             total_documents=(kb.stats or {}).get("total_documents", kb.total_documents or 0),
@@ -262,12 +381,28 @@ async def get_kb(
     # Extract stats for both new stats field and legacy compatibility fields
     kb_stats = kb.stats or {}
 
+    # Query document source types for reindexing capability
+    documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+    source_types = list(set(doc.source_type for doc in documents if doc.source_type))
+
+    # Determine reindexing capability based on source types
+    # File uploads cannot be reindexed because content_full is None (Qdrant-only storage)
+    file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
+    total_docs = len(documents)
+
+    # Reindexing is only allowed when ALL documents are web/text sources (no file uploads)
+    # File uploads cannot be rechunked because content_full is None (Qdrant-only storage)
+    # Mixed sources are also not allowed to maintain consistency across all chunks
+    can_reindex = file_upload_count == 0
+    reindex_warning = None
+
     return KBDetailResponse(
         id=str(kb.id),
         name=kb.name,
         description=kb.description,
         workspace_id=str(kb.workspace_id),
         status=kb.status,
+        context=kb.context or "both",  # Include context field
         config=kb.config or {},
         embedding_config=kb.embedding_config or {},
         vector_store_config=kb.vector_store_config or {},
@@ -279,7 +414,11 @@ async def get_kb(
         error_message=kb.error_message,
         created_at=kb.created_at.isoformat(),
         updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
-        created_by=str(kb.created_by)
+        created_by=str(kb.created_by),
+        # Reindexing capability
+        source_types=source_types,
+        can_reindex=can_reindex,
+        reindex_warning=reindex_warning
     )
 
 
@@ -377,6 +516,101 @@ async def delete_kb(
         )
 
 
+@router.patch("/{kb_id}", response_model=KBDetailResponse)
+async def update_kb(
+    kb_id: UUID,
+    request: UpdateKBRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update KB general settings (name, description, context).
+
+    NOTE: This does NOT trigger reindexing. For configuration changes
+    that require reprocessing (chunking, embedding, vector store),
+    use the /reindex endpoint instead.
+
+    Returns:
+        Updated KB details
+    """
+
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id
+    ).first()
+
+    if not kb:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found"
+        )
+
+    # Update fields if provided
+    if request.name is not None:
+        kb.name = request.name.strip()
+
+    if request.description is not None:
+        kb.description = request.description.strip() if request.description else None
+
+    if request.context is not None:
+        valid_contexts = ["chatbot", "chatflow", "both"]
+        if request.context not in valid_contexts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid context. Must be one of: {valid_contexts}"
+            )
+        kb.context = request.context
+
+    kb.updated_at = datetime.utcnow()
+
+    try:
+        db.commit()
+        db.refresh(kb)
+
+        # Match GET endpoint response structure exactly
+        kb_stats = kb.stats or {}
+
+        # Query document source types for reindexing capability (same logic as GET)
+        documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+        source_types = list(set(doc.source_type for doc in documents if doc.source_type))
+
+        file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
+        total_docs = len(documents)
+
+        # Reindexing only allowed when ALL documents are web/text sources (no file uploads)
+        can_reindex = file_upload_count == 0
+        reindex_warning = None
+
+        return KBDetailResponse(
+            id=str(kb.id),
+            name=kb.name,
+            description=kb.description,
+            workspace_id=str(kb.workspace_id),
+            status=kb.status,
+            context=kb.context or "both",
+            config=kb.config or {},
+            embedding_config=kb.embedding_config or {},
+            vector_store_config=kb.vector_store_config or {},
+            indexing_method=kb.indexing_method or "by_heading",
+            stats=kb_stats,
+            total_documents=kb_stats.get("total_documents", kb.total_documents or 0),
+            total_chunks=kb_stats.get("total_chunks", kb.total_chunks or 0),
+            error_message=kb.error_message,
+            created_at=kb.created_at.isoformat() if kb.created_at else None,
+            updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
+            created_by=str(kb.created_by),
+            source_types=source_types,
+            can_reindex=can_reindex,
+            reindex_warning=reindex_warning
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update KB: {str(e)}"
+        )
+
+
 # ========================================
 # MANAGEMENT ENDPOINTS
 # ========================================
@@ -435,17 +669,32 @@ async def reindex_kb(
     # TODO: Add proper workspace membership check if needed
 
     # Check if KB is in re-indexable state
-    if kb.status not in ["ready", "ready_with_warnings", "failed"]:
+    # Include "reindexing" to allow retry when tasks crash/fail silently
+    if kb.status not in ["ready", "ready_with_warnings", "failed", "reindexing"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot re-index KB with status '{kb.status}'. Wait for current processing to complete."
         )
 
+    # Check if KB has any file uploads - reindexing not allowed
+    # File uploads don't store content_full in PostgreSQL, so they cannot be rechunked
+    documents = db.query(Document).filter(Document.kb_id == kb_id).all()
+    file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
+    if file_upload_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot reindex KB containing file uploads. File content is stored in vectors only and cannot be rechunked."
+        )
+
     # Update configuration if provided
+    # NOTE: chunking_config is stored inside kb.config, not as a direct attribute
     configuration_updated = False
     if request:
         if request.chunking_config:
-            kb.chunking_config = request.chunking_config
+            # Store chunking_config inside kb.config dict
+            if kb.config is None:
+                kb.config = {}
+            kb.config = {**kb.config, "chunking_config": request.chunking_config}
             configuration_updated = True
         if request.embedding_config:
             kb.embedding_config = request.embedding_config
@@ -493,6 +742,100 @@ class RetryRequest(BaseModel):
     config_overrides: Optional[Dict[str, Any]] = Field(None, description="Configuration overrides to apply during retry")
     preserve_existing_chunks: bool = Field(False, description="Whether to preserve existing chunks and only retry failed operations")
     retry_stages: Optional[List[str]] = Field(None, description="Specific stages to retry: ['scraping', 'chunking', 'embedding', 'indexing']")
+
+
+@router.get("/{kb_id}/retry-status")
+async def get_kb_retry_status(
+    kb_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the retry status for a KB - whether it can be retried and why.
+
+    WHY: Frontend needs to know when to show retry button
+    HOW: Check KB status and pipeline status for staleness
+
+    Returns:
+        {
+            "can_retry": bool,
+            "reason": str,
+            "kb_status": str,
+            "pipeline_status": str | null,
+            "pipeline_age_seconds": int | null,
+            "is_stale": bool,
+            "stale_threshold_seconds": int,
+            "retry_available_in_seconds": int | null
+        }
+    """
+    kb = get_kb_with_deletion_check(kb_id, db)
+
+    # Check KB status
+    kb_status = kb.status
+    pipeline_status = None
+    pipeline_age = None
+    is_stale = False
+    can_retry = False
+    reason = ""
+    retry_available_in = None
+
+    # Direct retry states
+    if kb_status in ["failed", "error", "processing_failed"]:
+        can_retry = True
+        reason = f"KB failed with status: {kb_status}"
+    elif kb_status == "ready":
+        can_retry = False
+        reason = "KB is ready - no retry needed"
+    elif kb_status == "deleting":
+        can_retry = False
+        reason = "KB is being deleted"
+    elif kb_status == "processing":
+        # Check pipeline status
+        pipeline_data = get_pipeline_status_for_kb(str(kb_id))
+        if pipeline_data:
+            pipeline_status = pipeline_data.get("status")
+            pipeline_age = get_pipeline_age_seconds(pipeline_data)
+
+            if pipeline_status == "queued":
+                is_stale = is_pipeline_stale(pipeline_data)
+                if is_stale:
+                    can_retry = True
+                    reason = f"Pipeline stuck in queue for {int(pipeline_age or 0)}s (threshold: {STALE_PIPELINE_THRESHOLD_SECONDS}s)"
+                else:
+                    can_retry = False
+                    retry_available_in = max(0, STALE_PIPELINE_THRESHOLD_SECONDS - int(pipeline_age or 0))
+                    reason = f"Pipeline queued for {int(pipeline_age or 0)}s - retry available in {retry_available_in}s"
+            elif pipeline_status == "running":
+                can_retry = False
+                reason = "Pipeline is currently running"
+            elif pipeline_status in ["completed", "failed"]:
+                # Pipeline finished but KB not updated - stale state
+                can_retry = True
+                is_stale = True
+                reason = f"Pipeline {pipeline_status} but KB status not updated"
+            else:
+                can_retry = False
+                reason = f"Unknown pipeline status: {pipeline_status}"
+        else:
+            # No pipeline found - orphaned KB
+            can_retry = True
+            is_stale = True
+            reason = "No pipeline found - orphaned KB in processing state"
+    else:
+        can_retry = False
+        reason = f"Unknown KB status: {kb_status}"
+
+    return {
+        "can_retry": can_retry,
+        "reason": reason,
+        "kb_status": kb_status,
+        "pipeline_status": pipeline_status,
+        "pipeline_age_seconds": int(pipeline_age) if pipeline_age else None,
+        "is_stale": is_stale,
+        "stale_threshold_seconds": STALE_PIPELINE_THRESHOLD_SECONDS,
+        "retry_available_in_seconds": retry_available_in
+    }
+
 
 @router.post("/{kb_id}/retry-processing")
 async def retry_kb_processing(
@@ -556,11 +899,51 @@ async def retry_kb_processing(
     # TODO: Add proper workspace membership check if needed
 
     # Check if KB is in a retryable state
-    if kb.status not in ["failed", "error", "processing_failed"]:
+    # ENHANCED: Also allow retry for stale queued pipelines (KB status "processing" but pipeline stuck in "queued")
+    is_stale_queued = False
+    pipeline_age = None
+
+    if kb.status == "processing":
+        # Check if pipeline is stale (queued for too long)
+        pipeline_status = get_pipeline_status_for_kb(str(kb_id))
+        if pipeline_status:
+            is_stale_queued = is_pipeline_stale(pipeline_status)
+            pipeline_age = get_pipeline_age_seconds(pipeline_status)
+
+            if not is_stale_queued:
+                # Pipeline exists and is not stale - check if it's still actively queued
+                if pipeline_status.get("status") == "queued":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "message": f"Pipeline is still queued (age: {int(pipeline_age or 0)}s). Wait {STALE_PIPELINE_THRESHOLD_SECONDS}s before retry.",
+                            "kb_status": kb.status,
+                            "pipeline_status": pipeline_status.get("status"),
+                            "pipeline_age_seconds": int(pipeline_age or 0),
+                            "stale_threshold_seconds": STALE_PIPELINE_THRESHOLD_SECONDS,
+                            "retry_available_in_seconds": max(0, STALE_PIPELINE_THRESHOLD_SECONDS - int(pipeline_age or 0))
+                        }
+                    )
+                elif pipeline_status.get("status") == "running":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Pipeline is currently running. Cannot retry while processing is in progress."
+                    )
+        else:
+            # No pipeline found - KB is in processing state but no pipeline tracking
+            # This is an orphaned KB - allow retry
+            is_stale_queued = True
+            print(f"[retry_kb_processing] KB {kb_id} has no pipeline tracking - treating as stale/orphaned")
+
+    if kb.status not in ["failed", "error", "processing_failed"] and not is_stale_queued:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot retry KB with status '{kb.status}'. Only failed KBs can be retried."
+            detail=f"Cannot retry KB with status '{kb.status}'. Only failed or stale KBs can be retried."
         )
+
+    # Log retry reason
+    if is_stale_queued:
+        print(f"[retry_kb_processing] Retrying stale queued KB {kb_id} (age: {pipeline_age}s, status: {kb.status})")
 
     # Extract configuration overrides for enhanced retry
     config_overrides = None
@@ -1362,6 +1745,19 @@ async def create_kb_document(
             detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
         )
 
+    # CRITICAL: Check if this is a file-upload-only KB
+    # File-upload KBs should only accept file uploads, not text documents
+    existing_docs = db.query(Document).filter(Document.kb_id == kb_id).all()
+    is_file_upload_kb = len(existing_docs) > 0 and all(
+        doc.source_type == "file_upload" for doc in existing_docs
+    )
+
+    if is_file_upload_kb:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This knowledge base was created with file uploads. Text documents cannot be added. Please use the file upload feature instead."
+        )
+
     # Create document record
     try:
         new_document = Document(
@@ -1486,66 +1882,115 @@ async def upload_kb_document(
     # Verify user has edit access
     kb = verify_kb_access(db, kb_id, current_user.id, "edit")
 
-    # File validation
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    # File validation - basic checks
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No filename provided"
         )
 
-    # Read file content
+    # Read file content first
     try:
         content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File too large (max {MAX_FILE_SIZE / 1024 / 1024}MB)"
-            )
 
         if len(content) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Empty file"
             )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to read file: {str(e)}"
         )
 
-    # Simple content extraction for supported file types
+    # Check document limit per KB
+    MAX_DOCUMENTS_PER_KB = 10000
+    doc_count = db.query(Document).filter(Document.kb_id == kb_id).count()
+    if doc_count >= MAX_DOCUMENTS_PER_KB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
+        )
+
+    # CRITICAL: Detect if this KB is a file-upload-only KB BEFORE parsing
+    # This determines which parsing strategy and file size limit to use:
+    # - File-upload KBs: Use Tika for robust parsing (PDF, Word, etc.), 50MB limit
+    # - Web URL KBs: Use simple parsing (.txt, .md, .json, .csv), 10MB limit
+    existing_docs = db.query(Document).filter(Document.kb_id == kb_id).all()
+    is_file_upload_kb = len(existing_docs) > 0 and all(
+        doc.source_type == "file_upload" for doc in existing_docs
+    )
+
+    # File size validation - different limits based on KB type
+    MAX_FILE_SIZE_WEB_URL = 10 * 1024 * 1024   # 10MB for web URL KBs
+    MAX_FILE_SIZE_FILE_UPLOAD = 50 * 1024 * 1024  # 50MB for file-upload KBs
+    max_file_size = MAX_FILE_SIZE_FILE_UPLOAD if is_file_upload_kb else MAX_FILE_SIZE_WEB_URL
+
+    if len(content) > max_file_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large (max {max_file_size / 1024 / 1024:.0f}MB for {'file upload' if is_file_upload_kb else 'web URL'} knowledge bases)"
+        )
+
+    file_extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+    document_title = file.filename.rsplit('.', 1)[0] if '.' in file.filename else file.filename
+
+    # Content extraction - strategy depends on KB type
     try:
-        file_extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+        if is_file_upload_kb:
+            # ROBUST PARSING: File-upload-only KBs use Tika for 15+ formats
+            # This matches the original KB creation flow
+            from app.services.tika_service import tika_service
+            from io import BytesIO
 
-        if file_extension in ['txt', 'md']:
-            # Plain text files
-            parsed_content = content.decode('utf-8', errors='ignore')
-            document_title = file.filename.rsplit('.', 1)[0]
+            try:
+                parsed_file = await tika_service.parse_file(
+                    file_stream=BytesIO(content),
+                    filename=file.filename,
+                    metadata_only=False
+                )
+                parsed_content = parsed_file.content
+                document_title = parsed_file.metadata.get("title", document_title) or document_title
 
-        elif file_extension == 'json':
-            # JSON files
-            import json
-            json_data = json.loads(content.decode('utf-8'))
-            parsed_content = json.dumps(json_data, indent=2)
-            document_title = file.filename.rsplit('.', 1)[0]
-
-        elif file_extension == 'csv':
-            # CSV files
-            import csv
-            import io
-
-            csv_content = content.decode('utf-8', errors='ignore')
-            csv_reader = csv.reader(io.StringIO(csv_content))
-            parsed_content = "\n".join([", ".join(row) for row in csv_reader])
-            document_title = file.filename.rsplit('.', 1)[0]
-
+                print(f"[KB Upload] Tika parsed file: {file.filename}, {len(parsed_content)} chars")
+            except Exception as tika_error:
+                print(f"[KB Upload] Tika parsing failed: {tika_error}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to parse file with Tika: {str(tika_error)}"
+                )
         else:
-            # Unsupported file type - provide clear guidance
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported file format: .{file_extension}. Currently supported: .txt, .md, .json, .csv"
-            )
+            # SIMPLE PARSING: Web URL KBs use simple text extraction
+            # Only supports .txt, .md, .json, .csv
+            if file_extension in ['txt', 'md']:
+                # Plain text files
+                parsed_content = content.decode('utf-8', errors='ignore')
+
+            elif file_extension == 'json':
+                # JSON files
+                json_data = json.loads(content.decode('utf-8'))
+                parsed_content = json.dumps(json_data, indent=2)
+
+            elif file_extension == 'csv':
+                # CSV files
+                import csv
+                import io
+
+                csv_content = content.decode('utf-8', errors='ignore')
+                csv_reader = csv.reader(io.StringIO(csv_content))
+                parsed_content = "\n".join([", ".join(row) for row in csv_reader])
+
+            else:
+                # Unsupported file type for web URL KBs
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unsupported file format for web URL knowledge bases: .{file_extension}. "
+                           f"Supported formats: .txt, .md, .json, .csv. "
+                           f"For more file formats (PDF, Word, etc.), create a new KB using file upload."
+                )
 
         if len(parsed_content.strip()) < 50:
             raise HTTPException(
@@ -1571,33 +2016,47 @@ async def upload_kb_document(
             detail=f"Failed to parse file: {str(e)}"
         )
 
-    # Check document limit per KB
-    MAX_DOCUMENTS_PER_KB = 10000
-    doc_count = db.query(Document).filter(Document.kb_id == kb_id).count()
-    if doc_count >= MAX_DOCUMENTS_PER_KB:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"KB document limit reached ({MAX_DOCUMENTS_PER_KB})"
-        )
+    # Create approved_sources structure for file uploads (matches finalization flow)
+    approved_sources = [{
+        "url": f"file://{file.filename}",
+        "title": document_title,
+        "content": parsed_content,
+        "markdown": parsed_content,
+        "is_edited": False,
+        "source": "file_upload",
+        "metadata": {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "file_size": len(content),
+        },
+        "approved_at": datetime.utcnow().isoformat(),
+        "approved_by": str(current_user.id)
+    }]
 
-    # Create document record
+    # Create document record with proper storage pattern based on KB type
+    # - Web URL KBs: Store content in PostgreSQL (consistent with text documents)
+    # - File Upload KBs: No content in PostgreSQL (Qdrant-only for privacy)
     try:
         new_document = Document(
             kb_id=kb_id,
             workspace_id=kb.workspace_id,
             name=document_title,
             source_type="file_upload",
-            source_url=None,
+            source_url=f"file:///{file.filename}",  # Triple slash to match pipeline tasks
             source_metadata={
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "file_size": len(content),
                 "uploaded_by": str(current_user.id),
                 "created_via": "api",
-                "method": "file_upload"
+                "method": "file_upload",
+                "approved_sources": approved_sources  # Store content in metadata for processing
             },
-            content_full=parsed_content,
-            content_preview=parsed_content[:500] if len(parsed_content) > 500 else parsed_content,
+            # Storage pattern based on KB type:
+            # - Web URL KBs: Store content (like text documents) for consistency
+            # - File Upload KBs: No content in PostgreSQL (Qdrant-only)
+            content_full=parsed_content if not is_file_upload_kb else None,
+            content_preview=(parsed_content[:500] if len(parsed_content) > 500 else parsed_content) if not is_file_upload_kb else None,
             status="processing",
             processing_progress=0,
             word_count=len(parsed_content.split()),
@@ -1614,14 +2073,18 @@ async def upload_kb_document(
         db.commit()
         db.refresh(new_document)
 
-        # Queue background processing using same task as text documents
-        from app.tasks.document_processing_tasks import process_document_task
+        # Queue background processing with file upload flow
+        # Use the same task that handles file uploads with KB config inheritance
+        from app.tasks.document_processing_tasks import process_file_upload_document_task
 
-        task = process_document_task.apply_async(
+        task = process_file_upload_document_task.apply_async(
             kwargs={
                 "document_id": str(new_document.id),
                 "content": parsed_content,
-                "kb_config": kb.config or {}
+                "kb_config": kb.config or {},
+                "chunking_config": kb.config.get("chunking_config", {}) if kb.config else {},
+                "embedding_config": kb.embedding_config or {},
+                "skip_postgres_chunks": is_file_upload_kb  # Metadata-only storage for file upload KBs
             },
             queue="default"
         )
@@ -1992,6 +2455,127 @@ async def delete_kb_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete document: {str(e)}"
         )
+
+
+@router.get("/{kb_id}/documents/{doc_id}/download")
+async def download_kb_document(
+    kb_id: UUID,
+    doc_id: UUID,
+    format: Literal["txt", "md", "json"] = Query("txt", description="Download format: txt, md (markdown), or json"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Download document content in specified format.
+
+    WHY: Export document for backup or external use
+    HOW: Return content with appropriate Content-Type headers
+
+    FORMATS:
+    - txt: Plain text content
+    - md: Markdown with title and metadata
+    - json: Structured JSON with all fields
+    """
+    from app.services.kb_rbac_service import verify_kb_access
+
+    # Verify user has access to KB
+    kb = verify_kb_access(db, kb_id, current_user.id, "view")
+
+    # Get document
+    document = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.kb_id == kb_id
+    ).first()
+
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Check if this is a file upload - content is in Qdrant only, not PostgreSQL
+    # File uploads have: content_full=NULL, chunk_storage_location="qdrant_only"
+    is_file_upload = document.source_type == "file_upload"
+    storage_location = (document.processing_metadata or {}).get("chunk_storage_location", "")
+
+    if is_file_upload or storage_location == "qdrant_only":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Download not available for file uploads. File content is stored in vector database only and cannot be exported."
+        )
+
+    # Get document content
+    # Priority: content_full > reconstructed from chunks (skip content_preview - it's truncated)
+    content = document.content_full
+
+    if not content:
+        # Reconstruct from chunks (only works for web sources where chunks are in PostgreSQL)
+        chunks = db.query(Chunk).filter(
+            Chunk.document_id == doc_id
+        ).order_by(Chunk.chunk_index).all()
+
+        if chunks:
+            content = "\n\n".join([c.content for c in chunks if c.content])
+        else:
+            content = "No content available for this document."
+
+    # Generate safe filename
+    safe_name = "".join(c for c in document.name if c.isalnum() or c in "._- ").strip()
+    if not safe_name:
+        safe_name = f"document_{doc_id}"
+
+    # Format content based on requested format
+    if format == "txt":
+        # Plain text
+        output = content
+        content_type = "text/plain; charset=utf-8"
+        filename = f"{safe_name}.txt"
+
+    elif format == "md":
+        # Markdown with metadata header
+        output = f"""# {document.name}
+
+**Source Type:** {document.source_type}
+**Status:** {document.status}
+**Created:** {document.created_at.isoformat() if document.created_at else 'N/A'}
+**Word Count:** {document.word_count or 0}
+**Chunks:** {document.chunk_count or 0}
+
+---
+
+{content}
+"""
+        content_type = "text/markdown; charset=utf-8"
+        filename = f"{safe_name}.md"
+
+    else:  # json
+        # Structured JSON
+        output_data = {
+            "id": str(document.id),
+            "name": document.name,
+            "source_type": document.source_type,
+            "source_url": document.source_url,
+            "status": document.status,
+            "content": content,
+            "word_count": document.word_count or 0,
+            "character_count": document.character_count or 0,
+            "chunk_count": document.chunk_count or 0,
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+            "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+            "source_metadata": document.source_metadata or {},
+            "custom_metadata": document.custom_metadata or {},
+        }
+        output = json.dumps(output_data, indent=2, ensure_ascii=False)
+        content_type = "application/json; charset=utf-8"
+        filename = f"{safe_name}.json"
+
+    return Response(
+        content=output,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 # ========================================

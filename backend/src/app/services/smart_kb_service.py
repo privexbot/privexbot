@@ -29,6 +29,7 @@ import json
 from datetime import datetime
 
 from app.services.chunking_service import chunking_service
+from app.services.enhanced_chunking_service import enhanced_chunking_service, EnhancedChunkConfig
 from app.services.embedding_service_local import embedding_service
 from app.services.qdrant_service import qdrant_service, QdrantChunk
 from app.models.document import Document
@@ -154,10 +155,6 @@ class SmartKBService:
         # Get user's explicit parameters (from API call, etc.)
         user_config = user_config or {}
 
-        # DEBUG: Log user config processing
-        print(f"[DEBUG] Smart KB Service - user_config: {user_config}")
-        print(f"[DEBUG] Smart KB Service - chunking_config from KB: {chunking_config}")
-
         # Check for explicit user preferences (highest priority)
         user_strategy = (
             user_config.get("strategy") or
@@ -172,14 +169,8 @@ class SmartKBService:
             chunking_config.get("chunk_overlap")
         )
 
-        # DEBUG: Log extracted user preferences
-        print(f"[DEBUG] Smart KB Service - user_strategy: {user_strategy}")
-        print(f"[DEBUG] Smart KB Service - user_chunk_size: {user_chunk_size}")
-        print(f"[DEBUG] Smart KB Service - user_chunk_overlap: {user_chunk_overlap}")
-
         # Special handling for no_chunking strategies - size/overlap are irrelevant
         if user_strategy in ("no_chunking", "full_content"):
-            print(f"[DEBUG] Smart KB Service - Using NO_CHUNKING strategy: {user_strategy}")
             return ChunkingDecision(
                 strategy=user_strategy,
                 chunk_size=len(content),  # Full content size
@@ -191,7 +182,6 @@ class SmartKBService:
 
         # If user has explicit preferences for other strategies, use them
         if user_strategy and user_chunk_size and user_chunk_overlap:
-            print(f"[DEBUG] Smart KB Service - Using FULL user preferences: strategy={user_strategy}, size={user_chunk_size}, overlap={user_chunk_overlap}")
             return ChunkingDecision(
                 strategy=user_strategy,
                 chunk_size=user_chunk_size,
@@ -202,17 +192,13 @@ class SmartKBService:
             )
 
         # If partial user preferences, get adaptive suggestions for missing parts
-        print(f"[DEBUG] Smart KB Service - Using PARTIAL/ADAPTIVE preferences, analyzing content...")
         adaptive_analysis = self._analyze_content_for_adaptive_suggestions(content, title, kb)
-        print(f"[DEBUG] Smart KB Service - Adaptive analysis: {adaptive_analysis}")
 
         final_strategy = user_strategy or adaptive_analysis["recommended_strategy"]
         final_chunk_size = user_chunk_size or adaptive_analysis["recommended_chunk_size"]
         final_chunk_overlap = user_chunk_overlap or adaptive_analysis["recommended_overlap"]
 
         user_preference = bool(user_strategy or user_chunk_size or user_chunk_overlap)
-
-        print(f"[DEBUG] Smart KB Service - Final decision: strategy={final_strategy}, size={final_chunk_size}, overlap={final_chunk_overlap}, user_preference={user_preference}")
 
         reasoning_parts = []
         if user_strategy:
@@ -238,6 +224,158 @@ class SmartKBService:
             adaptive_suggestion=adaptive_analysis["recommended_strategy"],
             reasoning="; ".join(reasoning_parts)
         )
+
+    def make_chunking_decision_for_preview(
+        self,
+        content: str,
+        title: str,
+        user_config: Optional[Dict] = None,
+        draft_context: str = "both"
+    ) -> ChunkingDecision:
+        """
+        Make chunking decision for PREVIEW - uses same logic as production for parity.
+
+        This method mirrors make_chunking_decision() but works without a KB object,
+        using draft data instead. This ensures preview shows EXACTLY what production
+        will produce.
+
+        Args:
+            content: The content to chunk
+            title: Document/source title for content type detection
+            user_config: User's chunking configuration from preview request
+            draft_context: Draft context ("chatbots", "chatflows", "both") for access-based sizing
+
+        Returns:
+            ChunkingDecision with the same logic as production
+        """
+        user_config = user_config or {}
+
+        # Extract user preferences
+        user_strategy = user_config.get("strategy")
+        user_chunk_size = user_config.get("chunk_size")
+        user_chunk_overlap = user_config.get("chunk_overlap")
+
+        print(f"[PREVIEW] Smart KB Service - user_config: {user_config}")
+        print(f"[PREVIEW] Smart KB Service - user_strategy: {user_strategy}, size: {user_chunk_size}, overlap: {user_chunk_overlap}")
+
+        # Special handling for no_chunking strategies
+        if user_strategy in ("no_chunking", "full_content"):
+            print(f"[PREVIEW] Using NO_CHUNKING strategy: {user_strategy}")
+            return ChunkingDecision(
+                strategy=user_strategy,
+                chunk_size=len(content),
+                chunk_overlap=0,
+                user_preference=True,
+                adaptive_suggestion="N/A - no chunking strategy",
+                reasoning=f"No chunking strategy selected: {user_strategy}"
+            )
+
+        # If user has ALL explicit preferences, use them directly (same as production)
+        if user_strategy and user_chunk_size and user_chunk_overlap:
+            print(f"[PREVIEW] Using FULL user preferences: strategy={user_strategy}, size={user_chunk_size}, overlap={user_chunk_overlap}")
+            return ChunkingDecision(
+                strategy=user_strategy,
+                chunk_size=user_chunk_size,
+                chunk_overlap=user_chunk_overlap,
+                user_preference=True,
+                adaptive_suggestion="N/A - user preference used",
+                reasoning=f"User explicitly configured: strategy={user_strategy}, size={user_chunk_size}, overlap={user_chunk_overlap}"
+            )
+
+        # PARTIAL config: Use adaptive suggestions for missing parts (SAME AS PRODUCTION)
+        print(f"[PREVIEW] Using PARTIAL/ADAPTIVE preferences, analyzing content...")
+        adaptive_analysis = self._analyze_content_for_preview(content, title, draft_context)
+        print(f"[PREVIEW] Adaptive analysis: {adaptive_analysis}")
+
+        final_strategy = user_strategy or adaptive_analysis["recommended_strategy"]
+        final_chunk_size = user_chunk_size or adaptive_analysis["recommended_chunk_size"]
+        final_chunk_overlap = user_chunk_overlap or adaptive_analysis["recommended_overlap"]
+
+        user_preference = bool(user_strategy or user_chunk_size or user_chunk_overlap)
+
+        print(f"[PREVIEW] Final decision: strategy={final_strategy}, size={final_chunk_size}, overlap={final_chunk_overlap}")
+
+        reasoning_parts = []
+        if user_strategy:
+            reasoning_parts.append(f"strategy: user choice ({user_strategy})")
+        else:
+            reasoning_parts.append(f"strategy: adaptive suggestion ({final_strategy})")
+
+        if user_chunk_size:
+            reasoning_parts.append(f"size: user choice ({user_chunk_size})")
+        else:
+            reasoning_parts.append(f"size: adaptive suggestion ({final_chunk_size})")
+
+        if user_chunk_overlap:
+            reasoning_parts.append(f"overlap: user choice ({user_chunk_overlap})")
+        else:
+            reasoning_parts.append(f"overlap: adaptive suggestion ({final_chunk_overlap})")
+
+        return ChunkingDecision(
+            strategy=final_strategy,
+            chunk_size=final_chunk_size,
+            chunk_overlap=final_chunk_overlap,
+            user_preference=user_preference,
+            adaptive_suggestion=adaptive_analysis["recommended_strategy"],
+            reasoning="; ".join(reasoning_parts)
+        )
+
+    def _analyze_content_for_preview(
+        self,
+        content: str,
+        title: str,
+        draft_context: str = "both"
+    ) -> Dict[str, Any]:
+        """
+        Analyze content for adaptive suggestions during PREVIEW.
+
+        Uses draft_context instead of KB access control for parity with production.
+        """
+        # Analyze content structure (same as production)
+        content_size = len(content)
+        content_type = self._detect_content_type(content, title)
+        structure_score = self._analyze_structure(content)
+
+        # Recommend strategy based on content analysis (SAME LOGIC AS PRODUCTION)
+        if structure_score > 0.4:
+            recommended_strategy = "by_heading"
+        elif content_type == "code":
+            recommended_strategy = "semantic"
+        elif content_type == "faq":
+            recommended_strategy = "by_section"
+        elif content_size > 50000:
+            recommended_strategy = "semantic"
+        else:
+            recommended_strategy = "adaptive"
+
+        # Recommend chunk size based on draft context (mirrors KB access control logic)
+        if draft_context == "chatbots":
+            # Chatbot-only: smaller chunks for precise answers
+            base_chunk_size = 800
+        elif draft_context == "chatflows":
+            # Chatflow-only: larger chunks for context
+            base_chunk_size = 1500
+        else:
+            # Both or unspecified: balanced approach
+            base_chunk_size = 1200
+
+        # Adjust based on content type (SAME AS PRODUCTION)
+        if content_type == "faq":
+            base_chunk_size = int(base_chunk_size * 0.7)  # Smaller for Q&A
+        elif content_type == "documentation":
+            base_chunk_size = int(base_chunk_size * 1.2)  # Larger for explanations
+
+        # Recommend overlap (SAME AS PRODUCTION)
+        recommended_overlap = int(base_chunk_size * 0.2)  # 20% overlap
+
+        return {
+            "content_type": content_type,
+            "structure_score": structure_score,
+            "recommended_strategy": recommended_strategy,
+            "recommended_chunk_size": base_chunk_size,
+            "recommended_overlap": recommended_overlap,
+            "analysis_reasoning": f"Content type: {content_type}, structure score: {structure_score:.2f}, context: {draft_context}"
+        }
 
     def _analyze_content_for_adaptive_suggestions(
         self,
@@ -340,17 +478,46 @@ class SmartKBService:
         document: Document,
         content: str,
         kb: KnowledgeBase,
-        user_config: Optional[Dict] = None
+        user_config: Optional[Dict] = None,
+        skip_postgres_chunks: bool = False
     ) -> Dict[str, Any]:
         """
         Process document with proper storage strategy.
 
-        STORAGE STRATEGY:
-        1. PostgreSQL Documents: Full content (always)
-        2. PostgreSQL Chunks: Chunk text + metadata (always)
-        3. Qdrant: ONLY vector embeddings + minimal metadata (never redundant)
-        4. No embedding duplication
+        STORAGE STRATEGY (varies by source_type):
+
+        For WEB_SCRAPING (archive + retrieval):
+        1. PostgreSQL Documents: Full content (archive/backup)
+        2. PostgreSQL Chunks: Chunk text + metadata (backup)
+        3. Qdrant: Vector embeddings + full chunk content + metadata (retrieval)
+
+        For FILE_UPLOADS (metadata-only in PostgreSQL):
+        1. PostgreSQL Documents: Metadata ONLY (no content_full)
+        2. PostgreSQL Chunks: NONE (skip creation)
+        3. Qdrant: Vector embeddings + full chunk content + metadata (ONLY storage)
+
+        Args:
+            document: Document record
+            content: Full text content to process
+            kb: Knowledge base record
+            user_config: Optional chunking configuration override
+            skip_postgres_chunks: If True, skip PostgreSQL chunk creation (for file uploads)
         """
+        import re
+
+        # CRITICAL: Normalize content to match preview processing
+        # This ensures database chunk count matches preview chunk count
+        def normalize_content(text: str) -> str:
+            """Normalize content by removing excessive whitespace and blank lines."""
+            if not text:
+                return ""
+            # Strip leading/trailing whitespace
+            text = text.strip()
+            # Replace 3+ consecutive newlines with 2
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            return text
+
+        content = normalize_content(content)
 
         # Make chunking decision respecting user preferences
         chunking_decision = self.make_chunking_decision(
@@ -360,13 +527,36 @@ class SmartKBService:
             user_config=user_config
         )
 
-        # Use existing chunking service with decided parameters (BACKWARD COMPATIBLE)
-        chunks_data = chunking_service.chunk_document(
-            text=content,
-            strategy=chunking_decision.strategy,
-            chunk_size=chunking_decision.chunk_size,
-            chunk_overlap=chunking_decision.chunk_overlap
-        )
+        # Extract optional enhanced features from user_config
+        user_config = user_config or {}
+        custom_separators = user_config.get("custom_separators", None)
+        enable_enhanced_metadata = user_config.get("enable_enhanced_metadata", False)
+        preserve_code_blocks = user_config.get("preserve_code_blocks", True)  # Default: True
+
+        # ENHANCED CHUNKING: Use enhanced_chunking_service for rich metadata when enabled
+        if enable_enhanced_metadata:
+            print(f"📊 [ENHANCED] Using enhanced_chunking_service with rich metadata")
+            enhanced_config = EnhancedChunkConfig(
+                strategy=chunking_decision.strategy,
+                chunk_size=chunking_decision.chunk_size,
+                chunk_overlap=chunking_decision.chunk_overlap,
+                include_context=True,
+                include_metadata=True,
+                analyze_structure=True
+            )
+            enhanced_chunks = enhanced_chunking_service.chunk_document_enhanced(content, enhanced_config)
+            # Convert to standard format for pipeline compatibility
+            chunks_data = [chunk.to_dict() for chunk in enhanced_chunks]
+        else:
+            # Use standard chunking service with code block preservation (BACKWARD COMPATIBLE)
+            chunks_data = chunking_service.chunk_document(
+                text=content,
+                strategy=chunking_decision.strategy,
+                chunk_size=chunking_decision.chunk_size,
+                chunk_overlap=chunking_decision.chunk_overlap,
+                separators=custom_separators,  # NOW WIRED: Pass custom separators for "custom" strategy
+                preserve_code_blocks=preserve_code_blocks  # NOW WIRED: Pass user's config
+            )
 
         if not chunks_data:
             return {
@@ -386,9 +576,18 @@ class SmartKBService:
                 "chunks_created": len(chunks_data)
             }
 
-        # Prepare PostgreSQL chunks (NO EMBEDDING STORAGE - avoid redundancy)
+        # Prepare chunk storage lists
+        # For file uploads: skip PostgreSQL chunks (metadata-only storage)
+        # For web scraping: create both PostgreSQL and Qdrant chunks
         postgres_chunks = []
         qdrant_chunks = []
+
+        # Get source metadata for enhanced Qdrant payload
+        source_metadata = document.source_metadata or {}
+        is_file_upload = document.source_type == "file_upload"
+
+        # Determine storage location based on source type
+        storage_location = "qdrant_only" if is_file_upload else "qdrant_and_postgres"
 
         for idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
             # Generate a proper UUID for each chunk
@@ -402,20 +601,13 @@ class SmartKBService:
             # CRITICAL FIX: Robust character count calculation
             # Always calculate from content length as the authoritative source
             character_count = len(chunk_data["content"]) if chunk_data.get("content") else 0
+            token_count = chunk_data.get("token_count", character_count // 4)
 
             # PostgreSQL chunk (content + metadata, NO EMBEDDING)
-            postgres_chunk_data = {
-                "id": chunk_id,  # Add the UUID to postgres chunk data
-                "document_id": document.id,
-                "kb_id": document.kb_id,
-                "content": chunk_data["content"],
-                "chunk_index": idx,
-                "position": idx,
-                "word_count": word_count,
-                "character_count": character_count,
-                # NO embedding field - avoid redundancy
-                "chunk_metadata": {
-                    "token_count": chunk_data.get("token_count", 0),
+            # SKIP for file uploads when skip_postgres_chunks=True
+            if not skip_postgres_chunks:
+                postgres_chunk_metadata = {
+                    "token_count": token_count,
                     "strategy": chunking_decision.strategy,
                     "chunk_size": chunking_decision.chunk_size,
                     "user_preference": chunking_decision.user_preference,
@@ -423,37 +615,109 @@ class SmartKBService:
                     "reasoning": chunking_decision.reasoning,
                     "workspace_id": str(document.workspace_id),
                     "created_at": datetime.utcnow().isoformat(),
-                    "word_count": word_count,  # Also store in metadata for backward compatibility
+                    "word_count": word_count,
                     "character_count": character_count
                 }
-            }
-            postgres_chunks.append(postgres_chunk_data)
 
-            # Qdrant chunk (ONLY embedding + enhanced metadata for search and filtering)
+                # CRITICAL: Include enhanced metadata from enhanced_chunking_service when enabled
+                # This preserves context_before, context_after, parent_heading, section_title
+                if enable_enhanced_metadata and chunk_metadata:
+                    # Enhanced metadata fields that should be stored in PostgreSQL
+                    enhanced_fields = [
+                        "context_before", "context_after",
+                        "parent_heading", "section_title",
+                        "document_analysis", "structure_score"
+                    ]
+                    for field in enhanced_fields:
+                        if field in chunk_metadata:
+                            postgres_chunk_metadata[field] = chunk_metadata[field]
+                    postgres_chunk_metadata["enhanced_metadata_enabled"] = True
+
+                postgres_chunk_data = {
+                    "id": chunk_id,
+                    "document_id": document.id,
+                    "kb_id": document.kb_id,
+                    "content": chunk_data["content"],
+                    "chunk_index": idx,
+                    "position": idx,
+                    "word_count": word_count,
+                    "character_count": character_count,
+                    "chunk_metadata": postgres_chunk_metadata
+                }
+                postgres_chunks.append(postgres_chunk_data)
+
+            # Qdrant chunk with COMPREHENSIVE metadata for search and filtering
+            # This is the primary storage for file uploads (contains full chunk content)
+            qdrant_metadata = {
+                # Core identifiers
+                "document_id": str(document.id),
+                "document_name": document.name,
+                "kb_id": str(kb.id),
+                "workspace_id": str(kb.workspace_id),
+
+                # Context filtering (CRITICAL for chatbot vs chatflow)
+                "kb_context": kb.context,  # "chatbot", "chatflow", or "both"
+
+                # Source information
+                "source_type": document.source_type,  # "file_upload", "web_scraping", "text_input"
+                "source_url": document.source_url,
+                "original_filename": source_metadata.get("filename") or source_metadata.get("original_filename"),
+
+                # Chunk metadata
+                "chunk_index": idx,
+                "word_count": word_count,
+                "character_count": character_count,
+                "token_count": token_count,
+
+                # Chunking configuration (for debugging and analysis)
+                "chunking_strategy": chunking_decision.strategy,
+                "chunk_size": chunking_decision.chunk_size,
+                "chunk_overlap": chunking_decision.chunk_overlap,
+                "content_type": chunking_decision.adaptive_suggestion,
+                "user_configured": chunking_decision.user_preference,
+
+                # System metadata
+                "embedding_model": "all-MiniLM-L6-v2",
+                "storage_location": storage_location,
+                "indexed_at": datetime.utcnow().isoformat()
+            }
+
+            # CRITICAL: Include enhanced metadata from enhanced_chunking_service when enabled
+            # This preserves context_before, context_after, parent_heading, section_title in Qdrant
+            if enable_enhanced_metadata and chunk_metadata:
+                # Enhanced metadata fields for better retrieval context
+                if "context_before" in chunk_metadata:
+                    qdrant_metadata["context_before"] = chunk_metadata["context_before"]
+                if "context_after" in chunk_metadata:
+                    qdrant_metadata["context_after"] = chunk_metadata["context_after"]
+                if "parent_heading" in chunk_metadata:
+                    qdrant_metadata["parent_heading"] = chunk_metadata["parent_heading"]
+                if "section_title" in chunk_metadata:
+                    qdrant_metadata["section_title"] = chunk_metadata["section_title"]
+                qdrant_metadata["enhanced_metadata_enabled"] = True
+
             qdrant_chunk = QdrantChunk(
                 id=chunk_id,
                 embedding=embedding,
-                content=chunk_data["content"],  # Store content in Qdrant for search results
-                metadata={
-                    "document_id": str(document.id),
-                    "kb_id": str(kb.id),
-                    "workspace_id": str(kb.workspace_id),
-                    "context": kb.context,  # CRITICAL: Enable context-based filtering
-                    "chunk_index": idx,
-                    "content_type": chunking_decision.adaptive_suggestion,
-                    "strategy_used": chunking_decision.strategy,
-                    "user_configured": chunking_decision.user_preference
-                }
+                content=chunk_data["content"],  # Full chunk text in Qdrant
+                metadata=qdrant_metadata
             )
             qdrant_chunks.append(qdrant_chunk)
 
+        # Log storage strategy
+        if skip_postgres_chunks:
+            print(f"📦 [STORAGE] File upload: Qdrant-only storage ({len(qdrant_chunks)} chunks)")
+        else:
+            print(f"📦 [STORAGE] Web scraping: Dual storage ({len(postgres_chunks)} postgres, {len(qdrant_chunks)} qdrant)")
+
         return {
             "chunking_decision": chunking_decision,
-            "postgres_chunks": postgres_chunks,
+            "postgres_chunks": postgres_chunks,  # Empty list for file uploads
             "qdrant_chunks": qdrant_chunks,
             "chunks_created": len(chunks_data),
             "embeddings_generated": len(embeddings),
-            "storage_strategy": "separated_storage_no_redundancy"
+            "storage_strategy": storage_location,
+            "skip_postgres_chunks": skip_postgres_chunks
         }
 
     def validate_storage_conditions(self, document: Document, content: str) -> Dict[str, Any]:

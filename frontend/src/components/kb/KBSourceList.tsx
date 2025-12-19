@@ -68,7 +68,8 @@ export function KBSourceList({ sources }: KBSourceListProps) {
       case SourceType.WEB:
         return source.url || 'Web Source';
       case SourceType.FILE:
-        return (source.metadata?.file_name as string) || 'File Source';
+        // Use filename from metadata (set by store from API response)
+        return (source.metadata?.filename as string) || 'File Source';
       case SourceType.TEXT:
         return (source.metadata?.title as string) || 'Text Source';
       default:
@@ -81,7 +82,11 @@ export function KBSourceList({ sources }: KBSourceListProps) {
       case SourceType.WEB:
         return `${source.config?.method || 'crawl'} • max ${source.config?.max_pages || 50} pages`;
       case SourceType.FILE:
-        return `${((source.metadata?.file_size as number) || 0) / 1024 / 1024} MB • ${(source.metadata?.file_type as string) || 'auto'}`;
+        // Use file_size and mime_type from metadata
+        const fileSize = ((source.metadata?.file_size as number) || 0) / 1024 / 1024;
+        const pageCount = (source.metadata?.page_count as number) || 0;
+        const wordCount = (source.metadata?.word_count as number) || 0;
+        return `${fileSize.toFixed(2)} MB • ${pageCount} pages • ${wordCount.toLocaleString()} words`;
       case SourceType.TEXT:
         return `${((source.metadata?.content as string)?.length || 0).toLocaleString()} characters`;
       default:
@@ -139,6 +144,17 @@ export function KBSourceList({ sources }: KBSourceListProps) {
     // Find the latest source data from the store to ensure we have current edits
     const currentSource = draftSources.find(s => s.source_id === source.source_id) || source;
 
+    // Debug log to help trace data issues
+    console.log('📄 Preview source:', {
+      source_id: currentSource.source_id,
+      type: currentSource.type,
+      hasMetadata: !!currentSource.metadata,
+      filename: currentSource.metadata?.filename,
+      hasPreviewPages: !!(currentSource.metadata?.previewPages && Array.isArray(currentSource.metadata.previewPages)),
+      previewPagesCount: Array.isArray(currentSource.metadata?.previewPages) ? currentSource.metadata.previewPages.length : 0
+    });
+
+    // Always open the preview dialog - even without preview pages, we can show file info
     setPreviewSource(currentSource);
 
     // Check if source has its own preview pages in metadata
@@ -146,20 +162,19 @@ export function KBSourceList({ sources }: KBSourceListProps) {
                                    Array.isArray(currentSource.metadata.previewPages) &&
                                    currentSource.metadata.previewPages.length > 0;
 
-    // For approved sources, we should always have preview data in metadata
-    if (!sourceHasPreviewPages) {
-      toast({
-        title: 'Preview Unavailable',
-        description: 'This source does not have preview data available. This may happen with older sources or if content extraction failed.',
-        variant: 'destructive'
-      });
-      return;
+    // Show informational toast only if no preview pages (dialog still opens to show metadata)
+    if (!sourceHasPreviewPages && currentSource.type === SourceType.FILE) {
+      // For file sources, we can still show file info even without preview pages
+      console.log('⚠️ No preview pages found, but dialog will show file metadata');
     }
 
-    // Success - source has its own preview data with any edits preserved
-    console.log('✅ Loading source preview with', Array.isArray(currentSource.metadata?.previewPages) ? currentSource.metadata.previewPages.length : 0, 'pages');
-    if (currentSource.metadata?.hasEdits) {
-      console.log('📝 Source contains edited content');
+    // Log success case
+    if (sourceHasPreviewPages) {
+      const previewPages = currentSource.metadata?.previewPages as any[] | undefined;
+      console.log('✅ Loading source preview with', previewPages?.length || 0, 'pages');
+      if (currentSource.metadata?.hasEdits) {
+        console.log('📝 Source contains edited content');
+      }
     }
   };
 
@@ -452,7 +467,8 @@ ${pages.map((page, index) => {
 
     // Data flow confirmed working - preview pages loaded successfully
     const hasPatterns = source.config?.include_patterns?.length || source.config?.exclude_patterns?.length;
-    const hasStats = source.metadata?.wordCount as number | undefined;
+    // Check for stats using both camelCase (web) and snake_case (file) field names
+    const hasStats = (source.metadata?.wordCount || source.metadata?.word_count) as number | undefined;
 
     return (
       <div className="space-y-4">
@@ -520,21 +536,25 @@ ${pages.map((page, index) => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm font-manrope">
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
                 <div className="font-semibold text-lg text-gray-900 dark:text-white">
-                  {(source.metadata?.pageCount as number) || 0}
+                  {(source.metadata?.pageCount as number) || (source.metadata?.page_count as number) || 0}
                 </div>
                 <div className="text-gray-600 dark:text-gray-400">Total Pages</div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
                 <div className="font-semibold text-lg text-gray-900 dark:text-white">
-                  {((source.metadata?.wordCount as number) || 0).toLocaleString()}
+                  {((source.metadata?.wordCount as number) || (source.metadata?.word_count as number) || 0).toLocaleString()}
                 </div>
                 <div className="text-gray-600 dark:text-gray-400">Total Words</div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
                 <div className="font-semibold text-sm text-gray-900 dark:text-white">
-                  {source.metadata?.crawledAt ? new Date(source.metadata.crawledAt as string).toLocaleDateString() : 'N/A'}
+                  {(source.metadata?.crawledAt || source.metadata?.parsed_at)
+                    ? new Date((source.metadata?.crawledAt || source.metadata?.parsed_at) as string).toLocaleDateString()
+                    : 'N/A'}
                 </div>
-                <div className="text-gray-600 dark:text-gray-400">Crawled Date</div>
+                <div className="text-gray-600 dark:text-gray-400">
+                  {source.type === SourceType.FILE ? 'Parsed Date' : 'Crawled Date'}
+                </div>
               </div>
             </div>
           </div>
@@ -547,7 +567,7 @@ ${pages.map((page, index) => {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <h4 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg font-manrope flex items-center gap-2">
                   <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  Crawled Pages Content
+                  {source.type === SourceType.FILE ? 'Parsed Document Content' : 'Crawled Pages Content'}
                 </h4>
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
@@ -702,20 +722,33 @@ ${pages.map((page, index) => {
   };
 
   // Helper function to render file source preview content
+  // Uses the same editable pages pattern as web sources
   const renderFilePreviewContent = (source: DraftSource): React.ReactElement => {
-    const hasContent = source.metadata?.content;
+    // Get preview pages from source metadata (same as web sources)
+    const sourcePreviewPages = (source.metadata?.previewPages ||
+                               source.metadata?.pages ||
+                               source.metadata?.preview_pages) as any[] | undefined;
+    const previewPages = sourcePreviewPages && sourcePreviewPages.length > 0 ? sourcePreviewPages : [];
+    const hasPreviewPages = previewPages.length > 0;
+
+    // Calculate stats from pages if available
+    const totalWords = hasPreviewPages
+      ? previewPages.reduce((sum, p) => sum + (p.word_count || (p.content?.split(/\s+/).filter(Boolean).length || 0)), 0)
+      : (source.metadata?.word_count as number) || 0;
+    const totalPages = hasPreviewPages ? previewPages.length : (source.metadata?.page_count as number) || 0;
 
     return (
       <div className="space-y-6">
+        {/* File Information Card */}
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
           <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
             <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             File Information
           </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm font-manrope">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-manrope">
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
               <div className="font-medium text-gray-900 dark:text-white mb-1">Filename</div>
-              <div className="text-gray-600 dark:text-gray-400 break-all">{(source.metadata?.file_name as string) || 'Unknown'}</div>
+              <div className="text-gray-600 dark:text-gray-400 break-all">{(source.metadata?.filename as string) || 'Unknown'}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
               <div className="font-medium text-gray-900 dark:text-white mb-1">Size</div>
@@ -723,21 +756,201 @@ ${pages.map((page, index) => {
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
               <div className="font-medium text-gray-900 dark:text-white mb-1">Type</div>
-              <div className="text-gray-600 dark:text-gray-400">{(source.metadata?.file_type as string) || 'auto-detected'}</div>
+              <div className="text-gray-600 dark:text-gray-400">{(source.metadata?.mime_type as string) || 'auto-detected'}</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+              <div className="font-medium text-gray-900 dark:text-white mb-1">Parsing Time</div>
+              <div className="text-gray-600 dark:text-gray-400">{((source.metadata?.parsing_time_ms as number) || 0) / 1000}s</div>
             </div>
           </div>
         </div>
-        {hasContent ? (
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
-              <Eye className="h-5 w-5 text-green-600 dark:text-green-400" />
-              File Content Preview
-            </h4>
-            <pre className="whitespace-pre-wrap text-sm max-h-64 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 p-4 rounded-lg font-mono text-gray-900 dark:text-gray-100 leading-relaxed">
-              {String(source.metadata!.content)}
-            </pre>
+
+        {/* Content Statistics */}
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+          <h4 className="font-semibold text-gray-900 dark:text-white mb-4 font-manrope flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+            Content Statistics
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm font-manrope">
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+              <div className="font-semibold text-lg text-gray-900 dark:text-white">
+                {totalPages}
+              </div>
+              <div className="text-gray-600 dark:text-gray-400">Total Pages</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+              <div className="font-semibold text-lg text-gray-900 dark:text-white">
+                {totalWords.toLocaleString()}
+              </div>
+              <div className="text-gray-600 dark:text-gray-400">Total Words</div>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+              <div className="font-semibold text-sm text-gray-900 dark:text-white">
+                {source.metadata?.parsed_at
+                  ? new Date(source.metadata.parsed_at as string).toLocaleDateString()
+                  : 'N/A'}
+              </div>
+              <div className="text-gray-600 dark:text-gray-400">Parsed Date</div>
+            </div>
           </div>
-        ) : null}
+        </div>
+
+        {/* Editable Pages Content - same pattern as web sources */}
+        {hasPreviewPages ? (
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <h4 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg font-manrope flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  Parsed Document Content ({previewPages.length} {previewPages.length === 1 ? 'page' : 'pages'})
+                </h4>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyAll}
+                    className="bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 font-manrope"
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    <span className="hidden sm:inline">Copy All Pages</span>
+                    <span className="sm:hidden">Copy All</span>
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-700 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 font-manrope"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        <span className="hidden sm:inline">Export All</span>
+                        <span className="sm:hidden">Export</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
+                      <DropdownMenuItem
+                        onClick={() => handleExportFormat('markdown')}
+                        className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
+                        📄 Export as Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleExportFormat('plain_text')}
+                        className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
+                        📝 Export as Plain Text
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleExportFormat('html')}
+                        className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      >
+                        🌐 Export as HTML
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Page Cards - same as web sources */}
+            {previewPages.map((page, index) => {
+              const pageData = page as any;
+              const isEdited = pageData.is_edited as boolean || false;
+              const content = (pageData.edited_content as string) || page.content || '';
+              const originalContent = (pageData.original_content as string) || page.content || '';
+              const title = page.title || `Page ${index + 1}`;
+
+              return (
+                <Card key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 min-w-0 flex-shrink-0">
+                  <CardHeader className="py-4 px-4 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between w-full">
+                      <div className="flex flex-col gap-3 min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white font-manrope break-words">
+                          <span className="font-semibold text-blue-600 dark:text-blue-400">Page {index + 1}:</span>
+                          <span className="ml-2">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 font-manrope bg-gray-100 dark:bg-gray-700/50 px-2 py-1 rounded-md">
+                            {content.split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                          </div>
+                          {isEdited && (
+                            <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope">
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              Edited
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-row gap-2 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditPage(index)}
+                          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope text-xs sm:text-sm"
+                        >
+                          <Edit2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                          <span className="hidden sm:inline">Edit</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCopyPage(index)}
+                          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope text-xs sm:text-sm"
+                        >
+                          <Copy className="h-3 w-3 sm:h-4 sm:w-4" />
+                        </Button>
+                        {isEdited && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRevertPage(index)}
+                            className="bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700 hover:bg-orange-100 dark:hover:bg-orange-900/50 font-manrope text-xs sm:text-sm"
+                          >
+                            <Undo2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                            <span className="hidden sm:inline">Revert</span>
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
+                    {editingPageIndex === index ? (
+                      <ContentEditor
+                        pageIndex={index}
+                        originalContent={originalContent}
+                        editedContent={isEdited ? content : undefined}
+                        title={title}
+                        onSave={async (content, operations) => await handleSaveEdit(index, content, operations)}
+                        onCancel={() => setEditingPageIndex(null)}
+                        onRevert={() => handleRevertPage(index)}
+                      />
+                    ) : (
+                      <div className="max-h-48 overflow-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 p-4 rounded-lg text-sm min-w-0">
+                        <div className="whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-300 leading-relaxed break-words overflow-wrap-anywhere">
+                          {content || (
+                            <span className="text-gray-500 dark:text-gray-400 italic">No content extracted</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 sm:p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-amber-800 dark:text-amber-300 mb-2 font-manrope">Content Preview Unavailable</h4>
+                <p className="text-sm text-amber-700 dark:text-amber-400 font-manrope leading-relaxed">
+                  Full content preview not available. The file may have failed to parse or contains no extractable text content.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };

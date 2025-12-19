@@ -33,6 +33,7 @@ import {
   Brain,
   Cpu,
   RefreshCw,
+  XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PipelineStatusResponse } from '@/types/knowledge-base';
@@ -69,6 +70,18 @@ export default function PipelineMonitorPage() {
   const [isPolling, setIsPolling] = useState(false);
   const [errorRetryCount, setErrorRetryCount] = useState(0);
   const [kbDetails, setKbDetails] = useState<KnowledgeBase | null>(null);
+  const [retryStatus, setRetryStatus] = useState<{
+    can_retry: boolean;
+    reason: string;
+    kb_status: string;
+    pipeline_status: string | null;
+    pipeline_age_seconds: number | null;
+    is_stale: boolean;
+    stale_threshold_seconds: number;
+    retry_available_in_seconds: number | null;
+  } | null>(null);
+  const [retryLoading, setRetryLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const currentStatus = pipelineId ? activePipelines[pipelineId] : null;
 
@@ -88,7 +101,21 @@ export default function PipelineMonitorPage() {
       }
     };
 
+    // Fetch retry status to check if KB can be retried (handles stale queued pipelines)
+    const fetchRetryStatus = async () => {
+      try {
+        const status = await kbClient.kb.getRetryStatus(kbId);
+        setRetryStatus(status);
+      } catch (error) {
+        console.error('Failed to fetch retry status:', error);
+      }
+    };
+
     fetchKbDetails();
+    fetchRetryStatus();
+
+    // Poll retry status every 10 seconds to detect stale pipelines
+    const retryStatusInterval = setInterval(fetchRetryStatus, 10000);
 
     // Start polling for pipeline status
     setIsPolling(true);
@@ -96,13 +123,15 @@ export default function PipelineMonitorPage() {
       if (status.status === 'completed' || status.status === 'failed') {
         setIsPolling(false);
         stopPipelinePolling(pipelineId);
-        // Refresh KB details when pipeline completes/fails
+        // Refresh KB details and retry status when pipeline completes/fails
         fetchKbDetails();
+        fetchRetryStatus();
       }
     });
 
     // Cleanup on unmount
     return () => {
+      clearInterval(retryStatusInterval);
       if (pipelineId) {
         stopPipelinePolling(pipelineId);
       }
@@ -126,6 +155,7 @@ export default function PipelineMonitorPage() {
   const handleRetry = async () => {
     if (!kbId) return;
 
+    setRetryLoading(true);
     try {
       const result = await kbClient.kb.retryProcessing(kbId);
 
@@ -171,6 +201,45 @@ export default function PipelineMonitorPage() {
 
       // You could add a toast notification here if you have a toast system
       alert(`Failed to retry pipeline: ${errorMessage}`);
+    } finally {
+      setRetryLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!pipelineId) return;
+
+    // Confirm before cancelling
+    const confirmed = confirm(
+      'Are you sure you want to cancel this pipeline? This will stop all processing and the KB will need to be recreated or retried.'
+    );
+    if (!confirmed) return;
+
+    setCancelLoading(true);
+    try {
+      await kbClient.pipeline.cancel(pipelineId);
+
+      // Stop polling since pipeline is cancelled
+      stopPipelinePolling(pipelineId);
+      setIsPolling(false);
+
+      // Refresh status to show cancelled state
+      await fetchPipelineStatus(pipelineId);
+
+      // Refresh KB details and retry status
+      if (kbId) {
+        const kb = await kbClient.kb.get(kbId);
+        setKbDetails(kb);
+        const status = await kbClient.kb.getRetryStatus(kbId);
+        setRetryStatus(status);
+      }
+
+      console.log('✅ Pipeline cancelled successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to cancel pipeline:', error);
+      alert(`Failed to cancel pipeline: ${error.message || 'Unknown error'}`);
+    } finally {
+      setCancelLoading(false);
     }
   };
 
@@ -243,7 +312,10 @@ export default function PipelineMonitorPage() {
         return 'text-green-600';
       case 'failed':
         return 'text-red-600';
+      case 'cancelled':
+        return 'text-amber-600';
       case 'running':
+      case 'processing':
         return 'text-blue-600';
       default:
         return 'text-gray-600';
@@ -256,7 +328,10 @@ export default function PipelineMonitorPage() {
         return 'default'; // Using default instead of 'success'
       case 'failed':
         return 'destructive';
+      case 'cancelled':
+        return 'outline'; // Use outline for cancelled
       case 'running':
+      case 'processing':
         return 'default';
       default:
         return 'secondary';
@@ -334,35 +409,47 @@ export default function PipelineMonitorPage() {
                 <Progress value={getProgressPercentage()} className="h-3 bg-gray-200 dark:bg-gray-700" />
               </div>
 
-              {/* Statistics */}
-              {currentStatus?.stats && (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 lg:gap-6">
-                  <div className="bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 text-center shadow-sm">
-                    <div className="text-2xl font-bold text-gray-700 dark:text-gray-300 font-manrope">{currentStatus.stats.pages_discovered}</div>
-                    <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope mt-1">Pages Found</div>
+              {/* Statistics - Source-type aware labels */}
+              {currentStatus?.stats && (() => {
+                // Determine labels based on source type
+                const sourceType = currentStatus.stats.source_type || 'web_scraping';
+                const isFileUpload = sourceType === 'file_upload';
+                const isMixed = sourceType === 'mixed';
+
+                // Dynamic labels based on source type
+                const discoveredLabel = isFileUpload ? 'Docs Added' : isMixed ? 'Sources' : 'Pages Found';
+                const processedLabel = isFileUpload ? 'Docs Parsed' : isMixed ? 'Processed' : 'Pages Scraped';
+                const failedLabel = 'Failed';
+
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 lg:gap-6">
+                    <div className="bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 text-center shadow-sm">
+                      <div className="text-2xl font-bold text-gray-700 dark:text-gray-300 font-manrope">{currentStatus.stats.pages_discovered}</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400 font-manrope mt-1">{discoveredLabel}</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl p-4 text-center shadow-sm">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope">{currentStatus.stats.pages_scraped}</div>
+                      <div className="text-xs text-blue-700 dark:text-blue-300 font-manrope mt-1">{processedLabel}</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-red-50 to-pink-50 dark:from-red-900/30 dark:to-pink-900/30 border border-red-200 dark:border-red-700 rounded-xl p-4 text-center shadow-sm">
+                      <div className="text-2xl font-bold text-red-600 dark:text-red-400 font-manrope">{currentStatus.stats.pages_failed}</div>
+                      <div className="text-xs text-red-700 dark:text-red-300 font-manrope mt-1">{failedLabel}</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700 rounded-xl p-4 text-center shadow-sm">
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 font-manrope">{currentStatus.stats.chunks_created}</div>
+                      <div className="text-xs text-purple-700 dark:text-purple-300 font-manrope mt-1">Chunks</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/30 dark:to-amber-900/30 border border-yellow-200 dark:border-yellow-700 rounded-xl p-4 text-center shadow-sm">
+                      <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 font-manrope">{currentStatus.stats.embeddings_generated}</div>
+                      <div className="text-xs text-yellow-700 dark:text-yellow-300 font-manrope mt-1">Embeddings</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 rounded-xl p-4 text-center shadow-sm">
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope">{currentStatus.stats.vectors_indexed}</div>
+                      <div className="text-xs text-green-700 dark:text-green-300 font-manrope mt-1">Indexed</div>
+                    </div>
                   </div>
-                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl p-4 text-center shadow-sm">
-                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope">{currentStatus.stats.pages_scraped}</div>
-                    <div className="text-xs text-blue-700 dark:text-blue-300 font-manrope mt-1">Pages Scraped</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-red-50 to-pink-50 dark:from-red-900/30 dark:to-pink-900/30 border border-red-200 dark:border-red-700 rounded-xl p-4 text-center shadow-sm">
-                    <div className="text-2xl font-bold text-red-600 dark:text-red-400 font-manrope">{currentStatus.stats.pages_failed}</div>
-                    <div className="text-xs text-red-700 dark:text-red-300 font-manrope mt-1">Failed</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700 rounded-xl p-4 text-center shadow-sm">
-                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 font-manrope">{currentStatus.stats.chunks_created}</div>
-                    <div className="text-xs text-purple-700 dark:text-purple-300 font-manrope mt-1">Chunks</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/30 dark:to-amber-900/30 border border-yellow-200 dark:border-yellow-700 rounded-xl p-4 text-center shadow-sm">
-                    <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 font-manrope">{currentStatus.stats.embeddings_generated}</div>
-                    <div className="text-xs text-yellow-700 dark:text-yellow-300 font-manrope mt-1">Embeddings</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 rounded-xl p-4 text-center shadow-sm">
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope">{currentStatus.stats.vectors_indexed}</div>
-                    <div className="text-xs text-green-700 dark:text-green-300 font-manrope mt-1">Indexed</div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </CardContent>
         </Card>
@@ -483,17 +570,92 @@ export default function PipelineMonitorPage() {
           </Alert>
         )}
 
+        {/* Cancelled Alert */}
+        {currentStatus?.status === 'cancelled' && (
+          <Alert className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-700 rounded-xl shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
+                <XCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <AlertDescription className="flex-1">
+                <strong className="text-amber-900 dark:text-amber-100 font-manrope">Pipeline Cancelled</strong>
+                <div className="text-amber-800 dark:text-amber-200 font-manrope mt-1">
+                  The pipeline was cancelled by user request. You can retry processing using the Retry button.
+                </div>
+              </AlertDescription>
+            </div>
+          </Alert>
+        )}
+
         {/* Actions */}
         <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6">
+          {/* Stale Pipeline Warning */}
+          {retryStatus?.is_stale && retryStatus?.pipeline_status === 'queued' && (
+            <Alert className="mb-4 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <AlertDescription className="flex-1">
+                  <strong className="text-amber-900 dark:text-amber-100 font-manrope">Pipeline Stuck in Queue</strong>
+                  <div className="text-amber-800 dark:text-amber-200 font-manrope mt-1">
+                    {retryStatus.reason}
+                  </div>
+                </AlertDescription>
+              </div>
+            </Alert>
+          )}
+
+          {/* Retry Available Soon Message */}
+          {retryStatus && !retryStatus.can_retry && retryStatus.retry_available_in_seconds && retryStatus.retry_available_in_seconds > 0 && (
+            <Alert className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <AlertDescription className="flex-1">
+                  <strong className="text-blue-900 dark:text-blue-100 font-manrope">Waiting for Pipeline</strong>
+                  <div className="text-blue-800 dark:text-blue-200 font-manrope mt-1">
+                    Retry will be available in {retryStatus.retry_available_in_seconds}s if pipeline doesn't start
+                  </div>
+                </AlertDescription>
+              </div>
+            </Alert>
+          )}
+
           <div className="flex justify-end gap-3">
-            {kbDetails?.status === 'failed' && (
+            {/* Cancel button - only show when pipeline is actively running or queued */}
+            {currentStatus && ['running', 'queued', 'processing'].includes(currentStatus.status) && (
+              <Button
+                onClick={handleCancel}
+                disabled={cancelLoading}
+                variant="outline"
+                className="bg-white dark:bg-gray-800 border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg"
+              >
+                {cancelLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4 mr-2" />
+                )}
+                Cancel Pipeline
+              </Button>
+            )}
+            {retryStatus?.can_retry && (
               <Button
                 onClick={handleRetry}
+                disabled={retryLoading}
                 variant="outline"
-                className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg"
+                className={cn(
+                  "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200 rounded-lg",
+                  retryStatus.is_stale && "border-amber-300 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                )}
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry Pipeline
+                {retryLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                {retryStatus.is_stale ? 'Retry Stale Pipeline' : 'Retry Pipeline'}
               </Button>
             )}
             {currentStatus?.status === 'completed' && (

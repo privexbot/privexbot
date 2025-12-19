@@ -18,6 +18,8 @@ services:
       - ./uv.lock:/app/uv.lock
       # Persist Playwright browsers to avoid repeated downloads
       - playwright-browsers:/root/.cache/ms-playwright
+      # Persist embedding model downloads (shared with Celery)
+      - huggingface_cache:/root/.cache/huggingface
     env_file:
       - .env.dev
     environment:
@@ -25,12 +27,15 @@ services:
       - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
+      - TIKA_URL=http://tika:9998
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      tika:
         condition: service_healthy
     networks:
       - privexbot-dev
@@ -100,15 +105,37 @@ services:
       - privexbot-dev
     restart: unless-stopped
 
+  # Apache Tika for universal document parsing (PDF, DOCX, CSV, etc.)
+  tika:
+    image: apache/tika:latest-full
+    container_name: privexbot-tika-dev
+    command: ["-noFork"]  # Run in no-fork mode for Docker (single process)
+    ports:
+      - "9998:9998"  # Tika REST API
+    environment:
+      # Enable OCR for scanned documents
+      - OCR_STRATEGY=ocr_and_text
+    healthcheck:
+      # Use GET request instead of HEAD (--spider) to avoid Tika INFO log noise
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://localhost:9998/tika || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
   # Celery worker for background tasks (KB processing, embeddings, crawling)
   celery-worker:
-    image: privexbot-backend-dev:latest  # Reuse the same image
+    image: privexbot-backend-dev:latest
     container_name: privexbot-celery-dev
     command: celery -A app.tasks.celery_worker worker --loglevel=info --queues=default,high_priority,low_priority --pool=solo
     volumes:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
+      - huggingface_cache:/root/.cache/huggingface  # Persist model downloads
     env_file:
       - .env.dev
     environment:
@@ -118,6 +145,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - QDRANT_URL=http://qdrant:6333
+      - TIKA_URL=http://tika:9998
       # PyTorch/OpenMP compatibility with Celery
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
@@ -126,16 +154,18 @@ services:
       - NUMEXPR_NUM_THREADS=1
     depends_on:
       backend-dev:
-        condition: service_started  # Ensure image is built
+        condition: service_started  
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      tika:
+        condition: service_healthy
     networks:
       - privexbot-dev
-    # Fix DNS resolution for external services (SMTP, APIs)
+
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -146,9 +176,11 @@ services:
 
   # Celery Beat for scheduled tasks (periodic re-indexing, maintenance)
   celery-beat:
-    image: privexbot-backend-dev:latest  # Reuse the same image
+    image: privexbot-backend-dev:latest
     container_name: privexbot-celery-beat-dev
-    command: celery -A app.tasks.celery_worker beat --loglevel=info
+    working_dir: /app/src
+    # Use exec form for proper signal handling
+    command: ["celery", "-A", "app.tasks.celery_worker", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid", "--schedule=/tmp/celerybeat-schedule"]
     volumes:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
@@ -159,20 +191,21 @@ services:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PYTHONPATH=/app/src
     depends_on:
       backend-dev:
-        condition: service_started  # Ensure image is built
+        condition: service_started
       redis:
         condition: service_healthy
     networks:
       - privexbot-dev
     restart: unless-stopped
 
-  # Flower for Celery monitoring (Web UI at http://localhost:5555)
   flower:
-    image: privexbot-backend-dev:latest  # Reuse the same image
+    image: privexbot-backend-dev:latest 
     container_name: privexbot-flower-dev
     command: celery -A app.tasks.celery_worker flower --port=5555 --basic_auth=admin:admin123
     ports:
@@ -187,7 +220,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     depends_on:
       backend-dev:
-        condition: service_started  # Ensure image is built
+        condition: service_started
       redis:
         condition: service_healthy
     networks:
@@ -202,4 +235,5 @@ volumes:
   postgres_data_dev:
   redis_data_dev:
   qdrant_data_dev:
-  playwright-browsers:  # Persistent browser cache to avoid repeated downloads
+  playwright-browsers:
+  huggingface_cache:  # Persist embedding model downloads (avoid re-downloading ~470MB)

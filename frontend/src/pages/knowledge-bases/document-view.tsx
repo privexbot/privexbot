@@ -16,6 +16,12 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui/use-toast';
 import kbClient from '@/lib/kb-client';
 
@@ -132,16 +138,55 @@ export default function KBDocumentViewPage() {
     }
   };
 
-  const handleDownload = async () => {
-    if (!document || !kbId) return;
+  /**
+   * Check if document can be edited
+   * File upload documents cannot be edited since content is in Qdrant only
+   */
+  const canEditDocument = (): boolean => {
+    if (!document) return false;
+    if (document.source_type === 'file_upload') return false;
+    if ((document as any).processing_metadata?.chunk_storage_location === 'qdrant_only') return false;
+    return true;
+  };
+
+  /**
+   * Check if document can be downloaded
+   * File upload documents cannot be downloaded since content is in Qdrant only (not PostgreSQL)
+   */
+  const canDownloadDocument = (): boolean => {
+    if (!document) return false;
+    if (document.source_type === 'file_upload') return false;
+    if ((document as any).processing_metadata?.chunk_storage_location === 'qdrant_only') return false;
+    return true;
+  };
+
+  const handleDownload = async (format: 'txt' | 'md' | 'json') => {
+    if (!document || !kbId || !docId) return;
 
     try {
-      // Implementation would depend on backend API
+      const blob = await kbClient.kb.downloadDocument(kbId, docId, format);
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+
+      // Generate filename
+      const safeName = document.name.replace(/[^a-zA-Z0-9._\- ]/g, '').trim() || 'document';
+      a.download = `${safeName}.${format}`;
+
+      // Trigger download
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
       toast({
-        title: 'Info',
-        description: 'Download functionality will be implemented when backend API is available',
+        title: 'Download Started',
+        description: `Downloading ${document.name} as ${format.toUpperCase()}`,
       });
     } catch (error) {
+      console.error('Download failed:', error);
       toast({
         title: 'Error',
         description: 'Failed to download document',
@@ -235,16 +280,48 @@ export default function KBDocumentViewPage() {
 
               {/* Action buttons */}
               <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                <Button variant="outline" onClick={handleDownload} className="font-manrope">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download
-                </Button>
+                {canDownloadDocument() ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="font-manrope">
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={() => handleDownload('txt')} className="font-manrope cursor-pointer">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Plain Text (.txt)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownload('md')} className="font-manrope cursor-pointer">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Markdown (.md)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownload('json')} className="font-manrope cursor-pointer">
+                        <Database className="h-4 w-4 mr-2" />
+                        JSON (.json)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button variant="outline" disabled className="font-manrope text-gray-400 dark:text-gray-500 cursor-not-allowed">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download (File Upload)
+                  </Button>
+                )}
                 {hasPermission('kb:edit') && (
                   <>
-                    <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="font-manrope">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
+                    {canEditDocument() ? (
+                      <Button onClick={() => navigate(`/knowledge-bases/${kbId}/documents/${docId}/edit`)} className="font-manrope">
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                    ) : (
+                      <Button variant="outline" disabled className="font-manrope text-gray-400 dark:text-gray-500 cursor-not-allowed">
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit (File Upload)
+                      </Button>
+                    )}
                     <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} className="font-manrope">
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete

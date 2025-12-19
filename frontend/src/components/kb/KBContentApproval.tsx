@@ -61,14 +61,20 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
     const pages: any[] = [];
     let pageIndex = 0;
 
+    // DEBUG: Log draftSources state
+    if (draftSources.length === 0) {
+      console.log('⚠️ WARNING: draftSources is EMPTY in KBContentApproval');
+    }
+
     // Aggregate pages from ALL sources in draftSources that have preview data
     draftSources.forEach((source, sourceIndex) => {
-      const sourcePreviewPages = source.metadata?.previewPages;
+      // Support both metadata.previewPages (frontend) and preview_pages (backend direct)
+      const sourcePreviewPages = source.metadata?.previewPages || source.metadata?.preview_pages;
       const approvedPageIndices = Array.isArray(source.metadata?.approvedPageIndices)
         ? source.metadata.approvedPageIndices
         : [];
 
-      console.log(`🔍 DEBUG: Source ${sourceIndex + 1} - approvedPageIndices:`, approvedPageIndices, 'metadata:', source.metadata);
+      console.log(`🔍 DEBUG: Source ${sourceIndex + 1} (${source.type}) - source_id=${source.source_id}, approvedPageIndices:`, approvedPageIndices, 'previewPages count:', Array.isArray(sourcePreviewPages) ? sourcePreviewPages.length : 0);
 
       if (sourcePreviewPages && Array.isArray(sourcePreviewPages)) {
         sourcePreviewPages.forEach((page, pageInSourceIndex) => {

@@ -451,116 +451,54 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
           </div>
         )}
 
-        {/* Additional Options */}
+        {/* Processing Options */}
         <div className="space-y-4">
-          <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Additional Options</Label>
+          <Label className="text-base font-bold text-gray-900 dark:text-white font-manrope">Processing Options</Label>
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600 space-y-4">
-            <div className="flex items-center space-x-3">
-              <Checkbox
-                id="preserve-headings"
-                checked={chunkingConfig.preserve_headings}
-                onCheckedChange={(checked) => handleConfigChange('preserve_headings', checked)}
-              />
-              <Label htmlFor="preserve-headings" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                Preserve document headings and structure
-              </Label>
-            </div>
-
-            {/* Only show remove duplicates for chunking strategies */}
-            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-center space-x-3">
-                <Checkbox
-                  id="remove-duplicates"
-                  checked={chunkingConfig.remove_duplicates}
-                  onCheckedChange={(checked) => handleConfigChange('remove_duplicates', checked)}
-                />
-                <Label htmlFor="remove-duplicates" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                  Remove duplicate content across chunks
-                </Label>
-              </div>
-            )}
-
-            {/* Only show smart splitting for chunking strategies */}
-            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-center space-x-3">
-                <Checkbox
-                  id="smart-splitting"
-                  checked={chunkingConfig.smart_splitting}
-                  onCheckedChange={(checked) => handleConfigChange('smart_splitting', checked)}
-                />
-                <Label htmlFor="smart-splitting" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                  Enable smart splitting for code and tables
-                </Label>
-              </div>
-            )}
-
+            {/* Preserve Code Blocks - Backend IMPLEMENTED: Protects code blocks from being split during chunking */}
             <div className="flex items-center space-x-3">
               <Checkbox
                 id="preserve-code-blocks"
                 checked={chunkingConfig.preserve_code_blocks ?? true}
                 onCheckedChange={(checked) => handleConfigChange('preserve_code_blocks', checked)}
               />
-              <Label htmlFor="preserve-code-blocks" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                Preserve code blocks and formatting
-              </Label>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <Checkbox
-                id="preserve-structure"
-                checked={chunkingConfig.preserve_structure ?? true}
-                onCheckedChange={(checked) => handleConfigChange('preserve_structure', checked)}
-              />
-              <Label htmlFor="preserve-structure" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                Preserve document structure and element boundaries
-              </Label>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <Checkbox
-                id="include-metadata"
-                checked={chunkingConfig.include_metadata ?? true}
-                onCheckedChange={(checked) => handleConfigChange('include_metadata', checked)}
-              />
-              <Label htmlFor="include-metadata" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                Include structural metadata in chunks
-              </Label>
-            </div>
-
-            {/* Only show adaptive sizing for chunking strategies */}
-            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="flex items-center space-x-3">
-                <Checkbox
-                  id="adaptive-sizing"
-                  checked={chunkingConfig.adaptive_sizing ?? false}
-                  onCheckedChange={(checked) => handleConfigChange('adaptive_sizing', checked)}
-                />
-                <Label htmlFor="adaptive-sizing" className="text-sm text-gray-700 dark:text-gray-300 font-manrope">
-                  Enable adaptive sizing based on content type
+              <div className="flex-1">
+                <Label htmlFor="preserve-code-blocks" className="text-sm text-gray-700 dark:text-gray-300 font-manrope cursor-pointer">
+                  Preserve code blocks and formatting
                 </Label>
-              </div>
-            )}
-
-            {/* Context Window Setting - Only for chunking strategies */}
-            {chunkingConfig.strategy !== ChunkingStrategy.NO_CHUNKING && (
-              <div className="space-y-3">
-                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Context Window (surrounding elements)</Label>
-                <div className="flex items-center space-x-4">
-                  <Slider
-                    value={[chunkingConfig.context_window ?? 2]}
-                    onValueChange={([value]) => handleConfigChange('context_window', value)}
-                    min={0} max={5} step={1}
-                    className="flex-1"
-                  />
-                  <span className="text-sm text-gray-500 dark:text-gray-400 min-w-[60px] font-manrope">
-                    {chunkingConfig.context_window ?? 2} elements
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                  Number of surrounding elements to include for context
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-0.5">
+                  Keep code blocks intact during chunking to maintain readability
                 </p>
               </div>
-            )}
+            </div>
+
+            {/* Enable Enhanced Metadata - Backend supported - Available for ALL strategies including NO_CHUNKING */}
+            <div className="flex items-start space-x-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+              <Checkbox
+                id="enable-enhanced-metadata"
+                checked={chunkingConfig.enable_enhanced_metadata ?? false}
+                onCheckedChange={(checked) => handleConfigChange('enable_enhanced_metadata', checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <Label htmlFor="enable-enhanced-metadata" className="text-sm text-gray-700 dark:text-gray-300 font-manrope cursor-pointer flex items-center gap-2">
+                  Enable enhanced chunk metadata
+                  <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 text-xs font-manrope">
+                    Advanced
+                  </Badge>
+                </Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1 leading-relaxed">
+                  Adds rich metadata to each chunk including context from surrounding chunks, parent headings, and document structure analysis. Improves retrieval quality but increases processing time.
+                </p>
+                {chunkingConfig.enable_enhanced_metadata && (
+                  <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                    <p className="text-xs text-blue-700 dark:text-blue-300 font-manrope">
+                      <strong>Enhanced metadata includes:</strong> context_before, context_after, parent_heading, document_analysis
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

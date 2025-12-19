@@ -28,6 +28,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     # Core dependencies
     libpq5 \
+    libmagic1 \
     curl \
     ca-certificates \
     # Playwright browser dependencies (complete set for chromium)

@@ -13,10 +13,8 @@ import {
   BookOpen,
   FileText,
   Globe,
-  Type,
   Database,
   Cloud,
-  Link,
   CheckCircle2,
   Settings,
   Brain,
@@ -51,6 +49,7 @@ import { KBContentApproval } from "@/components/kb/KBContentApproval";
 import { KBPreviewModal } from "@/components/kb/KBPreviewModal";
 import { IntegrationsModal } from "@/components/kb/IntegrationsModal";
 import { KBModelConfig } from "@/components/kb/KBModelConfig";
+import { KBFileUploadForm } from "@/components/kb/KBFileUploadForm";
 import { ComingSoon } from "@/components/ui/coming-soon";
 import { motion } from "framer-motion";
 
@@ -371,7 +370,7 @@ export default function CreateKnowledgeBasePage() {
 
       toast({
         title: "Knowledge Base Created",
-        description: `Processing started. Estimated time: ${validation.estimated_duration_minutes} minutes`,
+        description: `Processing started. Estimated time: ${validation.estimated_duration_minutes || 1} minutes`,
       });
 
       // Navigate to pipeline monitoring page
@@ -458,24 +457,8 @@ export default function CreateKnowledgeBasePage() {
       icon: FileText,
       title: "Files",
       description: "PDF, Word, Text, CSV",
-      subtitle: "Coming Soon",
-      available: false,
-    },
-    {
-      type: SourceType.TEXT,
-      icon: Type,
-      title: "Text",
-      description: "Paste content directly",
-      subtitle: "Coming Soon",
-      available: false,
-    },
-    {
-      type: SourceType.COMBINE,
-      icon: Link,
-      title: "Combine",
-      description: "Merge multiple sources",
-      subtitle: "Coming Soon",
-      available: false,
+      subtitle: "Available",
+      available: true,
     },
     {
       type: "integrations" as const,
@@ -746,34 +729,17 @@ export default function CreateKnowledgeBasePage() {
                     )}
 
                     {activeSourceType === SourceType.FILE && (
-                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
-                        <ComingSoon
-                          title="File Upload"
-                          description="Upload documents, PDFs, spreadsheets and other files"
-                          icon={<FileText className="h-8 w-8" />}
-                          features={[
-                            "PDF document processing",
-                            "Word document support",
-                            "Excel and CSV parsing",
-                            "Drag & drop interface",
-                            "OCR for scanned documents",
-                          ]}
-                        />
-                      </div>
-                    )}
-
-                    {activeSourceType === SourceType.TEXT && (
-                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
-                        <ComingSoon
-                          title="Text Input"
-                          description="Add content by directly pasting or typing text"
-                          icon={<Type className="h-8 w-8" />}
-                          features={[
-                            "Rich text formatting",
-                            "Markdown support",
-                            "Content templates",
-                            "Auto-save drafts",
-                          ]}
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800/50">
+                        <KBFileUploadForm
+                          onBeforeUpload={ensureDraftExists}
+                          onSuccess={() => {
+                            toast({
+                              title: "Files uploaded",
+                              description: "Your files have been processed and added to the knowledge base",
+                            });
+                            setActiveSourceType(null);
+                          }}
+                          onCancel={() => setActiveSourceType(null)}
                         />
                       </div>
                     )}

@@ -259,6 +259,8 @@ async def cancel_pipeline(
     # Update pipeline status to cancelled
     pipeline_status["status"] = "cancelled"
     pipeline_status["updated_at"] = str(datetime.utcnow().isoformat())
+    pipeline_status["cancelled_at"] = str(datetime.utcnow().isoformat())
+    pipeline_status["cancelled_by"] = str(current_user.id)
 
     draft_service.redis_client.setex(
         redis_key,
@@ -266,11 +268,19 @@ async def cancel_pipeline(
         json.dumps(pipeline_status)
     )
 
-    # TODO: Revoke Celery task
-    # from app.tasks.kb_pipeline_tasks import process_web_kb_task
-    # celery_task_id = pipeline_status.get("celery_task_id")
-    # if celery_task_id:
-    #     process_web_kb_task.AsyncResult(celery_task_id).revoke(terminate=True)
+    # Revoke Celery task to stop processing
+    celery_task_id = pipeline_status.get("celery_task_id")
+    task_revoked = False
+    if celery_task_id:
+        try:
+            from app.tasks.celery_worker import celery_app
+            # Revoke the task - terminate=True sends SIGTERM to the worker process
+            celery_app.control.revoke(celery_task_id, terminate=True, signal='SIGTERM')
+            task_revoked = True
+            print(f"✅ Celery task {celery_task_id} revoked successfully")
+        except Exception as e:
+            # Log but don't fail - the status update is more important
+            print(f"⚠️ Failed to revoke Celery task {celery_task_id}: {e}")
 
     # Update KB status
     kb.status = "failed"
@@ -278,7 +288,9 @@ async def cancel_pipeline(
     db.commit()
 
     return {
-        "message": "Pipeline cancellation requested",
+        "message": "Pipeline cancelled successfully" if task_revoked else "Pipeline cancellation requested (task may still be completing)",
         "pipeline_id": pipeline_id,
-        "status": "cancelled"
+        "status": "cancelled",
+        "celery_task_revoked": task_revoked,
+        "celery_task_id": celery_task_id
     }

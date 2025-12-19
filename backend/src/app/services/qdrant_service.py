@@ -120,7 +120,9 @@ class QdrantService:
         self,
         kb_id: UUID,
         vector_size: int = 384,
-        distance_metric: str = "Cosine"
+        distance_metric: str = "Cosine",
+        hnsw_m: int = 16,
+        ef_construct: int = 100
     ) -> bool:
         """
         Create a collection for a knowledge base.
@@ -129,6 +131,8 @@ class QdrantService:
             kb_id: Knowledge base UUID
             vector_size: Embedding dimension (default 384 for all-MiniLM-L6-v2)
             distance_metric: Distance metric (Cosine, Dot, Euclid)
+            hnsw_m: HNSW M parameter - connections per node (default 16, higher = better recall, more memory)
+            ef_construct: HNSW ef_construct - construction accuracy (default 100)
 
         Returns:
             bool: True if created successfully
@@ -146,17 +150,17 @@ class QdrantService:
                 print(f"[QdrantService] Collection {collection_name} already exists")
                 return True
 
-            # Create collection
+            # Create collection with user-configurable HNSW parameters
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(
                     size=vector_size,
                     distance=getattr(models.Distance, distance_metric.upper())
                 ),
-                # Optimize for search speed
+                # Optimize for search speed with configurable parameters
                 hnsw_config=models.HnswConfigDiff(
-                    m=16,  # Number of connections per node
-                    ef_construct=100,  # Construction accuracy
+                    m=hnsw_m,  # Number of connections per node (user configurable)
+                    ef_construct=ef_construct,  # Construction accuracy
                 ),
                 # Enable metadata indexing for filtering
                 optimizers_config=models.OptimizersConfigDiff(
@@ -165,7 +169,7 @@ class QdrantService:
             )
 
             print(f"[QdrantService] Created collection: {collection_name}")
-            print(f"[QdrantService] Vector size: {vector_size}, Distance: {distance_metric}")
+            print(f"[QdrantService] Vector size: {vector_size}, Distance: {distance_metric}, HNSW M: {hnsw_m}")
 
             return True
 
@@ -327,6 +331,163 @@ class QdrantService:
 
         except Exception as e:
             print(f"[QdrantService] Error searching {collection_name}: {e}")
+            raise
+
+    async def search_with_context(
+        self,
+        kb_id: UUID,
+        query_embedding: List[float],
+        context: str,
+        top_k: int = 5,
+        score_threshold: Optional[float] = None,
+        additional_filters: Optional[Dict[str, Any]] = None
+    ) -> List[SearchResult]:
+        """
+        Search with context filtering (chatbot, chatflow, or both).
+
+        WHY: Chatbots and chatflows need different retrieval strategies
+        HOW: Filter by kb_context in Qdrant payload
+
+        CRITICAL: This is the primary search method for production use
+
+        Args:
+            kb_id: Knowledge base UUID
+            query_embedding: Query vector
+            context: "chatbot", "chatflow", or "both"
+            top_k: Number of results to return
+            score_threshold: Minimum similarity score (0-1)
+            additional_filters: Additional metadata filters
+
+        Returns:
+            List of SearchResult objects filtered by context
+
+        Context Filtering:
+            - "chatbot": Returns only chunks with kb_context = "chatbot" or "both"
+            - "chatflow": Returns only chunks with kb_context = "chatflow" or "both"
+            - "both": Returns all chunks (no context filtering)
+
+        Example:
+            # Search for chatbot use
+            results = await qdrant_service.search_with_context(
+                kb_id=kb_id,
+                query_embedding=embedding,
+                context="chatbot",
+                top_k=3,
+                score_threshold=0.75
+            )
+        """
+
+        collection_name = self._get_collection_name(kb_id)
+
+        try:
+            # Build context filter
+            must_conditions = []
+
+            # CRITICAL: Context filtering
+            if context in ["chatbot", "chatflow"]:
+                # Match kb_context = {context} OR kb_context = "both"
+                must_conditions.append({
+                    "key": "kb_context",
+                    "match": {"any": [context, "both"]}
+                })
+                print(f"[QdrantService] Filtering by context: {context} or 'both'")
+            else:
+                print(f"[QdrantService] No context filtering (context={context})")
+
+            # Add additional filters
+            if additional_filters:
+                for field, condition in additional_filters.items():
+                    if isinstance(condition, dict):
+                        for operator, value in condition.items():
+                            if operator == "$eq":
+                                must_conditions.append({
+                                    "key": field,
+                                    "match": {"value": value}
+                                })
+                            elif operator == "$in":
+                                must_conditions.append({
+                                    "key": field,
+                                    "match": {"any": value}
+                                })
+                            elif operator == "$gte":
+                                must_conditions.append({
+                                    "key": field,
+                                    "range": {"gte": value}
+                                })
+                            elif operator == "$lte":
+                                must_conditions.append({
+                                    "key": field,
+                                    "range": {"lte": value}
+                                })
+                    else:
+                        # Direct equality
+                        must_conditions.append({
+                            "key": field,
+                            "match": {"value": condition}
+                        })
+
+            # Build Qdrant filter
+            qdrant_filter = None
+            if must_conditions:
+                # Convert our filter format to Qdrant's models
+                qdrant_conditions = []
+                for cond in must_conditions:
+                    if "match" in cond:
+                        if "value" in cond["match"]:
+                            qdrant_conditions.append(
+                                models.FieldCondition(
+                                    key=cond["key"],
+                                    match=models.MatchValue(value=cond["match"]["value"])
+                                )
+                            )
+                        elif "any" in cond["match"]:
+                            qdrant_conditions.append(
+                                models.FieldCondition(
+                                    key=cond["key"],
+                                    match=models.MatchAny(any=cond["match"]["any"])
+                                )
+                            )
+                    elif "range" in cond:
+                        range_params = {}
+                        if "gte" in cond["range"]:
+                            range_params["gte"] = cond["range"]["gte"]
+                        if "lte" in cond["range"]:
+                            range_params["lte"] = cond["range"]["lte"]
+                        qdrant_conditions.append(
+                            models.FieldCondition(
+                                key=cond["key"],
+                                range=models.Range(**range_params)
+                            )
+                        )
+
+                qdrant_filter = models.Filter(must=qdrant_conditions)
+
+            # Search with context filter
+            search_results = self.client.query_points(
+                collection_name=collection_name,
+                query=query_embedding,
+                limit=top_k,
+                score_threshold=score_threshold,
+                query_filter=qdrant_filter,
+                with_payload=True,
+                with_vectors=False
+            ).points
+
+            # Convert to SearchResult objects
+            results = []
+            for hit in search_results:
+                results.append(SearchResult(
+                    id=str(hit.id),
+                    score=hit.score,
+                    content=hit.payload.get("content", ""),
+                    metadata={k: v for k, v in hit.payload.items() if k != "content"}
+                ))
+
+            print(f"[QdrantService] Context-filtered search returned {len(results)} results")
+            return results
+
+        except Exception as e:
+            print(f"[QdrantService] Error in context search {collection_name}: {e}")
             raise
 
     def _build_filter(self, filters: Dict[str, Any]) -> models.Filter:
@@ -494,6 +655,153 @@ class QdrantService:
         except Exception as e:
             print(f"[QdrantService] Error getting collection info for {collection_name}: {e}")
             raise
+
+    async def text_search(
+        self,
+        kb_id: UUID,
+        query_text: str,
+        top_k: int = 5,
+        field: str = "content"
+    ) -> List[SearchResult]:
+        """
+        Full-text search on payload content using Qdrant's MatchText.
+
+        WHY: Enable keyword search for Option A (Qdrant-only storage)
+        HOW: Use Qdrant's scroll with MatchText filter
+
+        IMPORTANT: This is NOT vector similarity search - it's text matching.
+        Results are not ranked by relevance, just filtered by text match.
+
+        Args:
+            kb_id: Knowledge base UUID
+            query_text: Text to search for (supports basic keyword matching)
+            top_k: Maximum number of results to return
+            field: Payload field to search in (default: "content")
+
+        Returns:
+            List of SearchResult objects matching the query text
+
+        Limitations:
+            - No relevance ranking (all matches have score=0.8)
+            - Case-insensitive substring matching
+            - For better keyword search, consider creating a text index
+        """
+
+        collection_name = self._get_collection_name(kb_id)
+
+        try:
+            # Build text match filter
+            # MatchText does case-insensitive substring matching
+            text_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key=field,
+                        match=models.MatchText(text=query_text)
+                    )
+                ]
+            )
+
+            # Use scroll to get matching points (since we're filtering, not vector searching)
+            scroll_result = self.client.scroll(
+                collection_name=collection_name,
+                scroll_filter=text_filter,
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False
+            )
+
+            # Convert to SearchResult objects
+            results = []
+            points = scroll_result[0]  # scroll returns (points, next_page_offset)
+
+            for point in points:
+                results.append(SearchResult(
+                    id=str(point.id),
+                    score=0.8,  # Fixed score for text matches (no ranking)
+                    content=point.payload.get("content", ""),
+                    metadata={k: v for k, v in point.payload.items() if k != "content"}
+                ))
+
+            print(f"[QdrantService] Text search returned {len(results)} results for query '{query_text[:50]}...'")
+            return results
+
+        except Exception as e:
+            print(f"[QdrantService] Error in text search {collection_name}: {e}")
+            # Return empty list instead of raising - graceful degradation
+            return []
+
+    async def hybrid_text_vector_search(
+        self,
+        kb_id: UUID,
+        query_text: str,
+        query_embedding: List[float],
+        top_k: int = 5,
+        score_threshold: Optional[float] = None,
+        vector_weight: float = 0.7,
+        text_weight: float = 0.3
+    ) -> List[SearchResult]:
+        """
+        Hybrid search combining vector similarity AND text matching.
+
+        WHY: Best of both worlds for Option A storage
+        HOW: Vector search + text search, then weighted score fusion
+
+        Args:
+            kb_id: Knowledge base UUID
+            query_text: Text query for keyword matching
+            query_embedding: Query vector for similarity search
+            top_k: Number of results to return
+            score_threshold: Minimum vector similarity score
+            vector_weight: Weight for vector search results (default 0.7)
+            text_weight: Weight for text search results (default 0.3)
+
+        Returns:
+            List of SearchResult objects with combined scores
+        """
+
+        # Get vector results
+        vector_results = await self.search(
+            kb_id=kb_id,
+            query_embedding=query_embedding,
+            top_k=top_k * 2,  # Get more for fusion
+            score_threshold=score_threshold
+        )
+
+        # Get text results
+        text_results = await self.text_search(
+            kb_id=kb_id,
+            query_text=query_text,
+            top_k=top_k * 2
+        )
+
+        # Combine results with weighted scores
+        combined = {}
+
+        for result in vector_results:
+            combined[result.id] = SearchResult(
+                id=result.id,
+                score=result.score * vector_weight,
+                content=result.content,
+                metadata=result.metadata
+            )
+
+        for result in text_results:
+            if result.id in combined:
+                # Boost score if appears in both
+                combined[result.id].score += result.score * text_weight
+            else:
+                combined[result.id] = SearchResult(
+                    id=result.id,
+                    score=result.score * text_weight,
+                    content=result.content,
+                    metadata=result.metadata
+                )
+
+        # Sort by score and limit
+        sorted_results = sorted(combined.values(), key=lambda x: x.score, reverse=True)[:top_k]
+
+        print(f"[QdrantService] Hybrid text+vector search returned {len(sorted_results)} results")
+        return sorted_results
 
 
 # Global instance (singleton pattern)

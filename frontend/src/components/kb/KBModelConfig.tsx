@@ -162,6 +162,50 @@ export function KBModelConfig() {
     }
   ];
 
+  // Supported embedding models (matching backend SUPPORTED_MODELS)
+  const embeddingModels = [
+    {
+      id: 'all-MiniLM-L6-v2',
+      name: 'MiniLM-L6 (Default)',
+      description: 'Fast, good quality - recommended for most use cases',
+      dimensions: 384,
+      speed: 'fast',
+      quality: 'good',
+      size: '90 MB',
+      icon: '🚀'
+    },
+    {
+      id: 'all-MiniLM-L12-v2',
+      name: 'MiniLM-L12',
+      description: 'Medium speed, better quality than L6',
+      dimensions: 384,
+      speed: 'medium',
+      quality: 'better',
+      size: '120 MB',
+      icon: '⚡'
+    },
+    {
+      id: 'all-mpnet-base-v2',
+      name: 'MPNet Base',
+      description: 'Slower but highest quality - for accuracy-critical applications',
+      dimensions: 768,
+      speed: 'slow',
+      quality: 'best',
+      size: '420 MB',
+      icon: '🏆'
+    },
+    {
+      id: 'paraphrase-multilingual-MiniLM-L12-v2',
+      name: 'Multilingual MiniLM',
+      description: 'Multilingual support - 50+ languages',
+      dimensions: 384,
+      speed: 'medium',
+      quality: 'good',
+      size: '470 MB',
+      icon: '🌍'
+    }
+  ];
+
   const handlePresetSelect = (presetId: string) => {
     const preset = presets.find(p => p.id === presetId);
     if (preset) {
@@ -208,13 +252,32 @@ export function KBModelConfig() {
     setActivePreset('custom');
   };
 
+  const handleEmbeddingModelChange = (modelId: string) => {
+    const selectedModel = embeddingModels.find(m => m.id === modelId);
+    if (selectedModel) {
+      const updatedConfig = {
+        ...currentConfig,
+        embedding: {
+          ...currentConfig.embedding,
+          model: modelId,
+          dimensions: selectedModel.dimensions
+        }
+      };
+      updateModelConfig(updatedConfig);
+      setActivePreset('custom');
+    }
+  };
+
+  // Get current selected model info
+  const currentEmbeddingModel = embeddingModels.find(m => m.id === currentConfig.embedding.model) || embeddingModels[0];
+
   const getStorageEstimate = () => {
     if (!chunkingConfig || draftSources.length === 0) {
       return {
         chunks: 0,
-        vectorStorage: 0,
-        metadataStorage: 0,
-        totalStorage: 0
+        vectorStorageKB: 0,
+        metadataStorageKB: 0,
+        totalStorageKB: 0
       };
     }
 
@@ -222,15 +285,16 @@ export function KBModelConfig() {
     if (chunkingConfig.strategy === ChunkingStrategy.NO_CHUNKING) {
       const chunks = draftSources.length;
       const vectorSize = currentConfig.embedding.dimensions;
-      const vectorStorage = chunks * vectorSize * 4; // 4 bytes per float
+      const vectorStorageBytes = chunks * vectorSize * 4; // 4 bytes per float
       const avgMetadataPerChunk = 150; // Estimated metadata per chunk (source info, etc.)
-      const metadataStorage = chunks * avgMetadataPerChunk;
+      const metadataStorageBytes = chunks * avgMetadataPerChunk;
+      const totalStorageBytes = vectorStorageBytes + metadataStorageBytes;
 
       return {
         chunks,
-        vectorStorage: Math.round(vectorStorage / 1024 / 1024 * 100) / 100, // MB
-        metadataStorage: Math.round(metadataStorage / 1024 * 100) / 100, // KB
-        totalStorage: Math.round((vectorStorage + metadataStorage) / 1024 / 1024 * 100) / 100 // MB
+        vectorStorageKB: Math.round(vectorStorageBytes / 1024 * 100) / 100, // KB
+        metadataStorageKB: Math.round(metadataStorageBytes / 1024 * 100) / 100, // KB
+        totalStorageKB: Math.round(totalStorageBytes / 1024 * 100) / 100 // KB
       };
     }
 
@@ -258,9 +322,9 @@ export function KBModelConfig() {
     if (totalContent === 0) {
       return {
         chunks: 0,
-        vectorStorage: 0,
-        metadataStorage: 0,
-        totalStorage: 0
+        vectorStorageKB: 0,
+        metadataStorageKB: 0,
+        totalStorageKB: 0
       };
     }
 
@@ -269,18 +333,27 @@ export function KBModelConfig() {
     const chunks = Math.max(1, Math.ceil(totalContent / effectiveChunkSize));
 
     const vectorSize = currentConfig.embedding.dimensions;
-    const vectorStorage = chunks * vectorSize * 4; // 4 bytes per float
+    const vectorStorageBytes = chunks * vectorSize * 4; // 4 bytes per float
 
     // Calculate metadata storage based on actual chunk count and content
     const avgMetadataPerChunk = 120 + Math.min(200, totalContent / chunks * 0.1); // Base metadata + proportional to content
-    const metadataStorage = chunks * avgMetadataPerChunk;
+    const metadataStorageBytes = chunks * avgMetadataPerChunk;
+    const totalStorageBytes = vectorStorageBytes + metadataStorageBytes;
 
     return {
       chunks,
-      vectorStorage: Math.round(vectorStorage / 1024 / 1024 * 100) / 100, // MB
-      metadataStorage: Math.round(metadataStorage / 1024 * 100) / 100, // KB
-      totalStorage: Math.round((vectorStorage + metadataStorage) / 1024 / 1024 * 100) / 100 // MB
+      vectorStorageKB: Math.round(vectorStorageBytes / 1024 * 100) / 100, // KB
+      metadataStorageKB: Math.round(metadataStorageBytes / 1024 * 100) / 100, // KB
+      totalStorageKB: Math.round(totalStorageBytes / 1024 * 100) / 100 // KB
     };
+  };
+
+  // Helper to format storage with appropriate unit (KB or MB)
+  const formatStorage = (kb: number): { value: string; unit: string } => {
+    if (kb >= 1024) {
+      return { value: (kb / 1024).toFixed(2), unit: 'MB' };
+    }
+    return { value: kb.toFixed(2), unit: 'KB' };
   };
 
   const storageEstimate = getStorageEstimate();
@@ -539,38 +612,35 @@ export function KBModelConfig() {
             {/* Embedding Model Configuration */}
             <TabsContent value="embedding" className="space-y-6">
               <div className="space-y-6">
+                {/* Current Model Summary */}
                 <Alert className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-xl shadow-sm">
                   <Cpu className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <AlertDescription className="text-green-900 dark:text-green-100">
                     <div className="space-y-3">
                       <p className="font-semibold text-lg text-green-900 dark:text-green-100 font-manrope">Current Embedding Setup</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-3">
-                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
-                            <div className="text-sm font-manrope">
-                              <span className="text-green-700 dark:text-green-300 font-medium">Provider:</span>
-                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">Local (all-MiniLM-L6-v2)</div>
-                            </div>
-                          </div>
-                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
-                            <div className="text-sm font-manrope">
-                              <span className="text-green-700 dark:text-green-300 font-medium">Dimensions:</span>
-                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">384</div>
-                            </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                          <div className="text-sm font-manrope">
+                            <span className="text-green-700 dark:text-green-300 font-medium">Model:</span>
+                            <div className="font-semibold text-green-800 dark:text-green-200 mt-1">{currentEmbeddingModel.name}</div>
                           </div>
                         </div>
-                        <div className="space-y-3">
-                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
-                            <div className="text-sm font-manrope">
-                              <span className="text-green-700 dark:text-green-300 font-medium">Performance:</span>
-                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">~500 embeddings/second</div>
-                            </div>
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                          <div className="text-sm font-manrope">
+                            <span className="text-green-700 dark:text-green-300 font-medium">Dimensions:</span>
+                            <div className="font-semibold text-green-800 dark:text-green-200 mt-1">{currentEmbeddingModel.dimensions}</div>
                           </div>
-                          <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
-                            <div className="text-sm font-manrope">
-                              <span className="text-green-700 dark:text-green-300 font-medium">Privacy:</span>
-                              <div className="font-semibold text-green-800 dark:text-green-200 mt-1">Fully local processing</div>
-                            </div>
+                        </div>
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                          <div className="text-sm font-manrope">
+                            <span className="text-green-700 dark:text-green-300 font-medium">Quality:</span>
+                            <div className="font-semibold text-green-800 dark:text-green-200 mt-1 capitalize">{currentEmbeddingModel.quality}</div>
+                          </div>
+                        </div>
+                        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
+                          <div className="text-sm font-manrope">
+                            <span className="text-green-700 dark:text-green-300 font-medium">Privacy:</span>
+                            <div className="font-semibold text-green-800 dark:text-green-200 mt-1">🔒 Local</div>
                           </div>
                         </div>
                       </div>
@@ -578,74 +648,89 @@ export function KBModelConfig() {
                   </AlertDescription>
                 </Alert>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
-                    <CardHeader>
-                      <CardTitle className="text-lg font-bold text-gray-900 dark:text-white font-manrope">
-                        Embedding Provider
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <Select disabled value="local">
-                        <SelectTrigger className="bg-gray-50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600 rounded-lg font-manrope">
-                          <SelectValue placeholder="Select provider" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                          <SelectItem value="local" className="font-manrope">
-                            <div className="flex items-center gap-2">
-                              <span className="text-green-600 dark:text-green-400">🔒</span>
-                              Local (Privacy-focused)
+                {/* Model Selection */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-lg font-semibold text-gray-900 dark:text-white font-manrope">Select Embedding Model</Label>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                      Choose the model that best fits your needs. Higher quality models are slower but produce better search results.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {embeddingModels.map((model) => {
+                      const isSelected = currentConfig.embedding.model === model.id;
+                      return (
+                        <Card
+                          key={model.id}
+                          className={`cursor-pointer transition-all duration-300 border rounded-xl shadow-sm hover:shadow-md ${
+                            isSelected
+                              ? 'ring-2 ring-green-500 dark:ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+                              : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                          }`}
+                          onClick={() => handleEmbeddingModelChange(model.id)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start gap-3">
+                              <span className="text-2xl flex-shrink-0">{model.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h3 className="font-bold text-gray-900 dark:text-white font-manrope">{model.name}</h3>
+                                  {isSelected && <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />}
+                                </div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">{model.description}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                                    {model.dimensions}d
+                                  </Badge>
+                                  <Badge className={`text-xs border ${
+                                    model.speed === 'fast' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700' :
+                                    model.speed === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700' :
+                                    'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
+                                  }`}>
+                                    {model.speed}
+                                  </Badge>
+                                  <Badge className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                                    {model.size}
+                                  </Badge>
+                                </div>
+                              </div>
                             </div>
-                          </SelectItem>
-                          <SelectItem value="openai" disabled className="font-manrope opacity-50">
-                            <div className="flex items-center gap-2">
-                              <span>🔮</span>
-                              OpenAI (Coming Soon)
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="huggingface" disabled className="font-manrope opacity-50">
-                            <div className="flex items-center gap-2">
-                              <span>🤗</span>
-                              Hugging Face (Coming Soon)
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
-                        Local processing ensures your data never leaves your infrastructure
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
-                    <CardHeader>
-                      <CardTitle className="text-lg font-bold text-gray-900 dark:text-white font-manrope">
-                        Batch Configuration
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-3">
-                        <Label className="text-base font-semibold text-gray-900 dark:text-white font-manrope">Batch Size</Label>
-                        <Slider
-                          value={[currentConfig.embedding.batch_size]}
-                          onValueChange={([value]) => handleConfigChange('embedding', 'batch_size', value)}
-                          max={128}
-                          min={8}
-                          step={8}
-                          className="w-full"
-                        />
-                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 font-manrope">
-                          <span>Current: <strong>{currentConfig.embedding.batch_size}</strong> texts per batch</span>
-                        </div>
-                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
-                          <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
-                            Higher batch sizes process more texts at once but use more memory
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {/* Batch Configuration */}
+                <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-lg font-bold text-gray-900 dark:text-white font-manrope">
+                      Batch Configuration
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-3">
+                      <Label className="text-base font-semibold text-gray-900 dark:text-white font-manrope">Batch Size</Label>
+                      <Slider
+                        value={[currentConfig.embedding.batch_size]}
+                        onValueChange={([value]) => handleConfigChange('embedding', 'batch_size', value)}
+                        max={128}
+                        min={8}
+                        step={8}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                        <span>Current: <strong>{currentConfig.embedding.batch_size}</strong> texts per batch</span>
+                      </div>
+                      <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
+                          Higher batch sizes process more texts at once but use more memory. Recommended: 32 for most systems.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 
@@ -804,26 +889,26 @@ export function KBModelConfig() {
                 </div>
                 <div className="bg-white dark:bg-gray-800/50 border border-blue-100 dark:border-blue-800 rounded-xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-manrope mb-1">
-                    {storageEstimate.vectorStorage}
+                    {formatStorage(storageEstimate.vectorStorageKB).value}
                   </div>
                   <p className="text-sm text-blue-700 dark:text-blue-300 font-manrope font-medium">
-                    Vector Storage (MB)
+                    Vector Storage ({formatStorage(storageEstimate.vectorStorageKB).unit})
                   </p>
                 </div>
                 <div className="bg-white dark:bg-gray-800/50 border border-green-100 dark:border-green-800 rounded-xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400 font-manrope mb-1">
-                    {storageEstimate.metadataStorage}
+                    {formatStorage(storageEstimate.metadataStorageKB).value}
                   </div>
                   <p className="text-sm text-green-700 dark:text-green-300 font-manrope font-medium">
-                    Metadata Storage (KB)
+                    Metadata Storage ({formatStorage(storageEstimate.metadataStorageKB).unit})
                   </p>
                 </div>
                 <div className="bg-white dark:bg-gray-800/50 border border-purple-100 dark:border-purple-800 rounded-xl p-4 text-center shadow-sm">
                   <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 font-manrope mb-1">
-                    {storageEstimate.totalStorage}
+                    {formatStorage(storageEstimate.totalStorageKB).value}
                   </div>
                   <p className="text-sm text-purple-700 dark:text-purple-300 font-manrope font-medium">
-                    Total Storage (MB)
+                    Total Storage ({formatStorage(storageEstimate.totalStorageKB).unit})
                   </p>
                 </div>
               </div>

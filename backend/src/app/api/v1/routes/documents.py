@@ -12,14 +12,15 @@ HOW:
 - File upload handling
 - Celery task management
 - Multi-tenant access control
-
-PSEUDOCODE follows the existing codebase patterns.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID
+import json
+from datetime import datetime
 
 from app.db.session import get_db
 from app.api.v1.dependencies import get_current_user
@@ -523,3 +524,124 @@ async def get_document_status(
         "error": document.metadata.get("error"),
         "processing_time_ms": document.metadata.get("processing_time_ms")
     }
+
+
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: UUID,
+    format: Literal["txt", "md", "json"] = Query("txt", description="Download format: txt, md (markdown), or json"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Download document content in specified format.
+
+    WHY: Export document for backup or external use
+    HOW: Return content with appropriate Content-Type headers
+
+    FORMATS:
+    - txt: Plain text content
+    - md: Markdown with title and metadata
+    - json: Structured JSON with all fields
+    """
+
+    document = db.query(Document).filter(
+        Document.id == document_id
+    ).first()
+
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Verify access through KB
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == document.kb_id
+    ).first()
+
+    from app.models.workspace import Workspace
+    workspace = db.query(Workspace).filter(
+        Workspace.id == kb.workspace_id,
+        Workspace.org_id == current_user.org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Get document content
+    # Priority: content_full > reconstructed from chunks (skip content_preview - it's truncated)
+    content = document.content_full
+
+    if not content:
+        # Reconstruct from chunks
+        from app.models.chunk import Chunk
+        chunks = db.query(Chunk).filter(
+            Chunk.document_id == document_id
+        ).order_by(Chunk.chunk_index).all()
+
+        if chunks:
+            content = "\n\n".join([c.content for c in chunks if c.content])
+        else:
+            content = "No content available for this document."
+
+    # Generate safe filename
+    safe_name = "".join(c for c in document.name if c.isalnum() or c in "._- ").strip()
+    if not safe_name:
+        safe_name = f"document_{document_id}"
+
+    # Format content based on requested format
+    if format == "txt":
+        # Plain text
+        output = content
+        content_type = "text/plain; charset=utf-8"
+        filename = f"{safe_name}.txt"
+
+    elif format == "md":
+        # Markdown with metadata header
+        output = f"""# {document.name}
+
+**Source Type:** {document.source_type}
+**Status:** {document.status}
+**Created:** {document.created_at.isoformat() if document.created_at else 'N/A'}
+**Word Count:** {document.word_count or 0}
+**Chunks:** {document.chunk_count or 0}
+
+---
+
+{content}
+"""
+        content_type = "text/markdown; charset=utf-8"
+        filename = f"{safe_name}.md"
+
+    else:  # json
+        # Structured JSON
+        output_data = {
+            "id": str(document.id),
+            "name": document.name,
+            "source_type": document.source_type,
+            "source_url": document.source_url,
+            "status": document.status,
+            "content": content,
+            "word_count": document.word_count or 0,
+            "character_count": document.character_count or 0,
+            "chunk_count": document.chunk_count or 0,
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+            "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+            "source_metadata": document.source_metadata or {},
+            "custom_metadata": document.custom_metadata or {},
+        }
+        output = json.dumps(output_data, indent=2, ensure_ascii=False)
+        content_type = "application/json; charset=utf-8"
+        filename = f"{safe_name}.json"
+
+    return Response(
+        content=output,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )

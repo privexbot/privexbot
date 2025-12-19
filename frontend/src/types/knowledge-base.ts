@@ -87,18 +87,22 @@ export type CrawlMethod = (typeof CrawlMethod)[keyof typeof CrawlMethod];
 
 /**
  * Chunking Strategies
+ *
+ * BACKEND ALIGNMENT: Uses chunking_service.py ChunkingStrategy enum
+ * Backend accepts aliases: "sentence_based" -> "by_sentence", "paragraph_based" -> "by_paragraph"
+ * NOTE: Use these exact string values when sending to backend API
  */
 export const ChunkingStrategy = {
-  NO_CHUNKING: "no_chunking",         // Keep content as complete documents
+  RECURSIVE: "recursive",             // Default - splits text recursively on separators
+  ADAPTIVE: "adaptive",               // Auto-selects strategy based on content structure
+  BY_HEADING: "by_heading",           // Split on markdown headings (# ## ###)
+  BY_PARAGRAPH: "paragraph_based",    // Split on paragraph breaks (backend alias: paragraph_based)
+  BY_SENTENCE: "sentence_based",      // Split on sentence boundaries (backend alias: sentence_based)
+  SEMANTIC: "semantic",               // Split on meaning/topic boundaries
+  HYBRID: "hybrid",                   // Combines multiple strategies
+  NO_CHUNKING: "no_chunking",         // Keep documents whole (small docs only)
   FULL_CONTENT: "full_content",       // Alias for no_chunking (backward compatibility)
-  BY_SENTENCE: "by_sentence",         // Split on sentence boundaries
-  BY_PARAGRAPH: "by_paragraph",       // Split on paragraph breaks
-  BY_HEADING: "by_heading",           // Split on markdown headings
-  SEMANTIC: "semantic",               // Split on meaning boundaries
-  ADAPTIVE: "adaptive",               // Dynamic chunking based on content
-  HYBRID: "hybrid",                   // Combination approach
-  CUSTOM: "custom",                   // User-defined separators
-  RECURSIVE: "recursive",             // Recursive text splitting (default)
+  CUSTOM: "custom",                   // User-defined separators (requires custom_separators)
 } as const;
 
 export type ChunkingStrategy =
@@ -120,12 +124,16 @@ export type VectorStoreProvider =
 
 /**
  * Distance Metrics
+ *
+ * BACKEND ALIGNMENT: Qdrant uses capitalized metric names
+ * - "Cosine" (not "cosine")
+ * - "Euclid" (not "euclidean")
+ * - "Dot" (not "dot_product")
  */
 export const DistanceMetric = {
-  COSINE: "cosine",
-  EUCLIDEAN: "euclidean",
-  DOT_PRODUCT: "dot",
-  MANHATTAN: "manhattan",
+  COSINE: "Cosine",     // Qdrant uses "Cosine"
+  EUCLIDEAN: "Euclid",  // Qdrant uses "Euclid" (not "Euclidean")
+  DOT_PRODUCT: "Dot",   // Qdrant uses "Dot"
 } as const;
 
 export type DistanceMetric =
@@ -494,6 +502,11 @@ export interface PipelineStatusResponse {
     chunks_created: number;
     embeddings_generated: number;
     vectors_indexed: number;
+    // Source-type aware metrics
+    source_type?: 'web_scraping' | 'file_upload' | 'mixed';
+    total_sources?: number;
+    file_sources?: number;
+    web_sources?: number;
   };
 }
 
@@ -528,37 +541,46 @@ export interface WebSourceConfig {
 
 /**
  * Chunking Configuration
+ *
+ * BACKEND-SUPPORTED FIELDS (sent to API and used by backend):
+ * - strategy, chunk_size, chunk_overlap
+ * - preserve_code_blocks, custom_separators, enable_enhanced_metadata
+ * - semantic_threshold (for semantic strategy)
+ *
+ * FRONTEND-ONLY FIELDS (stored locally, not used by backend):
+ * - min_chunk_size, max_chunk_size (UI display only)
  */
 export interface ChunkingConfig {
+  // Core parameters (REQUIRED - backend supported)
   strategy: ChunkingStrategy;
   chunk_size: number; // Characters per chunk (100-5000)
   chunk_overlap: number; // Overlap between chunks (0-1000)
 
-  // Backend-supported parameters (with UI controls)
-  preserve_code_blocks?: boolean; // API endpoint supports this
-  preserve_structure?: boolean; // Enhanced service supports this - maintain element boundaries
-  include_metadata?: boolean; // Enhanced service supports this - include structural metadata
-  adaptive_sizing?: boolean; // Enhanced service supports this - adjust size based on content type
-  context_window?: number; // Enhanced service supports this - surrounding elements for context (0-5)
-
-  // Legacy/frontend-only parameters (may not have backend support)
-  preserve_formatting?: boolean;
-  split_by_heading_level?: number; // For by_heading strategy
-  semantic_threshold?: number; // For semantic strategy (0-1)
+  // Backend-supported optional parameters
+  preserve_code_blocks?: boolean; // Keep code blocks intact during chunking
   custom_separators?: string[]; // For custom strategy - user-defined separators
-  min_chunk_size?: number; // Minimum chunk size (50-500)
-  max_chunk_size?: number; // Maximum chunk size (500-10000)
-  preserve_headings?: boolean;
-  remove_duplicates?: boolean;
-  smart_splitting?: boolean;
+  enable_enhanced_metadata?: boolean; // Add context_before/after, parent_heading to chunks
+  semantic_threshold?: number; // For semantic strategy (0-1)
+
+  // Frontend-only parameters (not sent to backend)
+  min_chunk_size?: number; // UI display only
+  max_chunk_size?: number; // UI display only
 }
 
 /**
  * Embedding Configuration
+ *
+ * BACKEND ALIGNMENT: Uses embedding_service_local.py configuration
+ * - device: "cpu" only (multi_model_embedding_service hardcodes CPU)
+ * - Models: Local sentence-transformers only (no OpenAI)
+ *
+ * NOTE: While the config schema allows "cuda", the actual pipeline
+ * (multi_model_embedding_service) hardcodes device="cpu" at line 521.
+ * GPU support is not currently implemented in the pipeline.
  */
 export interface EmbeddingConfig {
   model: string; // e.g., 'all-MiniLM-L6-v2'
-  device: "cpu" | "gpu";
+  device: "cpu"; // Backend hardcodes CPU in multi_model_embedding_service
   batch_size?: number;
   normalize?: boolean;
 }
@@ -698,12 +720,19 @@ export interface KBSummary {
  */
 export interface KnowledgeBase extends KBSummary {
   sources: AnySource[];
-  chunking_config: ChunkingConfig;
+  // NOTE: Backend returns chunking_config inside 'config' dict, not at top level
+  // Use config?.chunking_config to access it
+  config?: Record<string, any>;  // Raw config dict from backend (contains chunking_config)
+  chunking_config?: ChunkingConfig;  // May be undefined - check config.chunking_config instead
   embedding_config: EmbeddingConfig;
   vector_store_config: VectorStoreConfig;
   created_by: string;
   last_processed_at?: string;
   processing_logs?: PipelineLogEntry[];
+  // Reindexing capability fields (populated by backend based on document source types)
+  source_types?: string[];  // Unique source types in KB (file_upload, web_scraping, text_input)
+  can_reindex?: boolean;    // Whether KB can be reindexed (false if all file uploads)
+  reindex_warning?: string; // Warning message if partial/no reindexing available
 }
 
 /**

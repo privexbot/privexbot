@@ -20,12 +20,13 @@ This file implements PHASE 1 & 2 (API endpoints).
 PHASE 3 is implemented in Celery tasks.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, Field, validator, model_validator
 from datetime import datetime
+from io import BytesIO
 
 from app.db.session import get_db
 from app.api.v1.dependencies import get_current_user
@@ -482,6 +483,264 @@ async def add_web_source_to_draft(
         )
 
 
+@router.post("/{draft_id}/sources/file")
+async def add_file_source_to_draft(
+    draft_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Add file upload to KB draft with Tika parsing.
+
+    PHASE: 1 (Draft Mode - Redis Only)
+    DURATION: 1-5 seconds (depends on file size and complexity)
+    DATABASE: No writes to PostgreSQL
+
+    SUPPORTED FORMATS:
+    - Documents: PDF, DOCX, DOC, ODT, RTF
+    - Spreadsheets: XLSX, XLS, ODS, CSV
+    - Presentations: PPTX, PPT, ODP
+    - Text: TXT, MD, JSON, XML, HTML
+    - Images: PNG, JPG (with OCR if enabled)
+
+    ARCHITECTURE:
+    - Parse file with Apache Tika (Docker service)
+    - Extract text content and metadata
+    - Store in Redis draft (24hr TTL)
+    - Content goes ONLY to Qdrant (not PostgreSQL)
+    - PostgreSQL stores ONLY metadata
+
+    Args:
+        draft_id: KB draft ID
+        file: Uploaded file (multipart/form-data)
+
+    Returns:
+        {
+            "source_id": str,
+            "filename": str,
+            "file_size": int,
+            "mime_type": str,
+            "page_count": int,
+            "char_count": int,
+            "word_count": int,
+            "parsing_time_ms": int,
+            "message": str
+        }
+
+    Raises:
+        400: Invalid file or parsing failed
+        403: Access denied
+        404: Draft not found
+        413: File too large (>50MB)
+    """
+
+    # Verify draft exists and user owns it
+    draft = draft_service.get_draft(DraftType.KB, draft_id)
+
+    if not draft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="KB draft not found or expired"
+        )
+
+    if draft["created_by"] != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Validate file
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Filename is required"
+        )
+
+    # Read file content
+    file_content = await file.read()
+    file_size = len(file_content)
+
+    # Check file size (50MB limit)
+    max_size = 50 * 1024 * 1024  # 50MB
+    if file_size > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large: {file_size / 1024 / 1024:.1f} MB (max: 50 MB)"
+        )
+
+    # Check if file is empty
+    if file_size == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is empty"
+        )
+
+    try:
+        # Parse file with Tika
+        file_stream = BytesIO(file_content)
+
+        result = await kb_draft_service.add_file_source_to_draft(
+            draft_id=draft_id,
+            file_stream=file_stream,
+            filename=file.filename,
+            file_size=file_size,
+            mime_type=file.content_type or "application/octet-stream"
+        )
+
+        return {
+            **result,
+            "message": "File parsed and added to draft (not saved to database yet)"
+        }
+
+    except ConnectionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Tika service unavailable. Please ensure Tika Docker container is running."
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"File parsing failed: {str(e)}"
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
+        )
+
+
+@router.post("/{draft_id}/sources/files/bulk")
+async def add_bulk_file_sources_to_draft(
+    draft_id: str,
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Add multiple file uploads to KB draft in batch.
+
+    PHASE: 1 (Draft Mode - Redis Only)
+    DURATION: 2-15 seconds (depends on file count and sizes)
+    DATABASE: No writes to PostgreSQL
+
+    Args:
+        draft_id: KB draft ID
+        files: List of uploaded files (multipart/form-data)
+
+    Returns:
+        {
+            "sources_added": int,
+            "source_ids": List[str],
+            "total_chars": int,
+            "total_pages": int,
+            "failed_files": List[dict],
+            "message": str
+        }
+
+    Raises:
+        400: Invalid files or parsing failed
+        403: Access denied
+        404: Draft not found
+        413: Files too large
+    """
+
+    # Verify draft exists and user owns it
+    draft = draft_service.get_draft(DraftType.KB, draft_id)
+
+    if not draft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="KB draft not found or expired"
+        )
+
+    if draft["created_by"] != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Validate files
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one file is required"
+        )
+
+    if len(files) > 20:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 20 files allowed in bulk upload"
+        )
+
+    # Prepare file streams
+    file_tuples = []
+    max_size = 50 * 1024 * 1024  # 50MB per file
+
+    for file in files:
+        file_content = await file.read()
+        file_size = len(file_content)
+
+        if file_size > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File {file.filename} too large: {file_size / 1024 / 1024:.1f} MB (max: 50 MB)"
+            )
+
+        if file_size == 0:
+            continue  # Skip empty files
+
+        file_stream = BytesIO(file_content)
+        file_tuples.append((
+            file_stream,
+            file.filename,
+            file_size,
+            file.content_type or "application/octet-stream"
+        ))
+
+    if not file_tuples:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid files to process"
+        )
+
+    try:
+        # Parse all files
+        result = await kb_draft_service.add_bulk_file_sources_to_draft(
+            draft_id=draft_id,
+            files=file_tuples
+        )
+
+        return {
+            **result,
+            "message": f"Parsed and added {result['sources_added']} files to draft"
+        }
+
+    except ConnectionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Tika service unavailable. Please ensure Tika Docker container is running."
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
+        )
+
+
 @router.delete("/{draft_id}")
 async def delete_draft(
     draft_id: str,
@@ -595,6 +854,9 @@ async def preview_chunks_live(
     WHY: Users need to see exactly how their content will be chunked
     HOW: Apply chunking strategy to specific source content
 
+    PREVIEW PARITY: This endpoint uses the SAME chunking logic as production
+    (smart_kb_service) to ensure preview shows EXACTLY what will be stored.
+
     Request:
     {
         "source_id": "uuid",
@@ -603,16 +865,37 @@ async def preview_chunks_live(
         "chunk_size": 1000,
         "chunk_overlap": 200,
         "custom_separators": ["\\n\\n", ".", "!"],  // Optional: for custom strategy
+        "enable_enhanced_metadata": false,  // NEW: Enable rich metadata (context, headings)
         "include_metrics": true
     }
 
-    Returns:
+    Returns (standard):
     {
-        "chunks": [...],
+        "chunks": [{"content": "...", "index": 0, ...}],
+        "metrics": {...}
+    }
+
+    Returns (enhanced, when enable_enhanced_metadata=true):
+    {
+        "chunks": [{
+            "content": "...",
+            "index": 0,
+            "context_before": "...",  // Text from previous chunk
+            "context_after": "...",   // Text from next chunk
+            "parent_heading": "...",  // Heading containing this chunk
+            "metadata": {
+                "document_analysis": {...},  // Full structure analysis
+                "strategy_used": "by_heading",
+                "chunk_index": 0,
+                "total_chunks": 5
+            }
+        }],
         "metrics": {...}
     }
     """
     from app.services.chunking_service import chunking_service
+    from app.services.enhanced_chunking_service import enhanced_chunking_service, EnhancedChunkConfig
+    from app.services.smart_kb_service import smart_kb_service
 
     # Validate draft exists
     draft = draft_service.get_draft(DraftType.KB, draft_id)
@@ -622,14 +905,58 @@ async def preview_chunks_live(
             detail="KB draft not found"
         )
 
-    # Extract parameters
+    # Extract parameters from request
     content = request.get("content", "")
-    strategy = request.get("strategy", "by_heading")
-    chunk_size = request.get("chunk_size", 1000)
-    chunk_overlap = request.get("chunk_overlap", 200)
     custom_separators = request.get("custom_separators", None)  # For custom strategy
     include_metrics = request.get("include_metrics", False)
     max_chunks = request.get("max_chunks", None)  # Allow frontend to control chunk limit
+    enable_enhanced_metadata = request.get("enable_enhanced_metadata", False)
+
+    # CRITICAL: Normalize content to match pipeline processing
+    # This ensures preview chunk count matches what gets stored in database
+    import re
+
+    def normalize_content(text: str) -> str:
+        """Normalize content by removing excessive whitespace and blank lines."""
+        if not text:
+            return ""
+        # Strip leading/trailing whitespace
+        text = text.strip()
+        # Replace 3+ consecutive newlines with 2
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text
+
+    content = normalize_content(content)
+
+    # Get draft context for adaptive logic ("chatbots", "chatflows", or "both")
+    draft_context = draft.get("context", "both")
+    source_title = request.get("title", draft.get("name", "Untitled"))
+
+    # Build user config from request (only include values explicitly provided)
+    user_config = {}
+    if "strategy" in request:
+        user_config["strategy"] = request["strategy"]
+    if "chunk_size" in request:
+        user_config["chunk_size"] = request["chunk_size"]
+    if "chunk_overlap" in request:
+        user_config["chunk_overlap"] = request["chunk_overlap"]
+
+    # PREVIEW PARITY FIX: Use smart_kb_service.make_chunking_decision_for_preview()
+    # This ensures preview uses the SAME adaptive logic as production
+    chunking_decision = smart_kb_service.make_chunking_decision_for_preview(
+        content=content,
+        title=source_title,
+        user_config=user_config,
+        draft_context=draft_context
+    )
+
+    # Extract final values from decision (these match what production will use)
+    strategy = chunking_decision.strategy
+    chunk_size = chunking_decision.chunk_size
+    chunk_overlap = chunking_decision.chunk_overlap
+
+    print(f"[PREVIEW PARITY] Using: strategy={strategy}, size={chunk_size}, overlap={chunk_overlap}")
+    print(f"[PREVIEW PARITY] Reasoning: {chunking_decision.reasoning}")
 
     # Special handling for "no_chunking" strategies
     if strategy in ("full_content", "no_chunking"):
@@ -654,14 +981,28 @@ async def preview_chunks_live(
             "context_quality": "high"  # Full context always high
         }
     else:
-        # Apply chunking strategy
-        chunks_raw = chunking_service.chunk_document(
-            text=content,
-            strategy=strategy,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=custom_separators  # Pass custom separators for custom strategy
-        )
+        # Use chunking with values from smart_kb_service decision (PARITY WITH PRODUCTION)
+        if enable_enhanced_metadata:
+            # Use enhanced_chunking_service (same as production when flag=true)
+            enhanced_config = EnhancedChunkConfig(
+                strategy=strategy,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                include_context=True,
+                include_metadata=True,
+                analyze_structure=True
+            )
+            enhanced_chunks = enhanced_chunking_service.chunk_document_enhanced(content, enhanced_config)
+            chunks_raw = [chunk.to_dict() for chunk in enhanced_chunks]
+        else:
+            # Use standard chunking_service (same as production when flag=false)
+            chunks_raw = chunking_service.chunk_document(
+                text=content,
+                strategy=strategy,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                separators=custom_separators  # Pass custom separators for custom strategy
+            )
 
         # Format chunks for frontend
         chunks = []
@@ -675,14 +1016,28 @@ async def preview_chunks_live(
                 overlap_start = max(0, len(prev_chunk) - chunk_overlap)
                 overlap_content = prev_chunk[overlap_start:][:50] + "..."  # Show first 50 chars
 
-            chunks.append({
+            # Build chunk output - include enhanced metadata when available
+            chunk_output = {
                 "content": chunk["content"],
                 "index": i,
                 "token_count": chunk.get("token_count", len(chunk["content"]) // 4),
                 "char_count": len(chunk["content"]),
                 "has_overlap": has_overlap,
                 "overlap_content": overlap_content
-            })
+            }
+
+            # Include enhanced metadata if available (production parity)
+            if enable_enhanced_metadata and "metadata" in chunk:
+                chunk_output["metadata"] = chunk["metadata"]
+                # Also expose key fields at top level for easy frontend access
+                if chunk["metadata"].get("context_before"):
+                    chunk_output["context_before"] = chunk["metadata"]["context_before"]
+                if chunk["metadata"].get("context_after"):
+                    chunk_output["context_after"] = chunk["metadata"]["context_after"]
+                if chunk["metadata"].get("parent_heading"):
+                    chunk_output["parent_heading"] = chunk["metadata"]["parent_heading"]
+
+            chunks.append(chunk_output)
 
         # Calculate metrics
         if include_metrics and chunks:
@@ -740,7 +1095,16 @@ async def preview_chunks_live(
         "metrics": metrics,
         "total_chunks": len(chunks),
         "preview_limited": len(chunks) > chunk_limit,
-        "chunks_shown": len(preview_chunks)
+        "chunks_shown": len(preview_chunks),
+        # NEW: Include chunking decision metadata for transparency
+        "chunking_decision": {
+            "strategy": chunking_decision.strategy,
+            "chunk_size": chunking_decision.chunk_size,
+            "chunk_overlap": chunking_decision.chunk_overlap,
+            "user_preference": chunking_decision.user_preference,
+            "adaptive_suggestion": chunking_decision.adaptive_suggestion,
+            "reasoning": chunking_decision.reasoning
+        }
     }
 
 
@@ -1372,15 +1736,6 @@ async def approve_and_add_to_sources(
         preview_data = draft.get("preview_data", {})
         pages = preview_data.get("pages", [])
 
-        # DEBUG: Log what approval API is seeing
-        total_pages = len(pages)
-        already_approved = len([p for p in pages if p.get("is_approved", False)])
-        print(f"🔍 APPROVE_SOURCES_DEBUG: draft={draft_id}, total_pages={total_pages}, already_approved={already_approved}")
-
-        if already_approved > 0:
-            approved_pages_details = [(i, p.get("title", "No title")[:50]) for i, p in enumerate(pages) if p.get("is_approved", False)]
-            print(f"⚠️  ALREADY_APPROVED_PAGES: {approved_pages_details}")
-
         if not pages:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1516,6 +1871,9 @@ async def approve_sources_with_edits(
             page_updates = approval.get("page_updates", [])
             print(f"  Source {i}: id={source_id}, approving_pages={page_indices}, updates_count={len(page_updates)}")
 
+        if not source_approvals:
+            print("⚠️ WARNING: source_approvals is empty - no sources to approve")
+
         # Get draft data
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
@@ -1526,6 +1884,15 @@ async def approve_sources_with_edits(
 
         data = draft.get("data", {})
         sources = data.get("sources", [])
+
+        # DEBUG: Log sources in draft
+        print(f"📦 DRAFT SOURCES: {len(sources)} sources in draft")
+        for i, s in enumerate(sources):
+            src_id = s.get("id", "no-id")
+            src_type = s.get("type", "unknown")
+            has_preview_pages = len(s.get("preview_pages", [])) > 0
+            has_metadata_preview = len(s.get("metadata", {}).get("previewPages", [])) > 0
+            print(f"  Source {i}: id={src_id}, type={src_type}, has_preview_pages={has_preview_pages}, has_metadata_preview={has_metadata_preview}")
 
         if not sources:
             raise HTTPException(
@@ -1543,30 +1910,40 @@ async def approve_sources_with_edits(
             approved_page_indices = approval_data.get("approved_page_indices", [])
             page_updates = approval_data.get("page_updates", [])
 
+            print(f"\n🔍 PROCESSING: source_id={source_id}, page_indices={approved_page_indices}")
+
             # Find the source
             source_index = next((i for i, s in enumerate(sources) if s.get("id") == source_id), None)
             if source_index is None:
+                print(f"  ❌ Source NOT FOUND in draft. Looking for id={source_id}")
+                print(f"  📋 Available source ids: {[s.get('id') for s in sources]}")
                 continue  # Skip if source not found
+
+            print(f"  ✅ Found source at index {source_index}")
 
             source = sources[source_index]
 
-            # Get source preview pages
+            # Get source preview pages - handle both storage locations
+            # Web sources: metadata.previewPages
+            # File sources: preview_pages (direct on source object)
             source_metadata = source.get("metadata", {})
             preview_pages = source_metadata.get("previewPages", [])
 
-            # DEBUG: Log approval state for this source
-            total_pages_in_source = len(preview_pages)
-            already_approved_in_source = len([p for p in preview_pages if p.get("is_approved", False)])
-            print(f"🔍 APPROVE_SOURCES_DEBUG: source={source_id}, total_pages={total_pages_in_source}, already_approved={already_approved_in_source}")
-            if already_approved_in_source > 0:
-                approved_pages_details = [(i, p.get("title", "No title")[:50], p.get("approved_at")) for i, p in enumerate(preview_pages) if p.get("is_approved", False)]
-                print(f"⚠️  ALREADY_APPROVED_PAGES_IN_SOURCE: {approved_pages_details}")
+            # CRITICAL FIX: For file uploads, preview_pages is stored directly on source
+            if not preview_pages:
+                preview_pages = source.get("preview_pages", [])
+                print(f"  📁 Using direct preview_pages for file source: {len(preview_pages)} pages found")
 
             if not preview_pages:
+                print(f"  ⚠️ No preview pages found for source {source_id}")
                 continue  # Skip if no preview pages
 
             # Update pages with edits and approval status
+            print(f"  📄 Processing {len(approved_page_indices)} page indices: {approved_page_indices}")
+            print(f"  📋 Preview pages available: {len(preview_pages)}")
+
             for page_idx in approved_page_indices:
+                print(f"    🔎 Checking page index {page_idx}...")
                 if page_idx < len(preview_pages):
                     page = preview_pages[page_idx]
 
@@ -1574,15 +1951,17 @@ async def approve_sources_with_edits(
                     page_is_approved = page.get("is_approved", False)
                     has_page_updates = any(pu.get("page_index") == page_idx for pu in page_updates)
 
+                    print(f"    📊 Page {page_idx}: is_approved={page_is_approved}, has_updates={has_page_updates}")
+
                     # Logic: If frontend is sending updates for this page, allow re-approval
                     if page_is_approved and has_page_updates:
-                        print(f"✅ EDIT DETECTED: Page {page_idx} has updates from frontend - allowing re-approval")
                         # Clear approval status to allow re-approval
+                        print(f"    🔄 Re-approving page {page_idx} (has updates)")
                         page["is_approved"] = False
                         page["approved_at"] = None
                         page["approved_by"] = None
                     elif page_is_approved:
-                        print(f"⚠️  DUPLICATE APPROVAL PREVENTED: Page {page_idx} already approved with no new edits")
+                        print(f"    ⏭️ SKIPPING page {page_idx} - already approved, no updates")
                         continue  # Skip this page entirely
 
                     # Apply edits if provided
@@ -1975,9 +2354,11 @@ class KBFinalizeRequest(BaseModel):
             "strategy": "by_heading",
             "chunk_size": 1000,
             "chunk_overlap": 200,
-            "preserve_code_blocks": True
+            "preserve_code_blocks": True,
+            "custom_separators": None,  # Optional: For "custom" strategy, e.g., ["\\n## ", "\\n### "]
+            "enable_enhanced_metadata": False  # Optional: Add context_before/after, parent_heading
         },
-        description="Chunking configuration"
+        description="Chunking configuration including optional custom_separators and enhanced metadata"
     )
     indexing_method: str = Field(
         default="high_quality",
@@ -2060,13 +2441,12 @@ async def configure_models_and_retrieval(
                 detail="KB draft not found"
             )
 
-        # Validate embedding model options
+        # Validate embedding model options (must match SUPPORTED_MODELS in embedding_service_local.py)
         supported_embedding_models = [
-            "all-MiniLM-L6-v2",
-            "all-mpnet-base-v2",
-            "sentence-transformers/all-MiniLM-L12-v2",
-            "sentence-transformers/all-distilroberta-v1",
-            "text-embedding-ada-002"  # OpenAI (if configured)
+            "all-MiniLM-L6-v2",           # Default - fast, good quality
+            "all-MiniLM-L12-v2",          # Medium speed, better quality
+            "all-mpnet-base-v2",          # Slow, best quality
+            "paraphrase-multilingual-MiniLM-L12-v2",  # Multilingual support
         ]
 
         embedding_model = request.embedding_config.get("model")
@@ -2104,13 +2484,12 @@ async def configure_models_and_retrieval(
         total_pages = sum(len(source.get("approved_pages", [])) for source in approved_sources)
         total_content_size = sum(source.get("metadata", {}).get("total_content_size", 0) for source in approved_sources)
 
-        # Estimate embedding dimensions based on model
+        # Estimate embedding dimensions based on model (must match SUPPORTED_MODELS)
         embedding_dimensions = {
             "all-MiniLM-L6-v2": 384,
+            "all-MiniLM-L12-v2": 384,
             "all-mpnet-base-v2": 768,
-            "sentence-transformers/all-MiniLM-L12-v2": 384,
-            "sentence-transformers/all-distilroberta-v1": 768,
-            "text-embedding-ada-002": 1536
+            "paraphrase-multilingual-MiniLM-L12-v2": 384,
         }
 
         estimated_dimensions = embedding_dimensions.get(embedding_model, 384)

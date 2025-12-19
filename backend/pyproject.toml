@@ -36,6 +36,7 @@ dependencies = [
     "qdrant-client>=1.7.0",
     "torch>=2.0.0",
     "playwright>=1.40.0",
+    "python-magic>=0.4.27",  # MIME type detection for file uploads
     # Celery monitoring
     "flower>=2.0.0",
 ]

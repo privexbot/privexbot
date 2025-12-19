@@ -125,7 +125,7 @@ function UnifiedStatsCard({ stats }: { stats: any }) {
 }
 
 // Modern KB Card Component
-function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
+function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, index }: any) {
   const getStatusColor = (status: KBStatus) => {
     switch (status) {
       case KBStatus.READY:
@@ -170,10 +170,6 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
                 <DropdownMenuItem onClick={() => onEdit(kb.id)} className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <Settings className="h-4 w-4 mr-2" />
                   Edit Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Re-chunk
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
                 <DropdownMenuItem onClick={() => onDelete(kb.id)} className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">
@@ -250,7 +246,7 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -263,7 +259,17 @@ function KBCard({ kb, onView, onEdit, onDelete, index }: any) {
             <Button
               variant="outline"
               size="sm"
-              className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              onClick={() => onViewDocuments(kb.id)}
+              className="font-manrope rounded-lg border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+            >
+              <FileText className="h-3 w-3 mr-1" />
+              Docs
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onTest(kb.id)}
+              className="font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
             >
               <Activity className="h-3 w-3 mr-1" />
               Test
@@ -326,7 +332,9 @@ export default function KnowledgeBasesPage() {
 
   const handleCreateKB = () => navigate('/knowledge-bases/create');
   const handleViewKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}`);
+  const handleViewDocuments = (kbId: string) => navigate(`/knowledge-bases/${kbId}/documents`);
   const handleEditKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}/edit`);
+  const handleTestKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}?tab=test-search`);
 
   const handleDeleteKB = async (kbId: string) => {
     try {
@@ -489,8 +497,10 @@ export default function KnowledgeBasesPage() {
                       kb={kb}
                       index={index}
                       onView={handleViewKB}
+                      onViewDocuments={handleViewDocuments}
                       onEdit={handleEditKB}
                       onDelete={setDeleteKBId}
+                      onTest={handleTestKB}
                     />
                   ))}
                 </motion.div>
@@ -550,6 +560,24 @@ export default function KnowledgeBasesPage() {
                               >
                                 <Eye className="h-4 w-4 mr-1" />
                                 View
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewDocuments(kb.id)}
+                                className="flex-1 sm:flex-none font-manrope rounded-lg border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                Docs
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleTestKB(kb.id)}
+                                className="flex-1 sm:flex-none font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                              >
+                                <Activity className="h-4 w-4 mr-1" />
+                                Test
                               </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

@@ -19,8 +19,7 @@ import {
   MoreHorizontal,
   AlertCircle,
   CheckCircle,
-  Clock,
-  Download
+  Clock
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { KnowledgeBase, KBDocument, formatDocumentSourceType, formatDocumentSource } from '@/types/knowledge-base';
@@ -184,6 +183,33 @@ export default function KBDocumentsPage() {
   const handleFileUpload = async () => {
     if (!selectedFile || !kbId) return;
 
+    // Client-side validation based on KB type
+    const formats = getSupportedFormats();
+    const maxSizeBytes = isFileUploadOnlyKB() ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+
+    // Validate file size
+    if (selectedFile.size > maxSizeBytes) {
+      toast({
+        title: 'Error',
+        description: `File is too large. Maximum size: ${formats.maxSize}`,
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate file extension
+    const fileExtension = selectedFile.name.toLowerCase().split('.').pop() || '';
+    const allowedExtensions = formats.accept.split(',').map(ext => ext.replace('.', ''));
+
+    if (!allowedExtensions.includes(fileExtension)) {
+      toast({
+        title: 'Error',
+        description: `Unsupported file format (.${fileExtension}). ${formats.hint.split('.')[0]}.`,
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
       const newDocument = await kbClient.kb.uploadDocument(kbId, selectedFile);
@@ -205,13 +231,19 @@ export default function KBDocumentsPage() {
 
       let errorMessage = 'Failed to upload document';
       if (error.message.includes('too large')) {
-        errorMessage = 'File is too large (max 10MB)';
+        errorMessage = `File is too large (max ${formats.maxSize})`;
       } else if (error.message.includes('format')) {
-        errorMessage = 'Unsupported file format. Please use Text, Markdown, CSV, or JSON files.';
+        errorMessage = isFileUploadOnlyKB()
+          ? 'Unsupported file format. This knowledge base supports PDF, Word, Excel, and more.'
+          : 'Unsupported file format. Please use Text, Markdown, CSV, or JSON files.';
+      } else if (error.message.includes('Tika')) {
+        errorMessage = 'File parsing failed. The file may be corrupted or password-protected.';
       } else if (error.message.includes('limit reached')) {
         errorMessage = 'Document limit reached for this knowledge base';
       } else if (error.message.includes('Access denied')) {
         errorMessage = 'You do not have permission to add documents to this knowledge base';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
       toast({
@@ -317,6 +349,46 @@ export default function KBDocumentsPage() {
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   };
 
+  /**
+   * Check if this KB is a file-upload-only KB
+   * Used to restrict adding text documents and editing
+   */
+  const isFileUploadOnlyKB = (): boolean => {
+    if (!Array.isArray(documents) || documents.length === 0) return false;
+    return documents.every((doc: KBDocument) => doc.source_type === 'file_upload');
+  };
+
+  /**
+   * Check if a document can be edited
+   * File upload documents cannot be edited since content is in Qdrant only
+   */
+  const canEditDocument = (doc: KBDocument): boolean => {
+    if (doc.source_type === 'file_upload') return false;
+    if ((doc as any).processing_metadata?.chunk_storage_location === 'qdrant_only') return false;
+    return true;
+  };
+
+  /**
+   * Get supported file formats based on KB type
+   * - File Upload KBs: Robust formats via Tika (PDF, Word, etc.)
+   * - Web URL KBs: Simple text formats only
+   */
+  const getSupportedFormats = () => {
+    if (isFileUploadOnlyKB()) {
+      return {
+        accept: '.pdf,.doc,.docx,.txt,.md,.csv,.json,.xlsx,.xls,.pptx,.ppt,.rtf,.odt,.html,.htm,.xml',
+        description: 'PDF, Word, Excel, PowerPoint, Text, Markdown, CSV, JSON, and more',
+        hint: 'Supported formats: PDF (.pdf), Word (.doc, .docx), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), Text (.txt), Markdown (.md), CSV (.csv), JSON (.json), RTF (.rtf), HTML (.html), XML (.xml). Files are parsed using Apache Tika for accurate text extraction.',
+        maxSize: '50MB'
+      };
+    }
+    return {
+      accept: '.txt,.md,.csv,.json',
+      description: 'Text, Markdown, CSV, JSON',
+      hint: 'Supported formats: Text (.txt), Markdown (.md), CSV (.csv), JSON (.json). For more file formats like PDF or Word documents, create a new knowledge base using the file upload option.',
+      maxSize: '10MB'
+    };
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -375,13 +447,15 @@ export default function KBDocumentsPage() {
               <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                 {hasPermission('kb:edit') && (
                   <>
-                    <Dialog open={textDialogOpen} onOpenChange={setTextDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" className="font-manrope">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Text
-                        </Button>
-                      </DialogTrigger>
+                    {/* Only show Add Text button for non-file-upload KBs */}
+                    {!isFileUploadOnlyKB() && (
+                      <Dialog open={textDialogOpen} onOpenChange={setTextDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" className="font-manrope">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Text
+                          </Button>
+                        </DialogTrigger>
                       <DialogContent className="max-w-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
                         <DialogHeader className="border-b border-gray-200 dark:border-gray-700 pb-4">
                           <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white font-manrope flex items-center gap-2">
@@ -452,8 +526,9 @@ export default function KBDocumentsPage() {
                             </Button>
                           </div>
                         </div>
-                  </DialogContent>
-                </Dialog>
+                      </DialogContent>
+                    </Dialog>
+                    )}
 
                     <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
                       <DialogTrigger asChild>
@@ -469,7 +544,7 @@ export default function KBDocumentsPage() {
                             Upload Document
                           </DialogTitle>
                           <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
-                            Upload a file to add to the knowledge base. Supported formats: Text, Markdown, CSV, JSON (max 10MB)
+                            Upload a file to add to the knowledge base. Supported formats: {getSupportedFormats().description} (max {getSupportedFormats().maxSize})
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-6 pt-4">
@@ -478,13 +553,13 @@ export default function KBDocumentsPage() {
                             <Input
                               id="file"
                               type="file"
-                              accept=".txt,.md,.csv,.json"
+                              accept={getSupportedFormats().accept}
                               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                               className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-lg shadow-sm font-manrope text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent"
                             />
-                            <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
-                              <p className="text-sm text-blue-700 dark:text-blue-300 font-manrope leading-relaxed">
-                                Supported formats: Text (.txt), Markdown (.md), CSV (.csv), JSON (.json). Files will be automatically processed and chunked for optimal search performance.
+                            <div className={`${isFileUploadOnlyKB() ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-700' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700'} border rounded-lg p-3`}>
+                              <p className={`text-sm ${isFileUploadOnlyKB() ? 'text-purple-700 dark:text-purple-300' : 'text-blue-700 dark:text-blue-300'} font-manrope leading-relaxed`}>
+                                {getSupportedFormats().hint}
                               </p>
                             </div>
                           </div>
@@ -567,10 +642,13 @@ export default function KBDocumentsPage() {
                 </p>
                 {documents.length === 0 && hasPermission('kb:edit') && (
                   <div className="flex flex-wrap gap-3 mt-6">
-                    <Button variant="outline" onClick={() => setTextDialogOpen(true)} className="font-manrope">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Text
-                    </Button>
+                    {/* Only show Add Text button for non-file-upload KBs */}
+                    {!isFileUploadOnlyKB() && (
+                      <Button variant="outline" onClick={() => setTextDialogOpen(true)} className="font-manrope">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Text
+                      </Button>
+                    )}
                     <Button onClick={() => setUploadDialogOpen(true)} className="font-manrope bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-500">
                       <Upload className="h-4 w-4 mr-2" />
                       Upload File
@@ -658,17 +736,23 @@ export default function KBDocumentsPage() {
                               <Eye className="h-4 w-4 mr-3 text-blue-600 dark:text-blue-400" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="font-manrope hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                              <Download className="h-4 w-4 mr-3 text-green-600 dark:text-green-400" />
-                              Download
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={() => navigate(`/knowledge-bases/${kbId}/documents/${document.id}/edit`)}
-                              className="font-manrope hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                            >
-                              <Edit className="h-4 w-4 mr-3 text-orange-600 dark:text-orange-400" />
-                              Edit
-                            </DropdownMenuItem>
+                            {canEditDocument(document) ? (
+                              <DropdownMenuItem
+                                onSelect={() => navigate(`/knowledge-bases/${kbId}/documents/${document.id}/edit`)}
+                                className="font-manrope hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                              >
+                                <Edit className="h-4 w-4 mr-3 text-orange-600 dark:text-orange-400" />
+                                Edit
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                disabled
+                                className="font-manrope text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                              >
+                                <Edit className="h-4 w-4 mr-3 text-gray-400 dark:text-gray-500" />
+                                Edit (File Upload)
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               className="text-red-600 dark:text-red-400 font-manrope hover:bg-red-50 dark:hover:bg-red-900/20"
                               onClick={() => handleDeleteClick(document.id, document.name || document.title || 'Untitled Document')}
