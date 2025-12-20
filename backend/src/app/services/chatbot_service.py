@@ -123,20 +123,22 @@ class ChatbotService:
             max_messages=chatbot.config.get("memory", {}).get("max_messages", 10)
         )
 
-        # 5. Build prompt
-        prompt = self._build_prompt(
+        # 5. Build structured messages for AI
+        messages = self._build_messages(
             chatbot=chatbot,
             user_message=user_message,
             context=context,
             history=history
         )
 
-        # 6. Call AI
+        # 6. Call AI with structured messages
+        # This automatically routes to the correct provider based on model prefix
+        # e.g., "gemini-2.0-flash" -> Gemini, "gpt-4o" -> OpenAI, etc.
         try:
-            ai_response = await self.inference_service.generate(
-                prompt=prompt,
-                model=chatbot.config.get("model", "secret-ai-v1"),
-                temperature=chatbot.config.get("temperature", 0.7),
+            ai_response = await self.inference_service.generate_chat(
+                messages=messages,
+                model=chatbot.config.get("model"),  # None = use default
+                temperature=chatbot.config.get("temperature"),  # None = use provider default
                 max_tokens=chatbot.config.get("max_tokens", 2000)
             )
 
@@ -260,6 +262,56 @@ class ChatbotService:
         }
 
 
+    def _build_messages(
+        self,
+        chatbot: Chatbot,
+        user_message: str,
+        context: str,
+        history: list
+    ) -> list:
+        """
+        Build structured messages for AI model.
+
+        WHY: Modern LLMs (OpenAI, Gemini, etc.) work better with structured messages
+        HOW: Build list of role/content dicts with system, history, and user messages
+
+        RETURNS:
+            [
+                {"role": "system", "content": "You are a helpful assistant..."},
+                {"role": "user", "content": "Previous user message"},
+                {"role": "assistant", "content": "Previous response"},
+                {"role": "user", "content": "Current user message"}
+            ]
+        """
+        messages = []
+
+        # 1. System prompt (with optional KB context embedded)
+        system_prompt = chatbot.config.get("system_prompt", "You are a helpful assistant.")
+
+        # If we have KB context, add it to system prompt
+        if context:
+            system_content = f"""{system_prompt}
+
+Use the following context from the knowledge base to answer questions. If the context doesn't contain relevant information, say so honestly.
+
+Context:
+{context}"""
+        else:
+            system_content = system_prompt
+
+        messages.append({"role": "system", "content": system_content})
+
+        # 2. Chat history (previous messages)
+        if history:
+            for msg in history:
+                role = "user" if msg.role.value == "user" else "assistant"
+                messages.append({"role": role, "content": msg.content})
+
+        # 3. Current user message
+        messages.append({"role": "user", "content": user_message})
+
+        return messages
+
     def _build_prompt(
         self,
         chatbot: Chatbot,
@@ -268,47 +320,20 @@ class ChatbotService:
         history: list
     ) -> str:
         """
-        Build prompt for AI model.
+        DEPRECATED: Use _build_messages() instead.
 
-        WHY: Structure input for optimal AI response
-        HOW: System prompt + KB context + history + user message
-
-        TEMPLATE:
-            System: {system_prompt}
-
-            Context from knowledge base:
-            {context}
-
-            Chat history:
-            {history}
-
-            User: {user_message}
-            Assistant:
+        Kept for backward compatibility with any code that might still use it.
+        Converts structured messages to a single prompt string.
         """
+        messages = self._build_messages(chatbot, user_message, context, history)
 
         parts = []
+        for msg in messages:
+            role = msg["role"].capitalize()
+            parts.append(f"{role}: {msg['content']}")
 
-        # System prompt
-        system_prompt = chatbot.config.get("system_prompt", "You are a helpful assistant.")
-        parts.append(f"System: {system_prompt}")
-
-        # Knowledge base context
-        if context:
-            parts.append("\nContext from knowledge base:")
-            parts.append(context)
-
-        # Chat history
-        if history:
-            parts.append("\nChat history:")
-            for msg in history:
-                role = "User" if msg.role.value == "user" else "Assistant"
-                parts.append(f"{role}: {msg.content}")
-
-        # Current user message
-        parts.append(f"\nUser: {user_message}")
         parts.append("Assistant:")
-
-        return "\n".join(parts)
+        return "\n\n".join(parts)
 
 
     async def preview_response(

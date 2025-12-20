@@ -134,24 +134,32 @@ async def chat(
     }
 
     # Route to appropriate service
-    if bot_type == "chatbot":
-        from app.services.chatbot_service import chatbot_service
+    try:
+        if bot_type == "chatbot":
+            from app.services.chatbot_service import chatbot_service
 
-        response = await chatbot_service.process_message(
-            db=db,
-            chatbot=bot,
-            user_message=request.message,
-            session_id=session_id,
-            channel_context=channel_context
-        )
+            response = await chatbot_service.process_message(
+                db=db,
+                chatbot=bot,
+                user_message=request.message,
+                session_id=session_id,
+                channel_context=channel_context
+            )
 
-    else:  # chatflow
-        # Placeholder - chatflow_service not yet implemented
-        response = {
-            "response": "Chatflow support coming soon",
-            "session_id": session_id,
-            "message_id": str(uuid4())
-        }
+        else:  # chatflow
+            # Placeholder - chatflow_service not yet implemented
+            response = {
+                "response": "Chatflow support coming soon",
+                "session_id": session_id,
+                "message_id": str(uuid4())
+            }
+
+    except Exception as e:
+        # Handle inference errors properly
+        error_str = str(e).lower()
+        if "rate limit" in error_str or "429" in error_str or "quota" in error_str:
+            raise HTTPException(429, f"Rate limit exceeded: {str(e)[:200]}")
+        raise HTTPException(500, f"AI generation failed: {str(e)[:200]}")
 
     return ChatResponse(
         response=response["response"],

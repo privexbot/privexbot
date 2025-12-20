@@ -24,13 +24,17 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 from app.db.session import get_db
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user, get_current_user_with_org
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.chatbot import Chatbot, ChatbotStatus
 from app.models.knowledge_base import KnowledgeBase
 from app.services.draft_service import draft_service, DraftType
 from app.services.chatbot_service import chatbot_service
+
+# Type alias for the user context tuple
+from typing import Tuple
+UserContext = Tuple[User, str, str]  # (user, org_id, ws_id)
 
 router = APIRouter(prefix="/chatbots", tags=["chatbots"])
 
@@ -153,7 +157,7 @@ class TestMessageResponse(BaseModel):
 async def create_chatbot_draft(
     request: CreateChatbotDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Create a new chatbot draft in Redis.
@@ -161,10 +165,12 @@ async def create_chatbot_draft(
     This starts the chatbot creation process without committing to database.
     The draft expires after 24 hours if not deployed.
     """
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == request.workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -207,13 +213,15 @@ async def create_chatbot_draft(
 async def list_chatbot_drafts(
     workspace_id: UUID = Query(..., description="Workspace ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """List all chatbot drafts for a workspace."""
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -234,9 +242,11 @@ async def list_chatbot_drafts(
 async def get_chatbot_draft(
     draft_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Get a chatbot draft by ID."""
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -248,7 +258,7 @@ async def get_chatbot_draft(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == UUID(draft["workspace_id"]),
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -265,13 +275,15 @@ async def update_chatbot_draft(
     draft_id: str,
     request: UpdateChatbotDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Update chatbot draft configuration.
 
     Auto-saves to Redis with extended TTL.
     """
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -283,7 +295,7 @@ async def update_chatbot_draft(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == UUID(draft["workspace_id"]),
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -309,9 +321,11 @@ async def update_chatbot_draft(
 async def delete_chatbot_draft(
     draft_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Delete a chatbot draft (abandon creation)."""
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -323,7 +337,7 @@ async def delete_chatbot_draft(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == UUID(draft["workspace_id"]),
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -346,9 +360,11 @@ async def attach_kb_to_draft(
     draft_id: str,
     request: AttachKBRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Attach a knowledge base to the chatbot draft."""
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -404,9 +420,11 @@ async def detach_kb_from_draft(
     draft_id: str,
     kb_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Detach a knowledge base from the chatbot draft."""
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -443,7 +461,7 @@ async def deploy_chatbot(
     draft_id: str,
     request: DeployChatbotRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Deploy chatbot from draft to production.
@@ -456,6 +474,8 @@ async def deploy_chatbot(
 
     Returns the API key - store it securely as it won't be shown again.
     """
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -467,7 +487,7 @@ async def deploy_chatbot(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == UUID(draft["workspace_id"]),
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -535,13 +555,15 @@ async def list_chatbots(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """List all deployed chatbots in a workspace."""
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -582,9 +604,11 @@ async def list_chatbots(
 async def get_chatbot(
     chatbot_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Get a deployed chatbot by ID."""
+    current_user, org_id, _ = user_context
+
     chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
 
     if not chatbot:
@@ -596,7 +620,7 @@ async def get_chatbot(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == chatbot.workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -630,9 +654,11 @@ async def update_chatbot(
     chatbot_id: UUID,
     request: UpdateChatbotDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Update a deployed chatbot's configuration."""
+    current_user, org_id, _ = user_context
+
     chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
 
     if not chatbot:
@@ -644,7 +670,7 @@ async def update_chatbot(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == chatbot.workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -711,9 +737,11 @@ async def update_chatbot(
 async def delete_chatbot(
     chatbot_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Archive a chatbot (soft delete)."""
+    current_user, org_id, _ = user_context
+
     chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
 
     if not chatbot:
@@ -725,7 +753,7 @@ async def delete_chatbot(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == chatbot.workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -751,13 +779,15 @@ async def test_draft_chatbot(
     draft_id: str,
     request: TestMessageRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Test a chatbot draft with a message.
 
     This allows testing the chatbot configuration before deployment.
     """
+    current_user, org_id, _ = user_context
+
     draft = draft_service.get_draft(DraftType.CHATBOT, draft_id)
 
     if not draft:
@@ -769,7 +799,7 @@ async def test_draft_chatbot(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == UUID(draft["workspace_id"]),
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -800,9 +830,11 @@ async def test_deployed_chatbot(
     chatbot_id: UUID,
     request: TestMessageRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Test a deployed chatbot with a message."""
+    current_user, org_id, _ = user_context
+
     chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
 
     if not chatbot:
@@ -814,7 +846,7 @@ async def test_deployed_chatbot(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == chatbot.workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -852,9 +884,11 @@ async def get_chatbot_analytics(
     chatbot_id: UUID,
     days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """Get chatbot usage analytics."""
+    current_user, org_id, _ = user_context
+
     chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
 
     if not chatbot:
@@ -866,7 +900,7 @@ async def get_chatbot_analytics(
     # Verify workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == chatbot.workspace_id,
-        Workspace.organization_id == current_user.organization_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:

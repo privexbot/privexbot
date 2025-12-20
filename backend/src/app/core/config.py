@@ -119,7 +119,8 @@ class Settings(BaseSettings):
         description="Frontend application URL for generating invitation links"
     )
 
-    # Secret AI Settings
+    # LLM Inference Settings
+    # Secret AI (primary provider for production)
     SECRET_AI_API_KEY: str = Field(
         default="",
         description="Secret AI API key for LLM inference"
@@ -127,6 +128,36 @@ class Settings(BaseSettings):
     SECRET_AI_BASE_URL: str = Field(
         default="https://api.secret.ai/v1",
         description="Secret AI API base URL"
+    )
+
+    # Ollama (local inference for development)
+    OLLAMA_BASE_URL: str = Field(
+        default="http://localhost:11434/v1",
+        description="Ollama API base URL (local LLM inference)"
+    )
+
+    # OpenAI (alternative provider)
+    OPENAI_API_KEY: str = Field(
+        default="",
+        description="OpenAI API key"
+    )
+
+    # DeepSeek (alternative provider)
+    DEEPSEEK_API_KEY: str = Field(
+        default="",
+        description="DeepSeek API key"
+    )
+
+    # Gemini (Google AI)
+    GEMINI_API_KEY: str = Field(
+        default="",
+        description="Google Gemini API key"
+    )
+
+    # Default inference model
+    DEFAULT_INFERENCE_MODEL: str = Field(
+        default="llama3.1",
+        description="Default model to use for inference"
     )
 
     # Deployment URLs

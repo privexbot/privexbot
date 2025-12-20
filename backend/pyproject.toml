@@ -39,4 +39,7 @@ dependencies = [
     "python-magic>=0.4.27",  # MIME type detection for file uploads
     # Celery monitoring
     "flower>=2.0.0",
+    # LLM Inference providers
+    "openai>=1.0.0",  # OpenAI-compatible APIs (OpenAI, Ollama, DeepSeek, Secret AI)
+    "google-genai>=0.1.0",  # Google Gemini API
 ]
