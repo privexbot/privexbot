@@ -35,10 +35,12 @@ import {
   ThumbsDown,
   Eye,
   MousePointer,
+  Key,
+  RotateCcw,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { useApp } from '@/contexts/AppContext';
-import type { Chatbot, ChatMessage, SourceReference, ChatbotAnalytics } from '@/types/chatbot';
+import type { Chatbot, ChatMessage, ChatbotAnalytics, APIKeyInfo } from '@/types/chatbot';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -72,6 +74,15 @@ export default function ChatbotDetailPage() {
   const [analytics, setAnalytics] = useState<ChatbotAnalytics | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsDays, setAnalyticsDays] = useState(7);
+
+  // API Key state
+  const [apiKeys, setApiKeys] = useState<APIKeyInfo[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(false);
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [deleteKeyDialogOpen, setDeleteKeyDialogOpen] = useState(false);
+  const [keyToDelete, setKeyToDelete] = useState<APIKeyInfo | null>(null);
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+  const [newApiKeyCopied, setNewApiKeyCopied] = useState(false);
 
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
@@ -312,6 +323,90 @@ export default function ChatbotDetailPage() {
       loadAnalytics();
     }
   }, [activeTab, analyticsDays]);
+
+  // Load API keys when embed tab is selected
+  useEffect(() => {
+    if (activeTab === 'embed' && chatbotId) {
+      loadApiKeys();
+    }
+  }, [activeTab, chatbotId]);
+
+  const loadApiKeys = async () => {
+    if (!chatbotId || apiKeysLoading) return;
+
+    setApiKeysLoading(true);
+    try {
+      const keys = await chatbotApi.listApiKeys(chatbotId);
+      setApiKeys(keys);
+    } catch (error) {
+      console.error('Failed to load API keys:', error);
+      // Don't show error toast - might be a new chatbot without keys
+    } finally {
+      setApiKeysLoading(false);
+    }
+  };
+
+  const handleRegenerateApiKey = async () => {
+    if (!chatbotId) return;
+
+    try {
+      const result = await chatbotApi.regenerateApiKey(chatbotId);
+      setNewApiKey(result.api_key);
+      // Reload keys to show the new key prefix
+      await loadApiKeys();
+      toast({
+        title: 'API Key Regenerated',
+        description: 'Your new API key has been generated. Save it now!',
+      });
+    } catch (error) {
+      console.error('Failed to regenerate API key:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to regenerate API key',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const confirmDeleteApiKey = (key: APIKeyInfo) => {
+    setKeyToDelete(key);
+    setDeleteKeyDialogOpen(true);
+  };
+
+  const handleDeleteApiKey = async () => {
+    if (!chatbotId || !keyToDelete) return;
+
+    try {
+      await chatbotApi.deleteApiKey(chatbotId, keyToDelete.id);
+      // Reload keys to reflect the change
+      await loadApiKeys();
+      setDeleteKeyDialogOpen(false);
+      setKeyToDelete(null);
+      toast({
+        title: 'API Key Deleted',
+        description: 'The API key has been permanently deleted.',
+      });
+    } catch (error) {
+      console.error('Failed to delete API key:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete API key',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const copyNewApiKey = () => {
+    if (newApiKey) {
+      navigator.clipboard.writeText(newApiKey);
+      setNewApiKeyCopied(true);
+      setTimeout(() => setNewApiKeyCopied(false), 2000);
+      toast({
+        title: 'Copied!',
+        description: 'API key copied to clipboard',
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -751,57 +846,227 @@ export default function ChatbotDetailPage() {
 
           {/* Embed Code Tab */}
           <TabsContent value="embed">
-            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
-              <CardHeader className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border-b border-cyan-200 dark:border-cyan-700 rounded-t-xl p-6">
-                <div className="flex items-center gap-3">
-                  <Code className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
-                  <div>
-                    <CardTitle className="text-lg font-bold text-cyan-900 dark:text-cyan-100 font-manrope">Embed Code</CardTitle>
-                    <CardDescription className="text-cyan-700 dark:text-cyan-300 font-manrope">Add this chatbot to your website</CardDescription>
+            <div className="space-y-6">
+              {/* API Keys Section */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-b border-amber-200 dark:border-amber-700 rounded-t-xl p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Key className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                      <div>
+                        <CardTitle className="text-lg font-bold text-amber-900 dark:text-amber-100 font-manrope">API Keys</CardTitle>
+                        <CardDescription className="text-amber-700 dark:text-amber-300 font-manrope">Manage your chatbot API keys</CardDescription>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setRegenerateDialogOpen(true)}
+                      className="border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Regenerate Key
+                    </Button>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 space-y-6">
-                <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700">
-                  <AlertCircle className="h-4 w-4 text-amber-600" />
-                  <AlertDescription className="text-amber-800 dark:text-amber-200 font-manrope">
-                    Replace <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">YOUR_API_KEY</code> with the API key you received when deploying the chatbot.
-                  </AlertDescription>
-                </Alert>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  {/* New API Key Alert (shown after regeneration) */}
+                  {newApiKey && (
+                    <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-green-800 dark:text-green-200 font-manrope">
+                        <div className="space-y-2">
+                          <p className="font-semibold">New API Key Generated!</p>
+                          <p className="text-sm">Save this key now - it won't be shown again.</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <code className="bg-green-100 dark:bg-green-900/50 px-3 py-2 rounded font-mono text-sm flex-1 break-all">
+                              {newApiKey}
+                            </code>
+                            <Button variant="outline" size="sm" onClick={copyNewApiKey}>
+                              {newApiKeyCopied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
 
-                <div className="relative">
-                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm font-mono">
-                    {getEmbedCode()}
-                  </pre>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={copyEmbedCode}
-                    className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-100 border-gray-600"
-                  >
-                    {embedCodeCopied ? (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4 mr-1" />
-                        Copy
-                      </>
-                    )}
-                  </Button>
-                </div>
+                  {/* API Keys List */}
+                  {apiKeysLoading ? (
+                    <div className="flex items-center justify-center py-4">
+                      <RefreshCw className="h-5 w-5 animate-spin text-amber-500" />
+                    </div>
+                  ) : apiKeys.length > 0 ? (
+                    <div className="space-y-3">
+                      {apiKeys.filter(k => k.is_active).map((key) => (
+                        <div
+                          key={key.id}
+                          className="flex items-center justify-between p-4 rounded-lg border bg-gray-50 dark:bg-gray-700/30 border-gray-200 dark:border-gray-700"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Key className="h-5 w-5 text-amber-600" />
+                            <div>
+                              <p className="font-mono text-sm text-gray-900 dark:text-gray-100">{key.key_prefix}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Created {new Date(key.created_at).toLocaleDateString()}
+                                {key.last_used_at && ` • Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="default">Active</Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => confirmDeleteApiKey(key)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              title="Delete API Key"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <Key className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">No API keys found</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Click "Regenerate Key" to create one</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-                <div className="flex items-center gap-4">
-                  <Button variant="outline" onClick={() => window.open(`${import.meta.env.VITE_WIDGET_URL?.replace('/widget.js', '') || 'http://localhost:9000'}/test.html`, '_blank')}>
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Open Test Page
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              {/* Embed Code Section */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border-b border-cyan-200 dark:border-cyan-700 rounded-t-xl p-6">
+                  <div className="flex items-center gap-3">
+                    <Code className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
+                    <div>
+                      <CardTitle className="text-lg font-bold text-cyan-900 dark:text-cyan-100 font-manrope">Embed Code</CardTitle>
+                      <CardDescription className="text-cyan-700 dark:text-cyan-300 font-manrope">Add this chatbot to your website</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700">
+                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                    <AlertDescription className="text-blue-800 dark:text-blue-200 font-manrope">
+                      Replace <code className="bg-blue-100 dark:bg-blue-900/50 px-1 rounded">YOUR_API_KEY</code> with the API key shown above.
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="relative">
+                    <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm font-mono">
+                      {getEmbedCode()}
+                    </pre>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={copyEmbedCode}
+                      className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-100 border-gray-600"
+                    >
+                      {embedCodeCopied ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4 mr-1" />
+                          Copy
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <Button variant="outline" onClick={() => window.open(`${import.meta.env.VITE_WIDGET_URL?.replace('/widget.js', '') || 'http://localhost:9000'}/test.html`, '_blank')}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Test Page
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
+
+          {/* Regenerate API Key Confirmation Dialog */}
+          <Dialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>
+            <DialogContent className="bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-xl shadow-xl max-w-md">
+              <DialogHeader className="text-center pb-4">
+                <RotateCcw className="w-12 h-12 mx-auto text-amber-600 dark:text-amber-400 mb-4" />
+                <DialogTitle className="text-xl font-bold text-amber-900 dark:text-amber-100 font-manrope">Regenerate API Key</DialogTitle>
+                <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed mt-3">
+                  This will <span className="font-semibold text-amber-700 dark:text-amber-300">permanently delete all existing API keys</span> and create a new one.
+                  <br /><br />
+                  Any applications using the old key will stop working immediately.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setRegenerateDialogOpen(false)}
+                  className="flex-1 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    handleRegenerateApiKey();
+                    setRegenerateDialogOpen(false);
+                  }}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 font-manrope"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Regenerate Key
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete API Key Confirmation Dialog */}
+          <Dialog open={deleteKeyDialogOpen} onOpenChange={setDeleteKeyDialogOpen}>
+            <DialogContent className="bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-xl shadow-xl max-w-md">
+              <DialogHeader className="text-center pb-4">
+                <Trash2 className="w-12 h-12 mx-auto text-red-600 dark:text-red-400 mb-4" />
+                <DialogTitle className="text-xl font-bold text-red-900 dark:text-red-100 font-manrope">Delete API Key</DialogTitle>
+                <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed mt-3">
+                  Are you sure you want to <span className="font-semibold text-red-700 dark:text-red-300">permanently delete</span> this API key?
+                  <br /><br />
+                  {keyToDelete && (
+                    <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-sm font-mono">
+                      {keyToDelete.key_prefix}
+                    </code>
+                  )}
+                  <br /><br />
+                  <span className="text-red-600 dark:text-red-400 font-medium">
+                    This action is irreversible. Any applications using this key will stop working immediately.
+                  </span>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteKeyDialogOpen(false);
+                    setKeyToDelete(null);
+                  }}
+                  className="flex-1 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleDeleteApiKey}
+                  variant="destructive"
+                  className="flex-1 font-manrope"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Permanently
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Configuration Tab */}
           <TabsContent value="settings">

@@ -29,6 +29,10 @@ import type {
 
   // Analytics Types
   ChatbotAnalytics,
+
+  // API Key Types
+  APIKeyInfo,
+  APIKeyCreateResponse,
 } from "@/types/chatbot";
 
 // ========================================
@@ -399,6 +403,68 @@ export const chatbotApi = {
         `/chatbots/${chatbotId}/analytics`,
         { params: { days } }
       );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  // ========================================
+  // API KEY MANAGEMENT
+  // ========================================
+
+  /**
+   * List API keys for a chatbot
+   * GET /api/v1/chatbots/{chatbot_id}/api-keys
+   *
+   * Returns list of API keys with prefix only (not full key for security)
+   */
+  async listApiKeys(chatbotId: string): Promise<APIKeyInfo[]> {
+    try {
+      const response = await apiClient.get<APIKeyInfo[]>(
+        `/chatbots/${chatbotId}/api-keys`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Regenerate API key for a chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/api-keys/regenerate
+   *
+   * WARNING: This revokes all existing keys and creates a new one.
+   * The new key is returned only once - it must be saved immediately!
+   */
+  async regenerateApiKey(chatbotId: string): Promise<APIKeyCreateResponse> {
+    try {
+      const response = await apiClient.post<APIKeyCreateResponse>(
+        `/chatbots/${chatbotId}/api-keys/regenerate`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Permanently delete a specific API key
+   * DELETE /api/v1/chatbots/{chatbot_id}/api-keys/{key_id}
+   *
+   * WARNING: This action is irreversible. The key will stop working immediately.
+   */
+  async deleteApiKey(
+    chatbotId: string,
+    keyId: string
+  ): Promise<{ status: string; key_id: string; key_prefix: string; message: string }> {
+    try {
+      const response = await apiClient.delete<{
+        status: string;
+        key_id: string;
+        key_prefix: string;
+        message: string;
+      }>(`/chatbots/${chatbotId}/api-keys/${keyId}`);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

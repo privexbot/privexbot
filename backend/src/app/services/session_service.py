@@ -76,19 +76,45 @@ class SessionService:
         # Parse session_id to UUID (handles both UUID strings and arbitrary strings)
         session_uuid = self._parse_or_generate_session_uuid(session_id)
 
-        # Try to get existing session
+        # Try to get existing session (query by ID only, handle status separately)
+        # FIX: Previous code filtered by status != EXPIRED, causing UniqueViolation
+        # when trying to create a session with the same deterministic UUID
         session = db.query(ChatSession).filter(
-            ChatSession.id == session_uuid,
-            ChatSession.workspace_id == workspace_id,
-            ChatSession.status != SessionStatus.EXPIRED
+            ChatSession.id == session_uuid
         ).first()
 
         if session:
-            # Update activity
-            session.updated_at = datetime.utcnow()
-            session.last_message_at = datetime.utcnow()
-            db.commit()
-            return session
+            # Session exists - check if we can reuse it
+            if session.workspace_id != workspace_id:
+                # Session belongs to different workspace - this shouldn't happen
+                # but handle it by creating a unique session_id
+                import uuid as uuid_module
+                session_uuid = uuid_module.uuid4()
+                session = None  # Fall through to create new session
+            elif session.status in (SessionStatus.EXPIRED, SessionStatus.CLOSED):
+                # Reactivate expired/closed session
+                session.status = SessionStatus.ACTIVE
+                session.bot_type = BotType(bot_type)
+                session.bot_id = bot_id
+                session.expires_at = datetime.utcnow() + timedelta(hours=24)
+                session.updated_at = datetime.utcnow()
+                session.last_message_at = datetime.utcnow()
+                session.closed_at = None
+                # Update metadata
+                session.session_metadata = {
+                    **(session.session_metadata or {}),
+                    **(channel_context or {}),
+                    "original_session_id": session_id,
+                    "reactivated_at": datetime.utcnow().isoformat()
+                }
+                db.commit()
+                return session
+            else:
+                # Session is active - update activity
+                session.updated_at = datetime.utcnow()
+                session.last_message_at = datetime.utcnow()
+                db.commit()
+                return session
 
         # Create new session with parsed UUID
         session = ChatSession(

@@ -1329,3 +1329,217 @@ async def get_channel_analytics(
             "total": {"sessions": 0, "messages": 0},
             "error": str(e)
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# API KEY MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════
+
+class APIKeyResponse(BaseModel):
+    """API key response (without the actual key)."""
+    id: str
+    name: str
+    key_prefix: str
+    is_active: bool
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+
+
+class APIKeyCreateResponse(BaseModel):
+    """API key creation response (includes the actual key - shown only once)."""
+    id: str
+    name: str
+    key_prefix: str
+    api_key: str  # Full key - only shown once!
+    message: str
+
+
+@router.get("/{chatbot_id}/api-keys", response_model=list[APIKeyResponse])
+async def list_chatbot_api_keys(
+    chatbot_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    List API keys for a chatbot.
+
+    WHY: Users need to see what API keys exist for their chatbot
+    HOW: Return list of keys with prefix only (not the full key for security)
+
+    NOTE: The full API key is only shown once during creation/regeneration.
+    """
+    current_user, org_id, _ = user_context
+    from app.models.api_key import APIKey
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Get all API keys for this chatbot
+    api_keys = db.query(APIKey).filter(
+        APIKey.entity_id == chatbot_id,
+        APIKey.entity_type == "chatbot"
+    ).order_by(APIKey.created_at.desc()).all()
+
+    return [
+        APIKeyResponse(
+            id=str(key.id),
+            name=key.name,
+            key_prefix=key.key_prefix,
+            is_active=key.is_active and not key.is_revoked,
+            created_at=key.created_at,
+            last_used_at=key.last_used_at,
+            expires_at=key.expires_at
+        )
+        for key in api_keys
+    ]
+
+
+@router.post("/{chatbot_id}/api-keys/regenerate", response_model=APIKeyCreateResponse)
+async def regenerate_chatbot_api_key(
+    chatbot_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Regenerate API key for a chatbot.
+
+    WHY: Users may lose their API key or need to rotate it for security
+    HOW: Revoke existing keys and create a new one
+
+    SECURITY:
+    - Old keys are revoked (not deleted for audit trail)
+    - New key is returned only once - save it immediately!
+    """
+    current_user, org_id, _ = user_context
+    from app.models.api_key import APIKey, create_api_key
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Permanently delete all existing API keys for this chatbot
+    deleted_count = db.query(APIKey).filter(
+        APIKey.entity_id == chatbot_id,
+        APIKey.entity_type == "chatbot"
+    ).delete(synchronize_session=False)
+
+    # Create new API key
+    new_key, plain_key = create_api_key(
+        workspace_id=chatbot.workspace_id,
+        name=f"{chatbot.name} API Key",
+        entity_type="chatbot",
+        entity_id=chatbot_id,
+        created_by=current_user.id,
+        permissions=["read", "execute"]
+    )
+
+    db.add(new_key)
+    db.commit()
+
+    return APIKeyCreateResponse(
+        id=str(new_key.id),
+        name=new_key.name,
+        key_prefix=new_key.key_prefix,
+        api_key=plain_key,
+        message="New API key generated. Save it now - it won't be shown again!"
+    )
+
+
+@router.delete("/{chatbot_id}/api-keys/{key_id}", response_model=dict)
+async def delete_chatbot_api_key(
+    chatbot_id: UUID,
+    key_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Permanently delete a specific API key.
+
+    WHY: Security - users need to be able to remove compromised keys
+    HOW: Hard delete from database (no audit trail, immediate effect)
+
+    WARNING: This action is irreversible. The key will stop working immediately.
+    """
+    current_user, org_id, _ = user_context
+    from app.models.api_key import APIKey
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Get the specific API key
+    api_key = db.query(APIKey).filter(
+        APIKey.id == key_id,
+        APIKey.entity_id == chatbot_id,
+        APIKey.entity_type == "chatbot"
+    ).first()
+
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found"
+        )
+
+    # Store key prefix for response before deletion
+    key_prefix = api_key.key_prefix
+
+    # Permanently delete the key
+    db.delete(api_key)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "key_id": str(key_id),
+        "key_prefix": key_prefix,
+        "message": "API key has been permanently deleted"
+    }

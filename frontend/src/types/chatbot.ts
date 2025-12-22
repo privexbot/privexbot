@@ -258,6 +258,30 @@ export interface DeploymentResponse {
   message: string;
 }
 
+/**
+ * API Key Info - For listing keys (without the actual key for security)
+ */
+export interface APIKeyInfo {
+  id: string;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  created_at: string;
+  last_used_at?: string | null;
+  expires_at?: string | null;
+}
+
+/**
+ * API Key Create Response - Contains the actual key (shown only once!)
+ */
+export interface APIKeyCreateResponse {
+  id: string;
+  name: string;
+  key_prefix: string;
+  api_key: string;
+  message: string;
+}
+
 // ========================================
 // DRAFT TYPES (Phase 1 - Redis)
 // ========================================
