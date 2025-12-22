@@ -549,6 +549,11 @@ class UnifiedDraftService:
             db=db
         )
 
+        # Update chatbot's deployment_config with actual channel results
+        # This stores bot_token_credential_id for webhook handlers to use
+        chatbot.deployment_config = deployment_results["channels"]
+        db.commit()
+
         # Add API key to response (only shown once)
         deployment_results["api_key"] = plain_key
         deployment_results["api_key_prefix"] = api_key.key_prefix
@@ -600,6 +605,11 @@ class UnifiedDraftService:
             api_key=api_key.key,
             db=db
         )
+
+        # Update chatflow's config with actual channel results
+        # This stores bot_token_credential_id for webhook handlers to use
+        chatflow.config["deployment"] = deployment_results["channels"]
+        db.commit()
 
         return deployment_results
 
@@ -685,18 +695,41 @@ class UnifiedDraftService:
                     }
 
                 elif channel_type == "telegram":
-                    # Register Telegram webhook (placeholder - requires integration)
+                    # Register Telegram webhook via Telegram API
+                    from app.integrations.telegram_integration import telegram_integration
+
+                    telegram_result = telegram_integration.register_webhook(
+                        db=db,
+                        entity_id=entity_id,
+                        entity_type=entity_type,
+                        config=channel["config"]  # Contains bot_token credential_id
+                    )
+
                     deployment_results["channels"]["telegram"] = {
                         "status": "success",
-                        "webhook_url": f"{settings.API_BASE_URL}/webhooks/telegram/{entity_id}",
-                        "bot_token": channel["config"].get("bot_token")
+                        "webhook_url": telegram_result["webhook_url"],
+                        "bot_username": telegram_result["bot_username"],
+                        "bot_token_credential_id": channel["config"]["bot_token"]  # Store credential ref for webhook handler
                     }
 
                 elif channel_type == "discord":
-                    # Register Discord webhook (placeholder - requires integration)
+                    # Register Discord webhook via Discord API
+                    from app.integrations.discord_integration import discord_integration
+
+                    discord_result = discord_integration.register_webhook(
+                        db=db,
+                        entity_id=entity_id,
+                        entity_type=entity_type,
+                        config=channel["config"]  # Contains bot_token credential_id
+                    )
+
                     deployment_results["channels"]["discord"] = {
                         "status": "success",
-                        "webhook_url": f"{settings.API_BASE_URL}/webhooks/discord/{entity_id}"
+                        "webhook_url": discord_result["webhook_url"],
+                        "bot_username": discord_result["bot_username"],
+                        "application_id": discord_result.get("application_id"),
+                        "invite_url": discord_result.get("invite_url"),  # URL for users to add bot to servers
+                        "bot_token_credential_id": channel["config"]["bot_token"]  # Store credential ref for webhook handler
                     }
 
                 elif channel_type == "whatsapp":

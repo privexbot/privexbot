@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, public, credentials
+from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
 
 
 @asynccontextmanager
@@ -136,6 +137,20 @@ app.include_router(
     credentials.router,
     prefix=settings.API_V1_PREFIX,
     tags=["credentials"]
+)
+
+# Webhook routes (Telegram, Discord, etc.)
+# These receive incoming messages from external platforms
+app.include_router(
+    telegram_webhook.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["webhooks"]
+)
+
+app.include_router(
+    discord_webhook.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["webhooks"]
 )
 
 

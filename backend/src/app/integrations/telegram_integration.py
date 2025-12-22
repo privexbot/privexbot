@@ -183,6 +183,75 @@ class TelegramIntegration:
             }
         )
 
+    async def send_message(
+        self,
+        bot_token: str,
+        chat_id: int,
+        message: str
+    ):
+        """
+        Public method to send message to Telegram user.
+
+        WHY: Called by webhook handler to send responses
+        HOW: Call Telegram sendMessage API
+        """
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+        )
+
+    async def get_webhook_info(self, bot_token: str) -> dict:
+        """
+        Get webhook info from Telegram.
+
+        WHY: Debug and verify webhook configuration
+        HOW: Call Telegram getWebhookInfo API
+        """
+        response = requests.get(
+            f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
+        )
+        data = response.json()
+
+        if data.get("ok"):
+            result = data.get("result", {})
+            return {
+                "webhook_url": result.get("url", ""),
+                "is_set": bool(result.get("url")),
+                "pending_update_count": result.get("pending_update_count", 0),
+                "last_error_date": result.get("last_error_date"),
+                "last_error_message": result.get("last_error_message")
+            }
+        return {"ok": False, "error": data.get("description", "Failed to get webhook info")}
+
+    async def set_webhook(self, bot_token: str, webhook_url: str) -> dict:
+        """
+        Set Telegram webhook URL.
+
+        WHY: Configure where Telegram sends updates
+        HOW: Call Telegram setWebhook API
+        """
+        response = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/setWebhook",
+            json={"url": webhook_url}
+        )
+        return response.json()
+
+    async def delete_webhook(self, bot_token: str) -> dict:
+        """
+        Delete Telegram webhook.
+
+        WHY: Remove webhook when disabling Telegram channel
+        HOW: Call Telegram deleteWebhook API
+        """
+        response = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
+        )
+        return response.json()
+
 
     def _get_bot(self, db: Session, entity_id: UUID) -> Tuple[str, Any]:
         """Get bot by ID (chatbot or chatflow)."""

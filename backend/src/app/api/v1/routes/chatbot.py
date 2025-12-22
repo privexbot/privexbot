@@ -956,3 +956,113 @@ async def get_chatbot_analytics(
             "cached_metrics": chatbot.cached_metrics or {},
             "error": str(e)
         }
+
+
+@router.get("/{chatbot_id}/analytics/by-channel", response_model=dict)
+async def get_channel_analytics(
+    chatbot_id: UUID,
+    days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Get chatbot analytics broken down by deployment channel.
+
+    WHY: Users need to know which channels (web, Telegram, Discord) are most used
+    HOW: Query session_metadata for platform field, aggregate by channel
+
+    RETURNS:
+        {
+            "chatbot_id": "uuid",
+            "period_days": 7,
+            "channels": [
+                {"channel": "web", "sessions": 150, "messages": 1200, "avg_messages_per_session": 8.0},
+                {"channel": "telegram", "sessions": 45, "messages": 320, "avg_messages_per_session": 7.1},
+                {"channel": "discord", "sessions": 22, "messages": 180, "avg_messages_per_session": 8.2}
+            ],
+            "total": {"sessions": 217, "messages": 1700}
+        }
+    """
+    current_user, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    from sqlalchemy import text
+    from datetime import timedelta
+
+    try:
+        # Query sessions grouped by platform
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        result = db.execute(
+            text("""
+                SELECT
+                    COALESCE(session_metadata->>'platform', 'web') as channel,
+                    COUNT(*) as sessions,
+                    SUM(message_count) as messages
+                FROM chat_sessions
+                WHERE bot_id = :bot_id
+                    AND bot_type = 'chatbot'
+                    AND created_at >= :cutoff_date
+                GROUP BY session_metadata->>'platform'
+                ORDER BY sessions DESC
+            """),
+            {"bot_id": str(chatbot_id), "cutoff_date": cutoff_date}
+        ).fetchall()
+
+        channels = []
+        total_sessions = 0
+        total_messages = 0
+
+        for row in result:
+            channel = row[0] or "web"
+            sessions = row[1] or 0
+            messages = row[2] or 0
+
+            channels.append({
+                "channel": channel,
+                "sessions": sessions,
+                "messages": messages,
+                "avg_messages_per_session": round(messages / sessions, 1) if sessions > 0 else 0
+            })
+
+            total_sessions += sessions
+            total_messages += messages
+
+        return {
+            "chatbot_id": str(chatbot_id),
+            "period_days": days,
+            "channels": channels,
+            "total": {
+                "sessions": total_sessions,
+                "messages": total_messages
+            }
+        }
+
+    except Exception as e:
+        # Return empty result on error
+        return {
+            "chatbot_id": str(chatbot_id),
+            "period_days": days,
+            "channels": [],
+            "total": {"sessions": 0, "messages": 0},
+            "error": str(e)
+        }

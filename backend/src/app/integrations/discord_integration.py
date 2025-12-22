@@ -17,7 +17,7 @@ PSEUDOCODE follows the existing codebase patterns.
 
 import requests
 from uuid import UUID
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional, List
 
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,55 @@ class DiscordIntegration:
     WHY: Multi-channel deployment to Discord
     HOW: Webhook and Gateway-based message handling
     """
+
+    # Discord permission flags
+    # See: https://discord.com/developers/docs/topics/permissions
+    PERMISSIONS = {
+        "send_messages": 2048,
+        "embed_links": 16384,
+        "read_message_history": 65536,
+        "add_reactions": 64,
+        "use_slash_commands": 2147483648,
+    }
+
+    def generate_invite_url(
+        self,
+        application_id: str,
+        scopes: Optional[List[str]] = None,
+        permissions: Optional[List[str]] = None
+    ) -> str:
+        """
+        Generate Discord bot invite URL.
+
+        WHY: Users need a link to add bot to their servers
+        HOW: Construct OAuth2 authorize URL with proper scopes and permissions
+
+        ARGS:
+            application_id: Discord application/client ID
+            scopes: OAuth2 scopes (default: ["bot", "applications.commands"])
+            permissions: Permission names from PERMISSIONS dict
+
+        RETURNS:
+            Discord OAuth2 authorize URL
+
+        EXAMPLE:
+            url = discord_integration.generate_invite_url(
+                application_id="123456789",
+                permissions=["send_messages", "use_slash_commands"]
+            )
+            # Returns: https://discord.com/api/oauth2/authorize?client_id=123456789&permissions=2147485696&scope=bot+applications.commands
+        """
+        scopes = scopes or ["bot", "applications.commands"]
+        permissions = permissions or ["send_messages", "embed_links", "read_message_history", "use_slash_commands"]
+
+        # Calculate permission integer from permission names
+        permission_int = 0
+        for perm in permissions:
+            if perm in self.PERMISSIONS:
+                permission_int |= self.PERMISSIONS[perm]
+
+        scope_str = "+".join(scopes)
+        return f"https://discord.com/api/oauth2/authorize?client_id={application_id}&permissions={permission_int}&scope={scope_str}"
 
     def register_webhook(
         self,
@@ -58,7 +107,9 @@ class DiscordIntegration:
         RETURNS:
             {
                 "webhook_url": "https://...",
-                "bot_username": "YourBot#1234"
+                "bot_username": "YourBot#1234",
+                "application_id": "123456789",
+                "invite_url": "https://discord.com/api/oauth2/authorize?..."
             }
         """
 
@@ -85,11 +136,18 @@ class DiscordIntegration:
         ).json()
 
         bot_username = f"{bot_info['username']}#{bot_info['discriminator']}"
+        application_id = config.get("application_id")
+
+        # Generate invite URL if application_id is provided
+        invite_url = None
+        if application_id:
+            invite_url = self.generate_invite_url(application_id)
 
         return {
             "webhook_url": webhook_url,
             "bot_username": bot_username,
-            "application_id": config.get("application_id")
+            "application_id": application_id,
+            "invite_url": invite_url
         }
 
 
@@ -160,6 +218,68 @@ class DiscordIntegration:
             }
         }
 
+
+    def verify_signature(
+        self,
+        body: bytes,
+        signature: str,
+        timestamp: str,
+        public_key: str
+    ) -> bool:
+        """
+        Verify Discord interaction signature.
+
+        WHY: Discord requires signature verification for security
+        HOW: Use Ed25519 to verify the signature
+        """
+        try:
+            from nacl.signing import VerifyKey
+            from nacl.exceptions import BadSignature
+
+            verify_key = VerifyKey(bytes.fromhex(public_key))
+            message = timestamp.encode() + body
+            verify_key.verify(message, bytes.fromhex(signature))
+            return True
+        except (BadSignature, Exception):
+            return False
+
+    async def register_global_commands(
+        self,
+        bot_token: str,
+        application_id: str,
+        commands: list
+    ) -> dict:
+        """
+        Register global slash commands with Discord.
+
+        WHY: Set up bot commands users can invoke
+        HOW: Call Discord API to register commands
+        """
+        headers = {"Authorization": f"Bot {bot_token}"}
+        response = requests.put(
+            f"https://discord.com/api/v10/applications/{application_id}/commands",
+            headers=headers,
+            json=commands
+        )
+        return response.json()
+
+    async def get_global_commands(
+        self,
+        bot_token: str,
+        application_id: str
+    ) -> list:
+        """
+        Get registered global commands from Discord.
+
+        WHY: View current commands for debugging
+        HOW: Call Discord API to list commands
+        """
+        headers = {"Authorization": f"Bot {bot_token}"}
+        response = requests.get(
+            f"https://discord.com/api/v10/applications/{application_id}/commands",
+            headers=headers
+        )
+        return response.json()
 
     def _get_bot(self, db: Session, entity_id: UUID) -> Tuple[str, Any]:
         """Get bot by ID (chatbot or chatflow)."""
