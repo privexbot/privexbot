@@ -135,37 +135,39 @@ class ChatbotAnalyticsService:
 
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # Get overview stats from sessions
+        # Base filter for real sessions (exclude test sessions)
+        # Test sessions have session_metadata->>'platform' = 'test'
+        real_session_filter = and_(
+            ChatSession.bot_id == chatbot_id,
+            ChatSession.bot_type == BotType.CHATBOT,
+            ChatSession.created_at >= start_date,
+            # Exclude test sessions - check platform != 'test' or platform is null
+            ~ChatSession.session_metadata["platform"].astext.in_(["test", "preview"])
+        )
+
+        # Get overview stats from sessions (excluding test/preview)
         session_stats = db.query(
             func.count(ChatSession.id).label("total_sessions"),
             func.avg(ChatSession.message_count).label("avg_messages")
         ).filter(
-            ChatSession.bot_id == chatbot_id,
-            ChatSession.bot_type == BotType.CHATBOT,
-            ChatSession.created_at >= start_date
+            real_session_filter
         ).first()
 
-        # Get message stats (all messages)
+        # Get message stats (all messages, excluding test sessions)
         message_count = db.query(func.count(ChatMessage.id)).join(
             ChatSession,
-            and_(
-                ChatMessage.session_id == ChatSession.id,
-                ChatSession.bot_id == chatbot_id,
-                ChatSession.bot_type == BotType.CHATBOT
-            )
+            ChatMessage.session_id == ChatSession.id
         ).filter(
+            real_session_filter,
             ChatMessage.created_at >= start_date
         ).scalar() or 0
 
-        # Get assistant response stats (successful vs failed)
+        # Get assistant response stats (successful vs failed, excluding test sessions)
         assistant_messages_query = db.query(ChatMessage).join(
             ChatSession,
-            and_(
-                ChatMessage.session_id == ChatSession.id,
-                ChatSession.bot_id == chatbot_id,
-                ChatSession.bot_type == BotType.CHATBOT
-            )
+            ChatMessage.session_id == ChatSession.id
         ).filter(
+            real_session_filter,
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT
         )
@@ -243,11 +245,11 @@ class ChatbotAnalyticsService:
         chatbot_id: UUID,
         days: int
     ) -> List[Dict[str, Any]]:
-        """Get daily conversation and message trends."""
+        """Get daily conversation and message trends (excluding test sessions)."""
 
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # Get daily session counts
+        # Get daily session counts (excluding test/preview sessions)
         daily_sessions = db.query(
             func.date(ChatSession.created_at).label("date"),
             func.count(ChatSession.id).label("conversations"),
@@ -255,7 +257,9 @@ class ChatbotAnalyticsService:
         ).filter(
             ChatSession.bot_id == chatbot_id,
             ChatSession.bot_type == BotType.CHATBOT,
-            ChatSession.created_at >= start_date
+            ChatSession.created_at >= start_date,
+            # Exclude test sessions
+            ~ChatSession.session_metadata["platform"].astext.in_(["test", "preview"])
         ).group_by(
             func.date(ChatSession.created_at)
         ).order_by(
@@ -324,17 +328,17 @@ class ChatbotAnalyticsService:
 
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # Get feedback counts
+        # Get feedback counts (excluding test sessions)
         feedback_messages = db.query(ChatMessage).join(
             ChatSession,
-            and_(
-                ChatMessage.session_id == ChatSession.id,
-                ChatSession.bot_id == chatbot_id,
-                ChatSession.bot_type == BotType.CHATBOT
-            )
+            ChatMessage.session_id == ChatSession.id
         ).filter(
+            ChatSession.bot_id == chatbot_id,
+            ChatSession.bot_type == BotType.CHATBOT,
             ChatMessage.feedback.isnot(None),
-            ChatMessage.created_at >= start_date
+            ChatMessage.created_at >= start_date,
+            # Exclude test sessions
+            ~ChatSession.session_metadata["platform"].astext.in_(["test", "preview"])
         ).all()
 
         positive = sum(

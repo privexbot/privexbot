@@ -293,7 +293,9 @@ class SessionService:
         """
 
         query = db.query(ChatSession).filter(
-            ChatSession.workspace_id == workspace_id
+            ChatSession.workspace_id == workspace_id,
+            # Exclude test/preview sessions from stats
+            ~ChatSession.session_metadata["platform"].astext.in_(["test", "preview"])
         )
 
         if bot_type:
