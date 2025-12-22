@@ -280,11 +280,23 @@ class Chatbot(Base):
         onupdate=datetime.utcnow
     )
 
+    # Archive tracking (soft delete audit)
+    archived_at = Column(DateTime, nullable=True)
+    # When the chatbot was archived (soft deleted)
+
+    archived_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True
+    )
+    # Who archived the chatbot
+
     # ═══════════════════════════════════════════════════════════════
     # RELATIONSHIPS
     # ═══════════════════════════════════════════════════════════════
     workspace = relationship("Workspace", back_populates="chatbots")
     creator = relationship("User", foreign_keys=[created_by])
+    archiver = relationship("User", foreign_keys=[archived_by])
 
     # ═══════════════════════════════════════════════════════════════
     # INDEXES
@@ -319,3 +331,8 @@ class Chatbot(Base):
     def is_active(self) -> bool:
         """Check if chatbot is active and can receive messages."""
         return self.status == ChatbotStatus.ACTIVE
+
+    @property
+    def is_archived(self) -> bool:
+        """Check if chatbot is archived (soft deleted)."""
+        return self.status == ChatbotStatus.ARCHIVED

@@ -157,6 +157,32 @@ export default function ChatbotDetailPage() {
     }
   };
 
+  const handleStatusChange = async (newStatus: 'active' | 'paused') => {
+    if (!chatbotId || !chatbot) return;
+
+    try {
+      const result = await chatbotApi.updateStatus(chatbotId, newStatus);
+
+      // Update local state
+      setChatbot(prev => prev ? { ...prev, status: result.new_status as Chatbot['status'] } : null);
+
+      toast({
+        title: newStatus === 'active' ? 'Chatbot Activated' : 'Chatbot Paused',
+        description: newStatus === 'active'
+          ? `"${chatbot.name}" is now live and accepting messages`
+          : `"${chatbot.name}" has been paused and won't respond to new messages`,
+      });
+    } catch (error) {
+      console.error('Failed to update chatbot status:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update status';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+    }
+  };
+
   const handleTestMessage = async () => {
     if (!testInput.trim() || !chatbotId || isTestLoading) return;
 
@@ -397,12 +423,18 @@ export default function ChatbotDetailPage() {
                       Refresh
                     </DropdownMenuItem>
                     {chatbot.status === 'active' ? (
-                      <DropdownMenuItem className="hover:bg-amber-50 dark:hover:bg-amber-900/30 text-gray-700 dark:text-gray-300 hover:text-amber-700 dark:hover:text-amber-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                      <DropdownMenuItem
+                        onClick={() => handleStatusChange('paused')}
+                        className="hover:bg-amber-50 dark:hover:bg-amber-900/30 text-gray-700 dark:text-gray-300 hover:text-amber-700 dark:hover:text-amber-300 transition-colors duration-200 rounded-lg mx-1 my-1"
+                      >
                         <Pause className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-3" />
                         Pause
                       </DropdownMenuItem>
                     ) : chatbot.status === 'paused' ? (
-                      <DropdownMenuItem className="hover:bg-green-50 dark:hover:bg-green-900/30 text-gray-700 dark:text-gray-300 hover:text-green-700 dark:hover:text-green-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                      <DropdownMenuItem
+                        onClick={() => handleStatusChange('active')}
+                        className="hover:bg-green-50 dark:hover:bg-green-900/30 text-gray-700 dark:text-gray-300 hover:text-green-700 dark:hover:text-green-300 transition-colors duration-200 rounded-lg mx-1 my-1"
+                      >
                         <Play className="h-4 w-4 text-green-600 dark:text-green-400 mr-3" />
                         Resume
                       </DropdownMenuItem>

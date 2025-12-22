@@ -734,12 +734,21 @@ async def update_chatbot(
 
 
 @router.delete("/{chatbot_id}", response_model=dict)
-async def delete_chatbot(
+async def archive_chatbot(
     chatbot_id: UUID,
     db: Session = Depends(get_db),
     user_context: UserContext = Depends(get_current_user_with_org)
 ):
-    """Archive a chatbot (soft delete)."""
+    """
+    Archive a chatbot (soft delete).
+
+    The chatbot will be hidden from normal views but can be restored later.
+    All associated data (sessions, leads) is preserved.
+
+    Use DELETE /{chatbot_id}/permanent for irreversible hard delete.
+    """
+    from datetime import datetime
+
     current_user, org_id, _ = user_context
 
     chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
@@ -762,12 +771,266 @@ async def delete_chatbot(
             detail="Access denied"
         )
 
-    # Soft delete by changing status
+    # Check if already archived
+    if chatbot.status == ChatbotStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chatbot is already archived"
+        )
+
+    # Soft delete by changing status and recording audit trail
     chatbot.status = ChatbotStatus.ARCHIVED
+    chatbot.archived_at = datetime.utcnow()
+    chatbot.archived_by = current_user.id
 
     db.commit()
 
-    return {"status": "archived", "chatbot_id": str(chatbot_id)}
+    return {
+        "status": "archived",
+        "chatbot_id": str(chatbot_id),
+        "archived_at": chatbot.archived_at.isoformat()
+    }
+
+
+@router.post("/{chatbot_id}/restore", response_model=dict)
+async def restore_chatbot(
+    chatbot_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Restore an archived chatbot.
+
+    The chatbot will be set to PAUSED status (not ACTIVE) to allow
+    the user to review settings before going live again.
+    """
+    current_user, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Check if archived
+    if chatbot.status != ChatbotStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chatbot is not archived"
+        )
+
+    # Restore to PAUSED status (user must explicitly activate)
+    chatbot.status = ChatbotStatus.PAUSED
+    chatbot.archived_at = None
+    chatbot.archived_by = None
+
+    db.commit()
+
+    return {
+        "status": "restored",
+        "chatbot_id": str(chatbot_id),
+        "new_status": "paused"
+    }
+
+
+@router.post("/{chatbot_id}/status", response_model=dict)
+async def update_chatbot_status(
+    chatbot_id: UUID,
+    new_status: str = Query(..., description="New status: 'active' or 'paused'"),
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Update chatbot status (activate or pause).
+
+    Valid transitions:
+    - active -> paused (pause the chatbot)
+    - paused -> active (resume/activate the chatbot)
+
+    Archived chatbots must be restored first before changing status.
+    """
+    current_user, org_id, _ = user_context
+
+    # Validate new_status
+    if new_status not in ["active", "paused"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid status. Must be 'active' or 'paused'"
+        )
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Check if archived - must restore first
+    if chatbot.status == ChatbotStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change status of archived chatbot. Restore it first."
+        )
+
+    # Check if draft - cannot activate drafts
+    if chatbot.status == ChatbotStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change status of draft chatbot. Deploy it first."
+        )
+
+    # Get the target status enum
+    target_status = ChatbotStatus.ACTIVE if new_status == "active" else ChatbotStatus.PAUSED
+
+    # Check if already in target status
+    if chatbot.status == target_status:
+        return {
+            "status": "unchanged",
+            "chatbot_id": str(chatbot_id),
+            "current_status": new_status,
+            "message": f"Chatbot is already {new_status}"
+        }
+
+    # Update status
+    old_status = chatbot.status.value
+    chatbot.status = target_status
+
+    db.commit()
+
+    return {
+        "status": "updated",
+        "chatbot_id": str(chatbot_id),
+        "old_status": old_status,
+        "new_status": new_status
+    }
+
+
+@router.delete("/{chatbot_id}/permanent", response_model=dict)
+async def delete_chatbot_permanently(
+    chatbot_id: UUID,
+    confirm: bool = Query(False, description="Must be true to confirm permanent deletion"),
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Permanently delete a chatbot (hard delete).
+
+    WARNING: This action is IRREVERSIBLE. All associated data will be deleted:
+    - Chat sessions and messages
+    - Leads captured by this chatbot
+    - API keys for this chatbot
+    - Analytics data
+
+    The chatbot must be archived first before permanent deletion.
+    Pass confirm=true to confirm the deletion.
+    """
+    from app.models.chat_session import ChatSession
+    from app.models.api_key import APIKey
+
+    current_user, org_id, _ = user_context
+
+    # Require explicit confirmation
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Permanent deletion requires confirm=true query parameter"
+        )
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Require archived status before permanent deletion
+    if chatbot.status != ChatbotStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chatbot must be archived before permanent deletion. Archive it first."
+        )
+
+    # Store info for response before deletion
+    chatbot_name = chatbot.name
+
+    # Delete related entities
+    # 1. Delete chat sessions (polymorphic relationship)
+    deleted_sessions = db.query(ChatSession).filter(
+        ChatSession.bot_id == chatbot_id,
+        ChatSession.bot_type == "chatbot"
+    ).delete(synchronize_session=False)
+
+    # 2. Delete API keys
+    deleted_api_keys = db.query(APIKey).filter(
+        APIKey.entity_id == chatbot_id,
+        APIKey.entity_type == "chatbot"
+    ).delete(synchronize_session=False)
+
+    # 3. Delete leads (if Lead model exists)
+    deleted_leads = 0
+    try:
+        from app.models.lead import Lead
+        deleted_leads = db.query(Lead).filter(
+            Lead.bot_id == chatbot_id,
+            Lead.bot_type == "chatbot"
+        ).delete(synchronize_session=False)
+    except ImportError:
+        pass  # Lead model may not exist yet
+
+    # 4. Delete the chatbot itself
+    db.delete(chatbot)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "chatbot_id": str(chatbot_id),
+        "chatbot_name": chatbot_name,
+        "deleted_resources": {
+            "sessions": deleted_sessions,
+            "api_keys": deleted_api_keys,
+            "leads": deleted_leads
+        }
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════

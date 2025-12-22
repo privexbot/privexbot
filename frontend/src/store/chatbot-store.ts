@@ -98,6 +98,13 @@ interface ChatbotStoreActions {
     updates: Partial<ChatbotFormData>
   ) => Promise<void>;
   archiveChatbot: (chatbotId: string) => Promise<void>;
+  restoreChatbot: (chatbotId: string) => Promise<void>;
+  deleteChatbotPermanently: (chatbotId: string) => Promise<{
+    sessions: number;
+    api_keys: number;
+    leads: number;
+  }>;
+  updateChatbotStatus: (chatbotId: string, newStatus: "active" | "paused") => Promise<void>;
   clearCurrentChatbot: () => void;
 
   // ========================================
@@ -316,10 +323,75 @@ export const useChatbotStore = create<ChatbotStoreState & ChatbotStoreActions>()
           try {
             await chatbotClient.chatbot.archive(chatbotId);
 
-            // Remove from list
+            // Remove from list (or update status if showing archived)
+            set((s) => {
+              const chatbot = s.chatbots.find((cb) => cb.id === chatbotId);
+              if (chatbot) {
+                // Update status instead of removing
+                chatbot.status = "archived" as ChatbotSummary["status"];
+              }
+              // If not filtering by archived, remove from visible list
+              if (s.filters.status !== "archived") {
+                s.chatbots = s.chatbots.filter((cb) => cb.id !== chatbotId);
+                s.totalCount = Math.max(0, s.totalCount - 1);
+              }
+            });
+          } catch (error) {
+            throw new Error(chatbotClient.errors.getUserMessage(error));
+          }
+        },
+
+        restoreChatbot: async (chatbotId) => {
+          try {
+            const result = await chatbotClient.chatbot.restore(chatbotId);
+
+            // Update status in list
+            set((s) => {
+              const chatbot = s.chatbots.find((cb) => cb.id === chatbotId);
+              if (chatbot) {
+                chatbot.status = result.new_status as ChatbotSummary["status"];
+              }
+              // If filtering by archived, remove from visible list
+              if (s.filters.status === "archived") {
+                s.chatbots = s.chatbots.filter((cb) => cb.id !== chatbotId);
+                s.totalCount = Math.max(0, s.totalCount - 1);
+              }
+            });
+          } catch (error) {
+            throw new Error(chatbotClient.errors.getUserMessage(error));
+          }
+        },
+
+        deleteChatbotPermanently: async (chatbotId) => {
+          try {
+            const result = await chatbotClient.chatbot.deletePermanently(chatbotId);
+
+            // Remove from list permanently
             set((s) => {
               s.chatbots = s.chatbots.filter((cb) => cb.id !== chatbotId);
               s.totalCount = Math.max(0, s.totalCount - 1);
+            });
+
+            return result.deleted_resources;
+          } catch (error) {
+            throw new Error(chatbotClient.errors.getUserMessage(error));
+          }
+        },
+
+        updateChatbotStatus: async (chatbotId, newStatus) => {
+          try {
+            const result = await chatbotClient.chatbot.updateStatus(chatbotId, newStatus);
+
+            // Update status in list
+            set((s) => {
+              const chatbot = s.chatbots.find((cb) => cb.id === chatbotId);
+              if (chatbot) {
+                chatbot.status = result.new_status as ChatbotSummary["status"];
+              }
+              // Also update current chatbot if it's the same one
+              if (s.currentChatbot && s.currentChatbot.id === chatbotId) {
+                s.currentChatbot.status = result.new_status as ChatbotSummary["status"];
+              }
             });
           } catch (error) {
             throw new Error(chatbotClient.errors.getUserMessage(error));

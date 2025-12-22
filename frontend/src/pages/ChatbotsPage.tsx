@@ -29,6 +29,9 @@ import {
   Zap,
   Play,
   Code,
+  Archive,
+  RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { ChatbotStatus, getStatusLabel } from "@/types/chatbot";
@@ -175,7 +178,9 @@ interface ChatbotCardProps {
   onView: (id: string) => void;
   onEdit: (id: string) => void;
   onTest: (id: string) => void;
-  onDelete: (id: string) => void;
+  onArchive: (id: string) => void;
+  onRestore: (id: string) => void;
+  onDeletePermanently: (id: string) => void;
   index: number;
 }
 
@@ -184,9 +189,12 @@ function ChatbotCard({
   onView,
   onEdit,
   onTest,
-  onDelete,
+  onArchive,
+  onRestore,
+  onDeletePermanently,
   index,
 }: ChatbotCardProps) {
+  const isArchived = chatbot.status === ChatbotStatus.ARCHIVED;
   const getStatusColor = (status: ChatbotStatus) => {
     switch (status) {
       case ChatbotStatus.ACTIVE:
@@ -262,13 +270,32 @@ function ChatbotCard({
                   Embed Code
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-600" />
-                <DropdownMenuItem
-                  onClick={() => onDelete(chatbot.id)}
-                  className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Archive
-                </DropdownMenuItem>
+                {isArchived ? (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => onRestore(chatbot.id)}
+                      className="font-manrope text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Restore
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => onDeletePermanently(chatbot.id)}
+                      className="font-manrope text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Permanently
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <DropdownMenuItem
+                    onClick={() => onArchive(chatbot.id)}
+                    className="font-manrope text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  >
+                    <Archive className="h-4 w-4 mr-2" />
+                    Archive
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -424,8 +451,23 @@ export function ChatbotsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+
+  // Archive dialog state
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
+
+  // Restore dialog state
+  const [restoreId, setRestoreId] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Permanent delete dialog state
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletedResources, setDeletedResources] = useState<{
+    sessions: number;
+    api_keys: number;
+    leads: number;
+  } | null>(null);
 
   const {
     chatbots,
@@ -433,6 +475,8 @@ export function ChatbotsPage() {
     listError,
     fetchChatbots,
     archiveChatbot,
+    restoreChatbot,
+    deleteChatbotPermanently,
     clearListError,
   } = useChatbotStore();
 
@@ -481,22 +525,75 @@ export function ChatbotsPage() {
   const handleTestChatbot = (id: string) =>
     navigate(`/chatbots/${id}?tab=test`);
 
-  const handleDeleteChatbot = async () => {
-    if (!deleteId) return;
+  // Archive handler (soft delete)
+  const handleArchiveChatbot = async () => {
+    if (!archiveId) return;
 
-    setIsDeleting(true);
+    setIsArchiving(true);
     try {
-      await archiveChatbot(deleteId);
+      await archiveChatbot(archiveId);
       toast({
         title: "Chatbot Archived",
-        description: "The chatbot has been archived successfully",
+        description: "The chatbot has been archived. You can restore it later from the Archived filter.",
       });
-      setDeleteId(null);
+      setArchiveId(null);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to archive chatbot";
       toast({
         title: "Archive Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  // Restore handler
+  const handleRestoreChatbot = async () => {
+    if (!restoreId) return;
+
+    setIsRestoring(true);
+    try {
+      await restoreChatbot(restoreId);
+      toast({
+        title: "Chatbot Restored",
+        description: "The chatbot has been restored and set to Paused status. Activate it when ready.",
+      });
+      setRestoreId(null);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to restore chatbot";
+      toast({
+        title: "Restore Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  // Permanent delete handler (hard delete)
+  const handleDeletePermanently = async () => {
+    if (!deleteId) return;
+
+    setIsDeleting(true);
+    try {
+      const resources = await deleteChatbotPermanently(deleteId);
+      setDeletedResources(resources);
+      toast({
+        title: "Chatbot Deleted",
+        description: `Permanently deleted. Removed ${resources.sessions} sessions, ${resources.api_keys} API keys, and ${resources.leads} leads.`,
+      });
+      setDeleteId(null);
+      setDeletedResources(null);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to delete chatbot";
+      toast({
+        title: "Delete Failed",
         description: errorMessage,
         variant: "destructive",
       });
@@ -668,7 +765,9 @@ export function ChatbotsPage() {
                     onView={handleViewChatbot}
                     onEdit={handleEditChatbot}
                     onTest={handleTestChatbot}
-                    onDelete={(id) => setDeleteId(id)}
+                    onArchive={(id) => setArchiveId(id)}
+                    onRestore={(id) => setRestoreId(id)}
+                    onDeletePermanently={(id) => setDeleteId(id)}
                     index={index}
                   />
                 ))}
@@ -678,16 +777,90 @@ export function ChatbotsPage() {
         </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+      {/* Archive Confirmation Dialog */}
+      <Dialog open={!!archiveId} onOpenChange={() => setArchiveId(null)}>
         <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
           <DialogHeader>
-            <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope">
+            <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+              <Archive className="h-5 w-5 text-amber-500" />
               Archive Chatbot
             </DialogTitle>
             <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
               Are you sure you want to archive this chatbot? It will no longer be
-              accessible to users, but you can restore it later.
+              accessible to users, but all data will be preserved and you can restore
+              it later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setArchiveId(null)}
+              className="font-manrope rounded-lg border-gray-200 dark:border-gray-600"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleArchiveChatbot}
+              disabled={isArchiving}
+              className="font-manrope bg-amber-600 hover:bg-amber-700 text-white rounded-lg"
+            >
+              {isArchiving ? "Archiving..." : "Archive"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={!!restoreId} onOpenChange={() => setRestoreId(null)}>
+        <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-green-500" />
+              Restore Chatbot
+            </DialogTitle>
+            <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+              The chatbot will be restored and set to <span className="font-medium text-amber-600 dark:text-amber-400">Paused</span> status.
+              You can activate it when you're ready to make it live again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setRestoreId(null)}
+              className="font-manrope rounded-lg border-gray-200 dark:border-gray-600"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRestoreChatbot}
+              disabled={isRestoring}
+              className="font-manrope bg-green-600 hover:bg-green-700 text-white rounded-lg"
+            >
+              {isRestoring ? "Restoring..." : "Restore"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Permanent Delete Confirmation Dialog */}
+      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Delete Permanently
+            </DialogTitle>
+            <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope space-y-3">
+              <p>
+                <span className="font-semibold text-red-600 dark:text-red-400">Warning:</span> This action is{" "}
+                <span className="font-semibold">irreversible</span>. The chatbot and all associated data will be permanently deleted:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>All chat sessions and messages</li>
+                <li>All captured leads</li>
+                <li>All API keys</li>
+                <li>Analytics and metrics data</li>
+              </ul>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -699,11 +872,11 @@ export function ChatbotsPage() {
               Cancel
             </Button>
             <Button
-              onClick={handleDeleteChatbot}
+              onClick={handleDeletePermanently}
               disabled={isDeleting}
               className="font-manrope bg-red-600 hover:bg-red-700 text-white rounded-lg"
             >
-              {isDeleting ? "Archiving..." : "Archive"}
+              {isDeleting ? "Deleting..." : "Delete Permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>

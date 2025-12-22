@@ -257,15 +257,109 @@ export const chatbotApi = {
   /**
    * Archive chatbot (soft delete)
    * DELETE /api/v1/chatbots/{chatbot_id}
+   *
+   * The chatbot will be hidden but can be restored later.
+   * All associated data (sessions, leads) is preserved.
    */
   async archive(
     chatbotId: string
-  ): Promise<{ status: string; chatbot_id: string }> {
+  ): Promise<{ status: string; chatbot_id: string; archived_at: string }> {
     try {
       const response = await apiClient.delete<{
         status: string;
         chatbot_id: string;
+        archived_at: string;
       }>(`/chatbots/${chatbotId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Restore an archived chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/restore
+   *
+   * The chatbot will be restored to PAUSED status.
+   */
+  async restore(
+    chatbotId: string
+  ): Promise<{ status: string; chatbot_id: string; new_status: string }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        chatbot_id: string;
+        new_status: string;
+      }>(`/chatbots/${chatbotId}/restore`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Update chatbot status (pause/resume)
+   * POST /api/v1/chatbots/{chatbot_id}/status?new_status=active|paused
+   *
+   * Use 'active' to resume a paused chatbot.
+   * Use 'paused' to pause an active chatbot.
+   */
+  async updateStatus(
+    chatbotId: string,
+    newStatus: "active" | "paused"
+  ): Promise<{
+    status: string;
+    chatbot_id: string;
+    old_status: string;
+    new_status: string;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        chatbot_id: string;
+        old_status: string;
+        new_status: string;
+      }>(`/chatbots/${chatbotId}/status`, null, {
+        params: { new_status: newStatus },
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Permanently delete a chatbot (hard delete)
+   * DELETE /api/v1/chatbots/{chatbot_id}/permanent?confirm=true
+   *
+   * WARNING: This is IRREVERSIBLE. All associated data will be deleted.
+   * The chatbot must be archived first.
+   */
+  async deletePermanently(
+    chatbotId: string
+  ): Promise<{
+    status: string;
+    chatbot_id: string;
+    chatbot_name: string;
+    deleted_resources: {
+      sessions: number;
+      api_keys: number;
+      leads: number;
+    };
+  }> {
+    try {
+      const response = await apiClient.delete<{
+        status: string;
+        chatbot_id: string;
+        chatbot_name: string;
+        deleted_resources: {
+          sessions: number;
+          api_keys: number;
+          leads: number;
+        };
+      }>(`/chatbots/${chatbotId}/permanent`, {
+        params: { confirm: true },
+      });
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
