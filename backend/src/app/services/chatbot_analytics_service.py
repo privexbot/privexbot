@@ -145,7 +145,7 @@ class ChatbotAnalyticsService:
             ChatSession.created_at >= start_date
         ).first()
 
-        # Get message stats
+        # Get message stats (all messages)
         message_count = db.query(func.count(ChatMessage.id)).join(
             ChatSession,
             and_(
@@ -156,6 +156,28 @@ class ChatbotAnalyticsService:
         ).filter(
             ChatMessage.created_at >= start_date
         ).scalar() or 0
+
+        # Get assistant response stats (successful vs failed)
+        assistant_messages_query = db.query(ChatMessage).join(
+            ChatSession,
+            and_(
+                ChatMessage.session_id == ChatSession.id,
+                ChatSession.bot_id == chatbot_id,
+                ChatSession.bot_type == BotType.CHATBOT
+            )
+        ).filter(
+            ChatMessage.created_at >= start_date,
+            ChatMessage.role == MessageRole.ASSISTANT
+        )
+
+        total_responses = assistant_messages_query.count()
+        failed_responses = assistant_messages_query.filter(
+            ChatMessage.error.isnot(None)
+        ).count()
+        successful_responses = total_responses - failed_responses
+
+        # Calculate error rate
+        error_rate = round(failed_responses / total_responses, 3) if total_responses > 0 else 0
 
         # Get widget event stats
         widget_opens = db.query(func.count(WidgetEvent.id)).filter(
@@ -202,6 +224,13 @@ class ChatbotAnalyticsService:
                 "widget_opens": widget_opens,
                 "conversation_starts": session_stats.total_sessions or 0,
                 "engagement_rate": engagement_rate
+            },
+            "response_quality": {
+                "total_responses": total_responses,
+                "successful_responses": successful_responses,
+                "failed_responses": failed_responses,
+                "error_rate": error_rate,
+                "success_rate": round(1 - error_rate, 3) if total_responses > 0 else 1
             },
             "trends": daily_trends,
             "hourly_distribution": hourly_dist,

@@ -165,6 +165,9 @@ class ChatbotService:
                 completion_tokens=tokens_used.get("completion_tokens")
             )
 
+            # 8. Update cached metrics for dashboard consistency
+            self._update_cached_metrics(db, chatbot)
+
             return {
                 "response": response_text,
                 "sources": sources,
@@ -394,6 +397,42 @@ Context:
         )
 
         return response
+
+
+    def _update_cached_metrics(self, db: Session, chatbot: Chatbot) -> None:
+        """
+        Update cached metrics for dashboard display.
+
+        WHY: Keep cached_metrics in sync with actual data for list/detail pages
+        HOW: Query session stats and update chatbot.cached_metrics
+
+        Called after each message is processed.
+        """
+        from datetime import datetime
+
+        try:
+            # Get real-time stats from session service
+            stats = self.session_service.get_session_stats(
+                db=db,
+                workspace_id=chatbot.workspace_id,
+                bot_type="chatbot",
+                bot_id=chatbot.id
+            )
+
+            # Update cached_metrics
+            chatbot.cached_metrics = {
+                "total_conversations": stats.get("total_sessions", 0),
+                "total_messages": stats.get("total_messages", 0),
+                "avg_messages_per_session": stats.get("avg_messages_per_session", 0),
+                "active_sessions": stats.get("active_sessions", 0),
+                "last_updated": datetime.utcnow().isoformat()
+            }
+
+            db.commit()
+
+        except Exception as e:
+            # Log error but don't fail the request
+            print(f"[ChatbotService] Error updating cached_metrics: {e}")
 
 
     def get_chatbot_stats(

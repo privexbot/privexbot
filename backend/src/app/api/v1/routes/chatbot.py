@@ -1331,6 +1331,79 @@ async def get_channel_analytics(
         }
 
 
+@router.post("/{chatbot_id}/refresh-metrics", response_model=dict)
+async def refresh_chatbot_metrics(
+    chatbot_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Refresh cached metrics for a chatbot.
+
+    WHY: Sync cached_metrics with actual session/message data
+    HOW: Query real stats and update cached_metrics in database
+
+    Use this endpoint to refresh metrics for existing chatbots
+    that may have stale or empty cached_metrics.
+    """
+    current_user, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    try:
+        # Get real-time stats from session service
+        from app.services.session_service import session_service
+
+        stats = session_service.get_session_stats(
+            db=db,
+            workspace_id=chatbot.workspace_id,
+            bot_type="chatbot",
+            bot_id=chatbot_id
+        )
+
+        # Update cached_metrics
+        chatbot.cached_metrics = {
+            "total_conversations": stats.get("total_sessions", 0),
+            "total_messages": stats.get("total_messages", 0),
+            "avg_messages_per_session": stats.get("avg_messages_per_session", 0),
+            "active_sessions": stats.get("active_sessions", 0),
+            "last_updated": datetime.utcnow().isoformat()
+        }
+
+        db.commit()
+
+        return {
+            "status": "refreshed",
+            "chatbot_id": str(chatbot_id),
+            "cached_metrics": chatbot.cached_metrics,
+            "message": "Metrics have been refreshed"
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh metrics: {str(e)}"
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # API KEY MANAGEMENT
 # ═══════════════════════════════════════════════════════════════════════════

@@ -409,6 +409,43 @@ export const chatbotApi = {
     }
   },
 
+  /**
+   * Refresh cached metrics for a chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/refresh-metrics
+   *
+   * Use this to sync cached_metrics with actual session/message data
+   */
+  async refreshMetrics(chatbotId: string): Promise<{
+    status: string;
+    chatbot_id: string;
+    cached_metrics: {
+      total_conversations: number;
+      total_messages: number;
+      avg_messages_per_session: number;
+      active_sessions: number;
+      last_updated: string;
+    };
+    message: string;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        chatbot_id: string;
+        cached_metrics: {
+          total_conversations: number;
+          total_messages: number;
+          avg_messages_per_session: number;
+          active_sessions: number;
+          last_updated: string;
+        };
+        message: string;
+      }>(`/chatbots/${chatbotId}/refresh-metrics`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
   // ========================================
   // API KEY MANAGEMENT
   // ========================================

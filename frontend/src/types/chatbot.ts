@@ -373,8 +373,11 @@ export interface CreateDraftResponse {
 export interface ChatbotMetrics {
   total_conversations: number;
   total_messages: number;
-  avg_response_time_ms: number;
+  avg_response_time_ms?: number;
+  avg_messages_per_session?: number;
+  active_sessions?: number;
   satisfaction_rate?: number;
+  last_updated?: string;
 }
 
 /**
@@ -486,6 +489,17 @@ export interface AnalyticsEngagement {
 }
 
 /**
+ * Response quality metrics (success/error tracking)
+ */
+export interface ResponseQuality {
+  total_responses: number;
+  successful_responses: number;
+  failed_responses: number;
+  error_rate: number;
+  success_rate: number;
+}
+
+/**
  * Daily trend data point
  */
 export interface AnalyticsTrend {
@@ -539,6 +553,7 @@ export interface EventsBreakdown {
 export interface AnalyticsData {
   overview: AnalyticsOverview;
   engagement: AnalyticsEngagement;
+  response_quality?: ResponseQuality;
   trends: AnalyticsTrend[];
   hourly_distribution: HourlyDistribution[];
   period_days: number;

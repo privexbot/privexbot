@@ -84,6 +84,9 @@ export default function ChatbotDetailPage() {
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
   const [newApiKeyCopied, setNewApiKeyCopied] = useState(false);
 
+  // Metrics refresh state
+  const [metricsRefreshing, setMetricsRefreshing] = useState(false);
+
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
       loadChatbotData();
@@ -408,6 +411,45 @@ export default function ChatbotDetailPage() {
     }
   };
 
+  const handleRefreshMetrics = async () => {
+    if (!chatbotId || metricsRefreshing) return;
+
+    setMetricsRefreshing(true);
+    try {
+      const result = await chatbotApi.refreshMetrics(chatbotId);
+
+      // Update the local chatbot state with new metrics
+      setChatbot(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          cached_metrics: {
+            ...prev.cached_metrics,
+            total_conversations: result.cached_metrics.total_conversations,
+            total_messages: result.cached_metrics.total_messages,
+            avg_messages_per_session: result.cached_metrics.avg_messages_per_session,
+            active_sessions: result.cached_metrics.active_sessions,
+            last_updated: result.cached_metrics.last_updated,
+          }
+        };
+      });
+
+      toast({
+        title: 'Metrics Refreshed',
+        description: 'Dashboard statistics have been updated.',
+      });
+    } catch (error) {
+      console.error('Failed to refresh metrics:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to refresh metrics',
+        variant: 'destructive'
+      });
+    } finally {
+      setMetricsRefreshing(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -546,7 +588,23 @@ export default function ChatbotDetailPage() {
         </div>
 
         {/* Statistics Overview */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
+              Statistics Overview
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshMetrics}
+              disabled={metricsRefreshing}
+              className="border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${metricsRefreshing ? 'animate-spin' : ''}`} />
+              {metricsRefreshing ? 'Refreshing...' : 'Refresh Metrics'}
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -604,6 +662,7 @@ export default function ChatbotDetailPage() {
               </div>
             </CardContent>
           </Card>
+          </div>
         </div>
 
         {/* Content Tabs */}
@@ -1242,6 +1301,59 @@ export default function ChatbotDetailPage() {
                       </CardContent>
                     </Card>
                   </div>
+
+                  {/* Response Quality Card */}
+                  <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+                    <CardHeader className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 border-b border-cyan-200 dark:border-cyan-700 rounded-t-xl p-4">
+                      <div className="flex items-center gap-3">
+                        <Zap className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                        <CardTitle className="text-base font-bold text-cyan-900 dark:text-cyan-100 font-manrope">
+                          Response Quality
+                        </CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-4">
+                      {analytics.analytics?.response_quality ? (
+                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                              {analytics.analytics.response_quality.total_responses}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Total Responses</p>
+                          </div>
+                          <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                              {analytics.analytics.response_quality.successful_responses}
+                            </p>
+                            <p className="text-xs text-green-600 dark:text-green-400 font-manrope">Successful</p>
+                          </div>
+                          <div className="text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                            <p className="text-2xl font-bold text-red-700 dark:text-red-300">
+                              {analytics.analytics.response_quality.failed_responses}
+                            </p>
+                            <p className="text-xs text-red-600 dark:text-red-400 font-manrope">Failed</p>
+                          </div>
+                          <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                              {(analytics.analytics.response_quality.success_rate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-green-600 dark:text-green-400 font-manrope">Success Rate</p>
+                          </div>
+                          <div className="text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                            <p className="text-2xl font-bold text-red-700 dark:text-red-300">
+                              {(analytics.analytics.response_quality.error_rate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-red-600 dark:text-red-400 font-manrope">Error Rate</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-6">
+                          <Zap className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                          <p className="text-sm text-gray-500 font-manrope">No response data yet</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
 
                   {/* Feedback and Events */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
