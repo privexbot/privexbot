@@ -16,7 +16,7 @@ HOW:
 - Structured message format internally, converted per-provider
 
 SUPPORTED PROVIDERS:
-- Secret AI (OpenAI-compatible endpoint)
+- Secret AI (OpenAI-compatible endpoint) - DEFAULT for PrivexBot
 - Ollama (local inference)
 - OpenAI
 - DeepSeek
@@ -34,9 +34,16 @@ All methods accept structured messages:
 
 For backward compatibility, generate() accepts a single prompt string
 and converts it to a user message internally.
+
+NETWORK NOTES:
+- Secret AI is the PRIMARY provider for PrivexBot (runs on SecretVM)
+- If Secret AI is blocked by your local network, use fallback providers
+- In production (SecretVM), Secret AI should work without network issues
+- Configure INFERENCE_FALLBACK_ENABLED=true to enable automatic fallback
 """
 
 import os
+import asyncio
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Optional, List, Dict, Any, Union
 from enum import Enum
@@ -70,13 +77,28 @@ class AuthError(InferenceError):
     pass
 
 
-class ConnectionError(InferenceError):
-    """Connection to provider failed."""
+class NetworkError(InferenceError):
+    """
+    Network/connection error - often caused by local network restrictions.
+
+    Common causes:
+    - Firewall blocking Secret AI endpoints
+    - VPN interference
+    - DNS issues
+    - Corporate network restrictions
+
+    Solution: Use fallback providers or check network configuration.
+    """
     pass
 
 
 class ModelNotFoundError(InferenceError):
     """Requested model not available."""
+    pass
+
+
+class ProviderUnavailableError(InferenceError):
+    """Provider is not available (no API key, service down, etc.)."""
     pass
 
 
@@ -100,37 +122,56 @@ class InferenceResponse:
 
 
 # Provider configurations
+# SECRET_AI is the primary provider for PrivexBot
 PROVIDER_CONFIGS = {
     InferenceProvider.SECRET_AI: {
-        "base_url": os.getenv("SECRET_AI_BASE_URL", "https://api.secret.ai/v1"),
+        "base_url": os.getenv("SECRET_AI_BASE_URL", "https://secretai-api-url.scrtlabs.com:443/v1"),
         "api_key_env": "SECRET_AI_API_KEY",
-        "default_model": "llama3.1",
-        "model_prefixes": [],  # No specific prefix, uses base_url
+        "default_model": "DeepSeek-R1-Distill-Llama-70B",  # Primary model for Secret AI
+        "model_prefixes": ["secret-", "secretai-", "secret_ai-"],
+        "timeout": 120.0,  # Longer timeout for Secret AI (TEE processing)
+        "description": "Secret AI - Privacy-preserving inference via Trusted Execution Environment",
     },
     InferenceProvider.OLLAMA: {
         "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
         "api_key_env": None,
         "default_model": "llama3.2",
-        "model_prefixes": ["ollama/"],
+        "model_prefixes": ["ollama/", "ollama-"],
+        "timeout": 60.0,
+        "description": "Ollama - Local LLM inference",
     },
     InferenceProvider.OPENAI: {
         "base_url": "https://api.openai.com/v1",
         "api_key_env": "OPENAI_API_KEY",
         "default_model": "gpt-4o-mini",
         "model_prefixes": ["gpt-", "o1-", "o3-"],
+        "timeout": 60.0,
+        "description": "OpenAI - GPT models",
     },
     InferenceProvider.DEEPSEEK: {
         "base_url": "https://api.deepseek.com/v1",
         "api_key_env": "DEEPSEEK_API_KEY",
         "default_model": "deepseek-chat",
         "model_prefixes": ["deepseek-"],
+        "timeout": 60.0,
+        "description": "DeepSeek - High-quality reasoning models",
     },
     InferenceProvider.GEMINI: {
         "api_key_env": "GEMINI_API_KEY",
         "default_model": "gemini-2.0-flash",
         "model_prefixes": ["gemini-"],
+        "timeout": 60.0,
+        "description": "Google Gemini - Multimodal AI",
     },
 }
+
+# Fallback order when primary provider fails
+FALLBACK_ORDER = [
+    InferenceProvider.GEMINI,
+    InferenceProvider.OPENAI,
+    InferenceProvider.DEEPSEEK,
+    InferenceProvider.OLLAMA,
+]
 
 
 class BaseProvider(ABC):
@@ -197,7 +238,8 @@ class OpenAICompatibleProvider(BaseProvider):
         base_url: str,
         api_key: str,
         default_model: str = "llama3.1",
-        provider_name: str = "openai_compatible"
+        provider_name: str = "openai_compatible",
+        timeout: float = 60.0
     ):
         from openai import OpenAI, AsyncOpenAI
 
@@ -205,37 +247,66 @@ class OpenAICompatibleProvider(BaseProvider):
         self.api_key = api_key
         self.default_model = default_model
         self.provider_name = provider_name
+        self.timeout = timeout
 
         self.client = OpenAI(
             base_url=base_url,
             api_key=api_key or "placeholder",  # Some providers don't need key
-            timeout=60.0
+            timeout=timeout
         )
 
         self.async_client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key or "placeholder",
-            timeout=60.0
+            timeout=timeout
         )
 
     def _handle_error(self, e: Exception) -> None:
-        """Convert OpenAI errors to our error types."""
+        """Convert OpenAI errors to our error types with helpful messages."""
         from openai import (
             APIError, APIConnectionError,
             RateLimitError as OpenAIRateLimitError,
-            AuthenticationError
+            AuthenticationError,
+            APITimeoutError
         )
+        import httpx
+
+        error_str = str(e).lower()
+
+        # Network/connection errors
+        if isinstance(e, (APIConnectionError, APITimeoutError)):
+            raise NetworkError(
+                f"Failed to connect to {self.provider_name} at {self.base_url}. "
+                f"This may be caused by network restrictions, firewall, or VPN. "
+                f"If using Secret AI locally, your network may be blocking the endpoint. "
+                f"The service will work correctly when deployed on SecretVM. "
+                f"Original error: {e}"
+            )
+
+        # Check for httpx connection errors (wrapped)
+        if isinstance(e, Exception) and "connect" in error_str:
+            raise NetworkError(
+                f"Connection failed to {self.provider_name}. "
+                f"Check your network configuration or use a fallback provider. "
+                f"Original error: {e}"
+            )
 
         if isinstance(e, OpenAIRateLimitError):
-            raise RateLimitError(f"Rate limit exceeded: {e}")
+            raise RateLimitError(f"Rate limit exceeded for {self.provider_name}: {e}")
         elif isinstance(e, AuthenticationError):
-            raise AuthError(f"Authentication failed: {e}")
-        elif isinstance(e, APIConnectionError):
-            raise ConnectionError(f"Failed to connect: {e}")
+            raise AuthError(f"Authentication failed for {self.provider_name}: {e}")
         elif isinstance(e, APIError):
-            raise InferenceError(f"API error: {e}")
+            if "rate" in error_str or "quota" in error_str:
+                raise RateLimitError(f"Rate limit exceeded for {self.provider_name}: {e}")
+            raise InferenceError(f"API error from {self.provider_name}: {e}")
         else:
-            raise InferenceError(f"Unexpected error: {e}")
+            # Check for network-related keywords
+            if any(keyword in error_str for keyword in ["connect", "timeout", "refused", "unreachable", "network"]):
+                raise NetworkError(
+                    f"Network error with {self.provider_name}: {e}. "
+                    f"Try a different provider or check your network."
+                )
+            raise InferenceError(f"Unexpected error from {self.provider_name}: {e}")
 
     async def generate_chat(
         self,
@@ -345,7 +416,7 @@ class OpenAICompatibleProvider(BaseProvider):
             models = self.client.models.list()
             return [model.id for model in models.data]
         except Exception as e:
-            print(f"[OpenAICompatibleProvider] Failed to list models: {e}")
+            print(f"[{self.provider_name}] Failed to list models: {e}")
             return []
 
     def health_check(self) -> dict:
@@ -523,10 +594,13 @@ class GeminiProvider(BaseProvider):
             )
 
         except Exception as e:
-            if "quota" in str(e).lower() or "rate" in str(e).lower():
+            error_str = str(e).lower()
+            if "quota" in error_str or "rate" in error_str or "429" in error_str:
                 raise RateLimitError(f"Gemini rate limit: {e}")
-            elif "api key" in str(e).lower() or "auth" in str(e).lower():
+            elif "api key" in error_str or "auth" in error_str or "403" in error_str:
                 raise AuthError(f"Gemini auth error: {e}")
+            elif any(kw in error_str for kw in ["connect", "timeout", "network", "unreachable"]):
+                raise NetworkError(f"Gemini network error: {e}")
             else:
                 raise InferenceError(f"Gemini error: {e}")
 
@@ -580,10 +654,13 @@ class GeminiProvider(BaseProvider):
             )
 
         except Exception as e:
-            if "quota" in str(e).lower() or "rate" in str(e).lower():
+            error_str = str(e).lower()
+            if "quota" in error_str or "rate" in error_str or "429" in error_str:
                 raise RateLimitError(f"Gemini rate limit: {e}")
-            elif "api key" in str(e).lower() or "auth" in str(e).lower():
+            elif "api key" in error_str or "auth" in error_str or "403" in error_str:
                 raise AuthError(f"Gemini auth error: {e}")
+            elif any(kw in error_str for kw in ["connect", "timeout", "network", "unreachable"]):
+                raise NetworkError(f"Gemini network error: {e}")
             else:
                 raise InferenceError(f"Gemini error: {e}")
 
@@ -658,11 +735,13 @@ class InferenceService:
     """
     Unified inference service that routes to appropriate providers.
 
-    Supports:
+    SECRET AI IS THE DEFAULT PROVIDER for PrivexBot.
+
+    This design ensures:
+    - Privacy-preserving inference via Secret AI TEE when deployed
+    - Fallback to other providers when Secret AI is unavailable (e.g., local network blocks)
     - Automatic provider detection based on model name prefix
-    - Explicit provider selection
-    - Fallback chain for resilience
-    - Structured message format
+    - Explicit provider selection when needed
 
     Usage:
         # Auto-detect provider from model
@@ -671,7 +750,12 @@ class InferenceService:
             model="gemini-2.0-flash"  # Routes to Gemini
         )
 
-        # Or with explicit provider
+        # Use default (Secret AI)
+        response = await inference_service.generate_chat(
+            messages=[{"role": "user", "content": "Hello"}]
+        )
+
+        # With explicit provider
         response = await inference_service.generate_chat(
             messages=[...],
             model="custom-model",
@@ -682,39 +766,39 @@ class InferenceService:
     def __init__(
         self,
         default_provider: Optional[InferenceProvider] = None,
-        default_model: Optional[str] = None
+        default_model: Optional[str] = None,
+        enable_fallback: bool = True
     ):
         """
         Initialize inference service.
 
         Args:
-            default_provider: Default provider when model doesn't indicate one
+            default_provider: Default provider (defaults to SECRET_AI)
             default_model: Default model when not specified
+            enable_fallback: Enable automatic fallback to other providers on failure
         """
-        self.default_provider = default_provider or self._detect_default_provider()
+        # SECRET AI is ALWAYS the default for PrivexBot
+        # This ensures privacy-preserving inference in production
+        self.default_provider = default_provider or InferenceProvider.SECRET_AI
         self.default_model = default_model or self._get_default_model(self.default_provider)
+        self.enable_fallback = enable_fallback
         self._providers: Dict[InferenceProvider, BaseProvider] = {}
 
-        print(f"[InferenceService] Initialized with default provider: {self.default_provider.value}")
+        # Environment detection
+        self.environment = os.getenv("ENVIRONMENT", "development")
+        self.is_production = self.environment == "production"
+        self.is_secretvm = os.getenv("SECRETVM", "false").lower() == "true"
 
-    def _detect_default_provider(self) -> InferenceProvider:
-        """Detect default provider based on available credentials."""
-        # Priority order
-        if os.getenv("SECRET_AI_API_KEY"):
-            return InferenceProvider.SECRET_AI
-        if os.getenv("GEMINI_API_KEY"):
-            return InferenceProvider.GEMINI
-        if os.getenv("OPENAI_API_KEY"):
-            return InferenceProvider.OPENAI
-        if os.getenv("DEEPSEEK_API_KEY"):
-            return InferenceProvider.DEEPSEEK
-        # Default to Ollama (local, no key needed)
-        return InferenceProvider.OLLAMA
+        print(f"[InferenceService] Initialized")
+        print(f"[InferenceService] Default provider: {self.default_provider.value}")
+        print(f"[InferenceService] Default model: {self.default_model}")
+        print(f"[InferenceService] Environment: {self.environment}")
+        print(f"[InferenceService] Fallback enabled: {self.enable_fallback}")
 
     def _get_default_model(self, provider: InferenceProvider) -> str:
         """Get default model for a provider."""
         config = PROVIDER_CONFIGS.get(provider, {})
-        return config.get("default_model", "llama3.1")
+        return config.get("default_model", "DeepSeek-R1-Distill-Llama-70B")
 
     def _detect_provider_from_model(self, model: str) -> Optional[InferenceProvider]:
         """Detect provider from model name prefix."""
@@ -726,6 +810,26 @@ class InferenceService:
                     return provider
 
         return None
+
+    def _is_provider_available(self, provider: InferenceProvider) -> bool:
+        """Check if a provider has credentials configured."""
+        config = PROVIDER_CONFIGS.get(provider, {})
+        api_key_env = config.get("api_key_env")
+
+        if api_key_env is None:
+            # No API key needed (e.g., Ollama)
+            return True
+
+        api_key = os.getenv(api_key_env, "")
+        return bool(api_key and api_key.strip())
+
+    def _get_available_fallbacks(self) -> List[InferenceProvider]:
+        """Get list of available fallback providers in order of preference."""
+        available = []
+        for provider in FALLBACK_ORDER:
+            if self._is_provider_available(provider):
+                available.append(provider)
+        return available
 
     def _get_provider(self, provider: InferenceProvider) -> BaseProvider:
         """Get or create a provider instance."""
@@ -746,12 +850,14 @@ class InferenceService:
             api_key_env = config.get("api_key_env")
             api_key = os.getenv(api_key_env, "") if api_key_env else "placeholder"
             base_url = config.get("base_url", "http://localhost:11434/v1")
+            timeout = config.get("timeout", 60.0)
 
             instance = OpenAICompatibleProvider(
                 base_url=base_url,
                 api_key=api_key,
                 default_model=config.get("default_model", "llama3.1"),
-                provider_name=provider.value
+                provider_name=provider.value,
+                timeout=timeout
             )
 
         self._providers[provider] = instance
@@ -774,6 +880,91 @@ class InferenceService:
         use_model = model or self._get_default_model(use_provider)
 
         return use_provider, use_model
+
+    async def _try_with_fallback(
+        self,
+        operation: str,
+        primary_provider: InferenceProvider,
+        primary_model: str,
+        generate_fn,
+        **kwargs
+    ) -> InferenceResponse:
+        """
+        Try operation with primary provider, fallback on network errors.
+
+        Args:
+            operation: Description of operation for logging
+            primary_provider: Primary provider to try
+            primary_model: Model to use
+            generate_fn: Async function that takes provider instance and returns response
+            **kwargs: Additional kwargs for generate_fn
+        """
+        errors = []
+
+        # Try primary provider first
+        try:
+            provider_instance = self._get_provider(primary_provider)
+            return await generate_fn(provider_instance, primary_model, **kwargs)
+        except NetworkError as e:
+            errors.append(f"{primary_provider.value}: {str(e)[:100]}")
+            print(f"[InferenceService] {primary_provider.value} network error: {e}")
+
+            if not self.enable_fallback:
+                raise NetworkError(
+                    f"Failed to connect to {primary_provider.value}. "
+                    f"Fallback is disabled. Enable with INFERENCE_FALLBACK_ENABLED=true. "
+                    f"Error: {e}"
+                )
+        except (AuthError, ProviderUnavailableError) as e:
+            errors.append(f"{primary_provider.value}: {str(e)[:100]}")
+            print(f"[InferenceService] {primary_provider.value} auth/availability error: {e}")
+
+            if not self.enable_fallback:
+                raise
+        except RateLimitError:
+            # Don't fallback for rate limits - just propagate
+            raise
+        except InferenceError as e:
+            # Check if it's a network-like error
+            if "connect" in str(e).lower() or "network" in str(e).lower():
+                errors.append(f"{primary_provider.value}: {str(e)[:100]}")
+                print(f"[InferenceService] {primary_provider.value} connection error: {e}")
+                if not self.enable_fallback:
+                    raise
+            else:
+                raise
+
+        # Try fallback providers
+        fallbacks = self._get_available_fallbacks()
+        for fallback_provider in fallbacks:
+            if fallback_provider == primary_provider:
+                continue
+
+            try:
+                print(f"[InferenceService] Trying fallback: {fallback_provider.value}")
+                fallback_model = self._get_default_model(fallback_provider)
+                provider_instance = self._get_provider(fallback_provider)
+                response = await generate_fn(provider_instance, fallback_model, **kwargs)
+                print(f"[InferenceService] Fallback {fallback_provider.value} succeeded")
+                return response
+            except (NetworkError, AuthError, ProviderUnavailableError) as e:
+                errors.append(f"{fallback_provider.value}: {str(e)[:100]}")
+                print(f"[InferenceService] Fallback {fallback_provider.value} failed: {e}")
+                continue
+            except RateLimitError:
+                errors.append(f"{fallback_provider.value}: rate limited")
+                print(f"[InferenceService] Fallback {fallback_provider.value} rate limited")
+                continue
+            except Exception as e:
+                errors.append(f"{fallback_provider.value}: {str(e)[:100]}")
+                print(f"[InferenceService] Fallback {fallback_provider.value} error: {e}")
+                continue
+
+        # All providers failed
+        raise InferenceError(
+            f"All inference providers failed. Errors: {'; '.join(errors)}. "
+            f"Please check your network configuration and API keys."
+        )
 
     # =========================================================================
     # PUBLIC INTERFACE - Structured Messages (Recommended)
@@ -812,20 +1003,27 @@ class InferenceService:
             {
                 "text": "AI response",
                 "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-                "model": "gemini-2.0-flash",
-                "provider": "gemini"
+                "model": "DeepSeek-R1-Distill-Llama-70B",
+                "provider": "secret_ai"
             }
         """
         use_provider, use_model = self._resolve_provider_and_model(model, provider)
-        provider_instance = self._get_provider(use_provider)
 
-        response = await provider_instance.generate_chat(
-            messages=messages,
-            model=use_model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stop=stop,
-            **kwargs
+        async def _generate(provider_instance: BaseProvider, model_to_use: str, **kw) -> InferenceResponse:
+            return await provider_instance.generate_chat(
+                messages=messages,
+                model=model_to_use,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stop=stop,
+                **kwargs
+            )
+
+        response = await self._try_with_fallback(
+            operation="generate_chat",
+            primary_provider=use_provider,
+            primary_model=use_model,
+            generate_fn=_generate
         )
 
         return response.to_dict()
@@ -988,7 +1186,9 @@ class InferenceService:
                 "provider": provider.value,
                 "available": available,
                 "default_model": config.get("default_model"),
-                "requires_api_key": api_key_env is not None
+                "requires_api_key": api_key_env is not None,
+                "description": config.get("description", ""),
+                "is_default": provider == self.default_provider
             })
 
         return results
@@ -998,31 +1198,27 @@ class InferenceService:
 def create_inference_service(
     provider: Optional[InferenceProvider] = None,
     model: Optional[str] = None,
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None
+    enable_fallback: bool = True
 ) -> InferenceService:
     """
     Factory to create inference service with custom configuration.
 
     Examples:
-        # Auto-detect
+        # Auto-detect (uses Secret AI by default)
         service = create_inference_service()
 
         # Specific provider
         service = create_inference_service(provider=InferenceProvider.GEMINI)
 
-        # Custom endpoint
-        service = create_inference_service(
-            provider=InferenceProvider.CUSTOM,
-            base_url="https://my-llm.com/v1",
-            api_key="my-key"
-        )
+        # With fallback disabled
+        service = create_inference_service(enable_fallback=False)
     """
     return InferenceService(
         default_provider=provider,
-        default_model=model
+        default_model=model,
+        enable_fallback=enable_fallback
     )
 
 
-# Global instance (auto-detects provider)
+# Global instance (Secret AI as default, fallback enabled)
 inference_service = InferenceService()

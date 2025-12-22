@@ -909,12 +909,43 @@ async def get_chatbot_analytics(
             detail="Access denied"
         )
 
+    from app.services.chatbot_analytics_service import chatbot_analytics_service
+
     try:
-        stats = chatbot_service.get_chatbot_stats(db=db, chatbot_id=chatbot_id)
+        # Get comprehensive analytics from the analytics service
+        analytics = await chatbot_analytics_service.get_chatbot_analytics(
+            db=db,
+            chatbot_id=chatbot_id,
+            days=days
+        )
+
+        # Get feedback summary
+        feedback = await chatbot_analytics_service.get_feedback_summary(
+            db=db,
+            chatbot_id=chatbot_id,
+            days=days
+        )
+
+        # Get event breakdown
+        events = await chatbot_analytics_service.get_event_breakdown(
+            db=db,
+            chatbot_id=chatbot_id,
+            days=days
+        )
+
+        # Also get basic stats from chatbot service
+        try:
+            basic_stats = chatbot_service.get_chatbot_stats(db=db, chatbot_id=chatbot_id)
+        except Exception:
+            basic_stats = {}
+
         return {
             "chatbot_id": str(chatbot_id),
             "period_days": days,
-            **stats,
+            "analytics": analytics,
+            "feedback": feedback,
+            "events": events,
+            "basic_stats": basic_stats,
             "cached_metrics": chatbot.cached_metrics
         }
     except Exception as e:
@@ -922,6 +953,6 @@ async def get_chatbot_analytics(
         return {
             "chatbot_id": str(chatbot_id),
             "period_days": days,
-            **chatbot.cached_metrics,
+            "cached_metrics": chatbot.cached_metrics or {},
             "error": str(e)
         }

@@ -19,6 +19,9 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { OrganizationsPage } from "@/pages/OrganizationsPage";
 import { InvitationAcceptPage } from "@/pages/InvitationAcceptPage";
 import { ChatbotsPage } from "@/pages/ChatbotsPage";
+import CreateChatbotPage from "@/pages/chatbots/create";
+import ChatbotDetailPage from "@/pages/chatbots/detail";
+import ChatbotEditPage from "@/pages/chatbots/edit";
 import { StudioPage } from "@/pages/StudioPage";
 import KnowledgeBasesPage from "@/pages/knowledge-bases/index";
 import CreateKnowledgeBasePage from "@/pages/knowledge-bases/create";
@@ -95,6 +98,30 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <ChatbotsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/chatbots/create"
+                element={
+                  <ProtectedRoute>
+                    <CreateChatbotPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/chatbots/:chatbotId"
+                element={
+                  <ProtectedRoute>
+                    <ChatbotDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/chatbots/:chatbotId/edit"
+                element={
+                  <ProtectedRoute>
+                    <ChatbotEditPage />
                   </ProtectedRoute>
                 }
               />

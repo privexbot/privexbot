@@ -1,0 +1,1085 @@
+/**
+ * Chatbot Detail Page
+ *
+ * Shows detailed view of a deployed chatbot with configuration, test panel, and embed code
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import {
+  ArrowLeft,
+  Bot,
+  Settings,
+  Trash2,
+  RefreshCw,
+  MoreHorizontal,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  XCircle,
+  MessageSquare,
+  Users,
+  Zap,
+  Code,
+  Send,
+  Copy,
+  ExternalLink,
+  Pause,
+  Play,
+  Database,
+  Sparkles,
+  BarChart2,
+  TrendingUp,
+  ThumbsUp,
+  ThumbsDown,
+  Eye,
+  MousePointer,
+} from 'lucide-react';
+import { chatbotApi } from '@/api/chatbot';
+import { useApp } from '@/contexts/AppContext';
+import type { Chatbot, ChatMessage, SourceReference, ChatbotAnalytics } from '@/types/chatbot';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { toast } from '@/components/ui/use-toast';
+import { Input } from '@/components/ui/input';
+import { motion, AnimatePresence } from 'framer-motion';
+
+export default function ChatbotDetailPage() {
+  const { chatbotId } = useParams<{ chatbotId: string }>();
+  const navigate = useNavigate();
+  const { currentWorkspace, workspaces } = useApp();
+
+  const [chatbot, setChatbot] = useState<Chatbot | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [embedCodeCopied, setEmbedCodeCopied] = useState(false);
+
+  // Test chat state
+  const [testMessages, setTestMessages] = useState<ChatMessage[]>([]);
+  const [testInput, setTestInput] = useState('');
+  const [isTestLoading, setIsTestLoading] = useState(false);
+  const [testSessionId, setTestSessionId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Analytics state
+  const [analytics, setAnalytics] = useState<ChatbotAnalytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsDays, setAnalyticsDays] = useState(7);
+
+  useEffect(() => {
+    if (chatbotId && currentWorkspace) {
+      loadChatbotData();
+    }
+  }, [chatbotId, currentWorkspace]);
+
+  useEffect(() => {
+    // Scroll to bottom when new messages arrive
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [testMessages]);
+
+  const loadChatbotData = async () => {
+    if (!chatbotId || !currentWorkspace) return;
+
+    setIsLoading(true);
+    try {
+      const data = await chatbotApi.get(chatbotId);
+
+      // Verify chatbot belongs to current workspace
+      if (data.workspace_id !== currentWorkspace.id) {
+        const chatbotWorkspace = workspaces.find(ws => ws.id === data.workspace_id);
+
+        if (chatbotWorkspace) {
+          toast({
+            title: 'Wrong Workspace',
+            description: `This chatbot belongs to "${chatbotWorkspace.name}". Please switch to that workspace.`,
+            variant: 'destructive'
+          });
+        } else {
+          toast({
+            title: 'Access Denied',
+            description: 'You do not have permission to view this chatbot',
+            variant: 'destructive'
+          });
+        }
+        navigate('/chatbots');
+        return;
+      }
+
+      setChatbot(data);
+
+      // Add greeting as first message if available
+      const greeting = data.prompt_config?.messages?.greeting;
+      if (greeting && testMessages.length === 0) {
+        setTestMessages([{
+          id: 'greeting',
+          role: 'assistant',
+          content: greeting,
+          timestamp: new Date().toISOString(),
+        }]);
+      }
+    } catch (error) {
+      console.error('Failed to load chatbot:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load chatbot details',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!chatbotId || !chatbot) return;
+
+    try {
+      await chatbotApi.archive(chatbotId);
+      toast({
+        title: 'Success',
+        description: `Chatbot "${chatbot.name}" has been archived`,
+      });
+      setArchiveDialogOpen(false);
+      navigate('/chatbots');
+    } catch (error) {
+      console.error('Failed to archive chatbot:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to archive chatbot',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleTestMessage = async () => {
+    if (!testInput.trim() || !chatbotId || isTestLoading) return;
+
+    const userMessage: ChatMessage = {
+      id: `user_${Date.now()}`,
+      role: 'user',
+      content: testInput.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    setTestMessages(prev => [...prev, userMessage]);
+    setTestInput('');
+    setIsTestLoading(true);
+
+    try {
+      const response = await chatbotApi.test(chatbotId, {
+        message: userMessage.content,
+        session_id: testSessionId || undefined,
+      });
+
+      const assistantMessage: ChatMessage = {
+        id: response.message_id,
+        role: 'assistant',
+        content: response.response,
+        sources: response.sources,
+        timestamp: new Date().toISOString(),
+      };
+
+      setTestMessages(prev => [...prev, assistantMessage]);
+      setTestSessionId(response.session_id);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to get response';
+      toast({
+        title: 'Test Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsTestLoading(false);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'paused':
+        return <Clock className="h-4 w-4 text-amber-500" />;
+      case 'archived':
+        return <XCircle className="h-4 w-4 text-gray-500" />;
+      default:
+        return <AlertCircle className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800';
+      case 'paused':
+        return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+      case 'archived':
+        return 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800';
+      default:
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300';
+    }
+  };
+
+  const getEmbedCode = () => {
+    if (!chatbot) return '';
+
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const widgetUrl = import.meta.env.VITE_WIDGET_URL || 'http://localhost:9000/widget.js';
+    const color = chatbot.branding_config?.primary_color || '#6366f1';
+    const position = chatbot.branding_config?.position || 'bottom-right';
+    const greeting = chatbot.prompt_config?.messages?.greeting || 'Hello! How can I help you?';
+    const botName = chatbot.branding_config?.chat_title || chatbot.name;
+
+    return `<script src="${widgetUrl}"></script>
+<script>
+  pb('init', {
+    id: '${chatbot.id}',
+    apiKey: 'YOUR_API_KEY', // Replace with your API key
+    options: {
+      baseURL: '${apiUrl}',
+      position: '${position}',
+      color: '${color}',
+      greeting: '${greeting}',
+      botName: '${botName}'
+    }
+  });
+</script>`;
+  };
+
+  const copyEmbedCode = () => {
+    navigator.clipboard.writeText(getEmbedCode());
+    setEmbedCodeCopied(true);
+    setTimeout(() => setEmbedCodeCopied(false), 2000);
+    toast({
+      title: 'Copied!',
+      description: 'Embed code copied to clipboard',
+    });
+  };
+
+  const loadAnalytics = async () => {
+    if (!chatbotId || analyticsLoading) return;
+
+    setAnalyticsLoading(true);
+    try {
+      const data = await chatbotApi.getAnalytics(chatbotId, analyticsDays);
+      setAnalytics(data);
+    } catch (error) {
+      console.error('Failed to load analytics:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load analytics data',
+        variant: 'destructive'
+      });
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  // Load analytics when tab is selected or days change
+  useEffect(() => {
+    if (activeTab === 'analytics' && chatbotId) {
+      loadAnalytics();
+    }
+  }, [activeTab, analyticsDays]);
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-4">
+            <RefreshCw className="h-12 w-12 mx-auto animate-spin text-primary" />
+            <h3 className="text-lg font-medium">Loading Chatbot</h3>
+            <p className="text-muted-foreground">Fetching details...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!chatbot) {
+    return (
+      <DashboardLayout>
+        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Chatbot not found or you don't have access to it.
+            </AlertDescription>
+          </Alert>
+          <Button className="mt-4" onClick={() => navigate('/chatbots')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Chatbots
+          </Button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-8">
+        {/* Header */}
+        <div>
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/chatbots')}
+            className="mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Chatbots
+          </Button>
+
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4 sm:p-6 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div className="flex-1 space-y-3">
+                <div className="flex items-center gap-4">
+                  <Bot className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white font-manrope break-words">
+                        {chatbot.name}
+                      </h1>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {getStatusIcon(chatbot.status)}
+                        <Badge className={`border ${getStatusBadgeClass(chatbot.status)} font-manrope`}>
+                          {chatbot.status.toUpperCase()}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {chatbot.description && (
+                  <p className="text-gray-600 dark:text-gray-400 text-base font-manrope leading-relaxed">
+                    {chatbot.description}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                  <span className="bg-gray-100 dark:bg-gray-700/50 px-3 py-1 rounded-lg">
+                    Created {new Date(chatbot.created_at).toLocaleDateString()}
+                  </span>
+                  {chatbot.deployed_at && (
+                    <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-3 py-1 rounded-lg">
+                      Deployed {new Date(chatbot.deployed_at).toLocaleDateString()}
+                    </span>
+                  )}
+                  <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg">
+                    {chatbot.ai_config?.model || 'secret-ai-v1'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/chatbots/${chatbotId}/edit`)}
+                  className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 flex-shrink-0 transition-all duration-200 font-manrope"
+                >
+                  <Settings className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+                  Edit
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 flex-shrink-0 transition-all duration-200">
+                      <MoreHorizontal className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="font-manrope bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 rounded-xl shadow-lg backdrop-blur-sm min-w-[160px]">
+                    <DropdownMenuItem onClick={loadChatbotData} className="hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-700 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                      <RefreshCw className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-3" />
+                      Refresh
+                    </DropdownMenuItem>
+                    {chatbot.status === 'active' ? (
+                      <DropdownMenuItem className="hover:bg-amber-50 dark:hover:bg-amber-900/30 text-gray-700 dark:text-gray-300 hover:text-amber-700 dark:hover:text-amber-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                        <Pause className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-3" />
+                        Pause
+                      </DropdownMenuItem>
+                    ) : chatbot.status === 'paused' ? (
+                      <DropdownMenuItem className="hover:bg-green-50 dark:hover:bg-green-900/30 text-gray-700 dark:text-gray-300 hover:text-green-700 dark:hover:text-green-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                        <Play className="h-4 w-4 text-green-600 dark:text-green-400 mr-3" />
+                        Resume
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => setArchiveDialogOpen(true)} className="hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-700 dark:text-gray-300 hover:text-red-700 dark:hover:text-red-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                      <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400 mr-3" />
+                      Archive
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Statistics Overview */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <MessageSquare className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                <div>
+                  <p className="text-sm font-medium text-blue-700 dark:text-blue-300 font-manrope">Conversations</p>
+                  <p className="text-2xl font-bold text-blue-900 dark:text-blue-100 font-manrope">
+                    {chatbot.cached_metrics?.total_conversations || 0}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Users className="h-6 w-6 text-green-600 dark:text-green-400" />
+                <div>
+                  <p className="text-sm font-medium text-green-700 dark:text-green-300 font-manrope">Messages</p>
+                  <p className="text-2xl font-bold text-green-900 dark:text-green-100 font-manrope">
+                    {chatbot.cached_metrics?.total_messages || 0}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Zap className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                <div>
+                  <p className="text-sm font-medium text-purple-700 dark:text-purple-300 font-manrope">Avg Response</p>
+                  <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 font-manrope">
+                    {chatbot.cached_metrics?.avg_response_time_ms
+                      ? `${(chatbot.cached_metrics.avg_response_time_ms / 1000).toFixed(1)}s`
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 border border-amber-200 dark:border-amber-700 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Database className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-300 font-manrope">Knowledge Bases</p>
+                  <p className="text-2xl font-bold text-amber-900 dark:text-amber-100 font-manrope">
+                    {chatbot.kb_config?.knowledge_bases?.length || 0}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Content Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm w-full justify-start overflow-x-auto">
+            <TabsTrigger
+              value="overview"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="test"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Test Chat
+            </TabsTrigger>
+            <TabsTrigger
+              value="embed"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <Code className="h-4 w-4 mr-1" />
+              Embed Code
+            </TabsTrigger>
+            <TabsTrigger
+              value="settings"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              Configuration
+            </TabsTrigger>
+            <TabsTrigger
+              value="analytics"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <BarChart2 className="h-4 w-4 mr-1" />
+              Analytics
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Overview Tab */}
+          <TabsContent value="overview">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* AI Configuration */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 border-b border-indigo-200 dark:border-indigo-700 rounded-t-xl p-6">
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                    <div>
+                      <CardTitle className="text-lg font-bold text-indigo-900 dark:text-indigo-100 font-manrope">AI Configuration</CardTitle>
+                      <CardDescription className="text-indigo-700 dark:text-indigo-300 font-manrope">Model and generation settings</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-manrope block mb-1">Model</label>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config?.model || 'secret-ai-v1'}</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-manrope block mb-1">Temperature</label>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config?.temperature ?? 0.7}</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
+                      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-manrope block mb-1">Max Tokens</label>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config?.max_tokens || 2000}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Knowledge Bases */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-b border-amber-200 dark:border-amber-700 rounded-t-xl p-6">
+                  <div className="flex items-center gap-3">
+                    <Database className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                    <div>
+                      <CardTitle className="text-lg font-bold text-amber-900 dark:text-amber-100 font-manrope">Knowledge Bases</CardTitle>
+                      <CardDescription className="text-amber-700 dark:text-amber-300 font-manrope">Connected knowledge sources</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  {chatbot.kb_config?.knowledge_bases?.length > 0 ? (
+                    <div className="space-y-3">
+                      {chatbot.kb_config.knowledge_bases.map((kb, index) => (
+                        <div key={kb.kb_id || index} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
+                          <div className="flex items-center gap-3">
+                            <Database className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                            <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{kb.name || kb.kb_id}</span>
+                          </div>
+                          <Badge variant="outline" className={`text-xs ${kb.enabled ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                            {kb.enabled ? 'Enabled' : 'Disabled'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <Database className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">No knowledge bases connected</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* System Prompt */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm lg:col-span-2">
+                <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-b border-purple-200 dark:border-purple-700 rounded-t-xl p-6">
+                  <div className="flex items-center gap-3">
+                    <Bot className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                    <div>
+                      <CardTitle className="text-lg font-bold text-purple-900 dark:text-purple-100 font-manrope">System Prompt</CardTitle>
+                      <CardDescription className="text-purple-700 dark:text-purple-300 font-manrope">Base instructions for the AI</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                    <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap">
+                      {chatbot.prompt_config?.system_prompt || 'No system prompt configured'}
+                    </pre>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Test Chat Tab */}
+          <TabsContent value="test">
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-green-200 dark:border-green-700 rounded-t-xl p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <MessageSquare className="h-6 w-6 text-green-600 dark:text-green-400" />
+                    <div>
+                      <CardTitle className="text-lg font-bold text-green-900 dark:text-green-100 font-manrope">Test Chat</CardTitle>
+                      <CardDescription className="text-green-700 dark:text-green-300 font-manrope">Send test messages to your chatbot</CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setTestMessages([]);
+                      setTestSessionId(null);
+                      const greeting = chatbot.prompt_config?.messages?.greeting;
+                      if (greeting) {
+                        setTestMessages([{
+                          id: 'greeting',
+                          role: 'assistant',
+                          content: greeting,
+                          timestamp: new Date().toISOString(),
+                        }]);
+                      }
+                    }}
+                    className="text-green-700 dark:text-green-300 border-green-200 dark:border-green-700"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reset Chat
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {/* Messages */}
+                <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900/50">
+                  <AnimatePresence>
+                    {testMessages.map((message) => (
+                      <motion.div
+                        key={message.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                          message.role === 'user'
+                            ? 'bg-blue-600 text-white rounded-br-md'
+                            : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded-bl-md'
+                        }`}>
+                          <p className="text-sm font-manrope whitespace-pre-wrap">{message.content}</p>
+                          {message.sources && message.sources.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mb-1">Sources:</p>
+                              {message.sources.map((source, idx) => (
+                                <div key={idx} className="text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 rounded p-1 mt-1">
+                                  {source.document_title || `Source ${idx + 1}`}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+
+                  {isTestLoading && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex justify-start"
+                    >
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
+                        <div className="flex gap-1">
+                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input */}
+                <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleTestMessage();
+                    }}
+                    className="flex gap-3"
+                  >
+                    <Input
+                      value={testInput}
+                      onChange={(e) => setTestInput(e.target.value)}
+                      placeholder="Type a message..."
+                      disabled={isTestLoading}
+                      className="flex-1 font-manrope"
+                    />
+                    <Button type="submit" disabled={!testInput.trim() || isTestLoading}>
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </form>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Embed Code Tab */}
+          <TabsContent value="embed">
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border-b border-cyan-200 dark:border-cyan-700 rounded-t-xl p-6">
+                <div className="flex items-center gap-3">
+                  <Code className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
+                  <div>
+                    <CardTitle className="text-lg font-bold text-cyan-900 dark:text-cyan-100 font-manrope">Embed Code</CardTitle>
+                    <CardDescription className="text-cyan-700 dark:text-cyan-300 font-manrope">Add this chatbot to your website</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-amber-800 dark:text-amber-200 font-manrope">
+                    Replace <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">YOUR_API_KEY</code> with the API key you received when deploying the chatbot.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="relative">
+                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm font-mono">
+                    {getEmbedCode()}
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyEmbedCode}
+                    className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-100 border-gray-600"
+                  >
+                    {embedCodeCopied ? (
+                      <>
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <Button variant="outline" onClick={() => window.open(`${import.meta.env.VITE_WIDGET_URL?.replace('/widget.js', '') || 'http://localhost:9000'}/test.html`, '_blank')}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open Test Page
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Configuration Tab */}
+          <TabsContent value="settings">
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border-b border-violet-200 dark:border-violet-700 rounded-t-xl p-6">
+                <div className="flex items-center gap-3">
+                  <Settings className="h-6 w-6 text-violet-600 dark:text-violet-400" />
+                  <div>
+                    <CardTitle className="text-lg font-bold text-violet-900 dark:text-violet-100 font-manrope">Configuration</CardTitle>
+                    <CardDescription className="text-violet-700 dark:text-violet-300 font-manrope">Full chatbot configuration details</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                {/* Basic Info */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope block mb-2">Chatbot ID</label>
+                    <p className="font-mono text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 px-3 py-2 rounded border break-all">{chatbot.id}</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope block mb-2">Workspace ID</label>
+                    <p className="font-mono text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 px-3 py-2 rounded border break-all">{chatbot.workspace_id}</p>
+                  </div>
+                </div>
+
+                {/* Branding */}
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-3">Branding</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Primary Color</label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div
+                          className="w-6 h-6 rounded border"
+                          style={{ backgroundColor: chatbot.branding_config?.primary_color || '#6366f1' }}
+                        />
+                        <span className="text-sm font-mono">{chatbot.branding_config?.primary_color || '#6366f1'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Position</label>
+                      <p className="text-sm font-medium mt-1">{chatbot.branding_config?.position || 'bottom-right'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Chat Title</label>
+                      <p className="text-sm font-medium mt-1">{chatbot.branding_config?.chat_title || 'Chat with us'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Deployment Channels */}
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-3">Deployment Channels</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {chatbot.deployment_config?.channels?.map((channel, idx) => (
+                      <Badge
+                        key={idx}
+                        variant="outline"
+                        className={channel.enabled
+                          ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 border-gray-200 dark:border-gray-600'
+                        }
+                      >
+                        {channel.type} {channel.enabled ? '✓' : '✗'}
+                      </Badge>
+                    )) || <span className="text-sm text-gray-500">No channels configured</span>}
+                  </div>
+                </div>
+
+                {/* Edit Button */}
+                <div className="flex justify-end">
+                  <Button onClick={() => navigate(`/chatbots/${chatbotId}/edit`)}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Edit Configuration
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics">
+            <div className="space-y-6">
+              {/* Period Selector */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
+                  Analytics Overview
+                </h3>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={analyticsDays}
+                    onChange={(e) => setAnalyticsDays(Number(e.target.value))}
+                    className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-manrope focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={7}>Last 7 days</option>
+                    <option value={14}>Last 14 days</option>
+                    <option value={30}>Last 30 days</option>
+                    <option value={90}>Last 90 days</option>
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadAnalytics}
+                    disabled={analyticsLoading}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${analyticsLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+              </div>
+
+              {analyticsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
+                </div>
+              ) : analytics ? (
+                <>
+                  {/* Analytics Stats Grid */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                          <div>
+                            <p className="text-xs font-medium text-blue-700 dark:text-blue-300 font-manrope">Widget Loads</p>
+                            <p className="text-xl font-bold text-blue-900 dark:text-blue-100 font-manrope">
+                              {analytics.analytics?.overview?.widget_loads || 0}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border border-green-200 dark:border-green-700">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <MousePointer className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          <div>
+                            <p className="text-xs font-medium text-green-700 dark:text-green-300 font-manrope">Widget Opens</p>
+                            <p className="text-xl font-bold text-green-900 dark:text-green-100 font-manrope">
+                              {analytics.analytics?.engagement?.widget_opens || 0}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <MessageSquare className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                          <div>
+                            <p className="text-xs font-medium text-purple-700 dark:text-purple-300 font-manrope">Conversations</p>
+                            <p className="text-xl font-bold text-purple-900 dark:text-purple-100 font-manrope">
+                              {analytics.analytics?.overview?.total_conversations || 0}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 border border-amber-200 dark:border-amber-700">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <TrendingUp className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                          <div>
+                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300 font-manrope">Engagement Rate</p>
+                            <p className="text-xl font-bold text-amber-900 dark:text-amber-100 font-manrope">
+                              {((analytics.analytics?.engagement?.engagement_rate || 0) * 100).toFixed(1)}%
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Feedback and Events */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Feedback Summary */}
+                    <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+                      <CardHeader className="bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 border-b border-green-200 dark:border-green-700 rounded-t-xl p-4">
+                        <div className="flex items-center gap-3">
+                          <ThumbsUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          <CardTitle className="text-base font-bold text-green-900 dark:text-green-100 font-manrope">
+                            User Feedback
+                          </CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4">
+                        {analytics.feedback && analytics.feedback.total_feedback > 0 ? (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                                  <ThumbsUp className="h-4 w-4" />
+                                  <span className="font-semibold">{analytics.feedback.positive}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                                  <ThumbsDown className="h-4 w-4" />
+                                  <span className="font-semibold">{analytics.feedback.negative}</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                                  {(analytics.feedback.satisfaction_rate * 100).toFixed(0)}%
+                                </p>
+                                <p className="text-xs text-gray-500">Satisfaction</p>
+                              </div>
+                            </div>
+                            {analytics.feedback.recent_feedback?.length > 0 && (
+                              <div className="border-t pt-3 mt-3">
+                                <p className="text-xs font-medium text-gray-500 mb-2">Recent Comments</p>
+                                {analytics.feedback.recent_feedback.slice(0, 3).map((fb, idx) => (
+                                  <div key={idx} className="text-sm text-gray-600 dark:text-gray-400 py-1">
+                                    {fb.rating === 'positive' ? '👍' : '👎'} {fb.comment || fb.message_preview}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-center py-6">
+                            <ThumbsUp className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                            <p className="text-sm text-gray-500 font-manrope">No feedback collected yet</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Event Breakdown */}
+                    <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+                      <CardHeader className="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border-b border-violet-200 dark:border-violet-700 rounded-t-xl p-4">
+                        <div className="flex items-center gap-3">
+                          <BarChart2 className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+                          <CardTitle className="text-base font-bold text-violet-900 dark:text-violet-100 font-manrope">
+                            Event Breakdown
+                          </CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4">
+                        {analytics.events && Object.keys(analytics.events).length > 0 ? (
+                          <div className="space-y-2">
+                            {Object.entries(analytics.events).map(([eventType, count]) => (
+                              <div key={eventType} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                                <span className="text-sm text-gray-600 dark:text-gray-400 font-manrope capitalize">
+                                  {eventType.replace(/_/g, ' ')}
+                                </span>
+                                <span className="font-semibold text-gray-900 dark:text-gray-100">{count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-6">
+                            <BarChart2 className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                            <p className="text-sm text-gray-500 font-manrope">No events recorded yet</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <BarChart2 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Analytics Data</h3>
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">
+                    Analytics will appear once your chatbot starts receiving traffic.
+                  </p>
+                  <Button onClick={loadAnalytics} variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh Analytics
+                  </Button>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        {/* Archive Confirmation Dialog */}
+        <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+          <DialogContent className="bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-xl shadow-xl max-w-md">
+            <DialogHeader className="text-center pb-4">
+              <AlertCircle className="w-12 h-12 mx-auto text-red-600 dark:text-red-400 mb-4" />
+              <DialogTitle className="text-xl font-bold text-red-900 dark:text-red-100 font-manrope">Archive Chatbot</DialogTitle>
+              <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed mt-3">
+                Are you sure you want to archive <span className="font-semibold text-red-700 dark:text-red-300">"{chatbot?.name}"</span>?
+                <br /><br />
+                The chatbot will be disabled and won't respond to messages. You can restore it later.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-6">
+              <Button
+                variant="outline"
+                onClick={() => setArchiveDialogOpen(false)}
+                className="flex-1 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleArchive}
+                className="flex-1 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 font-manrope"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Archive Chatbot
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DashboardLayout>
+  );
+}

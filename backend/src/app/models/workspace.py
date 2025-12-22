@@ -192,6 +192,7 @@ class Workspace(Base):
     # Resources in this workspace
     knowledge_bases = relationship("KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan")
     chatbots = relationship("Chatbot", back_populates="workspace", cascade="all, delete-orphan")
+    credentials = relationship("Credential", back_populates="workspace", cascade="all, delete-orphan")
     # NOTE: These relationships will be defined when the models exist
     # chatflows = relationship("Chatflow", back_populates="workspace", cascade="all, delete-orphan")
     # leads = relationship("Lead", back_populates="workspace", cascade="all, delete-orphan")

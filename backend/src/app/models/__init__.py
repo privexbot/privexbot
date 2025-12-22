@@ -37,10 +37,15 @@ from app.models.chat_message import ChatMessage, MessageRole, ContentType
 # API Key model
 from app.models.api_key import APIKey, KeyScopeType, create_api_key
 
+# Widget Analytics
+from app.models.widget_event import WidgetEvent, EventType
+
+# Credentials (encrypted API keys/tokens for chatflow nodes)
+from app.models.credential import Credential, CredentialType
+
 # NOTE: The following models are still pseudocode and not imported yet:
-# - Chatflow
-# - Lead
-# - Credential
+# - Chatflow (chatflow.py is documentation only)
+# - Lead (lead.py is documentation only)
 
 __all__ = [
     # Core
@@ -75,4 +80,10 @@ __all__ = [
     "APIKey",
     "KeyScopeType",
     "create_api_key",
+    # Widget Analytics
+    "WidgetEvent",
+    "EventType",
+    # Credentials
+    "Credential",
+    "CredentialType",
 ]

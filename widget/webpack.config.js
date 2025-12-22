@@ -31,12 +31,19 @@ module.exports = {
     extensions: ['.js'],
   },
   devServer: {
-    static: {
-      directory: path.join(__dirname, 'build'),
-    },
+    static: [
+      {
+        directory: path.join(__dirname, 'build'),
+      },
+      {
+        directory: __dirname,
+        publicPath: '/',
+      },
+    ],
     compress: true,
     port: 9000,
     hot: true,
+    open: '/test.html',
   },
   optimization: {
     minimize: true,

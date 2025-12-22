@@ -120,14 +120,27 @@ class Settings(BaseSettings):
     )
 
     # LLM Inference Settings
-    # Secret AI (primary provider for production)
+    # Secret AI (PRIMARY provider for PrivexBot - privacy-preserving via TEE)
     SECRET_AI_API_KEY: str = Field(
         default="",
         description="Secret AI API key for LLM inference"
     )
     SECRET_AI_BASE_URL: str = Field(
-        default="https://api.secret.ai/v1",
-        description="Secret AI API base URL"
+        default="https://secretai-api-url.scrtlabs.com:443/v1",
+        description="Secret AI API base URL (SecretVM endpoint)"
+    )
+
+    # Inference Fallback Settings
+    # Enable fallback to other providers when Secret AI is unavailable (e.g., network blocks)
+    INFERENCE_FALLBACK_ENABLED: bool = Field(
+        default=True,
+        description="Enable fallback to other providers when primary fails"
+    )
+
+    # SecretVM Detection (for environment-aware behavior)
+    SECRETVM: str = Field(
+        default="false",
+        description="Set to 'true' when running on SecretVM"
     )
 
     # Ollama (local inference for development)

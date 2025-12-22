@@ -82,6 +82,29 @@ class LeadCaptureRequest(BaseModel):
     ip_address: Optional[str] = None
 
 
+class EventTrackingRequest(BaseModel):
+    """Widget event tracking request."""
+
+    event_type: str  # widget_loaded, widget_opened, widget_closed, message_sent, etc.
+    event_data: Optional[dict] = None
+    session_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class WidgetConfigResponse(BaseModel):
+    """Widget configuration response."""
+
+    chatbot_id: str
+    name: str
+    greeting: Optional[str] = None
+    bot_name: Optional[str] = None
+    color: Optional[str] = None
+    position: Optional[str] = None
+    show_branding: bool = True
+    lead_config: Optional[dict] = None
+    avatar_url: Optional[str] = None
+
+
 @router.post("/bots/{bot_id}/chat")
 async def chat(
     bot_id: UUID,
@@ -266,6 +289,117 @@ async def capture_lead(
     lead_id = str(uuid4())
 
     return {"lead_id": lead_id}
+
+
+@router.get("/bots/{bot_id}/config")
+async def get_widget_config(
+    bot_id: UUID,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> WidgetConfigResponse:
+    """
+    Get widget configuration for a chatbot.
+
+    WHY: Widget needs branding/appearance settings
+    HOW: Return chatbot's branding_config and prompt_config.messages
+    """
+
+    # Validate API key
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "API key required")
+
+    api_key = authorization.replace("Bearer ", "")
+    bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(
+        db,
+        bot_id,
+        api_key
+    )
+
+    if bot_type != "chatbot":
+        raise HTTPException(400, "Only chatbots are supported")
+
+    # Extract config from chatbot
+    branding = bot.branding_config or {}
+    prompt_config = bot.prompt_config or {}
+    messages = prompt_config.get("messages", {})
+    lead_capture = bot.lead_capture_config
+
+    return WidgetConfigResponse(
+        chatbot_id=str(bot_id),
+        name=bot.name,
+        greeting=messages.get("greeting"),
+        bot_name=branding.get("chat_title") or prompt_config.get("persona", {}).get("name"),
+        color=branding.get("primary_color"),
+        position=branding.get("position", "bottom-right"),
+        show_branding=True,  # Could be made configurable per plan
+        lead_config=lead_capture,
+        avatar_url=branding.get("avatar_url"),
+    )
+
+
+@router.post("/bots/{bot_id}/events")
+async def track_widget_event(
+    bot_id: UUID,
+    request: EventTrackingRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Track widget analytics events.
+
+    WHY: Collect usage analytics for chatbot owners
+    HOW: Store events in widget_events table
+
+    Events tracked:
+    - widget_loaded: Widget script loaded on page
+    - widget_opened: User opened chat window
+    - widget_closed: User closed chat window
+    - message_sent: User sent a message
+    - lead_collected: Lead form submitted
+    - feedback_given: User gave feedback
+    """
+
+    workspace_id = None
+    bot_type = "chatbot"
+
+    # Validate API key (optional for events - can be more lenient)
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization.replace("Bearer ", "")
+        try:
+            bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(
+                db, bot_id, api_key
+            )
+        except HTTPException:
+            # Log but don't fail for analytics
+            pass
+
+    # If no workspace_id from API key validation, try to get it from the bot
+    if not workspace_id:
+        from app.models.chatbot import Chatbot
+        bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+        if bot:
+            workspace_id = bot.workspace_id
+
+    # Only store event if we have a workspace_id
+    if workspace_id:
+        from app.services.chatbot_analytics_service import chatbot_analytics_service
+
+        try:
+            await chatbot_analytics_service.store_widget_event(
+                db=db,
+                bot_id=bot_id,
+                workspace_id=workspace_id,
+                event_type=request.event_type,
+                event_data=request.event_data,
+                session_id=request.session_id,
+                client_timestamp=request.timestamp,
+                bot_type=bot_type
+            )
+        except Exception as e:
+            # Log but don't fail the request
+            print(f"Failed to store widget event: {e}")
+
+    return {"status": "ok", "event_type": request.event_type}
 
 
 async def _validate_api_key_and_get_bot(
