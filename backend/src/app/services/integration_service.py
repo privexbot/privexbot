@@ -12,8 +12,6 @@ HOW:
 - Manages OAuth flows and token refresh
 - Schedules background sync tasks
 - Monitors integration health and errors
-
-PSEUDOCODE follows the existing codebase patterns.
 """
 
 from typing import Dict, List, Optional, Any
@@ -23,7 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.integrations.notion_adapter import notion_adapter
 from app.integrations.google_adapter import google_adapter
-from app.models.credential import Credential
+from app.models.credential import Credential, CredentialType
+from app.services.credential_service import credential_service
 
 
 class IntegrationService:
@@ -143,7 +142,7 @@ class IntegrationService:
         Handle OAuth callback and store credentials.
 
         WHY: Complete OAuth flow and save tokens
-        HOW: Exchange code for tokens, store in credentials
+        HOW: Exchange code for tokens, encrypt and store in credentials
 
         ARGS:
             db: Database session
@@ -171,16 +170,28 @@ class IntegrationService:
         # Test connection
         user_info = await adapter.get_user_info(tokens["access_token"])
 
-        # Store credential
+        # Prepare OAuth2 credential data (to be encrypted)
+        oauth_data = {
+            "access_token": tokens.get("access_token"),
+            "refresh_token": tokens.get("refresh_token"),
+            "expires_at": tokens.get("expires_at"),
+            "token_type": tokens.get("token_type", "Bearer"),
+            "integration_type": integration_type,  # Store the service type
+            "user_info": user_info,
+            "connected_at": datetime.utcnow().isoformat(),
+        }
+
+        # Encrypt the credential data
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(oauth_data)
+
+        # Store credential using correct model fields
         credential = Credential(
             workspace_id=workspace_id,
-            integration_type=integration_type,
-            tokens=tokens,
-            metadata={
-                "user_info": user_info,
-                "connected_at": datetime.utcnow().isoformat(),
-                "status": "active"
-            },
+            name=f"{integration_type.title()} Integration",
+            description=f"OAuth2 credentials for {integration_type}",
+            credential_type=CredentialType.OAUTH2,
+            encrypted_data=encrypted_data,
+            encryption_key_id=key_id,
             created_by=user_id
         )
 
@@ -204,7 +215,7 @@ class IntegrationService:
         List connected integrations for workspace.
 
         WHY: Show user's connected integrations
-        HOW: Query credentials table
+        HOW: Query OAuth2 credentials and decrypt to get integration info
 
         RETURNS:
             [
@@ -218,25 +229,40 @@ class IntegrationService:
             ]
         """
 
+        # Get only OAuth2 credentials (integrations)
         credentials = db.query(Credential).filter(
             Credential.workspace_id == workspace_id,
+            Credential.credential_type == CredentialType.OAUTH2,
             Credential.is_active == True
         ).all()
 
         results = []
         for cred in credentials:
-            # Check connection health
-            health_status = await self._check_integration_health(cred)
+            try:
+                # Decrypt to get integration data
+                cred_data = credential_service.decrypt_credential_data(cred.encrypted_data)
+                integration_type = cred_data.get("integration_type", "unknown")
 
-            results.append({
-                "credential_id": str(cred.id),
-                "integration_type": cred.integration_type,
-                "status": health_status["status"],
-                "connected_at": cred.metadata.get("connected_at"),
-                "last_sync_at": cred.metadata.get("last_sync_at"),
-                "error_message": health_status.get("error"),
-                "user_info": cred.metadata.get("user_info")
-            })
+                # Check connection health
+                health_status = await self._check_integration_health(cred, cred_data)
+
+                results.append({
+                    "credential_id": str(cred.id),
+                    "integration_type": integration_type,
+                    "status": health_status["status"],
+                    "connected_at": cred_data.get("connected_at"),
+                    "last_sync_at": cred_data.get("last_sync_at"),
+                    "error_message": health_status.get("error"),
+                    "user_info": cred_data.get("user_info")
+                })
+            except Exception as e:
+                # Skip credentials that can't be decrypted
+                results.append({
+                    "credential_id": str(cred.id),
+                    "integration_type": "unknown",
+                    "status": "error",
+                    "error_message": f"Failed to decrypt: {str(e)}"
+                })
 
         return results
 
@@ -250,7 +276,7 @@ class IntegrationService:
         Sync content from integration source.
 
         WHY: Import content from connected integration
-        HOW: Use appropriate adapter to fetch content
+        HOW: Decrypt credentials, use appropriate adapter to fetch content
 
         ARGS:
             db: Database session
@@ -270,22 +296,37 @@ class IntegrationService:
         if not credential:
             raise ValueError("Credential not found")
 
-        adapter = self.adapters.get(credential.integration_type)
+        # Decrypt to get tokens and integration type
+        cred_data = credential_service.decrypt_credential_data(credential.encrypted_data)
+        integration_type = cred_data.get("integration_type")
+
+        adapter = self.adapters.get(integration_type)
         if not adapter:
-            raise ValueError(f"No adapter for {credential.integration_type}")
+            raise ValueError(f"No adapter for {integration_type}")
 
         # Refresh tokens if needed
-        if await self._should_refresh_tokens(credential):
-            await self._refresh_integration_tokens(db, credential)
+        if await self._should_refresh_tokens(cred_data):
+            cred_data = await self._refresh_integration_tokens(db, credential, cred_data)
+
+        # Prepare tokens dict for adapter
+        tokens = {
+            "access_token": cred_data.get("access_token"),
+            "refresh_token": cred_data.get("refresh_token"),
+            "expires_at": cred_data.get("expires_at"),
+            "token_type": cred_data.get("token_type", "Bearer"),
+        }
 
         # Sync content
         result = await adapter.sync_content(
-            tokens=credential.tokens,
+            tokens=tokens,
             source_config=source_config
         )
 
-        # Update last sync time
-        credential.metadata["last_sync_at"] = datetime.utcnow().isoformat()
+        # Update last sync time in encrypted data
+        cred_data["last_sync_at"] = datetime.utcnow().isoformat()
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(cred_data)
+        credential.encrypted_data = encrypted_data
+        credential.encryption_key_id = key_id
         db.commit()
 
         return result
@@ -299,7 +340,7 @@ class IntegrationService:
         Disconnect integration.
 
         WHY: Remove integration connection
-        HOW: Revoke tokens, soft delete credential
+        HOW: Revoke tokens if possible, soft delete credential
 
         ARGS:
             db: Database session
@@ -313,25 +354,34 @@ class IntegrationService:
         if not credential:
             raise ValueError("Credential not found")
 
-        adapter = self.adapters.get(credential.integration_type)
+        # Decrypt to get integration type and tokens
+        cred_data = credential_service.decrypt_credential_data(credential.encrypted_data)
+        integration_type = cred_data.get("integration_type")
+
+        adapter = self.adapters.get(integration_type)
 
         # Revoke tokens if adapter supports it
-        if hasattr(adapter, 'revoke_tokens'):
+        if adapter and hasattr(adapter, 'revoke_tokens'):
             try:
-                await adapter.revoke_tokens(credential.tokens)
+                tokens = {
+                    "access_token": cred_data.get("access_token"),
+                    "refresh_token": cred_data.get("refresh_token"),
+                }
+                await adapter.revoke_tokens(tokens)
             except Exception:
                 pass  # Continue even if revocation fails
 
-        # Soft delete credential
-        credential.is_active = False
-        credential.metadata["disconnected_at"] = datetime.utcnow().isoformat()
+        # Hard delete credential (privacy-first: users control their data)
+        # GDPR Right to Erasure: permanent removal of sensitive data
+        db.delete(credential)
         db.commit()
 
         return {"status": "disconnected"}
 
     async def _check_integration_health(
         self,
-        credential: Credential
+        credential: Credential,
+        cred_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Check if integration is healthy.
@@ -339,20 +389,36 @@ class IntegrationService:
         WHY: Monitor integration status
         HOW: Test API connection with stored tokens
 
+        ARGS:
+            credential: Credential model instance
+            cred_data: Optional decrypted credential data (to avoid double decrypt)
+
         RETURNS:
             {
                 "status": "active" | "error" | "expired",
                 "error": "Token expired"
             }
         """
+        # Decrypt if not provided
+        if cred_data is None:
+            cred_data = credential_service.decrypt_credential_data(credential.encrypted_data)
 
-        adapter = self.adapters.get(credential.integration_type)
+        integration_type = cred_data.get("integration_type")
+        adapter = self.adapters.get(integration_type)
+
         if not adapter:
             return {"status": "error", "error": "No adapter available"}
 
         try:
+            # Prepare tokens dict for adapter
+            tokens = {
+                "access_token": cred_data.get("access_token"),
+                "refresh_token": cred_data.get("refresh_token"),
+                "expires_at": cred_data.get("expires_at"),
+            }
+
             # Test connection
-            await adapter.test_connection(credential.tokens)
+            await adapter.test_connection(tokens)
             return {"status": "active"}
 
         except Exception as e:
@@ -364,33 +430,40 @@ class IntegrationService:
             else:
                 return {"status": "error", "error": error_msg}
 
-    async def _should_refresh_tokens(self, credential: Credential) -> bool:
+    async def _should_refresh_tokens(self, cred_data: Dict[str, Any]) -> bool:
         """
         Check if tokens need refresh.
 
         WHY: Prevent API errors from expired tokens
         HOW: Check token expiry time
 
+        ARGS:
+            cred_data: Decrypted credential data
+
         RETURNS:
             True if refresh needed
         """
 
-        if not credential.tokens.get("refresh_token"):
+        if not cred_data.get("refresh_token"):
             return False
 
-        expires_at = credential.tokens.get("expires_at")
+        expires_at = cred_data.get("expires_at")
         if not expires_at:
             return False
 
         # Refresh if expires within 5 minutes
-        expiry_time = datetime.fromisoformat(expires_at)
-        return datetime.utcnow() + timedelta(minutes=5) >= expiry_time
+        try:
+            expiry_time = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            return datetime.utcnow() + timedelta(minutes=5) >= expiry_time.replace(tzinfo=None)
+        except ValueError:
+            return False
 
     async def _refresh_integration_tokens(
         self,
         db: Session,
-        credential: Credential
-    ) -> None:
+        credential: Credential,
+        cred_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Refresh expired tokens.
 
@@ -399,27 +472,46 @@ class IntegrationService:
 
         ARGS:
             db: Database session
-            credential: Credential to refresh
-        """
+            credential: Credential model instance
+            cred_data: Decrypted credential data
 
-        adapter = self.adapters.get(credential.integration_type)
+        RETURNS:
+            Updated credential data with new tokens
+        """
+        integration_type = cred_data.get("integration_type")
+        adapter = self.adapters.get(integration_type)
+
         if not adapter or not hasattr(adapter, 'refresh_tokens'):
-            return
+            return cred_data
 
         try:
             new_tokens = await adapter.refresh_tokens(
-                credential.tokens["refresh_token"]
+                cred_data["refresh_token"]
             )
 
-            # Update stored tokens
-            credential.tokens = new_tokens
-            credential.metadata["last_refreshed_at"] = datetime.utcnow().isoformat()
+            # Update credential data with new tokens
+            cred_data["access_token"] = new_tokens.get("access_token", cred_data["access_token"])
+            if new_tokens.get("refresh_token"):
+                cred_data["refresh_token"] = new_tokens["refresh_token"]
+            if new_tokens.get("expires_at"):
+                cred_data["expires_at"] = new_tokens["expires_at"]
+            cred_data["last_refreshed_at"] = datetime.utcnow().isoformat()
+
+            # Re-encrypt and save
+            encrypted_data, key_id = credential_service.encrypt_with_key_id(cred_data)
+            credential.encrypted_data = encrypted_data
+            credential.encryption_key_id = key_id
             db.commit()
+
+            return cred_data
 
         except Exception as e:
             # Mark as expired if refresh fails
-            credential.metadata["status"] = "expired"
-            credential.metadata["error"] = str(e)
+            cred_data["status"] = "expired"
+            cred_data["error"] = str(e)
+            encrypted_data, key_id = credential_service.encrypt_with_key_id(cred_data)
+            credential.encrypted_data = encrypted_data
+            credential.encryption_key_id = key_id
             db.commit()
             raise
 
@@ -433,7 +525,7 @@ class IntegrationService:
         Schedule automatic syncing.
 
         WHY: Keep content up-to-date automatically
-        HOW: Queue periodic sync tasks
+        HOW: Store sync config in encrypted data, queue periodic tasks
 
         ARGS:
             db: Database session
@@ -451,9 +543,14 @@ class IntegrationService:
         if not credential:
             raise ValueError("Credential not found")
 
-        # Store sync configuration
-        credential.metadata["auto_sync"] = sync_config
-        credential.metadata["auto_sync_enabled"] = True
+        # Decrypt, update, and re-encrypt
+        cred_data = credential_service.decrypt_credential_data(credential.encrypted_data)
+        cred_data["auto_sync"] = sync_config
+        cred_data["auto_sync_enabled"] = True
+
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(cred_data)
+        credential.encrypted_data = encrypted_data
+        credential.encryption_key_id = key_id
         db.commit()
 
         # TODO: Queue periodic task based on frequency

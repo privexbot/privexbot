@@ -24,6 +24,7 @@ from app.api.v1.dependencies import get_current_workspace, get_db
 from app.models.workspace import Workspace
 from app.models.knowledge_base import KnowledgeBase
 from app.services.enhanced_search_service import enhanced_search_service, SearchStrategy
+from app.services.retrieval_service import retrieval_service
 
 
 # Request/Response models
@@ -31,7 +32,12 @@ class EnhancedSearchRequest(BaseModel):
     """Request model for enhanced search"""
     kb_id: UUID
     query: str = Field(..., min_length=1, max_length=1000)
-    search_strategy: str = Field(default="adaptive", pattern="^(precise|contextual|hybrid|adaptive)$")
+    # Strategy names aligned with retrieval_service.py for consistency
+    # Frontend Test Search uses same strategies as chatbots in production
+    search_strategy: str = Field(
+        default="hybrid_search",
+        pattern="^(semantic_search|hybrid_search|keyword_search|mmr|similarity_score_threshold|precise|contextual|hybrid|adaptive)$"
+    )
     top_k: int = Field(default=5, ge=1, le=20)
     include_reasoning: bool = Field(default=True)
     requester_type: str = Field(default="api", pattern="^(chatbot|chatflow|api)$")
@@ -127,47 +133,72 @@ async def enhanced_search_endpoint(
                 detail="This chatflow does not have access to this knowledge base"
             )
 
-    # Validate and convert search strategy
-    strategy_mapping = {
+    # NEW: Retrieval service strategies (aligned with chatbot production)
+    # These use retrieval_service.py directly for consistency
+    retrieval_strategies = {
+        "semantic_search", "hybrid_search", "keyword_search", "mmr", "similarity_score_threshold"
+    }
+
+    # LEGACY: Enhanced search strategies (backward compatibility)
+    legacy_strategy_mapping = {
         "precise": SearchStrategy.PRECISE,
         "contextual": SearchStrategy.CONTEXTUAL,
         "hybrid": SearchStrategy.HYBRID,
         "adaptive": SearchStrategy.ADAPTIVE
     }
-    search_strategy = strategy_mapping[request.search_strategy]
 
     # Determine context type based on requester
     context_type = request.requester_type if request.requester_type in ["chatbot", "chatflow"] else "chatbot"
 
     try:
-        # Perform enhanced search
-        enhanced_results = await enhanced_search_service.enhanced_search(
-            kb=kb,
-            query=request.query,
-            search_strategy=search_strategy,
-            top_k=request.top_k,
-            context_type=context_type
-        )
+        # Route to appropriate search service based on strategy type
+        if request.search_strategy in retrieval_strategies:
+            # USE RETRIEVAL SERVICE - Same as chatbots in production
+            # This ensures Test Search results match actual chatbot behavior
+            results_raw = await retrieval_service.search(
+                db=db,
+                kb_id=kb.id,
+                query=request.query,
+                top_k=request.top_k,
+                search_method=request.search_strategy,  # Pass strategy directly
+                threshold=0.0,  # Let all results through, filter in response
+                apply_annotation_boost=True
+            )
 
-        # Convert results to response format
-        if enhanced_results:
+            # Convert retrieval_service results to response format
             results = []
-            for result in enhanced_results:
+            for result in results_raw:
                 result_dict = {
-                    "chunk_id": result.chunk_id,
-                    "content": result.content,
-                    "score": round(result.score, 4),
-                    "confidence": round(result.confidence, 4),
-                    "document_id": result.document_id,
-                    "page_url": result.page_url,
-                    "page_title": result.page_title,
-                    "content_type": result.content_type,
-                    "strategy_used": result.strategy_used,
-                    "context_type": result.context_type
+                    "chunk_id": result.get("chunk_id", ""),
+                    "content": result.get("content", ""),
+                    "score": round(result.get("score", 0), 4),
+                    "confidence": round(result.get("score", 0), 4),  # Use score as confidence
+                    "document_id": result.get("document_id", ""),
+                    "page_url": result.get("page_url", ""),
+                    "page_title": result.get("document_name", ""),
+                    "content_type": result.get("storage_type", "unknown"),
+                    "strategy_used": request.search_strategy,
+                    "context_type": context_type
                 }
 
                 if request.include_reasoning:
-                    result_dict["reasoning"] = result.reasoning
+                    # Generate reasoning based on strategy and score
+                    reasoning_parts = []
+                    if result.get("boosted"):
+                        reasoning_parts.append("annotation boosted")
+                    if result.get("score", 0) >= 0.8:
+                        reasoning_parts.append("high relevance match")
+                    elif result.get("score", 0) >= 0.6:
+                        reasoning_parts.append("good relevance match")
+                    else:
+                        reasoning_parts.append("potential match")
+
+                    if request.search_strategy == "mmr":
+                        reasoning_parts.append("selected for diversity")
+                    elif request.search_strategy == "similarity_score_threshold":
+                        reasoning_parts.append("passed strict threshold")
+
+                    result_dict["reasoning"] = "; ".join(reasoning_parts) if reasoning_parts else "matched query"
 
                 results.append(result_dict)
 
@@ -175,33 +206,77 @@ async def enhanced_search_endpoint(
 
             return EnhancedSearchResponse(
                 results=results,
-                search_strategy_used=search_strategy.value,
+                search_strategy_used=request.search_strategy,
                 total_results=len(results),
                 processing_time_ms=round(processing_time_ms, 2),
                 fallback_used=False
             )
 
         else:
-            # No enhanced results, try fallback
-            fallback_results = await enhanced_search_service.search_with_fallback(
+            # LEGACY: Use enhanced_search_service for backward compatibility
+            search_strategy = legacy_strategy_mapping.get(request.search_strategy, SearchStrategy.HYBRID)
+
+            enhanced_results = await enhanced_search_service.enhanced_search(
                 kb=kb,
                 query=request.query,
+                search_strategy=search_strategy,
                 top_k=request.top_k,
                 context_type=context_type
             )
 
-            processing_time_ms = (time.time() - start_time) * 1000
+            # Convert results to response format
+            if enhanced_results:
+                results = []
+                for result in enhanced_results:
+                    result_dict = {
+                        "chunk_id": result.chunk_id,
+                        "content": result.content,
+                        "score": round(result.score, 4),
+                        "confidence": round(result.confidence, 4),
+                        "document_id": result.document_id,
+                        "page_url": result.page_url,
+                        "page_title": result.page_title,
+                        "content_type": result.content_type,
+                        "strategy_used": result.strategy_used,
+                        "context_type": result.context_type
+                    }
 
-            return EnhancedSearchResponse(
-                results=fallback_results,
-                search_strategy_used="fallback_basic",
-                total_results=len(fallback_results),
-                processing_time_ms=round(processing_time_ms, 2),
-                fallback_used=True
-            )
+                    if request.include_reasoning:
+                        result_dict["reasoning"] = result.reasoning
+
+                    results.append(result_dict)
+
+                processing_time_ms = (time.time() - start_time) * 1000
+
+                return EnhancedSearchResponse(
+                    results=results,
+                    search_strategy_used=search_strategy.value,
+                    total_results=len(results),
+                    processing_time_ms=round(processing_time_ms, 2),
+                    fallback_used=False
+                )
+
+            else:
+                # No enhanced results, try fallback
+                fallback_results = await enhanced_search_service.search_with_fallback(
+                    kb=kb,
+                    query=request.query,
+                    top_k=request.top_k,
+                    context_type=context_type
+                )
+
+                processing_time_ms = (time.time() - start_time) * 1000
+
+                return EnhancedSearchResponse(
+                    results=fallback_results,
+                    search_strategy_used="fallback_basic",
+                    total_results=len(fallback_results),
+                    processing_time_ms=round(processing_time_ms, 2),
+                    fallback_used=True
+                )
 
     except Exception as e:
-        # Error in enhanced search, try basic fallback
+        # Error in search, try basic fallback
         try:
             fallback_results = await enhanced_search_service.search_with_fallback(
                 kb=kb,

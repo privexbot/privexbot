@@ -61,16 +61,21 @@ interface KBTestSearchProps {
   kbStatus: string;
 }
 
+/**
+ * Search strategies - aligned with backend retrieval_service.py
+ * These are the same strategies chatbots use in production
+ */
 const SEARCH_STRATEGIES = [
-  { value: 'adaptive', label: 'Adaptive (Recommended)', description: 'Automatically selects best strategy' },
-  { value: 'hybrid', label: 'Hybrid Search', description: 'Combines semantic + keyword search' },
-  { value: 'precise', label: 'Precise', description: 'Exact keyword matching' },
-  { value: 'contextual', label: 'Contextual', description: 'Deep semantic understanding' },
+  { value: 'hybrid_search', label: 'Hybrid (Recommended)', description: 'Combines semantic + keyword search (70/30)' },
+  { value: 'semantic_search', label: 'Semantic', description: 'Pure vector similarity - natural language' },
+  { value: 'keyword_search', label: 'Keyword', description: 'Exact term matching - technical queries' },
+  { value: 'mmr', label: 'MMR (Diverse)', description: 'Diverse results - avoid repetition' },
+  { value: 'similarity_score_threshold', label: 'Threshold (Strict)', description: 'Quality over quantity - may return fewer' },
 ];
 
 export function KBTestSearch({ kbId, kbName, kbStatus }: KBTestSearchProps) {
   const [query, setQuery] = useState('');
-  const [strategy, setStrategy] = useState('adaptive');
+  const [strategy, setStrategy] = useState('hybrid_search');
   const [topK, setTopK] = useState(5);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<SearchResponse | null>(null);
@@ -407,19 +412,19 @@ export function KBTestSearch({ kbId, kbName, kbStatus }: KBTestSearchProps) {
             <ul className="space-y-2 text-sm text-purple-700 dark:text-purple-300 font-manrope">
               <li className="flex items-start gap-2">
                 <span className="text-purple-500">•</span>
-                <span><strong>Adaptive strategy</strong> automatically selects the best approach based on your query</span>
+                <span><strong>Hybrid</strong> is best for most queries - combines semantic understanding with exact matching</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-purple-500">•</span>
-                <span><strong>Hybrid search</strong> combines keyword matching with semantic understanding</span>
+                <span><strong>Semantic</strong> works best for natural language questions (e.g., "How do I...")</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-purple-500">•</span>
-                <span>Use <strong>natural language questions</strong> for best results (e.g., "How do I...")</span>
+                <span><strong>MMR</strong> ensures diverse results - great for exploring different aspects of a topic</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-purple-500">•</span>
-                <span>Higher <strong>Top K</strong> returns more results but may include less relevant matches</span>
+                <span><strong>Threshold</strong> returns only high-confidence results - may return fewer or none</span>
               </li>
             </ul>
           </CardContent>

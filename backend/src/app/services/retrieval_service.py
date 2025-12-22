@@ -59,12 +59,13 @@ STRATEGY_TO_METHOD_MAP = {
     "semantic_search": "vector",
     "hybrid_search": "hybrid",
     "keyword_search": "keyword",
-    "mmr": "vector",  # MMR uses vector search with diversity
-    "similarity_score_threshold": "vector",
+    "mmr": "mmr",  # Maximum Marginal Relevance (diversity-aware search)
+    "similarity_score_threshold": "threshold",  # Strict threshold filtering
     # Direct method names (passthrough)
     "vector": "vector",
     "hybrid": "hybrid",
-    "keyword": "keyword"
+    "keyword": "keyword",
+    "threshold": "threshold"
 }
 
 
@@ -422,6 +423,27 @@ class RetrievalService:
                 kb=kb  # Pass KB for Qdrant text search fallback (Option A)
             )
 
+        elif effective_search_method == "mmr":
+            # Maximum Marginal Relevance: diversity-aware search
+            results = await self._mmr_search(
+                db=db,
+                kb_id=kb_id,
+                query_embedding=query_embedding,
+                top_k=effective_top_k * 2 if apply_annotation_boost else effective_top_k,
+                threshold=effective_threshold,
+                lambda_param=0.7  # 70% relevance, 30% diversity
+            )
+
+        elif effective_search_method == "threshold":
+            # Strict threshold filtering: quality over quantity
+            results = await self._threshold_search(
+                db=db,
+                kb_id=kb_id,
+                query_embedding=query_embedding,
+                top_k=effective_top_k * 2 if apply_annotation_boost else effective_top_k,
+                threshold=effective_threshold
+            )
+
         else:  # hybrid (default)
             results = await self._hybrid_search(
                 db=db,
@@ -694,6 +716,200 @@ class RetrievalService:
                     result["score"] *= 1.5
 
         return results
+
+
+    def _cosine_similarity(self, result1: dict, result2: dict) -> float:
+        """
+        Calculate similarity between two search results.
+
+        WHY: MMR needs to measure diversity between selected results
+        HOW: Content-based Jaccard similarity (embedding comparison requires storage)
+
+        ARGS:
+            result1: First search result with content
+            result2: Second search result with content
+
+        RETURNS:
+            Similarity score between 0.0 and 1.0
+        """
+        # Use content-based Jaccard similarity (word overlap)
+        # Note: For true cosine similarity on embeddings, we'd need to store embeddings
+        content1 = result1.get("content", "").lower()
+        content2 = result2.get("content", "").lower()
+
+        if not content1 or not content2:
+            return 0.0
+
+        words1 = set(content1.split())
+        words2 = set(content2.split())
+
+        if not words1 or not words2:
+            return 0.0
+
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+
+        return intersection / union if union > 0 else 0.0
+
+
+    async def _mmr_search(
+        self,
+        db: Session,
+        kb_id: UUID,
+        query_embedding: List[float],
+        top_k: int,
+        threshold: float,
+        lambda_param: float = 0.7
+    ) -> List[dict]:
+        """
+        Maximum Marginal Relevance search - balance relevance with diversity.
+
+        WHY: Avoid redundant results, get diverse information coverage
+        HOW: Iteratively select results that balance query relevance with novelty
+
+        ALGORITHM:
+            MMR = λ * sim(doc, query) - (1-λ) * max(sim(doc, selected_docs))
+
+            Where:
+            - λ = 1.0: Pure relevance (same as vector search)
+            - λ = 0.0: Pure diversity (most different from already selected)
+            - λ = 0.7: Recommended balance (70% relevance, 30% diversity)
+
+        ARGS:
+            db: Database session
+            kb_id: Knowledge base ID
+            query_embedding: Query embedding vector
+            top_k: Number of results to return
+            threshold: Minimum similarity threshold
+            lambda_param: Balance between relevance and diversity (default 0.7)
+
+        RETURNS:
+            Diverse results with MMR-adjusted scores
+        """
+        # Fetch more candidates than needed for MMR reranking
+        fetch_k = min(top_k * 3, 50)  # Get 3x candidates, max 50
+
+        # Get initial candidates via vector search
+        candidates = await self._vector_search(
+            db=db,
+            kb_id=kb_id,
+            query_embedding=query_embedding,
+            top_k=fetch_k,
+            threshold=threshold * 0.5  # Lower threshold to get more candidates
+        )
+
+        if not candidates:
+            return []
+
+        if len(candidates) <= top_k:
+            # Not enough candidates for MMR, return as-is
+            return candidates
+
+        # MMR selection
+        selected = []
+        remaining = candidates.copy()
+
+        while len(selected) < top_k and remaining:
+            if not selected:
+                # First selection: highest relevance to query
+                best = max(remaining, key=lambda x: x["score"])
+                best_idx = remaining.index(best)
+            else:
+                # Subsequent selections: MMR formula
+                best_mmr_score = float('-inf')
+                best_idx = 0
+
+                for i, candidate in enumerate(remaining):
+                    # Relevance to query (already computed as score)
+                    relevance = candidate["score"]
+
+                    # Maximum similarity to already selected results (diversity penalty)
+                    max_sim_to_selected = max(
+                        self._cosine_similarity(candidate, sel)
+                        for sel in selected
+                    )
+
+                    # MMR score: balance relevance and diversity
+                    mmr_score = (lambda_param * relevance) - ((1 - lambda_param) * max_sim_to_selected)
+
+                    if mmr_score > best_mmr_score:
+                        best_mmr_score = mmr_score
+                        best_idx = i
+
+                best = remaining[best_idx]
+                # Update score to reflect MMR ranking
+                best["mmr_score"] = best_mmr_score
+
+            # Add to selected, remove from remaining
+            selected.append(best)
+            remaining.pop(best_idx)
+
+        # Mark results as MMR-selected
+        for result in selected:
+            result["search_method"] = "mmr"
+
+        return selected
+
+
+    async def _threshold_search(
+        self,
+        db: Session,
+        kb_id: UUID,
+        query_embedding: List[float],
+        top_k: int,
+        threshold: float
+    ) -> List[dict]:
+        """
+        Strict threshold-based search - quality over quantity.
+
+        WHY: High-precision applications where only high-quality matches matter
+        HOW: Vector search with strict threshold, may return fewer than top_k
+
+        DIFFERENCE FROM SEMANTIC SEARCH:
+            - Semantic: Returns top_k results, then filters by threshold
+            - Threshold: Strictly returns ONLY results above threshold, may return 0
+
+        USE CASES:
+            - Legal/compliance: Only high-confidence answers
+            - Technical support: Avoid misleading low-confidence responses
+            - Mission-critical: Better no answer than wrong answer
+
+        ARGS:
+            db: Database session
+            kb_id: Knowledge base ID
+            query_embedding: Query embedding vector
+            top_k: Maximum results (may return fewer)
+            threshold: Strict minimum threshold (0.0-1.0)
+
+        RETURNS:
+            Only results strictly above threshold (may be empty)
+        """
+        # Get more candidates to filter strictly
+        fetch_k = top_k * 2
+
+        # Vector search with lower threshold to get candidates
+        candidates = await self._vector_search(
+            db=db,
+            kb_id=kb_id,
+            query_embedding=query_embedding,
+            top_k=fetch_k,
+            threshold=threshold * 0.8  # Get slightly more, filter strictly
+        )
+
+        # Strict threshold filtering - the key difference
+        # Unlike semantic search, this does NOT pad results below threshold
+        strict_results = [
+            result for result in candidates
+            if result["score"] >= threshold
+        ]
+
+        # Mark results as threshold-filtered
+        for result in strict_results:
+            result["search_method"] = "threshold"
+            result["threshold_applied"] = threshold
+
+        # Return up to top_k (may be fewer or zero)
+        return strict_results[:top_k]
 
 
     def _get_chunk_metadata(self, db: Session, chunk_id: str):

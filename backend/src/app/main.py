@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, public
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, public, credentials
 
 
 @asynccontextmanager
@@ -129,6 +129,13 @@ app.include_router(
     public.router,
     prefix=settings.API_V1_PREFIX,
     tags=["public"]
+)
+
+# Credentials routes (encrypted API keys/tokens for chatflow nodes and integrations)
+app.include_router(
+    credentials.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["credentials"]
 )
 
 

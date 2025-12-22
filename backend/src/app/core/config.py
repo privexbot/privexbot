@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Credential Encryption
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEY: str = Field(
+        default="",
+        description="Fernet encryption key for credential storage (required for credential features)"
+    )
+
     # CORS
     BACKEND_CORS_ORIGINS: str = Field(
         default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",

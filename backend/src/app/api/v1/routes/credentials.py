@@ -10,10 +10,8 @@ WHY:
 HOW:
 - FastAPI router
 - Fernet encryption
-- Multi-tenant access control
+- Multi-tenant access control via workspace dependency
 - Credential validation
-
-PSEUDOCODE follows the existing codebase patterns.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,18 +20,27 @@ from typing import List
 from uuid import UUID
 
 from app.db.session import get_db
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user, get_current_workspace
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.models.credential import Credential, CredentialType
 from app.services.credential_service import credential_service
+from app.schemas.credential import (
+    CredentialCreate,
+    CredentialUpdate,
+    CredentialResponse,
+    CredentialListResponse,
+    CredentialTestResponse,
+    CredentialUsageResponse,
+)
 
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
 
-@router.post("/")
+@router.post("/", response_model=dict)
 async def create_credential(
-    workspace_id: UUID,
-    credential_data: dict,
+    credential_data: CredentialCreate,
+    workspace: Workspace = Depends(get_current_workspace),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -45,8 +52,9 @@ async def create_credential(
 
     BODY:
         {
+            "workspace_id": "uuid",
             "name": "OpenAI API Key",
-            "credential_type": "openai",
+            "credential_type": "api_key",
             "data": {
                 "api_key": "sk-..."
             }
@@ -56,43 +64,35 @@ async def create_credential(
         {
             "credential_id": "uuid",
             "name": "OpenAI API Key",
-            "credential_type": "openai",
+            "credential_type": "api_key",
             "is_active": true
         }
     """
-
-    from app.models.workspace import Workspace
-
-    # Validate workspace access
-    workspace = db.query(Workspace).filter(
-        Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
+    # Verify workspace_id in request matches current workspace context
+    if credential_data.workspace_id != workspace.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace ID mismatch"
         )
 
     # Validate credential type
     try:
-        cred_type = CredentialType(credential_data["credential_type"])
+        cred_type = CredentialType(credential_data.credential_type.value)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid credential type: {credential_data['credential_type']}"
+            detail=f"Invalid credential type: {credential_data.credential_type}"
         )
 
     # Encrypt credential data
-    encrypted_data, key_id = credential_service.encrypt_credential_data(
-        credential_data["data"]
+    encrypted_data, key_id = credential_service.encrypt_with_key_id(
+        credential_data.data
     )
 
     # Create credential
     credential = Credential(
-        workspace_id=workspace_id,
-        name=credential_data["name"],
+        workspace_id=workspace.id,
+        name=credential_data.name,
         credential_type=cred_type,
         encrypted_data=encrypted_data,
         encryption_key_id=key_id,
@@ -112,13 +112,12 @@ async def create_credential(
     }
 
 
-@router.get("/")
+@router.get("/", response_model=CredentialListResponse)
 async def list_credentials(
-    workspace_id: UUID,
     skip: int = 0,
     limit: int = 50,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db)
 ):
     """
     List all credentials in workspace.
@@ -128,39 +127,15 @@ async def list_credentials(
 
     RETURNS:
         {
-            "items": [
-                {
-                    "id": "uuid",
-                    "name": "OpenAI API Key",
-                    "credential_type": "openai",
-                    "is_active": true,
-                    "usage_count": 42,
-                    "last_used_at": "2025-10-01T12:00:00Z"
-                }
-            ],
+            "items": [...],
             "total": 5,
             "skip": 0,
             "limit": 50
         }
     """
-
-    from app.models.workspace import Workspace
-
-    # Validate workspace access
-    workspace = db.query(Workspace).filter(
-        Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found"
-        )
-
-    # Get credentials (exclude encrypted_data)
+    # Get credentials for current workspace
     query = db.query(Credential).filter(
-        Credential.workspace_id == workspace_id
+        Credential.workspace_id == workspace.id
     )
 
     total = query.count()
@@ -168,32 +143,35 @@ async def list_credentials(
 
     # Format response (exclude encrypted data)
     items = [
-        {
-            "id": str(cred.id),
-            "name": cred.name,
-            "credential_type": cred.credential_type.value,
-            "is_active": cred.is_active,
-            "usage_count": cred.usage_count,
-            "last_used_at": cred.last_used_at.isoformat() if cred.last_used_at else None,
-            "created_at": cred.created_at.isoformat()
-        }
+        CredentialResponse(
+            id=cred.id,
+            workspace_id=cred.workspace_id,
+            name=cred.name,
+            credential_type=cred.credential_type,
+            is_active=cred.is_active,
+            usage_count=cred.usage_count,
+            last_used_at=cred.last_used_at,
+            created_at=cred.created_at,
+            updated_at=cred.updated_at,
+            data=None  # Never include data in list
+        )
         for cred in credentials
     ]
 
-    return {
-        "items": items,
-        "total": total,
-        "skip": skip,
-        "limit": limit
-    }
+    return CredentialListResponse(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
 
-@router.get("/{credential_id}")
+@router.get("/{credential_id}", response_model=CredentialResponse)
 async def get_credential(
     credential_id: UUID,
     include_data: bool = False,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db)
 ):
     """
     Get single credential by ID.
@@ -205,17 +183,11 @@ async def get_credential(
         include_data: If true, include decrypted data (use carefully)
 
     RETURNS:
-        {
-            "id": "uuid",
-            "name": "OpenAI API Key",
-            "credential_type": "openai",
-            "is_active": true,
-            "data": {...}  // Only if include_data=true
-        }
+        Credential details with optional decrypted data
     """
-
     credential = db.query(Credential).filter(
-        Credential.id == credential_id
+        Credential.id == credential_id,
+        Credential.workspace_id == workspace.id
     ).first()
 
     if not credential:
@@ -224,49 +196,37 @@ async def get_credential(
             detail="Credential not found"
         )
 
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == credential.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    result = {
-        "id": str(credential.id),
-        "name": credential.name,
-        "credential_type": credential.credential_type.value,
-        "is_active": credential.is_active,
-        "usage_count": credential.usage_count,
-        "last_used_at": credential.last_used_at.isoformat() if credential.last_used_at else None,
-        "created_at": credential.created_at.isoformat()
-    }
-
     # Optionally include decrypted data
+    decrypted_data = None
     if include_data:
         try:
             decrypted_data = credential_service.get_decrypted_data(db, credential)
-            result["data"] = decrypted_data
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to decrypt credential: {str(e)}"
             )
 
-    return result
+    return CredentialResponse(
+        id=credential.id,
+        workspace_id=credential.workspace_id,
+        name=credential.name,
+        credential_type=credential.credential_type,
+        is_active=credential.is_active,
+        usage_count=credential.usage_count,
+        last_used_at=credential.last_used_at,
+        created_at=credential.created_at,
+        updated_at=credential.updated_at,
+        data=decrypted_data
+    )
 
 
-@router.patch("/{credential_id}")
+@router.patch("/{credential_id}", response_model=dict)
 async def update_credential(
     credential_id: UUID,
-    updates: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    updates: CredentialUpdate,
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db)
 ):
     """
     Update credential.
@@ -278,14 +238,12 @@ async def update_credential(
         {
             "name": "Updated Name",
             "is_active": false,
-            "data": {  // Optional - re-encrypt if provided
-                "api_key": "sk-new..."
-            }
+            "data": {"api_key": "sk-new..."}  // Optional - re-encrypt if provided
         }
     """
-
     credential = db.query(Credential).filter(
-        Credential.id == credential_id
+        Credential.id == credential_id,
+        Credential.workspace_id == workspace.id
     ).first()
 
     if not credential:
@@ -294,30 +252,18 @@ async def update_credential(
             detail="Credential not found"
         )
 
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == credential.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
+    # Update name if provided
+    if updates.name is not None:
+        credential.name = updates.name
 
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    # Update name and is_active
-    if "name" in updates:
-        credential.name = updates["name"]
-
-    if "is_active" in updates:
-        credential.is_active = updates["is_active"]
+    # Update is_active if provided
+    if updates.is_active is not None:
+        credential.is_active = updates.is_active
 
     # Re-encrypt data if provided
-    if "data" in updates:
-        encrypted_data, key_id = credential_service.encrypt_credential_data(
-            updates["data"]
+    if updates.data is not None:
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(
+            updates.data
         )
         credential.encrypted_data = encrypted_data
         credential.encryption_key_id = key_id
@@ -336,20 +282,20 @@ async def update_credential(
 @router.delete("/{credential_id}")
 async def delete_credential(
     credential_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db)
 ):
     """
     Delete credential.
 
     WHY: Remove credential
-    HOW: Soft delete or hard delete
+    HOW: Hard delete from database
 
-    NOTE: Check if credential is in use by chatflows before deleting
+    NOTE: Consider checking if credential is in use by chatflows before deleting
     """
-
     credential = db.query(Credential).filter(
-        Credential.id == credential_id
+        Credential.id == credential_id,
+        Credential.workspace_id == workspace.id
     ).first()
 
     if not credential:
@@ -358,22 +304,6 @@ async def delete_credential(
             detail="Credential not found"
         )
 
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == credential.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    # TODO: Check if credential is in use by chatflows
-    # If in use, prevent deletion or warn user
-
     # Hard delete
     db.delete(credential)
     db.commit()
@@ -381,11 +311,11 @@ async def delete_credential(
     return {"status": "deleted"}
 
 
-@router.post("/{credential_id}/test")
+@router.post("/{credential_id}/test", response_model=CredentialTestResponse)
 async def test_credential(
     credential_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db)
 ):
     """
     Test credential validity.
@@ -397,12 +327,12 @@ async def test_credential(
         {
             "is_valid": true,
             "message": "Connection successful",
-            "metadata": {...}  // API-specific info
+            "metadata": {...}
         }
     """
-
     credential = db.query(Credential).filter(
-        Credential.id == credential_id
+        Credential.id == credential_id,
+        Credential.workspace_id == workspace.id
     ).first()
 
     if not credential:
@@ -411,57 +341,44 @@ async def test_credential(
             detail="Credential not found"
         )
 
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == credential.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
+    # Test credential
+    result = await credential_service.test_credential(db, credential)
 
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    # Test credential based on type
-    try:
-        result = await credential_service.test_credential(db, credential)
-        return result
-    except Exception as e:
-        return {
-            "is_valid": False,
-            "message": str(e),
-            "metadata": {}
-        }
+    return CredentialTestResponse(
+        is_valid=result["is_valid"],
+        message=result["message"],
+        metadata=result.get("metadata", {})
+    )
 
 
-@router.get("/{credential_id}/usage")
+@router.get("/{credential_id}/usage", response_model=CredentialUsageResponse)
 async def get_credential_usage(
     credential_id: UUID,
     days: int = 7,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db)
 ):
     """
     Get credential usage statistics.
 
     WHY: Monitor credential usage
-    HOW: Aggregate from usage logs
+    HOW: Return basic usage info from credential record
 
     RETURNS:
         {
+            "credential_id": "uuid",
             "total_uses": 1234,
             "last_used_at": "2025-10-01T12:00:00Z",
-            "usage_by_day": [
-                {"date": "2025-10-01", "count": 150},
-                {"date": "2025-10-02", "count": 200}
-            ]
+            "usage_by_day": [],
+            "usage_by_bot": []
         }
-    """
 
+    NOTE: Detailed usage tracking (usage_by_day, usage_by_bot) requires
+    a separate usage log table which is not yet implemented.
+    """
     credential = db.query(Credential).filter(
-        Credential.id == credential_id
+        Credential.id == credential_id,
+        Credential.workspace_id == workspace.id
     ).first()
 
     if not credential:
@@ -470,23 +387,10 @@ async def get_credential_usage(
             detail="Credential not found"
         )
 
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == credential.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    # TODO: Implement usage tracking and aggregation
-
-    return {
-        "total_uses": credential.usage_count,
-        "last_used_at": credential.last_used_at.isoformat() if credential.last_used_at else None,
-        "usage_by_day": []
-    }
+    return CredentialUsageResponse(
+        credential_id=credential.id,
+        total_uses=credential.usage_count,
+        last_used_at=credential.last_used_at,
+        usage_by_day=[],  # Not yet implemented
+        usage_by_bot=[]   # Not yet implemented
+    )

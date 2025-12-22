@@ -12,19 +12,19 @@ HOW:
 - Store encrypted bytes in database
 - Decrypt only when needed
 - Track usage
-
-PSEUDOCODE follows the existing codebase patterns.
 """
 
 from cryptography.fernet import Fernet
 from datetime import datetime
 from uuid import UUID
+from typing import Dict, Any, Tuple, Optional
 import json
 import os
+import httpx
 
 from sqlalchemy.orm import Session
 
-from app.models.credential import Credential
+from app.models.credential import Credential, CredentialType
 from app.core.config import settings
 
 
@@ -41,15 +41,28 @@ class CredentialService:
         Initialize encryption.
 
         WHY: Load encryption key from environment
-        HOW: Use Fernet for symmetric encryption
+        HOW: Use Fernet for symmetric encryption (lazy init)
         """
-        # Load encryption key from environment
-        encryption_key = os.getenv("ENCRYPTION_KEY") or settings.ENCRYPTION_KEY
-        if not encryption_key:
-            raise ValueError("ENCRYPTION_KEY not set in environment")
-
-        self.fernet = Fernet(encryption_key.encode())
+        self._fernet: Optional[Fernet] = None
         self.current_key_id = "key_v1_2025"
+
+    @property
+    def fernet(self) -> Fernet:
+        """
+        Lazy initialization of Fernet encryption.
+
+        WHY: Allow service to be imported even if ENCRYPTION_KEY not set
+        HOW: Initialize on first use
+        """
+        if self._fernet is None:
+            encryption_key = os.getenv("ENCRYPTION_KEY") or getattr(settings, "ENCRYPTION_KEY", "")
+            if not encryption_key:
+                raise ValueError(
+                    "ENCRYPTION_KEY not set. Generate one with: "
+                    "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                )
+            self._fernet = Fernet(encryption_key.encode())
+        return self._fernet
 
 
     def encrypt_credential_data(self, data: dict) -> bytes:
@@ -309,6 +322,252 @@ class CredentialService:
                 raise ValueError("access_key_id and secret_access_key required for AWS credential")
 
         # custom type allows any fields
+
+    def encrypt_with_key_id(self, data: dict) -> Tuple[bytes, str]:
+        """
+        Encrypt credential data and return with key ID.
+
+        WHY: Routes need both encrypted data and key ID
+        HOW: Encrypt and return tuple
+
+        ARGS:
+            data: Plain credential data
+
+        RETURNS:
+            Tuple of (encrypted_bytes, key_id)
+        """
+        encrypted = self.encrypt_credential_data(data)
+        return (encrypted, self.current_key_id)
+
+    async def test_credential(
+        self,
+        db: Session,
+        credential: Credential
+    ) -> Dict[str, Any]:
+        """
+        Test if credential is valid by making a test request.
+
+        WHY: Verify credential works before using in workflows
+        HOW: Make type-specific API test call
+
+        ARGS:
+            db: Database session
+            credential: Credential to test
+
+        RETURNS:
+            {
+                "is_valid": bool,
+                "message": str,
+                "metadata": dict
+            }
+        """
+        try:
+            # Decrypt credential data
+            cred_data = self.decrypt_credential_data(credential.encrypted_data)
+            cred_type = credential.credential_type.value if hasattr(credential.credential_type, 'value') else str(credential.credential_type)
+
+            # Test based on credential type
+            if cred_type == "api_key":
+                return await self._test_api_key(cred_data)
+
+            elif cred_type == "database":
+                return self._test_database(cred_data)
+
+            elif cred_type == "smtp":
+                return self._test_smtp(cred_data)
+
+            elif cred_type == "oauth2":
+                return await self._test_oauth2(cred_data)
+
+            elif cred_type == "aws":
+                return await self._test_aws(cred_data)
+
+            elif cred_type == "basic_auth":
+                # Basic auth requires URL to test
+                return {
+                    "is_valid": True,
+                    "message": "Basic auth credentials stored (cannot validate without target URL)",
+                    "metadata": {"username": cred_data.get("username", "N/A")}
+                }
+
+            else:
+                # Custom credentials can't be tested
+                return {
+                    "is_valid": True,
+                    "message": "Custom credentials stored (validation not applicable)",
+                    "metadata": {}
+                }
+
+        except Exception as e:
+            return {
+                "is_valid": False,
+                "message": str(e),
+                "metadata": {}
+            }
+
+    async def _test_api_key(self, cred_data: dict) -> Dict[str, Any]:
+        """Test API key by checking if it's properly formatted."""
+        api_key = cred_data.get("api_key", "")
+
+        if not api_key:
+            return {
+                "is_valid": False,
+                "message": "API key is empty",
+                "metadata": {}
+            }
+
+        # Check common API key formats
+        if api_key.startswith("sk-"):
+            # OpenAI-style key
+            return {
+                "is_valid": True,
+                "message": "API key format is valid (OpenAI-style)",
+                "metadata": {"format": "openai", "key_prefix": api_key[:7] + "..."}
+            }
+        elif api_key.startswith("sk-ant-"):
+            # Anthropic-style key
+            return {
+                "is_valid": True,
+                "message": "API key format is valid (Anthropic-style)",
+                "metadata": {"format": "anthropic", "key_prefix": api_key[:10] + "..."}
+            }
+        else:
+            # Generic API key
+            return {
+                "is_valid": True,
+                "message": "API key stored",
+                "metadata": {"key_length": len(api_key)}
+            }
+
+    def _test_database(self, cred_data: dict) -> Dict[str, Any]:
+        """Test database connection."""
+        from sqlalchemy import create_engine, text
+
+        try:
+            db_type = cred_data.get("type", "postgresql")
+            host = cred_data["host"]
+            port = cred_data["port"]
+            database = cred_data["database"]
+            username = cred_data["username"]
+            password = cred_data["password"]
+
+            conn_str = f"{db_type}://{username}:{password}@{host}:{port}/{database}"
+            engine = create_engine(conn_str, connect_args={"connect_timeout": 5})
+
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+
+            return {
+                "is_valid": True,
+                "message": f"Successfully connected to {database}@{host}",
+                "metadata": {"host": host, "database": database}
+            }
+
+        except Exception as e:
+            return {
+                "is_valid": False,
+                "message": f"Database connection failed: {str(e)}",
+                "metadata": {}
+            }
+
+    def _test_smtp(self, cred_data: dict) -> Dict[str, Any]:
+        """Test SMTP connection."""
+        import smtplib
+
+        try:
+            host = cred_data["host"]
+            port = cred_data["port"]
+            username = cred_data["username"]
+            password = cred_data["password"]
+            use_tls = cred_data.get("use_tls", True)
+
+            if use_tls:
+                server = smtplib.SMTP(host, port, timeout=10)
+                server.starttls()
+            else:
+                server = smtplib.SMTP(host, port, timeout=10)
+
+            server.login(username, password)
+            server.quit()
+
+            return {
+                "is_valid": True,
+                "message": f"Successfully authenticated with {host}",
+                "metadata": {"host": host, "username": username}
+            }
+
+        except Exception as e:
+            return {
+                "is_valid": False,
+                "message": f"SMTP connection failed: {str(e)}",
+                "metadata": {}
+            }
+
+    async def _test_oauth2(self, cred_data: dict) -> Dict[str, Any]:
+        """Test OAuth2 token validity."""
+        access_token = cred_data.get("access_token", "")
+        expires_at = cred_data.get("expires_at")
+
+        if not access_token:
+            return {
+                "is_valid": False,
+                "message": "Access token is empty",
+                "metadata": {}
+            }
+
+        # Check expiry if available
+        if expires_at:
+            from datetime import datetime
+            try:
+                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if expiry < datetime.now(expiry.tzinfo):
+                    has_refresh = bool(cred_data.get("refresh_token"))
+                    return {
+                        "is_valid": False,
+                        "message": "Token expired" + (" (refresh token available)" if has_refresh else ""),
+                        "metadata": {"expires_at": expires_at, "has_refresh_token": has_refresh}
+                    }
+            except ValueError:
+                pass
+
+        return {
+            "is_valid": True,
+            "message": "OAuth2 token stored",
+            "metadata": {
+                "has_refresh_token": bool(cred_data.get("refresh_token")),
+                "expires_at": expires_at
+            }
+        }
+
+    async def _test_aws(self, cred_data: dict) -> Dict[str, Any]:
+        """Test AWS credentials format."""
+        access_key_id = cred_data.get("access_key_id", "")
+        secret_key = cred_data.get("secret_access_key", "")
+        region = cred_data.get("region", "us-east-1")
+
+        if not access_key_id or not secret_key:
+            return {
+                "is_valid": False,
+                "message": "AWS credentials incomplete",
+                "metadata": {}
+            }
+
+        # Validate format (AWS keys have specific patterns)
+        if access_key_id.startswith("AKIA") and len(access_key_id) == 20:
+            return {
+                "is_valid": True,
+                "message": "AWS credentials format is valid",
+                "metadata": {
+                    "access_key_prefix": access_key_id[:4] + "...",
+                    "region": region
+                }
+            }
+
+        return {
+            "is_valid": True,
+            "message": "AWS credentials stored (format validation skipped)",
+            "metadata": {"region": region}
+        }
 
 
 # Global instance
