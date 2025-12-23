@@ -1368,10 +1368,27 @@ async def refresh_chatbot_metrics(
     Refresh cached metrics for a chatbot.
 
     WHY: Sync cached_metrics with actual session/message data
-    HOW: Query real stats and update cached_metrics in database
+    HOW: Query ChatSession and ChatMessage tables for comprehensive metrics
 
     Use this endpoint to refresh metrics for existing chatbots
     that may have stale or empty cached_metrics.
+
+    RETURNS:
+        {
+            "status": "refreshed",
+            "chatbot_id": "uuid",
+            "cached_metrics": {
+                "total_conversations": 150,
+                "total_messages": 1200,
+                "avg_satisfaction": 0.85,
+                "resolution_rate": 0.73,
+                "avg_response_time_ms": 450,
+                "positive_feedback": 42,
+                "negative_feedback": 8,
+                "error_rate": 0.02,
+                "last_updated": "2025-01-15T10:30:00Z"
+            }
+        }
     """
     current_user, org_id, _ = user_context
 
@@ -1396,32 +1413,16 @@ async def refresh_chatbot_metrics(
         )
 
     try:
-        # Get real-time stats from session service
-        from app.services.session_service import session_service
+        from app.services.chatbot_metrics_service import ChatbotMetricsService
 
-        stats = session_service.get_session_stats(
-            db=db,
-            workspace_id=chatbot.workspace_id,
-            bot_type="chatbot",
-            bot_id=chatbot_id
-        )
-
-        # Update cached_metrics
-        chatbot.cached_metrics = {
-            "total_conversations": stats.get("total_sessions", 0),
-            "total_messages": stats.get("total_messages", 0),
-            "avg_messages_per_session": stats.get("avg_messages_per_session", 0),
-            "active_sessions": stats.get("active_sessions", 0),
-            "last_updated": datetime.utcnow().isoformat()
-        }
-
-        db.commit()
+        service = ChatbotMetricsService(db)
+        metrics = service.update_chatbot_metrics(chatbot_id)
 
         return {
             "status": "refreshed",
             "chatbot_id": str(chatbot_id),
-            "cached_metrics": chatbot.cached_metrics,
-            "message": "Metrics have been refreshed"
+            "cached_metrics": metrics,
+            "message": "Metrics have been refreshed from conversation data"
         }
 
     except Exception as e:

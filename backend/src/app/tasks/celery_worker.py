@@ -78,6 +78,12 @@ celery_app.conf.update(
             "task": "health_check_qdrant_collections",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
         },
+
+        # Refresh chatbot metrics every hour
+        "refresh-chatbot-metrics": {
+            "task": "refresh_chatbot_metrics_scheduled",
+            "schedule": crontab(minute=30),  # Every hour at :30
+        },
     },
 )
 
