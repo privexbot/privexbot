@@ -34,6 +34,10 @@ import {
   Eye,
   MoreHorizontal,
   FileText,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
@@ -100,6 +104,17 @@ interface LeadStats {
   leads_this_week: number;
   leads_this_month: number;
   top_source: string;
+}
+
+interface LeadAnalytics {
+  total_leads: number;
+  new_leads: number;
+  contacted: number;
+  qualified: number;
+  converted: number;
+  conversion_rate: number;
+  leads_by_day: { date: string; count: number }[];
+  top_bots: { bot_id: string; bot_name: string; bot_type: string; lead_count: number }[];
 }
 
 // ========================================
@@ -334,6 +349,190 @@ function StatusBadge({ status }: { status: string | undefined }) {
 }
 
 // ========================================
+// ANALYTICS CHARTS COMPONENTS
+// ========================================
+
+function LeadsOverTimeChart({ data }: { data: { date: string; count: number }[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-40 text-gray-500 dark:text-gray-400 font-manrope text-sm">
+        No data available
+      </div>
+    );
+  }
+
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-end gap-1 h-32">
+        {data.slice(-14).map((item, idx) => {
+          const height = (item.count / maxCount) * 100;
+          return (
+            <div key={idx} className="flex-1 flex flex-col items-center gap-1 group">
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 font-manrope opacity-0 group-hover:opacity-100 transition-opacity">
+                {item.count}
+              </span>
+              <div
+                className="w-full bg-blue-500 dark:bg-blue-400 rounded-t transition-all duration-300 hover:bg-blue-600 dark:hover:bg-blue-300"
+                style={{ height: `${Math.max(height, 4)}%` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 font-manrope">
+        <span>{data.length > 0 ? format(new Date(data[Math.max(0, data.length - 14)].date), 'MMM d') : ''}</span>
+        <span>{data.length > 0 ? format(new Date(data[data.length - 1].date), 'MMM d') : ''}</span>
+      </div>
+    </div>
+  );
+}
+
+function ConversionFunnelChart({
+  analytics,
+}: {
+  analytics: LeadAnalytics;
+}) {
+  const stages = [
+    { label: 'New', count: analytics.new_leads, color: 'bg-blue-500 dark:bg-blue-400' },
+    { label: 'Contacted', count: analytics.contacted, color: 'bg-amber-500 dark:bg-amber-400' },
+    { label: 'Qualified', count: analytics.qualified, color: 'bg-purple-500 dark:bg-purple-400' },
+    { label: 'Converted', count: analytics.converted, color: 'bg-green-500 dark:bg-green-400' },
+  ];
+
+  const maxCount = Math.max(...stages.map((s) => s.count), 1);
+
+  return (
+    <div className="space-y-3">
+      {stages.map((stage, idx) => {
+        const width = (stage.count / maxCount) * 100;
+        return (
+          <div key={idx} className="space-y-1">
+            <div className="flex justify-between text-sm font-manrope">
+              <span className="text-gray-700 dark:text-gray-300">{stage.label}</span>
+              <span className="text-gray-900 dark:text-gray-100 font-medium">{stage.count}</span>
+            </div>
+            <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.max(width, 2)}%` }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                className={cn('h-full rounded-full', stage.color)}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-600 dark:text-gray-400 font-manrope">Conversion Rate</span>
+          <span className="text-lg font-bold text-green-600 dark:text-green-400 font-manrope">
+            {(analytics.conversion_rate * 100).toFixed(1)}%
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TopBotsChart({ bots }: { bots: LeadAnalytics['top_bots'] }) {
+  if (!bots || bots.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-32 text-gray-500 dark:text-gray-400 font-manrope text-sm">
+        No chatbot data
+      </div>
+    );
+  }
+
+  const maxCount = Math.max(...bots.map((b) => b.lead_count), 1);
+
+  return (
+    <div className="space-y-3">
+      {bots.slice(0, 5).map((bot, idx) => {
+        const width = (bot.lead_count / maxCount) * 100;
+        return (
+          <div key={bot.bot_id} className="space-y-1">
+            <div className="flex justify-between text-sm font-manrope">
+              <span className="text-gray-700 dark:text-gray-300 truncate max-w-[70%]">{bot.bot_name}</span>
+              <span className="text-gray-900 dark:text-gray-100 font-medium">{bot.lead_count}</span>
+            </div>
+            <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${width}%` }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                className="h-full rounded-full bg-indigo-500 dark:bg-indigo-400"
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnalyticsSection({ analytics, isLoading }: { analytics: LeadAnalytics | null; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        {[1, 2, 3].map((i) => (
+          <Card key={i} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+            <CardContent className="p-6">
+              <div className="animate-pulse space-y-4">
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
+                <div className="h-32 bg-gray-100 dark:bg-gray-700/50 rounded" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (!analytics) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.1 }}
+      className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6"
+    >
+      {/* Leads Over Time */}
+      <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+        <CardContent className="p-6">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 font-manrope mb-4">
+            Leads Over Time
+          </h3>
+          <LeadsOverTimeChart data={analytics.leads_by_day} />
+        </CardContent>
+      </Card>
+
+      {/* Conversion Funnel */}
+      <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+        <CardContent className="p-6">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 font-manrope mb-4">
+            Conversion Funnel
+          </h3>
+          <ConversionFunnelChart analytics={analytics} />
+        </CardContent>
+      </Card>
+
+      {/* Top Performing Bots */}
+      <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+        <CardContent className="p-6">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 font-manrope mb-4">
+            Top Performing Bots
+          </h3>
+          <TopBotsChart bots={analytics.top_bots} />
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ========================================
 // LEAD CARD COMPONENT (Grid View)
 // ========================================
 
@@ -481,11 +680,29 @@ export default function LeadsDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateRange, setDateRange] = useState<string>('all');
 
-  // Fetch leads
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = (
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    value: string
+  ) => {
+    setter(value);
+    setCurrentPage(1);
+  };
+
+  // Fetch leads with pagination
   const { data: leadsData, isLoading, refetch } = useQuery({
-    queryKey: ['leads', currentWorkspace?.id, sourceFilter, statusFilter, dateRange],
+    queryKey: ['leads', currentWorkspace?.id, sourceFilter, statusFilter, dateRange, currentPage, pageSize],
     queryFn: async () => {
-      const params: Record<string, string | undefined> = { workspace_id: currentWorkspace?.id };
+      const skip = (currentPage - 1) * pageSize;
+      const params: Record<string, string | number | undefined> = {
+        workspace_id: currentWorkspace?.id,
+        skip,
+        limit: pageSize,
+      };
       if (sourceFilter !== 'all') params.channel = sourceFilter;
       if (statusFilter !== 'all') params.lead_status = statusFilter;
       if (dateRange !== 'all') params.date_range = dateRange;
@@ -497,11 +714,63 @@ export default function LeadsDashboard() {
   });
 
   const leads: Lead[] = leadsData?.items || [];
+  const totalLeads: number = leadsData?.total || 0;
+  const totalPages = Math.ceil(totalLeads / pageSize);
   const stats: LeadStats = leadsData?.stats || {
     total_leads: 0,
     leads_this_week: 0,
     leads_this_month: 0,
     top_source: 'N/A',
+  };
+
+  // Fetch analytics data
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
+    queryKey: ['leads-analytics', currentWorkspace?.id],
+    queryFn: async () => {
+      const response = await apiClient.get('/leads/analytics/summary', {
+        params: { workspace_id: currentWorkspace?.id, days: 30 },
+      });
+      return response.data as LeadAnalytics;
+    },
+    enabled: !!currentWorkspace,
+  });
+
+  // Pagination helpers
+  const canGoBack = currentPage > 1;
+  const canGoForward = currentPage < totalPages;
+  const startItem = totalLeads === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalLeads);
+
+  // Generate page numbers to show
+  const getPageNumbers = () => {
+    const pages: (number | 'ellipsis')[] = [];
+    const showAround = 1; // Show 1 page around current
+
+    if (totalPages <= 7) {
+      // Show all pages
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+
+      if (currentPage > 3) {
+        pages.push('ellipsis');
+      }
+
+      const start = Math.max(2, currentPage - showAround);
+      const end = Math.min(totalPages - 1, currentPage + showAround);
+
+      for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) pages.push(i);
+      }
+
+      if (currentPage < totalPages - 2) {
+        pages.push('ellipsis');
+      }
+
+      if (!pages.includes(totalPages)) pages.push(totalPages);
+    }
+
+    return pages;
   };
 
   // Filter leads by search
@@ -526,39 +795,43 @@ export default function LeadsDashboard() {
     );
   }, [filteredLeads]);
 
-  // Export to CSV
-  const exportToCSV = () => {
-    const headers = ['Name', 'Email', 'Phone', 'Platform', 'Consent', 'Location', 'Captured At'];
-    const rows = filteredLeads.map((lead) => [
-      lead.name || '',
-      lead.email || '',
-      lead.phone || '',
-      lead.channel || lead.source || 'website',
-      lead.consent_given === 'Y'
-        ? 'Consented'
-        : lead.consent_given === 'N'
-          ? 'Declined'
-          : lead.consent_given === 'P'
-            ? 'Pending'
-            : 'None',
-      lead.city ? `${lead.city}, ${lead.country || ''}` : '',
-      format(new Date(lead.captured_at || lead.created_at || new Date()), 'yyyy-MM-dd HH:mm:ss'),
-    ]);
+  // Export to CSV via backend
+  const [isExporting, setIsExporting] = useState(false);
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
-    ].join('\n');
+  const exportToCSV = async () => {
+    if (!currentWorkspace?.id) return;
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `leads_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    setIsExporting(true);
+    try {
+      const params: Record<string, string | undefined> = {
+        workspace_id: currentWorkspace.id,
+      };
+      if (statusFilter !== 'all') params.status = statusFilter;
 
-    toast({ title: 'Leads exported', description: `${filteredLeads.length} leads exported to CSV` });
+      const response = await apiClient.get('/leads/export/csv', {
+        params,
+        responseType: 'blob',
+      });
+
+      // Create download link
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `leads_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast({ title: 'Leads exported', description: 'CSV file downloaded successfully' });
+    } catch (error) {
+      toast({
+        title: 'Export failed',
+        description: 'Failed to export leads. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // View lead handler - navigate to detail page
@@ -604,18 +877,25 @@ export default function LeadsDashboard() {
               </Button>
               <Button
                 onClick={exportToCSV}
-                disabled={filteredLeads.length === 0}
-                className="flex-1 sm:flex-none font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
+                disabled={totalLeads === 0 || isExporting}
+                className="flex-1 sm:flex-none font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all disabled:opacity-50"
               >
-                <Download className="h-4 w-4 mr-2" />
-                <span className="hidden sm:inline">Export CSV</span>
-                <span className="sm:hidden">Export</span>
+                {isExporting ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                <span className="hidden sm:inline">{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+                <span className="sm:hidden">{isExporting ? '...' : 'Export'}</span>
               </Button>
             </div>
           </div>
 
           {/* Stats Cards */}
           <UnifiedStatsCard stats={stats} />
+
+          {/* Analytics Charts */}
+          <AnalyticsSection analytics={analyticsData ?? null} isLoading={analyticsLoading} />
 
           {/* Filters and Search Bar */}
           <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
@@ -634,7 +914,7 @@ export default function LeadsDashboard() {
 
                 {/* Filters */}
                 <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-                  <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                  <Select value={sourceFilter} onValueChange={(v) => handleFilterChange(setSourceFilter, v)}>
                     <SelectTrigger className="w-full sm:w-40 h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
                       <SelectValue placeholder="Platform" />
                     </SelectTrigger>
@@ -648,7 +928,7 @@ export default function LeadsDashboard() {
                     </SelectContent>
                   </Select>
 
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <Select value={statusFilter} onValueChange={(v) => handleFilterChange(setStatusFilter, v)}>
                     <SelectTrigger className="w-full sm:w-40 h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
@@ -661,7 +941,7 @@ export default function LeadsDashboard() {
                     </SelectContent>
                   </Select>
 
-                  <Select value={dateRange} onValueChange={setDateRange}>
+                  <Select value={dateRange} onValueChange={(v) => handleFilterChange(setDateRange, v)}>
                     <SelectTrigger className="w-full sm:w-40 h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
                       <SelectValue placeholder="Date Range" />
                     </SelectTrigger>
@@ -713,6 +993,7 @@ export default function LeadsDashboard() {
               </CardContent>
             </Card>
           ) : (
+            <>
             <AnimatePresence mode="wait">
               {viewMode === 'table' && (
                 <motion.div
@@ -931,6 +1212,134 @@ export default function LeadsDashboard() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Pagination Controls */}
+            {totalPages > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+              >
+                <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                  <CardContent className="p-4">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                      {/* Info */}
+                      <div className="text-sm text-gray-600 dark:text-gray-400 font-manrope order-2 sm:order-1">
+                        Showing <span className="font-medium text-gray-900 dark:text-gray-100">{startItem}</span> to{' '}
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{endItem}</span> of{' '}
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{totalLeads}</span> leads
+                      </div>
+
+                      {/* Page Controls */}
+                      <div className="flex items-center gap-1 order-1 sm:order-2">
+                        {/* First Page */}
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setCurrentPage(1)}
+                          disabled={!canGoBack}
+                          className="h-8 w-8 rounded-lg border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          <ChevronsLeft className="h-4 w-4" />
+                        </Button>
+
+                        {/* Previous Page */}
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={!canGoBack}
+                          className="h-8 w-8 rounded-lg border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+
+                        {/* Page Numbers */}
+                        <div className="hidden sm:flex items-center gap-1 mx-1">
+                          {getPageNumbers().map((page, idx) =>
+                            page === 'ellipsis' ? (
+                              <span
+                                key={`ellipsis-${idx}`}
+                                className="w-8 h-8 flex items-center justify-center text-gray-400 dark:text-gray-500 font-manrope"
+                              >
+                                ...
+                              </span>
+                            ) : (
+                              <Button
+                                key={page}
+                                variant={currentPage === page ? 'default' : 'outline'}
+                                size="icon"
+                                onClick={() => setCurrentPage(page)}
+                                className={cn(
+                                  'h-8 w-8 rounded-lg font-manrope text-sm',
+                                  currentPage === page
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'
+                                    : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                )}
+                              >
+                                {page}
+                              </Button>
+                            )
+                          )}
+                        </div>
+
+                        {/* Mobile Page Indicator */}
+                        <span className="sm:hidden px-2 text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                          {currentPage} / {totalPages}
+                        </span>
+
+                        {/* Next Page */}
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={!canGoForward}
+                          className="h-8 w-8 rounded-lg border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+
+                        {/* Last Page */}
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setCurrentPage(totalPages)}
+                          disabled={!canGoForward}
+                          className="h-8 w-8 rounded-lg border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          <ChevronsRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      {/* Page Size Selector */}
+                      <div className="flex items-center gap-2 order-3">
+                        <span className="text-sm text-gray-500 dark:text-gray-400 font-manrope hidden sm:inline">
+                          Per page:
+                        </span>
+                        <Select
+                          value={pageSize.toString()}
+                          onValueChange={(v) => {
+                            setPageSize(Number(v));
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <SelectTrigger className="w-16 h-8 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                            <SelectItem value="10">10</SelectItem>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+            </>
           )}
         </div>
       </div>

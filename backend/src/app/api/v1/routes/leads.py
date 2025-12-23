@@ -243,8 +243,56 @@ async def get_leads_summary(
     # Calculate conversion rate
     conversion_rate = converted / total_leads if total_leads > 0 else 0
 
-    # TODO: Implement leads_by_day aggregation
-    # TODO: Implement top_bots aggregation
+    # Leads by day aggregation
+    from sqlalchemy import func, cast, Date
+    leads_by_day_query = db.query(
+        cast(Lead.captured_at, Date).label('date'),
+        func.count(Lead.id).label('count')
+    ).filter(
+        Lead.workspace_id == workspace_id,
+        Lead.created_at >= start_date
+    ).group_by(
+        cast(Lead.captured_at, Date)
+    ).order_by(
+        cast(Lead.captured_at, Date)
+    ).all()
+
+    leads_by_day = [
+        {"date": row.date.isoformat(), "count": row.count}
+        for row in leads_by_day_query
+    ]
+
+    # Top bots aggregation
+    from app.models.chatbot import Chatbot
+    top_bots_query = db.query(
+        Lead.bot_id,
+        Lead.bot_type,
+        func.count(Lead.id).label('lead_count')
+    ).filter(
+        Lead.workspace_id == workspace_id,
+        Lead.created_at >= start_date
+    ).group_by(
+        Lead.bot_id,
+        Lead.bot_type
+    ).order_by(
+        func.count(Lead.id).desc()
+    ).limit(5).all()
+
+    # Get bot names
+    top_bots = []
+    for row in top_bots_query:
+        bot_name = "Unknown Bot"
+        if row.bot_type == "chatbot":
+            chatbot = db.query(Chatbot).filter(Chatbot.id == row.bot_id).first()
+            if chatbot:
+                bot_name = chatbot.name
+        # TODO: Add chatflow name lookup when chatflow model is available
+        top_bots.append({
+            "bot_id": str(row.bot_id),
+            "bot_type": row.bot_type,
+            "bot_name": bot_name,
+            "lead_count": row.lead_count
+        })
 
     return {
         "total_leads": total_leads,
@@ -253,8 +301,8 @@ async def get_leads_summary(
         "qualified": qualified,
         "converted": converted,
         "conversion_rate": round(conversion_rate, 2),
-        "leads_by_day": [],
-        "top_bots": []
+        "leads_by_day": leads_by_day,
+        "top_bots": top_bots
     }
 
 
