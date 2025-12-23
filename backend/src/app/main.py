@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, public, credentials
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, public, credentials, leads
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
 
 
@@ -137,6 +137,13 @@ app.include_router(
     credentials.router,
     prefix=settings.API_V1_PREFIX,
     tags=["credentials"]
+)
+
+# Leads routes (lead capture, management, analytics)
+app.include_router(
+    leads.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["leads"]
 )
 
 # Webhook routes (Telegram, Discord, etc.)

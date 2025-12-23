@@ -46,7 +46,8 @@ import KBDocumentEditPage from "@/pages/knowledge-bases/document-edit";
 import KBAnalyticsPage from "@/pages/knowledge-bases/analytics";
 import KBPipelineMonitorPage from "@/pages/knowledge-bases/pipeline-monitor";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
-import { LeadsPage } from "@/pages/LeadsPage";
+import LeadsDashboard from "@/pages/leads/index";
+import LeadDetailPage from "@/pages/leads/detail";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { BillingsPage } from "@/pages/BillingsPage";
 import { MarketplacePage } from "@/pages/MarketplacePage";
@@ -245,7 +246,15 @@ function App() {
                 path="/leads"
                 element={
                   <ProtectedRoute>
-                    <LeadsPage />
+                    <LeadsDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/leads/:leadId"
+                element={
+                  <ProtectedRoute>
+                    <LeadDetailPage />
                   </ProtectedRoute>
                 }
               />
