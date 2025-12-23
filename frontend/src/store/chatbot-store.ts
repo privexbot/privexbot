@@ -27,6 +27,8 @@ import {
   DEFAULT_APPEARANCE,
   DEFAULT_MEMORY,
   DEFAULT_MESSAGES,
+  DEFAULT_BEHAVIOR,
+  DEFAULT_VARIABLES_CONFIG,
   DeploymentChannel,
 } from "@/types/chatbot";
 
@@ -166,10 +168,13 @@ const initialFormData: ChatbotFormData = {
   instructions: [],
   restrictions: [],
   messages: DEFAULT_MESSAGES,
+  behavior: DEFAULT_BEHAVIOR,
+  variables_config: DEFAULT_VARIABLES_CONFIG,
   knowledge_bases: [],
   appearance: DEFAULT_APPEARANCE,
   memory: DEFAULT_MEMORY,
   channels: [{ type: DeploymentChannel.WEBSITE, enabled: true }],
+  is_public: true,
 };
 
 const initialState: ChatbotStoreState = {
@@ -487,6 +492,7 @@ export const useChatbotStore = create<ChatbotStoreState & ChatbotStoreActions>()
               appearance: state.formData.appearance,
               memory: state.formData.memory,
               lead_capture: state.formData.lead_capture,
+              variables_config: state.formData.variables_config,
             });
 
             set((s) => {
@@ -859,11 +865,14 @@ export const useChatbotStore = create<ChatbotStoreState & ChatbotStoreActions>()
             // Save draft first
             await get().saveDraft();
 
-            // Deploy
+            // Deploy with all configuration
             const result = await chatbotClient.draft.deploy(
               state.currentDraft.id,
               {
                 channels: state.formData.channels,
+                is_public: state.formData.is_public,
+                behavior: state.formData.behavior,
+                conversation_openers: state.formData.behavior?.conversation_openers,
               }
             );
 

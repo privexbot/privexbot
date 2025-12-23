@@ -1,9 +1,20 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Toaster } from "@/components/ui/toaster";
+
+// Create a single QueryClient instance for the app
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      retry: 1,
+    },
+  },
+});
 import { LandingPage } from "@/pages/LandingPage";
 import { PrivacyPage } from "@/pages/PrivacyPage";
 import { FAQPage } from "@/pages/FAQPage";
@@ -48,10 +59,11 @@ import { NotFoundPage } from "@/pages/NotFoundPage";
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AppProvider>
-          <Router
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppProvider>
+            <Router
             future={{
               v7_startTransition: true,
               v7_relativeSplatPath: true,
@@ -290,10 +302,11 @@ function App() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Router>
-          <Toaster />
-        </AppProvider>
-      </AuthProvider>
-    </ThemeProvider>
+            <Toaster />
+          </AppProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

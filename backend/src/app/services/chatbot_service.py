@@ -54,7 +54,8 @@ class ChatbotService:
         chatbot: Chatbot,
         user_message: str,
         session_id: str,
-        channel_context: Optional[dict] = None
+        channel_context: Optional[dict] = None,
+        collected_variables: Optional[dict] = None
     ) -> dict:
         """
         Process user message through chatbot.
@@ -64,7 +65,7 @@ class ChatbotService:
         2. Save user message
         3. Retrieve context from KB (if configured)
         4. Get chat history
-        5. Build prompt
+        5. Build prompt (with variable substitution)
         6. Call AI (inference_service)
         7. Save assistant message
         8. Return response
@@ -75,6 +76,7 @@ class ChatbotService:
             user_message: User's input text
             session_id: Conversation session ID
             channel_context: Channel-specific data (e.g., Telegram user_id)
+            collected_variables: User-collected variables for {{variable}} substitution
 
         RETURNS:
             {
@@ -123,12 +125,13 @@ class ChatbotService:
             max_messages=chatbot.config.get("memory", {}).get("max_messages", 10)
         )
 
-        # 5. Build structured messages for AI
+        # 5. Build structured messages for AI (with variable substitution)
         messages = self._build_messages(
             chatbot=chatbot,
             user_message=user_message,
             context=context,
-            history=history
+            history=history,
+            collected_variables=collected_variables
         )
 
         # 6. Call AI with structured messages
@@ -265,12 +268,41 @@ class ChatbotService:
         }
 
 
+    def _substitute_variables(self, text: str, variables: Optional[dict]) -> str:
+        """
+        Substitute {{variable_name}} placeholders with collected values.
+
+        WHY: Allow dynamic prompt customization based on user-provided data
+        HOW: Simple regex replacement of {{variable}} patterns
+
+        ARGS:
+            text: Text containing {{variable}} placeholders
+            variables: Dict of variable_name -> value mappings
+
+        RETURNS:
+            Text with placeholders replaced by values
+        """
+        import re
+
+        if not variables or not text:
+            return text
+
+        def replace_var(match):
+            var_name = match.group(1).strip()
+            # Return the value if exists, otherwise keep the placeholder
+            return str(variables.get(var_name, match.group(0)))
+
+        # Match {{variable_name}} patterns (with optional whitespace)
+        pattern = r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
+        return re.sub(pattern, replace_var, text)
+
     def _build_messages(
         self,
         chatbot: Chatbot,
         user_message: str,
         context: str,
-        history: list
+        history: list,
+        collected_variables: Optional[dict] = None
     ) -> list:
         """
         Build structured messages for AI model.
@@ -290,6 +322,12 @@ class ChatbotService:
 
         # 1. System prompt (with optional KB context embedded)
         system_prompt = chatbot.config.get("system_prompt", "You are a helpful assistant.")
+
+        # Substitute variables in system prompt if provided
+        # Example: "You are helping {{user_name}} from {{company}}."
+        # becomes: "You are helping John from Acme Inc."
+        if collected_variables:
+            system_prompt = self._substitute_variables(system_prompt, collected_variables)
 
         # If we have KB context, add it to system prompt
         if context:

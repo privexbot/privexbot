@@ -241,6 +241,31 @@ class Chatbot(Base):
     # }
 
     # ═══════════════════════════════════════════════════════════════
+    # VARIABLE COLLECTION
+    # ═══════════════════════════════════════════════════════════════
+    variables_config = Column(JSONB, nullable=False, default=dict, server_default='{}')
+    # Structure:
+    # {
+    #     "enabled": false,
+    #     "variables": [
+    #         {
+    #             "id": "var_1",
+    #             "name": "user_name",           # Variable name for {{user_name}}
+    #             "type": "text",                # "text" | "email" | "phone" | "number" | "select"
+    #             "label": "What's your name?",  # Display label
+    #             "placeholder": "Enter name",   # Input placeholder
+    #             "required": true,
+    #             "default_value": "",           # Default if not collected
+    #             "options": []                  # For select type
+    #         }
+    #     ],
+    #     "collection_timing": "before_chat"    # "before_chat" | "on_demand"
+    # }
+    #
+    # Variables are substituted in system_prompt using {{variable_name}} syntax
+    # Example: "You are helping {{user_name}} who works at {{company}}."
+
+    # ═══════════════════════════════════════════════════════════════
     # ANALYTICS & METRICS
     # ═══════════════════════════════════════════════════════════════
     analytics_config = Column(JSONB, nullable=False, default=dict)
@@ -325,6 +350,7 @@ class Chatbot(Base):
             "memory": self.behavior_config.get("memory", {}),
             "branding": self.branding_config,
             "lead_capture": self.lead_capture_config,
+            "variables": self.variables_config,
         }
 
     @property

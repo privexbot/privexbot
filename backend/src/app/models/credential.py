@@ -138,7 +138,7 @@ from app.db.base_class import Base
 
 
 class CredentialType(str, enum.Enum):
-    """Credential type enum."""
+    """Credential type enum - authentication mechanism."""
     API_KEY = "api_key"
     OAUTH2 = "oauth2"
     BASIC_AUTH = "basic_auth"
@@ -174,6 +174,10 @@ class Credential(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     credential_type = Column(Enum(CredentialType), nullable=False, index=True)
+
+    # Provider/service name (e.g., "telegram", "discord", "openai", "notion")
+    # This indicates which service the credential is for, separate from auth mechanism
+    provider = Column(String(50), nullable=True, index=True, server_default=None)
 
     # Encrypted data (CRITICAL - stores sensitive information)
     encrypted_data = Column(LargeBinary, nullable=False)

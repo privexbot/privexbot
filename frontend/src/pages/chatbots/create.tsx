@@ -33,6 +33,9 @@ import {
   Plus,
   Trash2,
   GripVertical,
+  Lock,
+  Unlock,
+  MessageCircle,
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
@@ -44,6 +47,8 @@ import {
   getChannelLabel,
   DEFAULT_FORM_DATA,
   ChatbotFormErrors,
+  VariableField,
+  VariableFieldType,
 } from "@/types/chatbot";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,6 +83,7 @@ import { toast } from "@/components/ui/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useKBStore } from "@/store/kb-store";
+import CredentialSelector from "@/components/shared/CredentialSelector";
 
 // ========================================
 // STEP CONFIGURATION
@@ -255,6 +261,100 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
 // ========================================
 
 function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
+  const [newOpener, setNewOpener] = useState("");
+  const [newVarName, setNewVarName] = useState("");
+  const [newVarLabel, setNewVarLabel] = useState("");
+  const [newVarType, setNewVarType] = useState<VariableFieldType>(VariableFieldType.TEXT);
+  const [varError, setVarError] = useState("");
+
+  const addConversationOpener = () => {
+    if (!newOpener.trim()) return;
+    const openers = formData.behavior?.conversation_openers || [];
+    if (openers.length >= 4) return; // Max 4 openers
+    onUpdate({
+      behavior: {
+        ...formData.behavior,
+        conversation_openers: [...openers, newOpener.trim()],
+      },
+    });
+    setNewOpener("");
+  };
+
+  const removeConversationOpener = (index: number) => {
+    const openers = formData.behavior?.conversation_openers || [];
+    onUpdate({
+      behavior: {
+        ...formData.behavior,
+        conversation_openers: openers.filter((_, i) => i !== index),
+      },
+    });
+  };
+
+  // Variable management functions
+  const isValidVariableName = (name: string): boolean => {
+    // Variable names must be alphanumeric + underscore, start with letter or underscore
+    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+  };
+
+  const addVariable = () => {
+    setVarError("");
+
+    if (!newVarName.trim()) {
+      setVarError("Variable name is required");
+      return;
+    }
+
+    if (!isValidVariableName(newVarName.trim())) {
+      setVarError("Variable name must be alphanumeric (letters, numbers, underscore). Start with letter or underscore.");
+      return;
+    }
+
+    const existingVars = formData.variables_config?.variables || [];
+    if (existingVars.some(v => v.name === newVarName.trim())) {
+      setVarError("A variable with this name already exists");
+      return;
+    }
+
+    const newVar: VariableField = {
+      id: `var_${Date.now()}`,
+      name: newVarName.trim(),
+      type: newVarType,
+      label: newVarLabel.trim() || newVarName.trim(),
+      required: true,
+      placeholder: "",
+    };
+
+    onUpdate({
+      variables_config: {
+        ...formData.variables_config,
+        enabled: true,
+        variables: [...existingVars, newVar],
+      },
+    });
+
+    setNewVarName("");
+    setNewVarLabel("");
+    setNewVarType(VariableFieldType.TEXT);
+  };
+
+  const removeVariable = (varId: string) => {
+    const existingVars = formData.variables_config?.variables || [];
+    const updatedVars = existingVars.filter(v => v.id !== varId);
+    onUpdate({
+      variables_config: {
+        ...formData.variables_config,
+        enabled: updatedVars.length > 0,
+        variables: updatedVars,
+      },
+    });
+  };
+
+  const insertVariableInPrompt = (varName: string) => {
+    const placeholder = `{{${varName}}}`;
+    const currentPrompt = formData.system_prompt || "";
+    onUpdate({ system_prompt: currentPrompt + " " + placeholder });
+  };
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -356,6 +456,252 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
           Lower values make responses more deterministic, higher values more
           creative
         </p>
+      </div>
+
+      {/* Behavior Features */}
+      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope font-medium">
+          Behavior Features
+        </Label>
+
+        {/* Citations Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Database className="h-4 w-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                Citations & Attributions
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Show knowledge base sources in responses
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={formData.behavior?.enable_citations || false}
+            onCheckedChange={(checked) =>
+              onUpdate({
+                behavior: { ...formData.behavior, enable_citations: checked },
+              })
+            }
+          />
+        </div>
+
+        {/* Follow-up Questions Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <MessageSquare className="h-4 w-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                Follow-up Questions
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Suggest related questions after responses
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={formData.behavior?.enable_follow_up_questions || false}
+            onCheckedChange={(checked) =>
+              onUpdate({
+                behavior: { ...formData.behavior, enable_follow_up_questions: checked },
+              })
+            }
+          />
+        </div>
+
+        {/* Conversation Openers */}
+        <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-4 w-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                Conversation Starters
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Suggested prompts shown to users (max 4)
+              </p>
+            </div>
+          </div>
+
+          {/* Existing openers */}
+          {(formData.behavior?.conversation_openers || []).length > 0 && (
+            <div className="space-y-2">
+              {formData.behavior?.conversation_openers?.map((opener, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600"
+                >
+                  <span className="text-sm text-gray-700 dark:text-gray-300 font-manrope truncate flex-1">
+                    {opener}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeConversationOpener(index)}
+                    className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex-shrink-0"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add new opener */}
+          {(formData.behavior?.conversation_openers || []).length < 4 && (
+            <div className="flex gap-2">
+              <Input
+                value={newOpener}
+                onChange={(e) => setNewOpener(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addConversationOpener()}
+                placeholder="e.g., What can you help me with?"
+                className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addConversationOpener}
+                disabled={!newOpener.trim()}
+                className="h-9 px-3"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Variable Collection */}
+      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Settings className="h-4 w-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                Variable Collection
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Collect information from users using {"{{variable_name}}"} in your prompt
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={formData.variables_config?.enabled || false}
+            onCheckedChange={(checked) =>
+              onUpdate({
+                variables_config: {
+                  ...formData.variables_config,
+                  enabled: checked,
+                },
+              })
+            }
+          />
+        </div>
+
+        {formData.variables_config?.enabled && (
+          <div className="space-y-4 pt-3 border-t border-gray-200 dark:border-gray-600">
+            {/* Existing variables */}
+            {(formData.variables_config?.variables || []).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 font-manrope">
+                  Defined Variables
+                </p>
+                {formData.variables_config?.variables?.map((variable) => (
+                  <div
+                    key={variable.id}
+                    className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <code className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-xs font-mono">
+                        {`{{${variable.name}}}`}
+                      </code>
+                      <span className="text-sm text-gray-600 dark:text-gray-300 font-manrope truncate">
+                        {variable.label}
+                      </span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500 font-manrope">
+                        ({variable.type})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => insertVariableInPrompt(variable.name)}
+                        className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                      >
+                        Insert
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeVariable(variable.id)}
+                        className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new variable */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 font-manrope">
+                Add Variable
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Input
+                  value={newVarName}
+                  onChange={(e) => {
+                    setNewVarName(e.target.value.replace(/\s/g, '_'));
+                    setVarError("");
+                  }}
+                  placeholder="variable_name"
+                  className="h-9 bg-white dark:bg-gray-800 font-mono text-sm"
+                />
+                <Input
+                  value={newVarLabel}
+                  onChange={(e) => setNewVarLabel(e.target.value)}
+                  placeholder="Display label (optional)"
+                  className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm"
+                />
+                <div className="flex gap-2">
+                  <Select
+                    value={newVarType}
+                    onValueChange={(value) => setNewVarType(value as VariableFieldType)}
+                  >
+                    <SelectTrigger className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                      <SelectItem value={VariableFieldType.TEXT}>Text</SelectItem>
+                      <SelectItem value={VariableFieldType.EMAIL}>Email</SelectItem>
+                      <SelectItem value={VariableFieldType.PHONE}>Phone</SelectItem>
+                      <SelectItem value={VariableFieldType.NUMBER}>Number</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addVariable}
+                    disabled={!newVarName.trim()}
+                    className="h-9 px-3"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              {varError && (
+                <p className="text-xs text-red-500 font-manrope">{varError}</p>
+              )}
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Use variables in your system prompt with {"{{variable_name}}"} syntax. Values will be collected from users before chat.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -549,6 +895,10 @@ function Step3KnowledgeBases({
 // ========================================
 
 function Step4Appearance({ formData, onUpdate }: Step1Props) {
+  const [customColor, setCustomColor] = useState(formData.appearance.primary_color || "#3b82f6");
+  const [colorError, setColorError] = useState("");
+  const [avatarError, setAvatarError] = useState("");
+
   const colorOptions = [
     { value: "#3b82f6", label: "Blue" },
     { value: "#8b5cf6", label: "Purple" },
@@ -558,8 +908,166 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
     { value: "#6b7280", label: "Gray" },
   ];
 
+  // Validate hex color format
+  const isValidHex = (color: string): boolean => {
+    return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color);
+  };
+
+  const handleCustomColorChange = (value: string) => {
+    // Auto-add # if not present
+    let color = value;
+    if (value && !value.startsWith("#")) {
+      color = "#" + value;
+    }
+    setCustomColor(color);
+
+    if (color && !isValidHex(color)) {
+      setColorError("Invalid hex color (e.g., #3b82f6)");
+    } else {
+      setColorError("");
+      if (isValidHex(color)) {
+        onUpdate({
+          appearance: { ...formData.appearance, primary_color: color },
+        });
+      }
+    }
+  };
+
+  const handleColorPresetClick = (color: string) => {
+    setCustomColor(color);
+    setColorError("");
+    onUpdate({
+      appearance: { ...formData.appearance, primary_color: color },
+    });
+  };
+
+  const handleAvatarUrlChange = (url: string) => {
+    setAvatarError("");
+    onUpdate({
+      appearance: { ...formData.appearance, avatar_url: url },
+    });
+  };
+
+  // Check if current color matches a preset
+  const isPresetColor = colorOptions.some(c => c.value === formData.appearance.primary_color);
+
   return (
     <div className="space-y-6">
+      {/* Brand Name / Chat Title */}
+      <div className="space-y-2">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+          Brand Name
+        </Label>
+        <Input
+          value={formData.appearance.chat_title || ""}
+          onChange={(e) =>
+            onUpdate({
+              appearance: { ...formData.appearance, chat_title: e.target.value },
+            })
+          }
+          placeholder="My Assistant"
+          className="h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          Displayed in the chat header
+        </p>
+      </div>
+
+      {/* Avatar URL */}
+      <div className="space-y-2">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+          Avatar URL
+        </Label>
+        <div className="flex gap-3 items-start">
+          <div className="flex-1">
+            <Input
+              value={formData.appearance.avatar_url || ""}
+              onChange={(e) => handleAvatarUrlChange(e.target.value)}
+              placeholder="https://example.com/avatar.png"
+              className={cn(
+                "h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope",
+                avatarError && "border-red-500"
+              )}
+            />
+            {avatarError && (
+              <p className="text-sm text-red-500 font-manrope mt-1">{avatarError}</p>
+            )}
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+              Image URL for your chatbot avatar (recommended: 64x64px)
+            </p>
+          </div>
+          {/* Avatar Preview */}
+          <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
+            {formData.appearance.avatar_url ? (
+              <img
+                src={formData.appearance.avatar_url}
+                alt="Avatar preview"
+                className="w-full h-full object-cover"
+                onError={() => setAvatarError("Failed to load image")}
+                onLoad={() => setAvatarError("")}
+              />
+            ) : (
+              <Bot className="h-6 w-6 text-gray-400" />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Primary Color */}
+      <div className="space-y-3">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+          Primary Color
+        </Label>
+        <div className="flex flex-wrap items-center gap-3">
+          {colorOptions.map((color) => (
+            <button
+              key={color.value}
+              onClick={() => handleColorPresetClick(color.value)}
+              className={cn(
+                "w-10 h-10 rounded-full border-2 transition-all",
+                formData.appearance.primary_color === color.value
+                  ? "ring-2 ring-offset-2 ring-blue-500"
+                  : "border-gray-200 dark:border-gray-600 hover:scale-110"
+              )}
+              style={{ backgroundColor: color.value }}
+              title={color.label}
+            />
+          ))}
+          {/* Custom color indicator */}
+          {!isPresetColor && formData.appearance.primary_color && (
+            <div
+              className="w-10 h-10 rounded-full border-2 ring-2 ring-offset-2 ring-blue-500"
+              style={{ backgroundColor: formData.appearance.primary_color }}
+              title="Custom color"
+            />
+          )}
+        </div>
+        {/* Custom Hex Input */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-[200px]">
+            <Input
+              value={customColor}
+              onChange={(e) => handleCustomColorChange(e.target.value)}
+              placeholder="#3b82f6"
+              className={cn(
+                "h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono text-sm pl-10",
+                colorError && "border-red-500"
+              )}
+            />
+            <div
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded border border-gray-300 dark:border-gray-500"
+              style={{ backgroundColor: isValidHex(customColor) ? customColor : "#ccc" }}
+            />
+          </div>
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+            Custom hex color
+          </span>
+        </div>
+        {colorError && (
+          <p className="text-sm text-red-500 font-manrope">{colorError}</p>
+        )}
+      </div>
+
       {/* Widget Position */}
       <div className="space-y-3">
         <Label className="text-gray-900 dark:text-gray-100 font-manrope">
@@ -597,50 +1105,9 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
             Bottom Left
           </Button>
         </div>
-      </div>
-
-      {/* Primary Color */}
-      <div className="space-y-3">
-        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
-          Primary Color
-        </Label>
-        <div className="flex flex-wrap gap-3">
-          {colorOptions.map((color) => (
-            <button
-              key={color.value}
-              onClick={() =>
-                onUpdate({
-                  appearance: { ...formData.appearance, primary_color: color.value },
-                })
-              }
-              className={cn(
-                "w-10 h-10 rounded-full border-2 transition-all",
-                formData.appearance.primary_color === color.value
-                  ? "ring-2 ring-offset-2 ring-blue-500"
-                  : "border-gray-200 dark:border-gray-600"
-              )}
-              style={{ backgroundColor: color.value }}
-              title={color.label}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Chat Title */}
-      <div className="space-y-2">
-        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
-          Chat Title
-        </Label>
-        <Input
-          value={formData.appearance.chat_title || ""}
-          onChange={(e) =>
-            onUpdate({
-              appearance: { ...formData.appearance, chat_title: e.target.value },
-            })
-          }
-          placeholder="Chat with us"
-          className="h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope"
-        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          This controls where the widget button appears on your website. The test preview shows the chat window in a fixed position.
+        </p>
       </div>
 
       {/* Memory Settings */}
@@ -695,7 +1162,16 @@ interface Step5Props extends Step1Props {
     api_key: string;
     channels: Record<string, unknown>;
   } | null;
-  testMessages: { role: string; content: string }[];
+  testMessages: {
+    role: string;
+    content: string;
+    sources?: Array<{
+      content?: string;
+      score?: number;
+      document_title?: string;
+      document_url?: string;
+    }>;
+  }[];
   isTestLoading: boolean;
   onDeploy: () => Promise<void>;
   onSendTestMessage: (message: string) => Promise<void>;
@@ -749,6 +1225,8 @@ function Step5Deploy({
 
   const channelOptions = [
     { type: DeploymentChannel.WEBSITE, icon: Globe, description: "Website widget" },
+    { type: DeploymentChannel.TELEGRAM, icon: Send, description: "Telegram bot" },
+    { type: DeploymentChannel.DISCORD, icon: MessageCircle, description: "Discord bot" },
     { type: DeploymentChannel.API, icon: Settings, description: "REST API access" },
   ];
 
@@ -770,6 +1248,26 @@ function Step5Deploy({
 
   const isChannelEnabled = (type: DeploymentChannel) => {
     return formData.channels.some((c) => c.type === type && c.enabled);
+  };
+
+  const getChannelCredentialId = (type: DeploymentChannel): string | undefined => {
+    return formData.channels.find((c) => c.type === type)?.credential_id;
+  };
+
+  const updateChannelCredential = (type: DeploymentChannel, credentialId: string) => {
+    const channels = [...formData.channels];
+    const existingIndex = channels.findIndex((c) => c.type === type);
+
+    if (existingIndex >= 0) {
+      channels[existingIndex] = {
+        ...channels[existingIndex],
+        credential_id: credentialId,
+      };
+    } else {
+      channels.push({ type, enabled: true, credential_id: credentialId });
+    }
+
+    onUpdate({ channels });
   };
 
   if (deploymentResult) {
@@ -851,6 +1349,43 @@ function Step5Deploy({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Left: Channel Selection & Deploy */}
       <div className="space-y-6">
+        {/* Visibility Toggle */}
+        <div className="space-y-3">
+          <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+            Visibility
+          </Label>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => onUpdate({ is_public: true })}
+              className={cn(
+                "flex-1 font-manrope justify-start gap-3",
+                formData.is_public && "ring-2 ring-green-500 border-green-500 bg-green-50 dark:bg-green-950/30"
+              )}
+            >
+              <Unlock className={cn("h-4 w-4", formData.is_public ? "text-green-600" : "text-gray-400")} />
+              <div className="text-left">
+                <p className="font-medium">Public</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-normal">Anyone can access</p>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => onUpdate({ is_public: false })}
+              className={cn(
+                "flex-1 font-manrope justify-start gap-3",
+                !formData.is_public && "ring-2 ring-amber-500 border-amber-500 bg-amber-50 dark:bg-amber-950/30"
+              )}
+            >
+              <Lock className={cn("h-4 w-4", !formData.is_public ? "text-amber-600" : "text-gray-400")} />
+              <div className="text-left">
+                <p className="font-medium">Private</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-normal">Requires API key</p>
+              </div>
+            </Button>
+          </div>
+        </div>
+
         <div className="space-y-3">
           <Label className="text-gray-900 dark:text-gray-100 font-manrope">
             Deployment Channels
@@ -859,43 +1394,57 @@ function Step5Deploy({
             {channelOptions.map((channel) => {
               const Icon = channel.icon;
               const enabled = isChannelEnabled(channel.type);
+              const needsCredential = channel.type === DeploymentChannel.TELEGRAM || channel.type === DeploymentChannel.DISCORD;
               return (
-                <div
-                  key={channel.type}
-                  onClick={() => toggleChannel(channel.type)}
-                  className={cn(
-                    "flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all",
-                    enabled
-                      ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
-                      : "bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 hover:border-gray-300"
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      className={cn(
-                        "h-5 w-5",
-                        enabled
-                          ? "text-blue-600 dark:text-blue-400"
-                          : "text-gray-400"
-                      )}
-                    />
-                    <div>
-                      <p
+                <div key={channel.type} className="space-y-2">
+                  <div
+                    onClick={() => toggleChannel(channel.type)}
+                    className={cn(
+                      "flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all",
+                      enabled
+                        ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                        : "bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon
                         className={cn(
-                          "font-medium font-manrope",
+                          "h-5 w-5",
                           enabled
-                            ? "text-blue-900 dark:text-blue-100"
-                            : "text-gray-700 dark:text-gray-300"
+                            ? "text-blue-600 dark:text-blue-400"
+                            : "text-gray-400"
                         )}
-                      >
-                        {getChannelLabel(channel.type)}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                        {channel.description}
-                      </p>
+                      />
+                      <div>
+                        <p
+                          className={cn(
+                            "font-medium font-manrope",
+                            enabled
+                              ? "text-blue-900 dark:text-blue-100"
+                              : "text-gray-700 dark:text-gray-300"
+                          )}
+                        >
+                          {getChannelLabel(channel.type)}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                          {channel.description}
+                        </p>
+                      </div>
                     </div>
+                    <Switch checked={enabled} />
                   </div>
-                  <Switch checked={enabled} />
+                  {/* Credential selector for Telegram/Discord */}
+                  {enabled && needsCredential && (
+                    <div className="ml-8">
+                      <CredentialSelector
+                        provider={channel.type === DeploymentChannel.TELEGRAM ? "telegram" : "discord"}
+                        selectedId={getChannelCredentialId(channel.type)}
+                        onSelect={(credentialId) => updateChannelCredential(channel.type, credentialId)}
+                        label={`${channel.type === DeploymentChannel.TELEGRAM ? "Telegram" : "Discord"} Bot Token`}
+                        required={true}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -933,10 +1482,52 @@ function Step5Deploy({
             </Button>
           )}
         </div>
-        <div className="h-[400px] bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col">
+        <div className="h-[400px] bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col overflow-hidden shadow-lg">
+          {/* Chat Header - Reflects Appearance Settings */}
+          <div
+            className="px-4 py-3 flex items-center gap-3 border-b"
+            style={{ backgroundColor: formData.appearance.primary_color || "#3b82f6" }}
+          >
+            <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+              {formData.appearance.avatar_url ? (
+                <img
+                  src={formData.appearance.avatar_url}
+                  alt="Bot avatar"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <Bot className="h-5 w-5 text-white" />
+              )}
+            </div>
+            <div>
+              <p className="font-medium text-white font-manrope text-sm">
+                {formData.appearance.chat_title || formData.name || "Assistant"}
+              </p>
+              <p className="text-xs text-white/70 font-manrope">Online</p>
+            </div>
+          </div>
+
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {testMessages.length === 0 && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-700/50">
+            {/* Greeting message if set */}
+            {testMessages.length === 0 && formData.messages.greeting && (
+              <div className="flex items-start gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0"
+                  style={{ backgroundColor: formData.appearance.primary_color || "#3b82f6" }}>
+                  {formData.appearance.avatar_url ? (
+                    <img src={formData.appearance.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Bot className="h-4 w-4 text-white" />
+                  )}
+                </div>
+                <div className="max-w-[80%] p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                  <p className="text-sm font-manrope text-gray-700 dark:text-gray-200">
+                    {formData.messages.greeting}
+                  </p>
+                </div>
+              </div>
+            )}
+            {testMessages.length === 0 && !formData.messages.greeting && (
               <div className="text-center py-12">
                 <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                 <p className="text-gray-500 dark:text-gray-400 font-manrope text-sm">
@@ -948,37 +1539,80 @@ function Step5Deploy({
               <div
                 key={i}
                 className={cn(
-                  "max-w-[80%] p-3 rounded-lg",
-                  msg.role === "user"
-                    ? "ml-auto bg-blue-600 text-white"
-                    : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600"
+                  "flex items-start gap-2",
+                  msg.role === "user" && "flex-row-reverse"
                 )}
               >
-                <p className="text-sm font-manrope">{msg.content}</p>
+                {msg.role === "assistant" && (
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0"
+                    style={{ backgroundColor: formData.appearance.primary_color || "#3b82f6" }}>
+                    {formData.appearance.avatar_url ? (
+                      <img src={formData.appearance.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <Bot className="h-4 w-4 text-white" />
+                    )}
+                  </div>
+                )}
+                <div
+                  className={cn(
+                    "max-w-[80%] rounded-lg shadow-sm",
+                    msg.role === "user"
+                      ? "text-white p-3"
+                      : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600"
+                  )}
+                  style={msg.role === "user" ? { backgroundColor: formData.appearance.primary_color || "#3b82f6" } : {}}
+                >
+                  <p className={cn("text-sm font-manrope", msg.role === "assistant" && "p-3")}>{msg.content}</p>
+                  {/* Display sources/citations for assistant messages */}
+                  {msg.role === "assistant" && msg.sources && msg.sources.length > 0 && formData.behavior?.enable_citations && (
+                    <div className="px-3 pb-3 pt-1 border-t border-gray-100 dark:border-gray-700">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 font-manrope">Sources:</p>
+                      <div className="space-y-1">
+                        {msg.sources.slice(0, 3).map((source, idx) => (
+                          <div key={idx} className="text-xs text-gray-500 dark:text-gray-400 font-manrope flex items-start gap-1">
+                            <span className="text-gray-400">[{idx + 1}]</span>
+                            <span className="truncate">{source.document_title || source.content?.slice(0, 50) + "..."}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
             {isTestLoading && (
-              <div className="max-w-[80%] p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+              <div className="flex items-start gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0"
+                  style={{ backgroundColor: formData.appearance.primary_color || "#3b82f6" }}>
+                  {formData.appearance.avatar_url ? (
+                    <img src={formData.appearance.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Bot className="h-4 w-4 text-white" />
+                  )}
+                </div>
+                <div className="max-w-[80%] p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                </div>
               </div>
             )}
           </div>
 
           {/* Input */}
-          <div className="p-3 border-t border-gray-200 dark:border-gray-600">
+          <div className="p-3 border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
             <div className="flex gap-2">
               <Input
                 value={testInput}
                 onChange={(e) => setTestInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSendTest()}
                 placeholder="Type a message..."
-                className="flex-1 h-10 bg-white dark:bg-gray-800 font-manrope"
+                className="flex-1 h-10 bg-gray-50 dark:bg-gray-700 font-manrope"
                 disabled={isTestLoading}
               />
               <Button
                 onClick={handleSendTest}
                 disabled={!testInput.trim() || isTestLoading}
-                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white"
+                className="h-10 px-4 text-white"
+                style={{ backgroundColor: formData.appearance.primary_color || "#3b82f6" }}
               >
                 <Send className="h-4 w-4" />
               </Button>

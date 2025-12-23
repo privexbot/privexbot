@@ -102,6 +102,18 @@ class DeployChatbotRequest(BaseModel):
         default=[],
         description="Deployment channels to enable"
     )
+    is_public: bool = Field(
+        default=True,
+        description="Whether chatbot is publicly accessible. If False, API key required for all access."
+    )
+    behavior: Optional[dict] = Field(
+        default=None,
+        description="Behavior settings like citations, follow-up questions, etc."
+    )
+    conversation_openers: Optional[List[str]] = Field(
+        default=None,
+        description="Suggested conversation starters shown in widget"
+    )
 
 
 class ChatbotDraftResponse(BaseModel):
@@ -496,15 +508,30 @@ async def deploy_chatbot(
             detail="Access denied"
         )
 
-    # Update deployment config in draft
+    # Update deployment config and other fields in draft
+    draft_updates = {}
+
     if request.channels:
-        deployment_config = {
+        draft_updates["deployment"] = {
             "channels": [ch.model_dump() for ch in request.channels]
         }
+
+    # Add is_public to draft data
+    draft_updates["is_public"] = request.is_public
+
+    # Add behavior settings if provided
+    if request.behavior:
+        draft_updates["behavior"] = request.behavior
+
+    # Add conversation openers to messages if provided
+    if request.conversation_openers:
+        draft_updates["conversation_openers"] = request.conversation_openers
+
+    if draft_updates:
         draft_service.update_draft(
             draft_type=DraftType.CHATBOT,
             draft_id=draft_id,
-            updates={"data": {"deployment": deployment_config}},
+            updates={"data": draft_updates},
             extend_ttl=False
         )
 

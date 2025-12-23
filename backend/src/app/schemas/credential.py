@@ -23,7 +23,7 @@ from enum import Enum
 
 class CredentialType(str, Enum):
     """
-    Credential type enum.
+    Credential type enum - authentication mechanism.
 
     These are generic credential types that can be used for multiple services:
     - API_KEY: Any API that uses a single API key (OpenAI, Anthropic, Stripe, etc.)
@@ -33,6 +33,8 @@ class CredentialType(str, Enum):
     - SMTP: Email server credentials
     - AWS: AWS access credentials
     - CUSTOM: Any other credential type with custom fields
+
+    Note: Use 'provider' field to indicate which service (telegram, discord, openai, etc.)
     """
     API_KEY = "api_key"
     OAUTH2 = "oauth2"
@@ -64,7 +66,13 @@ class CredentialCreate(BaseModel):
 
     credential_type: CredentialType = Field(
         ...,
-        description="Credential type"
+        description="Credential type (authentication mechanism)"
+    )
+
+    provider: Optional[str] = Field(
+        None,
+        description="Service provider (e.g., 'telegram', 'discord', 'openai')",
+        max_length=50
     )
 
     data: Dict[str, Any] = Field(
@@ -76,10 +84,11 @@ class CredentialCreate(BaseModel):
         json_schema_extra = {
             "example": {
                 "workspace_id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "OpenAI API Key",
+                "name": "Telegram Bot Token",
                 "credential_type": "api_key",
+                "provider": "telegram",
                 "data": {
-                    "api_key": "sk-..."
+                    "bot_token": "123456:ABC-DEF..."
                 }
             }
         }
@@ -105,6 +114,12 @@ class CredentialUpdate(BaseModel):
         description="Enable/disable credential"
     )
 
+    provider: Optional[str] = Field(
+        None,
+        description="Service provider (e.g., 'telegram', 'discord', 'openai')",
+        max_length=50
+    )
+
     data: Optional[Dict[str, Any]] = Field(
         None,
         description="Updated credential data (will be re-encrypted)"
@@ -115,8 +130,9 @@ class CredentialUpdate(BaseModel):
             "example": {
                 "name": "Updated API Key Name",
                 "is_active": False,
+                "provider": "telegram",
                 "data": {
-                    "api_key": "sk-new..."
+                    "bot_token": "new-token..."
                 }
             }
         }
@@ -137,6 +153,7 @@ class CredentialResponse(BaseModel):
 
     name: str = Field(..., description="Credential name")
     credential_type: CredentialType = Field(..., description="Credential type")
+    provider: Optional[str] = Field(None, description="Service provider")
 
     is_active: bool = Field(..., description="Is credential active")
     usage_count: int = Field(..., description="Usage count")
@@ -154,8 +171,9 @@ class CredentialResponse(BaseModel):
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "workspace_id": "660e8400-e29b-41d4-a716-446655440000",
-                "name": "OpenAI API Key",
+                "name": "Telegram Bot Token",
                 "credential_type": "api_key",
+                "provider": "telegram",
                 "is_active": True,
                 "usage_count": 1234,
                 "last_used_at": "2025-10-01T12:00:00Z",

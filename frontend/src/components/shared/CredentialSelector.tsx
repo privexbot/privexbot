@@ -1,5 +1,5 @@
 /**
- * CredentialSelector - Select credential for chatflow nodes
+ * CredentialSelector - Select credential for chatflow nodes and channel deployment
  *
  * WHY:
  * - Reusable credential selection
@@ -7,12 +7,11 @@
  * - Secure credential storage
  *
  * HOW:
- * - Fetch available credentials
- * - Filter by provider/type
+ * - Fetch available credentials from API
+ * - Filter by provider (service name)
  * - Initiate OAuth flow if needed
  */
 
-import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Key,
@@ -37,6 +36,7 @@ import { useToast } from '@/hooks/use-toast';
 import apiClient, { handleApiError } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/store/workspace-store';
 
+// Provider types (service names)
 type CredentialProvider =
   | 'openai'
   | 'anthropic'
@@ -47,13 +47,18 @@ type CredentialProvider =
   | 'discord'
   | 'custom';
 
+// API response structure matching backend CredentialResponse
 interface Credential {
   id: string;
+  workspace_id: string;
   name: string;
-  provider: CredentialProvider;
-  status: 'active' | 'expired' | 'invalid';
-  created_at: string;
+  credential_type: string;
+  provider?: string;
+  is_active: boolean;
+  usage_count: number;
   last_used_at?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CredentialSelectorProps {
@@ -73,30 +78,27 @@ export default function CredentialSelector({
   label = 'Credential',
   required = false,
   allowMultiple = false,
-  providers,
 }: CredentialSelectorProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentWorkspace } = useWorkspaceStore();
-  const [showAddNew, setShowAddNew] = useState(false);
 
-  // Fetch credentials
-  const { data: credentials, isLoading } = useQuery({
-    queryKey: ['credentials', currentWorkspace?.id, provider, providers],
+  // Fetch credentials from API
+  const { data: credentials, isLoading, error } = useQuery({
+    queryKey: ['credentials', currentWorkspace?.id, provider],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (currentWorkspace?.id) {
         params.append('workspace_id', currentWorkspace.id);
       }
+      // Use provider filter (service name like 'telegram', 'discord')
       if (provider) {
         params.append('provider', provider);
       }
-      if (providers && providers.length > 0) {
-        params.append('providers', providers.join(','));
-      }
 
       const response = await apiClient.get(`/credentials?${params}`);
-      return response.data.credentials as Credential[];
+      // API returns { items: [...], total, skip, limit }
+      return response.data.items as Credential[];
     },
     enabled: !!currentWorkspace?.id,
   });
@@ -124,8 +126,9 @@ export default function CredentialSelector({
     window.location.href = oauthUrl;
   };
 
-  const getProviderName = (providerType: CredentialProvider) => {
-    const names: Record<CredentialProvider, string> = {
+  const getProviderName = (providerName?: string) => {
+    if (!providerName) return 'Unknown';
+    const names: Record<string, string> = {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       google: 'Google',
@@ -135,42 +138,34 @@ export default function CredentialSelector({
       discord: 'Discord',
       custom: 'Custom',
     };
-    return names[providerType];
+    return names[providerName] || providerName;
   };
 
-  const getStatusBadge = (status: Credential['status']) => {
-    switch (status) {
-      case 'active':
-        return (
-          <Badge className="bg-green-500 hover:bg-green-600 text-xs">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Active
-          </Badge>
-        );
-      case 'expired':
-        return (
-          <Badge variant="secondary" className="text-xs">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Expired
-          </Badge>
-        );
-      case 'invalid':
-        return (
-          <Badge variant="destructive" className="text-xs">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Invalid
-          </Badge>
-        );
+  const getStatusBadge = (isActive: boolean) => {
+    if (isActive) {
+      return (
+        <Badge className="bg-green-500 hover:bg-green-600 text-xs">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Active
+        </Badge>
+      );
     }
-  };
-
-  const isOAuthProvider = (providerType: CredentialProvider) => {
-    return ['google', 'notion', 'slack', 'telegram', 'discord'].includes(
-      providerType
+    return (
+      <Badge variant="destructive" className="text-xs">
+        <AlertCircle className="w-3 h-3 mr-1" />
+        Inactive
+      </Badge>
     );
   };
 
-  const activeCredentials = credentials?.filter((c) => c.status === 'active') || [];
+  const isOAuthProvider = (providerName: CredentialProvider) => {
+    // Telegram and Discord use bot tokens, not OAuth in traditional sense
+    // but we can use the OAuth flow UI for them
+    return ['telegram', 'discord'].includes(providerName);
+  };
+
+  // Filter active credentials
+  const activeCredentials = credentials?.filter((c) => c.is_active) || [];
   const hasCredentials = activeCredentials.length > 0;
 
   return (
@@ -187,6 +182,10 @@ export default function CredentialSelector({
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
+      ) : error ? (
+        <div className="text-center py-4 text-red-500 text-sm">
+          Failed to load credentials. Please try again.
+        </div>
       ) : hasCredentials ? (
         <div className="space-y-2">
           <Select value={selectedId} onValueChange={onSelect}>
@@ -202,7 +201,7 @@ export default function CredentialSelector({
                       <Badge variant="outline" className="text-xs">
                         {getProviderName(credential.provider)}
                       </Badge>
-                      {getStatusBadge(credential.status)}
+                      {getStatusBadge(credential.is_active)}
                     </div>
                   </div>
                 </SelectItem>
@@ -274,7 +273,10 @@ export default function CredentialSelector({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowAddNew(true)}
+            onClick={() => {
+              // Navigate to credentials page to add new credential
+              window.location.href = '/settings/credentials';
+            }}
             className="flex-1"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -286,7 +288,7 @@ export default function CredentialSelector({
       {/* Info Message */}
       <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
         <p className="text-xs text-blue-800 dark:text-blue-200">
-          💡 Credentials are encrypted and stored securely. They can be reused across
+          Credentials are encrypted and stored securely. They can be reused across
           multiple {allowMultiple ? 'nodes' : 'configurations'}.
         </p>
       </div>
@@ -309,7 +311,7 @@ export default function CredentialSelector({
                   <Badge variant="outline" className="text-xs">
                     {getProviderName(credential.provider)}
                   </Badge>
-                  {getStatusBadge(credential.status)}
+                  {getStatusBadge(credential.is_active)}
                 </div>
               </div>
             ))}

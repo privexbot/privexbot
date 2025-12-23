@@ -480,12 +480,27 @@ class UnifiedDraftService:
 
         data = draft["data"]
 
+        # Extract behavior settings for proper mapping
+        behavior = data.get("behavior", {})
+
+        # Map enable_citations boolean to citation_style string
+        citation_style = "none"
+        if behavior.get("enable_citations"):
+            citation_style = "inline"  # Default to inline citations
+
+        # Build messages config with conversation openers
+        messages_config = data.get("messages", {})
+        if data.get("conversation_openers"):
+            messages_config["conversation_openers"] = data.get("conversation_openers")
+
         # Create chatbot record with proper column mapping
         chatbot = Chatbot(
             workspace_id=UUID(draft["workspace_id"]),
             name=data["name"],
             description=data.get("description"),
             status=ChatbotStatus.ACTIVE,
+            # Visibility setting
+            is_public=data.get("is_public", True),
             # AI configuration
             ai_config=data.get("ai_config", {
                 "provider": "secret_ai",
@@ -499,12 +514,14 @@ class UnifiedDraftService:
                 "persona": data.get("persona", {}),
                 "instructions": data.get("instructions", []),
                 "restrictions": data.get("restrictions", []),
-                "messages": data.get("messages", {})
+                "messages": messages_config
             },
             # Knowledge base integration
             kb_config={
                 "enabled": bool(data.get("knowledge_bases")),
-                "knowledge_bases": data.get("knowledge_bases", [])
+                "knowledge_bases": data.get("knowledge_bases", []),
+                "citation_style": citation_style,
+                "max_context_tokens": 4000
             },
             # Branding
             branding_config=data.get("appearance", data.get("branding", {})),
@@ -513,10 +530,13 @@ class UnifiedDraftService:
             # Behavior
             behavior_config={
                 "memory": data.get("memory", {"enabled": True, "max_messages": 20}),
-                "response": data.get("response", {"typing_indicator": True})
+                "response": data.get("response", {"typing_indicator": True}),
+                "follow_up_questions": behavior.get("enable_follow_up_questions", False)
             },
             # Lead capture
             lead_capture_config=data.get("lead_capture", {}),
+            # Variable collection
+            variables_config=data.get("variables_config", {}),
             # Analytics
             analytics_config=data.get("analytics", {"track_conversations": True}),
             # Audit
@@ -698,29 +718,39 @@ class UnifiedDraftService:
                     # Register Telegram webhook via Telegram API
                     from app.integrations.telegram_integration import telegram_integration
 
+                    # Get credential_id from channel (frontend stores at top level)
+                    credential_id = channel.get("credential_id") or channel.get("config", {}).get("bot_token")
+                    if not credential_id:
+                        raise ValueError("Telegram bot token credential is required")
+
                     telegram_result = telegram_integration.register_webhook(
                         db=db,
                         entity_id=entity_id,
                         entity_type=entity_type,
-                        config=channel["config"]  # Contains bot_token credential_id
+                        config={"bot_token": credential_id}
                     )
 
                     deployment_results["channels"]["telegram"] = {
                         "status": "success",
                         "webhook_url": telegram_result["webhook_url"],
                         "bot_username": telegram_result["bot_username"],
-                        "bot_token_credential_id": channel["config"]["bot_token"]  # Store credential ref for webhook handler
+                        "bot_token_credential_id": credential_id  # Store credential ref for webhook handler
                     }
 
                 elif channel_type == "discord":
                     # Register Discord webhook via Discord API
                     from app.integrations.discord_integration import discord_integration
 
+                    # Get credential_id from channel (frontend stores at top level)
+                    credential_id = channel.get("credential_id") or channel.get("config", {}).get("bot_token")
+                    if not credential_id:
+                        raise ValueError("Discord bot token credential is required")
+
                     discord_result = discord_integration.register_webhook(
                         db=db,
                         entity_id=entity_id,
                         entity_type=entity_type,
-                        config=channel["config"]  # Contains bot_token credential_id
+                        config={"bot_token": credential_id}
                     )
 
                     deployment_results["channels"]["discord"] = {
@@ -729,7 +759,7 @@ class UnifiedDraftService:
                         "bot_username": discord_result["bot_username"],
                         "application_id": discord_result.get("application_id"),
                         "invite_url": discord_result.get("invite_url"),  # URL for users to add bot to servers
-                        "bot_token_credential_id": channel["config"]["bot_token"]  # Store credential ref for webhook handler
+                        "bot_token_credential_id": credential_id  # Store credential ref for webhook handler
                     }
 
                 elif channel_type == "whatsapp":

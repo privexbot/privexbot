@@ -172,7 +172,7 @@ interface ChatbotCardProps {
     cached_metrics: {
       total_conversations: number;
       total_messages: number;
-      avg_response_time_ms: number;
+      avg_response_time_ms?: number;
     };
   };
   onView: (id: string) => void;
@@ -223,7 +223,7 @@ function ChatbotCard({
     }
   };
 
-  const formatResponseTime = (ms: number) => {
+  const formatResponseTime = (ms?: number) => {
     if (!ms) return "N/A";
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;

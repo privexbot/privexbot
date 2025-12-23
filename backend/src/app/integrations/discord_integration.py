@@ -305,22 +305,21 @@ class DiscordIntegration:
 
         from app.services.credential_service import credential_service
 
-        deployment = bot.config.get("deployment", {})
-        channels = deployment.get("channels", [])
+        # After deployment, deployment_config contains channel results directly
+        # e.g., {"discord": {"bot_token_credential_id": "...", ...}, "website": {...}}
+        discord_config = bot.deployment_config.get("discord", {})
+        credential_id = discord_config.get("bot_token_credential_id")
 
-        for channel in channels:
-            if channel["type"] == "discord":
-                credential_id = channel["config"]["bot_token"]
+        if not credential_id:
+            raise ValueError("Discord bot token credential not found in deployment config")
 
-                credential = db.query(Credential).get(UUID(credential_id))
-                if not credential:
-                    raise ValueError("Discord credential not found")
+        credential = db.query(Credential).get(UUID(credential_id))
+        if not credential:
+            raise ValueError("Discord credential not found")
 
-                cred_data = credential_service.get_decrypted_data(db, credential)
+        cred_data = credential_service.get_decrypted_data(db, credential)
 
-                return cred_data["bot_token"]
-
-        raise ValueError("Discord bot token not found in config")
+        return cred_data["bot_token"]
 
 
 # Global instance

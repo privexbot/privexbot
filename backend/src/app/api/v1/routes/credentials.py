@@ -94,6 +94,7 @@ async def create_credential(
         workspace_id=workspace.id,
         name=credential_data.name,
         credential_type=cred_type,
+        provider=credential_data.provider,  # Service provider (telegram, discord, etc.)
         encrypted_data=encrypted_data,
         encryption_key_id=key_id,
         created_by=current_user.id,
@@ -108,6 +109,7 @@ async def create_credential(
         "credential_id": str(credential.id),
         "name": credential.name,
         "credential_type": credential.credential_type.value,
+        "provider": credential.provider,
         "is_active": credential.is_active
     }
 
@@ -116,6 +118,8 @@ async def create_credential(
 async def list_credentials(
     skip: int = 0,
     limit: int = 50,
+    credential_type: str = None,
+    provider: str = None,
     workspace: Workspace = Depends(get_current_workspace),
     db: Session = Depends(get_db)
 ):
@@ -124,6 +128,10 @@ async def list_credentials(
 
     WHY: Display credentials in dashboard
     HOW: Query database (exclude encrypted data)
+
+    QUERY PARAMS:
+        credential_type: Filter by auth type (e.g., "api_key", "oauth2")
+        provider: Filter by service provider (e.g., "telegram", "discord", "openai")
 
     RETURNS:
         {
@@ -138,6 +146,19 @@ async def list_credentials(
         Credential.workspace_id == workspace.id
     )
 
+    # Filter by credential_type if provided
+    if credential_type:
+        try:
+            cred_type = CredentialType(credential_type)
+            query = query.filter(Credential.credential_type == cred_type)
+        except ValueError:
+            # Invalid credential type, return empty results
+            pass
+
+    # Filter by provider if provided
+    if provider:
+        query = query.filter(Credential.provider == provider)
+
     total = query.count()
     credentials = query.offset(skip).limit(limit).all()
 
@@ -148,6 +169,7 @@ async def list_credentials(
             workspace_id=cred.workspace_id,
             name=cred.name,
             credential_type=cred.credential_type,
+            provider=cred.provider,
             is_active=cred.is_active,
             usage_count=cred.usage_count,
             last_used_at=cred.last_used_at,

@@ -158,6 +158,15 @@ export interface MemoryConfig {
 }
 
 /**
+ * Behavior Configuration - AI response features
+ */
+export interface BehaviorConfig {
+  enable_citations?: boolean;
+  enable_follow_up_questions?: boolean;
+  conversation_openers?: string[];
+}
+
+/**
  * Lead Capture Field
  */
 export interface LeadCaptureField {
@@ -176,6 +185,68 @@ export interface LeadCaptureConfig {
   fields: LeadCaptureField[];
   trigger: LeadCaptureTrigger;
 }
+
+// ========================================
+// VARIABLE COLLECTION TYPES
+// ========================================
+
+/**
+ * Variable Field Types
+ */
+export const VariableFieldType = {
+  TEXT: "text",
+  EMAIL: "email",
+  PHONE: "phone",
+  NUMBER: "number",
+  SELECT: "select",
+} as const;
+
+export type VariableFieldType = (typeof VariableFieldType)[keyof typeof VariableFieldType];
+
+/**
+ * Variable Collection Timing
+ */
+export const VariableCollectionTiming = {
+  BEFORE_CHAT: "before_chat",
+  ON_DEMAND: "on_demand",
+} as const;
+
+export type VariableCollectionTiming = (typeof VariableCollectionTiming)[keyof typeof VariableCollectionTiming];
+
+/**
+ * Variable Field - A single variable to collect
+ *
+ * Variables can be referenced in system prompt using {{variable_name}} syntax
+ * Example: "You are helping {{user_name}} who works at {{company}}."
+ */
+export interface VariableField {
+  id: string;
+  name: string; // Variable name for {{name}} substitution (no spaces, alphanumeric + underscore)
+  type: VariableFieldType;
+  label: string; // Display label for the form
+  placeholder?: string;
+  required: boolean;
+  default_value?: string;
+  options?: string[]; // For select type
+}
+
+/**
+ * Variables Configuration
+ */
+export interface VariablesConfig {
+  enabled: boolean;
+  variables: VariableField[];
+  collection_timing: VariableCollectionTiming;
+}
+
+/**
+ * Default Variables Configuration
+ */
+export const DEFAULT_VARIABLES_CONFIG: VariablesConfig = {
+  enabled: false,
+  variables: [],
+  collection_timing: VariableCollectionTiming.BEFORE_CHAT,
+};
 
 /**
  * AI Configuration
@@ -237,6 +308,7 @@ export interface ChannelConfig {
   type: DeploymentChannel;
   enabled: boolean;
   config?: Record<string, unknown>;
+  credential_id?: string; // For channels requiring bot tokens (Telegram, Discord)
 }
 
 /**
@@ -244,6 +316,9 @@ export interface ChannelConfig {
  */
 export interface DeployChatbotRequest {
   channels: ChannelConfig[];
+  is_public?: boolean;
+  behavior?: BehaviorConfig;
+  conversation_openers?: string[];
 }
 
 /**
@@ -316,6 +391,7 @@ export interface UpdateChatbotDraftRequest {
   appearance?: AppearanceConfig;
   memory?: MemoryConfig;
   lead_capture?: LeadCaptureConfig;
+  variables_config?: VariablesConfig;
 }
 
 /**
@@ -628,6 +704,8 @@ export interface ChatbotFormData {
   instructions: InstructionItem[];
   restrictions: RestrictionItem[];
   messages: MessagesConfig;
+  behavior: BehaviorConfig;
+  variables_config: VariablesConfig; // Variable collection for {{variable}} substitution
 
   // Step 3: Knowledge Bases
   knowledge_bases: KBAttachment[];
@@ -639,6 +717,7 @@ export interface ChatbotFormData {
 
   // Step 5: Deployment
   channels: ChannelConfig[];
+  is_public: boolean;
 }
 
 /**
@@ -687,6 +766,12 @@ export const DEFAULT_MESSAGES: MessagesConfig = {
   goodbye: "Thank you for chatting with us!",
 };
 
+export const DEFAULT_BEHAVIOR: BehaviorConfig = {
+  enable_citations: false,
+  enable_follow_up_questions: false,
+  conversation_openers: [],
+};
+
 export const DEFAULT_FORM_DATA: ChatbotFormData = {
   name: "",
   description: "",
@@ -697,10 +782,13 @@ export const DEFAULT_FORM_DATA: ChatbotFormData = {
   instructions: [],
   restrictions: [],
   messages: DEFAULT_MESSAGES,
+  behavior: DEFAULT_BEHAVIOR,
+  variables_config: DEFAULT_VARIABLES_CONFIG,
   knowledge_bases: [],
   appearance: DEFAULT_APPEARANCE,
   memory: DEFAULT_MEMORY,
   channels: [{ type: DeploymentChannel.WEBSITE, enabled: true }],
+  is_public: true,
 };
 
 // ========================================
