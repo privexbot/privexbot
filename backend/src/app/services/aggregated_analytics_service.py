@@ -501,11 +501,11 @@ class AggregatedAnalyticsService:
                 stats['positive_feedback'] = positive_count
                 stats['negative_feedback'] = negative_count
 
-        # Get bot names
+        # Get bot names - only include bots that exist in the database
         breakdowns: List[ChatbotBreakdown] = []
 
         for bot_key, stats in bot_stats.items():
-            bot_name = "Unknown Bot"
+            bot_name = None
             bot_id = UUID(stats['bot_id'])
 
             if stats['bot_type'] == 'chatbot':
@@ -515,7 +515,11 @@ class AggregatedAnalyticsService:
                 if chatbot:
                     bot_name = chatbot.name
 
-            # TODO: Add chatflow name lookup when available
+            # TODO: Add chatflow name lookup when Chatflow model is implemented
+
+            # Skip orphaned sessions (bot was deleted but sessions remain)
+            if bot_name is None:
+                continue
 
             total_feedback = stats['positive_feedback'] + stats['negative_feedback']
             satisfaction_rate = (
