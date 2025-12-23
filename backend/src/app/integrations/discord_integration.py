@@ -179,9 +179,19 @@ class DiscordIntegration:
             return {"status": "ignored"}
 
         user_message = interaction_data.get("data", {}).get("options", [{}])[0].get("value", "")
-        user_id = interaction_data.get("member", {}).get("user", {}).get("id")
+
+        # Extract user info from Discord
+        member = interaction_data.get("member", {})
+        user_data = member.get("user", {})
+        user_id = user_data.get("id")
+        discord_username = user_data.get("username")
+        discord_discriminator = user_data.get("discriminator")
+
         channel_id = interaction_data.get("channel_id")
         guild_id = interaction_data.get("guild_id")
+
+        # Get guild name if available (for B2B context)
+        guild_name = interaction_data.get("guild", {}).get("name")
 
         # Determine bot type
         bot_type, bot = self._get_bot(db, entity_id)
@@ -189,12 +199,27 @@ class DiscordIntegration:
         # Session ID (unique per Discord user in channel)
         session_id = f"discord_{guild_id}_{channel_id}_{user_id}"
 
+        # Auto-capture Discord user data on first message
+        await self._auto_capture_lead(
+            db=db,
+            bot=bot,
+            bot_type=bot_type,
+            session_id=session_id,
+            discord_user_id=user_id,
+            discord_username=discord_username,
+            discord_discriminator=discord_discriminator,
+            guild_id=guild_id,
+            guild_name=guild_name
+        )
+
         # Channel context
         channel_context = {
             "platform": "discord",
             "channel_id": channel_id,
             "user_id": user_id,
-            "guild_id": guild_id
+            "guild_id": guild_id,
+            "username": discord_username,
+            "guild_name": guild_name
         }
 
         # Route to appropriate service
@@ -280,6 +305,92 @@ class DiscordIntegration:
             headers=headers
         )
         return response.json()
+
+    async def _auto_capture_lead(
+        self,
+        db: Session,
+        bot: Any,
+        bot_type: str,
+        session_id: str,
+        discord_user_id: str,
+        discord_username: Optional[str] = None,
+        discord_discriminator: Optional[str] = None,
+        guild_id: Optional[str] = None,
+        guild_name: Optional[str] = None
+    ):
+        """
+        Auto-capture lead from Discord on first interaction.
+
+        WHY: Discord provides username and guild context (B2B valuable)
+        HOW: Check lead_capture_config, capture if enabled
+
+        NOTE: Discord does NOT provide email/phone.
+              Must use modal interaction to collect.
+        """
+
+        # Check if lead capture is enabled
+        lead_config = getattr(bot, "lead_capture_config", None) or {}
+        if not lead_config.get("enabled"):
+            return  # Lead capture not enabled
+
+        # Check platform-specific settings
+        platforms = lead_config.get("platforms", {})
+        discord_config = platforms.get("discord", {})
+
+        if not discord_config.get("enabled", True):
+            return  # Discord lead capture disabled
+
+        if not discord_config.get("auto_capture_username", True):
+            return  # Auto-capture disabled
+
+        # Check if lead already exists for this session
+        from app.services.lead_capture_service import lead_capture_service
+
+        existing_lead = await lead_capture_service.check_lead_exists(
+            db=db,
+            workspace_id=bot.workspace_id,
+            session_id=session_id
+        )
+
+        if existing_lead:
+            return  # Lead already captured
+
+        # Check privacy settings
+        privacy = lead_config.get("privacy", {})
+        require_consent = privacy.get("require_consent", False)
+
+        # If strict consent required, check session for consent status
+        if require_consent:
+            from app.models.chat_session import ChatSession
+
+            session = db.query(ChatSession).filter(
+                ChatSession.session_id == session_id
+            ).first()
+
+            if session:
+                metadata = session.session_metadata or {}
+                # Only capture if user explicitly gave consent
+                if not metadata.get("consent_given"):
+                    return  # Consent not given yet - don't capture
+
+        # For Discord, capture with implicit consent (user initiated)
+        # If strict consent required, set consent_given=False
+        consent_given = not require_consent
+
+        # Auto-capture the lead
+        await lead_capture_service.capture_from_discord(
+            db=db,
+            workspace_id=bot.workspace_id,
+            bot_id=bot.id,
+            bot_type=bot_type,
+            session_id=session_id,
+            discord_user_id=discord_user_id,
+            discord_username=discord_username,
+            discord_discriminator=discord_discriminator,
+            guild_id=guild_id,
+            guild_name=guild_name,
+            consent_given=consent_given
+        )
 
     def _get_bot(self, db: Session, entity_id: UUID) -> Tuple[str, Any]:
         """Get bot by ID (chatbot or chatflow)."""

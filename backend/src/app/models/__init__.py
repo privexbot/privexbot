@@ -43,9 +43,11 @@ from app.models.widget_event import WidgetEvent, EventType
 # Credentials (encrypted API keys/tokens for chatflow nodes)
 from app.models.credential import Credential, CredentialType
 
+# Lead capture
+from app.models.lead import Lead, LeadStatus
+
 # NOTE: The following models are still pseudocode and not imported yet:
 # - Chatflow (chatflow.py is documentation only)
-# - Lead (lead.py is documentation only)
 
 __all__ = [
     # Core
@@ -86,4 +88,7 @@ __all__ = [
     # Credentials
     "Credential",
     "CredentialType",
+    # Lead capture
+    "Lead",
+    "LeadStatus",
 ]

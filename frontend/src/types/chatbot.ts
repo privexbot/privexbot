@@ -178,12 +178,50 @@ export interface LeadCaptureField {
 }
 
 /**
+ * Platform-specific lead capture settings
+ */
+export interface LeadCapturePlatformConfig {
+  enabled?: boolean;
+  capture_ip?: boolean;
+  capture_referrer?: boolean;
+  auto_capture_phone?: boolean;
+  auto_capture_username?: boolean;
+  prompt_for_email?: boolean;
+  capture_guild_context?: boolean;
+}
+
+/**
+ * Privacy & consent settings
+ */
+export interface LeadCapturePrivacyConfig {
+  require_consent?: boolean;
+  consent_message?: string;
+  gdpr_compliant?: boolean;
+  retention_days?: number;
+}
+
+/**
  * Lead Capture Configuration
  */
 export interface LeadCaptureConfig {
   enabled: boolean;
-  fields: LeadCaptureField[];
-  trigger: LeadCaptureTrigger;
+  fields?: LeadCaptureField[];
+  trigger?: LeadCaptureTrigger;
+  // Simpler wizard fields
+  timing?: "before_chat" | "during_chat" | "after_chat";
+  required_fields?: string[];  // ["email", "name", "phone"]
+  // Email prompting via conversation
+  messages_before_prompt?: number;  // After how many messages to prompt for email
+  email_prompt_message?: string;    // Custom message to ask for email
+  // Platform-specific settings
+  platforms?: {
+    widget?: LeadCapturePlatformConfig;
+    whatsapp?: LeadCapturePlatformConfig;
+    telegram?: LeadCapturePlatformConfig;
+    discord?: LeadCapturePlatformConfig;
+  };
+  // Privacy settings
+  privacy?: LeadCapturePrivacyConfig;
 }
 
 // ========================================

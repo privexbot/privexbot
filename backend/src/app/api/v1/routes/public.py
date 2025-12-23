@@ -16,7 +16,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException, Header, Depends, Request
 from pydantic import BaseModel
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -80,6 +80,10 @@ class LeadCaptureRequest(BaseModel):
     phone: Optional[str] = None
     custom_fields: Optional[dict] = None
     ip_address: Optional[str] = None
+    # Browser metadata from widget
+    user_agent: Optional[str] = None
+    referrer: Optional[str] = None
+    language: Optional[str] = None
 
 
 class EventTrackingRequest(BaseModel):
@@ -99,10 +103,13 @@ class WidgetConfigResponse(BaseModel):
     greeting: Optional[str] = None
     bot_name: Optional[str] = None
     color: Optional[str] = None
+    secondary_color: Optional[str] = None
     position: Optional[str] = None
     show_branding: bool = True
     lead_config: Optional[dict] = None
     avatar_url: Optional[str] = None
+    font_family: Optional[str] = None
+    bubble_style: Optional[str] = None
 
 
 @router.post("/bots/{bot_id}/chat")
@@ -236,7 +243,8 @@ async def submit_feedback(
 @router.post("/leads/capture")
 async def capture_lead(
     bot_id: UUID,
-    request: LeadCaptureRequest,
+    lead_request: LeadCaptureRequest,
+    http_request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
@@ -258,37 +266,32 @@ async def capture_lead(
         api_key
     )
 
-    # Get geolocation from IP (placeholder - requires geoip_service)
-    geolocation = None
-    if request.ip_address:
-        # from app.services.geoip_service import geoip_service
-        # geolocation = geoip_service.lookup(request.ip_address)
-        pass
+    # Get client IP from headers (handles proxies)
+    client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = http_request.client.host if http_request.client else None
 
-    # Create lead (placeholder - requires Lead model)
-    # from app.models.lead import Lead
-    #
-    # lead = Lead(
-    #     workspace_id=workspace_id,
-    #     bot_type=bot_type,
-    #     bot_id=bot_id,
-    #     session_id=UUID(request.session_id),
-    #     email=request.email,
-    #     name=request.name,
-    #     phone=request.phone,
-    #     custom_fields=request.custom_fields or {},
-    #     ip_address=request.ip_address,
-    #     geolocation=geolocation,
-    #     source="widget"
-    # )
-    #
-    # db.add(lead)
-    # db.commit()
+    # Use unified LeadCaptureService
+    from app.services.lead_capture_service import lead_capture_service
 
-    # Placeholder response
-    lead_id = str(uuid4())
+    lead = await lead_capture_service.capture_from_widget(
+        db=db,
+        workspace_id=workspace_id,
+        bot_id=bot_id,
+        bot_type=bot_type,
+        session_id=lead_request.session_id,
+        email=lead_request.email,
+        name=lead_request.name,
+        phone=lead_request.phone,
+        custom_fields=lead_request.custom_fields,
+        ip_address=client_ip,  # Use server-captured IP
+        user_agent=lead_request.user_agent,
+        referrer=lead_request.referrer,
+        language=lead_request.language,
+        consent_given=True  # Widget form implies consent
+    )
 
-    return {"lead_id": lead_id}
+    return {"lead_id": str(lead.id)}
 
 
 @router.get("/bots/{bot_id}/config")
@@ -330,10 +333,13 @@ async def get_widget_config(
         greeting=messages.get("greeting"),
         bot_name=branding.get("chat_title") or prompt_config.get("persona", {}).get("name"),
         color=branding.get("primary_color"),
+        secondary_color=branding.get("secondary_color"),
         position=branding.get("position", "bottom-right"),
         show_branding=True,  # Could be made configurable per plan
         lead_config=lead_capture,
         avatar_url=branding.get("avatar_url"),
+        font_family=branding.get("font_family", "Inter"),
+        bubble_style=branding.get("bubble_style", "rounded"),
     )
 
 

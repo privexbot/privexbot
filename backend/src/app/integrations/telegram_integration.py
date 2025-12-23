@@ -129,18 +129,38 @@ class TelegramIntegration:
         chat_id = message_data["chat"]["id"]
         user_id = message_data["from"]["id"]
 
+        # Extract user info from Telegram
+        from_user = message_data.get("from", {})
+        telegram_username = from_user.get("username")
+        first_name = from_user.get("first_name")
+        last_name = from_user.get("last_name")
+
         # Determine bot type
         bot_type, bot = self._get_bot(db, entity_id)
 
         # Session ID (unique per Telegram user)
         session_id = f"telegram_{chat_id}_{user_id}"
 
+        # Auto-capture Telegram user data on first message
+        await self._auto_capture_lead(
+            db=db,
+            bot=bot,
+            bot_type=bot_type,
+            session_id=session_id,
+            telegram_user_id=str(user_id),
+            telegram_username=telegram_username,
+            first_name=first_name,
+            last_name=last_name
+        )
+
         # Channel context
         channel_context = {
             "platform": "telegram",
             "chat_id": chat_id,
             "user_id": user_id,
-            "username": message_data["from"].get("username")
+            "username": telegram_username,
+            "first_name": first_name,
+            "last_name": last_name
         }
 
         # Route to appropriate service
@@ -252,6 +272,90 @@ class TelegramIntegration:
         )
         return response.json()
 
+
+    async def _auto_capture_lead(
+        self,
+        db: Session,
+        bot: Any,
+        bot_type: str,
+        session_id: str,
+        telegram_user_id: str,
+        telegram_username: Optional[str] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None
+    ):
+        """
+        Auto-capture lead from Telegram on first message.
+
+        WHY: Telegram provides username and name
+        HOW: Check lead_capture_config, capture if enabled
+
+        NOTE: Telegram does NOT provide email/phone automatically.
+              Must be collected via conversation or contact sharing.
+        """
+
+        # Check if lead capture is enabled
+        lead_config = getattr(bot, "lead_capture_config", None) or {}
+        if not lead_config.get("enabled"):
+            return  # Lead capture not enabled
+
+        # Check platform-specific settings
+        platforms = lead_config.get("platforms", {})
+        telegram_config = platforms.get("telegram", {})
+
+        if not telegram_config.get("enabled", True):
+            return  # Telegram lead capture disabled
+
+        if not telegram_config.get("auto_capture_username", True):
+            return  # Auto-capture disabled
+
+        # Check if lead already exists for this session
+        from app.services.lead_capture_service import lead_capture_service
+
+        existing_lead = await lead_capture_service.check_lead_exists(
+            db=db,
+            workspace_id=bot.workspace_id,
+            session_id=session_id
+        )
+
+        if existing_lead:
+            return  # Lead already captured
+
+        # Check privacy settings
+        privacy = lead_config.get("privacy", {})
+        require_consent = privacy.get("require_consent", False)
+
+        # If strict consent required, check session for consent status
+        if require_consent:
+            from app.models.chat_session import ChatSession
+
+            session = db.query(ChatSession).filter(
+                ChatSession.session_id == session_id
+            ).first()
+
+            if session:
+                metadata = session.session_metadata or {}
+                # Only capture if user explicitly gave consent
+                if not metadata.get("consent_given"):
+                    return  # Consent not given yet - don't capture
+
+        # For Telegram, capture with implicit consent (user initiated)
+        # If strict consent required, set consent_given=False
+        consent_given = not require_consent
+
+        # Auto-capture the lead
+        await lead_capture_service.capture_from_telegram(
+            db=db,
+            workspace_id=bot.workspace_id,
+            bot_id=bot.id,
+            bot_type=bot_type,
+            session_id=session_id,
+            telegram_user_id=telegram_user_id,
+            telegram_username=telegram_username,
+            first_name=first_name,
+            last_name=last_name,
+            consent_given=consent_given
+        )
 
     def _get_bot(self, db: Session, entity_id: UUID) -> Tuple[str, Any]:
         """Get bot by ID (chatbot or chatflow)."""

@@ -45,6 +45,7 @@ type CredentialProvider =
   | 'slack'
   | 'telegram'
   | 'discord'
+  | 'whatsapp'
   | 'custom';
 
 // API response structure matching backend CredentialResponse
@@ -136,6 +137,7 @@ export default function CredentialSelector({
       slack: 'Slack',
       telegram: 'Telegram',
       discord: 'Discord',
+      whatsapp: 'WhatsApp',
       custom: 'Custom',
     };
     return names[providerName] || providerName;
@@ -159,9 +161,9 @@ export default function CredentialSelector({
   };
 
   const isOAuthProvider = (providerName: CredentialProvider) => {
-    // Telegram and Discord use bot tokens, not OAuth in traditional sense
+    // Telegram, Discord, and WhatsApp use tokens, not OAuth in traditional sense
     // but we can use the OAuth flow UI for them
-    return ['telegram', 'discord'].includes(providerName);
+    return ['telegram', 'discord', 'whatsapp'].includes(providerName);
   };
 
   // Filter active credentials

@@ -157,7 +157,11 @@ class WidgetAPIClient {
           body: JSON.stringify({
             ...leadData,
             session_id: this.sessionId,
-            ip_address: null, // Server will get real IP
+            // Browser metadata for lead enrichment
+            user_agent: navigator.userAgent,
+            referrer: document.referrer,
+            language: navigator.language,
+            // Note: IP is captured server-side from request headers
           }),
         }
       );

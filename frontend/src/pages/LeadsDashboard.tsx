@@ -29,7 +29,6 @@ import {
   Users,
   Download,
   Search,
-  Filter,
   MapPin,
   Mail,
   Phone,
@@ -37,6 +36,13 @@ import {
   TrendingUp,
   Grid3x3,
   Map as MapIcon,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Globe,
+  Send,
+  MessageCircle,
+  Terminal,
 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
@@ -51,24 +57,37 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceStore } from '@/store/workspace-store';
-import apiClient, { handleApiError } from '@/lib/api-client';
+import apiClient from '@/lib/api-client';
 
 interface Lead {
   id: string;
   email?: string;
   phone?: string;
   name?: string;
+  // Location fields (direct from Lead model, not nested)
+  city?: string;
+  country?: string;
+  country_code?: string;
+  region?: string;
+  // Computed location helper for backward compatibility
   location?: {
     city?: string;
     country?: string;
     latitude?: number;
     longitude?: number;
   };
-  source: string;
-  chatbot_id: string;
+  channel: string;  // Platform: website, whatsapp, telegram, discord, api
+  source?: string;  // Legacy field (deprecated, use channel)
+  bot_type?: string;  // "chatbot" | "chatflow"
+  chatbot_id?: string;
+  bot_id?: string;
   chatbot_name?: string;
   captured_at: string;
-  metadata?: Record<string, any>;
+  created_at?: string;
+  metadata?: Record<string, unknown>;
+  consent_given?: string;  // "Y" | "N" | "P" (Pending)
+  consent_timestamp?: string;
+  custom_fields?: Record<string, unknown>;
 }
 
 interface LeadStats {
@@ -77,6 +96,93 @@ interface LeadStats {
   leads_this_month: number;
   top_source: string;
 }
+
+/**
+ * Platform badge component for different lead sources.
+ * Each platform has distinctive colors and icons.
+ */
+const getPlatformBadge = (channel: string | undefined) => {
+  const badges: Record<string, { icon: React.ReactNode; bg: string; text: string }> = {
+    whatsapp: {
+      icon: <Phone className="w-3 h-3" />,
+      bg: "bg-green-100 dark:bg-green-900",
+      text: "text-green-700 dark:text-green-300"
+    },
+    telegram: {
+      icon: <Send className="w-3 h-3" />,
+      bg: "bg-blue-100 dark:bg-blue-900",
+      text: "text-blue-700 dark:text-blue-300"
+    },
+    discord: {
+      icon: <MessageCircle className="w-3 h-3" />,
+      bg: "bg-indigo-100 dark:bg-indigo-900",
+      text: "text-indigo-700 dark:text-indigo-300"
+    },
+    website: {
+      icon: <Globe className="w-3 h-3" />,
+      bg: "bg-gray-100 dark:bg-gray-800",
+      text: "text-gray-700 dark:text-gray-300"
+    },
+    api: {
+      icon: <Terminal className="w-3 h-3" />,
+      bg: "bg-orange-100 dark:bg-orange-900",
+      text: "text-orange-700 dark:text-orange-300"
+    },
+    web: {
+      icon: <Globe className="w-3 h-3" />,
+      bg: "bg-gray-100 dark:bg-gray-800",
+      text: "text-gray-700 dark:text-gray-300"
+    }
+  };
+
+  const normalizedChannel = channel?.toLowerCase() ?? '';
+  const badge = badges[normalizedChannel] ?? badges.website;
+  const displayName = channel ? channel.charAt(0).toUpperCase() + channel.slice(1) : 'Website';
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
+      {badge.icon}
+      {displayName}
+    </span>
+  );
+};
+
+/**
+ * Consent status badge component.
+ * Shows whether user has given consent for data capture.
+ */
+const getConsentBadge = (consent: string | undefined) => {
+  if (consent === "Y") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+        <CheckCircle className="w-3 h-3" />
+        Consented
+      </span>
+    );
+  }
+  if (consent === "P") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">
+        <Clock className="w-3 h-3" />
+        Pending
+      </span>
+    );
+  }
+  if (consent === "N") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">
+        <AlertCircle className="w-3 h-3" />
+        Declined
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+      <AlertCircle className="w-3 h-3" />
+      None
+    </span>
+  );
+};
 
 export default function LeadsDashboard() {
   const { toast } = useToast();
@@ -119,11 +225,14 @@ export default function LeadsDashboard() {
         lead.name?.toLowerCase().includes(query) ||
         lead.email?.toLowerCase().includes(query) ||
         lead.phone?.includes(query) ||
-        lead.location?.city?.toLowerCase().includes(query)
+        lead.city?.toLowerCase().includes(query) ||
+        lead.country?.toLowerCase().includes(query)
     );
   }, [leads, searchQuery]);
 
   // Get leads with location for map
+  // Note: Currently the Lead model doesn't store lat/lon, so map may be empty
+  // This filters for leads with the legacy location object if present
   const leadsWithLocation = useMemo(() => {
     return filteredLeads.filter(
       (lead) => lead.location?.latitude && lead.location?.longitude
@@ -132,14 +241,15 @@ export default function LeadsDashboard() {
 
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ['Name', 'Email', 'Phone', 'Source', 'Location', 'Captured At'];
+    const headers = ['Name', 'Email', 'Phone', 'Platform', 'Consent', 'Location', 'Captured At'];
     const rows = filteredLeads.map((lead) => [
       lead.name || '',
       lead.email || '',
       lead.phone || '',
-      lead.source,
-      lead.location ? `${lead.location.city}, ${lead.location.country}` : '',
-      format(new Date(lead.captured_at), 'yyyy-MM-dd HH:mm:ss'),
+      lead.channel || lead.source || 'website',
+      lead.consent_given === 'Y' ? 'Consented' : lead.consent_given === 'N' ? 'Declined' : lead.consent_given === 'P' ? 'Pending' : 'None',
+      lead.city ? `${lead.city}, ${lead.country || ''}` : '',
+      format(new Date(lead.captured_at || lead.created_at || new Date()), 'yyyy-MM-dd HH:mm:ss'),
     ]);
 
     const csvContent = [
@@ -236,10 +346,12 @@ export default function LeadsDashboard() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Sources</SelectItem>
+            <SelectItem value="all">All Platforms</SelectItem>
             <SelectItem value="website">Website</SelectItem>
-            <SelectItem value="telegram">Telegram</SelectItem>
             <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            <SelectItem value="telegram">Telegram</SelectItem>
+            <SelectItem value="discord">Discord</SelectItem>
+            <SelectItem value="api">API</SelectItem>
           </SelectContent>
         </Select>
 
@@ -293,7 +405,8 @@ export default function LeadsDashboard() {
                   <th className="text-left p-4 font-medium">Name</th>
                   <th className="text-left p-4 font-medium">Contact</th>
                   <th className="text-left p-4 font-medium">Location</th>
-                  <th className="text-left p-4 font-medium">Source</th>
+                  <th className="text-left p-4 font-medium">Platform</th>
+                  <th className="text-left p-4 font-medium">Consent</th>
                   <th className="text-left p-4 font-medium">Captured</th>
                 </tr>
               </thead>
@@ -318,17 +431,23 @@ export default function LeadsDashboard() {
                         {lead.phone && (
                           <div className="flex items-center gap-2 text-sm">
                             <Phone className="w-3 h-3 text-muted-foreground" />
-                            {lead.phone}
+                            <span>{lead.phone}</span>
+                            {(lead.custom_fields as Record<string, boolean> | undefined)?.phone_verified && (
+                              <span className="inline-flex items-center px-1 py-0.5 rounded text-[10px] bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+                                <CheckCircle className="w-2 h-2 mr-0.5" />
+                                Verified
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
                     </td>
 
                     <td className="p-4">
-                      {lead.location?.city ? (
+                      {lead.city ? (
                         <div className="flex items-center gap-2 text-sm">
                           <MapPin className="w-3 h-3 text-muted-foreground" />
-                          {lead.location.city}, {lead.location.country}
+                          {lead.city}{lead.country ? `, ${lead.country}` : ''}
                         </div>
                       ) : (
                         <span className="text-sm text-muted-foreground">Unknown</span>
@@ -336,9 +455,11 @@ export default function LeadsDashboard() {
                     </td>
 
                     <td className="p-4">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                        {lead.source}
-                      </span>
+                      {getPlatformBadge(lead.channel || lead.source || 'website')}
+                    </td>
+
+                    <td className="p-4">
+                      {getConsentBadge(lead.consent_given)}
                     </td>
 
                     <td className="p-4 text-sm text-muted-foreground">
@@ -372,13 +493,13 @@ export default function LeadsDashboard() {
                   <div className="p-2">
                     <h4 className="font-semibold mb-1">{lead.name || 'Anonymous'}</h4>
                     {lead.email && <p className="text-xs mb-1">{lead.email}</p>}
-                    {lead.location && (
+                    {lead.city && (
                       <p className="text-xs text-muted-foreground">
-                        {lead.location.city}, {lead.location.country}
+                        {lead.city}{lead.country ? `, ${lead.country}` : ''}
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mt-2">
-                      {format(new Date(lead.captured_at), 'MMM d, yyyy')}
+                      {format(new Date(lead.captured_at || lead.created_at || new Date()), 'MMM d, yyyy')}
                     </p>
                   </div>
                 </Popup>

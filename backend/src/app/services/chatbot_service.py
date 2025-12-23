@@ -97,6 +97,22 @@ class ChatbotService:
             channel_context=channel_context
         )
 
+        # 1.5. Check if this is a consent response (early processing)
+        metadata = session.session_metadata or {}
+        if metadata.get("consent_prompted") and metadata.get("consent_given") is None:
+            consent_response = self._parse_consent_response(user_message)
+            if consent_response is not None:
+                session.session_metadata = {
+                    **metadata,
+                    "consent_given": consent_response,
+                    "consent_timestamp": datetime.utcnow().isoformat()
+                }
+                db.commit()
+
+                if consent_response:
+                    # Trigger lead capture now that consent is given
+                    await self._trigger_lead_capture_after_consent(db, session, chatbot)
+
         # 2. Save user message
         user_msg = self.session_service.save_message(
             db=db,
@@ -171,6 +187,30 @@ class ChatbotService:
             # 8. Update cached metrics for dashboard consistency
             self._update_cached_metrics(db, chatbot)
 
+            # 9. Check if we should append consent or email prompts
+            # Consent prompt (only if not already prompted)
+            consent_prompt = await self._should_prompt_for_consent(db, session, chatbot)
+            if consent_prompt:
+                response_text = f"{response_text}\n\n---\n\n{consent_prompt}"
+                session.session_metadata = {
+                    **(session.session_metadata or {}),
+                    "consent_prompted": True,
+                    "consent_prompted_at": datetime.utcnow().isoformat()
+                }
+                db.commit()
+
+            # Email prompt (only if consent given or not required, and not already prompted)
+            elif not consent_prompt:  # Only check email if consent prompt wasn't shown
+                email_prompt = await self._should_prompt_for_email(db, session, chatbot)
+                if email_prompt:
+                    response_text = f"{response_text}\n\n---\n\n{email_prompt}"
+                    session.session_metadata = {
+                        **(session.session_metadata or {}),
+                        "email_prompted": True,
+                        "email_prompted_at": datetime.utcnow().isoformat()
+                    }
+                    db.commit()
+
             return {
                 "response": response_text,
                 "sources": sources,
@@ -190,6 +230,192 @@ class ChatbotService:
             )
 
             raise
+
+
+    async def _should_prompt_for_consent(
+        self,
+        db: Session,
+        session,
+        chatbot: Chatbot
+    ) -> Optional[str]:
+        """
+        Check if we need to ask for consent before capturing data.
+
+        WHY: GDPR compliance - explicit consent before data capture
+        HOW: Check lead_capture_config.privacy.require_consent
+
+        RETURNS:
+            Consent prompt message if should prompt, None otherwise
+        """
+        lead_config = getattr(chatbot, "lead_capture_config", None) or {}
+
+        if not lead_config.get("enabled"):
+            return None
+
+        privacy = lead_config.get("privacy", {})
+        if not privacy.get("require_consent", False):
+            return None
+
+        metadata = session.session_metadata or {}
+        if metadata.get("consent_prompted"):
+            return None  # Already asked
+
+        # Return consent message
+        return privacy.get("consent_message",
+            "We'd like to save your information to follow up with you. Reply 'yes' to agree or 'no' to decline.")
+
+    async def _should_prompt_for_email(
+        self,
+        db: Session,
+        session,
+        chatbot: Chatbot
+    ) -> Optional[str]:
+        """
+        Check if we should prompt user for email.
+
+        WHY: Capture email for leads after X messages
+        HOW: Check lead_capture_config, message count, and existing lead
+
+        RETURNS:
+            Email prompt message if should prompt, None otherwise
+        """
+        lead_config = getattr(chatbot, "lead_capture_config", None) or {}
+
+        # Check if feature enabled
+        if not lead_config.get("enabled"):
+            return None
+
+        # Check platform settings
+        # Platform is stored in session_metadata from channel_context
+        metadata = session.session_metadata or {}
+        platform = metadata.get("platform") or "widget"
+        platforms = lead_config.get("platforms", {})
+        platform_config = platforms.get(platform, {})
+
+        if not platform_config.get("prompt_for_email", False):
+            return None
+
+        # Check if already prompted
+        metadata = session.session_metadata or {}
+        if metadata.get("email_prompted"):
+            return None
+
+        # Check message count threshold
+        threshold = lead_config.get("messages_before_prompt", 3)
+        if session.message_count < threshold:
+            return None
+
+        # Check if lead already has email
+        from app.services.lead_capture_service import lead_capture_service
+
+        # Get original session_id string from metadata
+        original_session_id = metadata.get("original_session_id") or str(session.id)
+
+        existing_lead = await lead_capture_service.check_lead_exists(
+            db, chatbot.workspace_id, original_session_id
+        )
+
+        if existing_lead and existing_lead.email and "@placeholder" not in existing_lead.email:
+            return None  # Already have real email
+
+        return lead_config.get("email_prompt_message",
+            "Would you like to share your email so we can follow up with you?")
+
+    def _parse_consent_response(self, message: str) -> Optional[bool]:
+        """
+        Parse user's consent response.
+
+        WHY: Detect yes/no intent from user message
+        HOW: Pattern matching on common consent phrases
+
+        RETURNS:
+            True if yes, False if no, None if unclear
+        """
+        message_lower = message.lower().strip()
+
+        yes_patterns = ["yes", "yeah", "yep", "sure", "ok", "okay", "i agree", "agree", "accepted", "accept"]
+        no_patterns = ["no", "nope", "nah", "no thanks", "decline", "declined", "don't", "dont"]
+
+        for pattern in yes_patterns:
+            if pattern in message_lower:
+                return True
+
+        for pattern in no_patterns:
+            if pattern in message_lower:
+                return False
+
+        return None  # Unclear response
+
+    async def _trigger_lead_capture_after_consent(
+        self,
+        db: Session,
+        session,
+        chatbot: Chatbot
+    ):
+        """
+        Trigger lead capture after user gives consent.
+
+        WHY: Now that consent is given, capture the lead
+        HOW: Determine platform and capture with appropriate method
+        """
+        from app.services.lead_capture_service import lead_capture_service
+
+        # Get platform from session metadata
+        metadata = session.session_metadata or {}
+        platform = metadata.get("platform") or "widget"
+
+        # For widget/web, we don't have email yet - just mark consent
+        # For other platforms, trigger the appropriate capture
+        if platform in ("widget", "web"):
+            # Widget leads need form submission - just mark session
+            return
+
+        # Get session_id from metadata (stored by session_service)
+        session_id = metadata.get("original_session_id") or str(session.id)
+
+        # Platform-specific lead capture
+        if platform == "telegram":
+            await lead_capture_service.capture_from_telegram(
+                db=db,
+                workspace_id=chatbot.workspace_id,
+                bot_id=chatbot.id,
+                bot_type="chatbot",
+                session_id=session_id,
+                telegram_user_id=str(metadata.get("user_id", "")),
+                telegram_username=metadata.get("username"),
+                first_name=metadata.get("first_name"),
+                last_name=metadata.get("last_name"),
+                consent_given=True
+            )
+
+        elif platform == "discord":
+            await lead_capture_service.capture_from_discord(
+                db=db,
+                workspace_id=chatbot.workspace_id,
+                bot_id=chatbot.id,
+                bot_type="chatbot",
+                session_id=session_id,
+                discord_user_id=str(metadata.get("user_id", "")),
+                discord_username=metadata.get("username", ""),
+                guild_id=metadata.get("guild_id"),
+                guild_name=metadata.get("guild_name"),
+                consent_given=True
+            )
+
+        elif platform == "whatsapp":
+            # WhatsApp stores phone in from_number or user_id
+            phone = metadata.get("from_number") or metadata.get("user_id") or ""
+            await lead_capture_service.capture_from_whatsapp(
+                db=db,
+                workspace_id=chatbot.workspace_id,
+                bot_id=chatbot.id,
+                bot_type="chatbot",
+                session_id=session_id,
+                phone=str(phone),
+                wa_id=str(metadata.get("user_id", "")),
+                profile_name=metadata.get("display_name"),
+                consent_given=True
+            )
 
 
     async def _retrieve_context(

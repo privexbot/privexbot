@@ -9,7 +9,7 @@
  * 5. Deploy - Channel selection, preview, deploy
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -36,6 +36,8 @@ import {
   Lock,
   Unlock,
   MessageCircle,
+  Phone,
+  Users,
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
@@ -71,6 +73,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -252,6 +255,54 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
           This message appears when users first open the chat widget
         </p>
       </div>
+
+      <div className="space-y-2">
+        <Label
+          htmlFor="fallback"
+          className="text-gray-900 dark:text-gray-100 font-manrope"
+        >
+          Fallback Message
+        </Label>
+        <Textarea
+          id="fallback"
+          value={formData.messages.fallback || ""}
+          onChange={(e) =>
+            onUpdate({
+              messages: { ...formData.messages, fallback: e.target.value },
+            })
+          }
+          placeholder="I'm not sure about that. Would you like to speak with a human?"
+          rows={2}
+          className="bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          Shown when the bot cannot find a relevant answer
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label
+          htmlFor="goodbye"
+          className="text-gray-900 dark:text-gray-100 font-manrope"
+        >
+          Goodbye Message
+        </Label>
+        <Textarea
+          id="goodbye"
+          value={formData.messages.goodbye || ""}
+          onChange={(e) =>
+            onUpdate({
+              messages: { ...formData.messages, goodbye: e.target.value },
+            })
+          }
+          placeholder="Thank you for chatting! Have a great day!"
+          rows={2}
+          className="bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          Shown when the conversation ends
+        </p>
+      </div>
     </div>
   );
 }
@@ -266,6 +317,12 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
   const [newVarLabel, setNewVarLabel] = useState("");
   const [newVarType, setNewVarType] = useState<VariableFieldType>(VariableFieldType.TEXT);
   const [varError, setVarError] = useState("");
+
+  // Variable insertion menu state
+  const [showVariableMenu, setShowVariableMenu] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [variableFilter, setVariableFilter] = useState("");
+  const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
   const addConversationOpener = () => {
     if (!newOpener.trim()) return;
@@ -350,9 +407,67 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
   };
 
   const insertVariableInPrompt = (varName: string) => {
+    const textarea = systemPromptRef.current;
     const placeholder = `{{${varName}}}`;
     const currentPrompt = formData.system_prompt || "";
-    onUpdate({ system_prompt: currentPrompt + " " + placeholder });
+
+    if (textarea && showVariableMenu) {
+      // Insert at cursor position, removing the "/" that triggered the menu
+      const beforeSlash = currentPrompt.slice(0, cursorPosition - 1);
+      const afterCursor = currentPrompt.slice(cursorPosition + variableFilter.length);
+      const newValue = beforeSlash + placeholder + afterCursor;
+      onUpdate({ system_prompt: newValue });
+      setShowVariableMenu(false);
+      setVariableFilter("");
+
+      // Focus textarea and set cursor after inserted variable
+      setTimeout(() => {
+        textarea.focus();
+        const newPosition = beforeSlash.length + placeholder.length;
+        textarea.setSelectionRange(newPosition, newPosition);
+      }, 0);
+    } else {
+      // Fallback: append to end (when clicking button below)
+      onUpdate({ system_prompt: currentPrompt + " " + placeholder });
+    }
+  };
+
+  // Handle keydown in system prompt textarea
+  const handlePromptKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+
+    if (e.key === "/") {
+      // Check if we have variables to show
+      const vars = formData.variables_config?.variables || [];
+      if (vars.length > 0) {
+        setCursorPosition(textarea.selectionStart + 1); // +1 because "/" will be typed
+        setVariableFilter("");
+        setShowVariableMenu(true);
+      }
+    } else if (e.key === "Escape") {
+      setShowVariableMenu(false);
+      setVariableFilter("");
+    } else if (showVariableMenu) {
+      // Capture characters typed after "/" for filtering
+      if (e.key === "Backspace") {
+        if (variableFilter.length > 0) {
+          setVariableFilter(variableFilter.slice(0, -1));
+        } else {
+          setShowVariableMenu(false);
+        }
+      } else if (e.key.length === 1 && /[a-zA-Z0-9_]/.test(e.key)) {
+        setVariableFilter(variableFilter + e.key);
+      }
+    }
+  };
+
+  // Get filtered variables for the menu
+  const getFilteredVariables = () => {
+    const vars = formData.variables_config?.variables || [];
+    if (!variableFilter) return vars;
+    return vars.filter((v) =>
+      v.name.toLowerCase().includes(variableFilter.toLowerCase())
+    );
   };
 
   return (
@@ -364,24 +479,83 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
         >
           System Prompt *
         </Label>
-        <Textarea
-          id="system_prompt"
-          value={formData.system_prompt}
-          onChange={(e) => onUpdate({ system_prompt: e.target.value })}
-          placeholder="You are a helpful assistant..."
-          rows={6}
-          className={cn(
-            "bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none",
-            formErrors.system_prompt && "border-red-500"
+        <div className="relative">
+          <Textarea
+            ref={systemPromptRef}
+            id="system_prompt"
+            value={formData.system_prompt}
+            onChange={(e) => {
+              onUpdate({ system_prompt: e.target.value });
+              // Close menu if user deletes the "/"
+              if (showVariableMenu && !e.target.value.includes("/")) {
+                setShowVariableMenu(false);
+                setVariableFilter("");
+              }
+            }}
+            onKeyDown={handlePromptKeyDown}
+            onBlur={() => {
+              // Delay to allow click on menu item
+              setTimeout(() => setShowVariableMenu(false), 200);
+            }}
+            placeholder="You are a helpful assistant..."
+            rows={6}
+            className={cn(
+              "bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none",
+              formErrors.system_prompt && "border-red-500"
+            )}
+          />
+
+          {/* Variable Insertion Menu */}
+          {showVariableMenu && getFilteredVariables().length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 max-h-48 overflow-y-auto">
+              <div className="text-xs text-gray-500 dark:text-gray-400 px-2 pb-2 border-b border-gray-200 dark:border-gray-700 mb-2">
+                Select a variable to insert
+              </div>
+              {getFilteredVariables().map((variable) => (
+                <button
+                  key={variable.id}
+                  type="button"
+                  onClick={() => insertVariableInPrompt(variable.name)}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between group"
+                >
+                  <div>
+                    <span className="font-mono text-sm text-blue-600 dark:text-blue-400">
+                      {`{{${variable.name}}}`}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                      {variable.label}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100">
+                    {variable.type}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
-        />
+
+          {/* No variables message */}
+          {showVariableMenu && getFilteredVariables().length === 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {variableFilter
+                  ? `No variables matching "${variableFilter}"`
+                  : "No variables defined yet. Add variables below."}
+              </p>
+            </div>
+          )}
+        </div>
         {formErrors.system_prompt && (
           <p className="text-sm text-red-500 font-manrope">
             {formErrors.system_prompt}
           </p>
         )}
         <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-          Instructions that define how your chatbot behaves
+          Instructions that define how your chatbot behaves.{" "}
+          <span className="text-blue-600 dark:text-blue-400">
+            Type "/" to insert variables
+          </span>{" "}
+          • Use {"{{ variable_name }}"} syntax
         </p>
       </div>
 
@@ -569,6 +743,196 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
               </Button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Instructions */}
+      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+        <div className="flex items-center gap-3">
+          <Check className="h-4 w-4 text-green-500" />
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+              Instructions
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+              Specific behaviors the AI should follow
+            </p>
+          </div>
+        </div>
+
+        {/* Existing instructions */}
+        {(formData.instructions || []).length > 0 && (
+          <div className="space-y-2">
+            {formData.instructions?.map((instruction) => (
+              <div
+                key={instruction.id}
+                className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600"
+              >
+                <Switch
+                  checked={instruction.enabled}
+                  onCheckedChange={(checked) => {
+                    const updated = formData.instructions?.map((i) =>
+                      i.id === instruction.id ? { ...i, enabled: checked } : i
+                    );
+                    onUpdate({ instructions: updated });
+                  }}
+                  className="flex-shrink-0"
+                />
+                <span className={cn(
+                  "text-sm font-manrope flex-1 truncate",
+                  instruction.enabled
+                    ? "text-gray-700 dark:text-gray-300"
+                    : "text-gray-400 dark:text-gray-500 line-through"
+                )}>
+                  {instruction.content}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    const updated = formData.instructions?.filter((i) => i.id !== instruction.id);
+                    onUpdate({ instructions: updated });
+                  }}
+                  className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex-shrink-0"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new instruction */}
+        <div className="flex gap-2">
+          <Input
+            placeholder="e.g., Always greet users warmly"
+            className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                const newInstruction = {
+                  id: `inst_${Date.now()}`,
+                  content: e.currentTarget.value.trim(),
+                  enabled: true,
+                };
+                onUpdate({ instructions: [...(formData.instructions || []), newInstruction] });
+                e.currentTarget.value = "";
+              }
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 px-3"
+            onClick={(e) => {
+              const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+              if (input?.value.trim()) {
+                const newInstruction = {
+                  id: `inst_${Date.now()}`,
+                  content: input.value.trim(),
+                  enabled: true,
+                };
+                onUpdate({ instructions: [...(formData.instructions || []), newInstruction] });
+                input.value = "";
+              }
+            }}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Restrictions */}
+      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="h-4 w-4 text-red-500" />
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+              Restrictions
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+              Things the AI should not do or discuss
+            </p>
+          </div>
+        </div>
+
+        {/* Existing restrictions */}
+        {(formData.restrictions || []).length > 0 && (
+          <div className="space-y-2">
+            {formData.restrictions?.map((restriction) => (
+              <div
+                key={restriction.id}
+                className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600"
+              >
+                <Switch
+                  checked={restriction.enabled}
+                  onCheckedChange={(checked) => {
+                    const updated = formData.restrictions?.map((r) =>
+                      r.id === restriction.id ? { ...r, enabled: checked } : r
+                    );
+                    onUpdate({ restrictions: updated });
+                  }}
+                  className="flex-shrink-0"
+                />
+                <span className={cn(
+                  "text-sm font-manrope flex-1 truncate",
+                  restriction.enabled
+                    ? "text-gray-700 dark:text-gray-300"
+                    : "text-gray-400 dark:text-gray-500 line-through"
+                )}>
+                  {restriction.content}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    const updated = formData.restrictions?.filter((r) => r.id !== restriction.id);
+                    onUpdate({ restrictions: updated });
+                  }}
+                  className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex-shrink-0"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new restriction */}
+        <div className="flex gap-2">
+          <Input
+            placeholder="e.g., Never discuss competitor products"
+            className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                const newRestriction = {
+                  id: `rest_${Date.now()}`,
+                  content: e.currentTarget.value.trim(),
+                  enabled: true,
+                };
+                onUpdate({ restrictions: [...(formData.restrictions || []), newRestriction] });
+                e.currentTarget.value = "";
+              }
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 px-3"
+            onClick={(e) => {
+              const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+              if (input?.value.trim()) {
+                const newRestriction = {
+                  id: `rest_${Date.now()}`,
+                  content: input.value.trim(),
+                  enabled: true,
+                };
+                onUpdate({ restrictions: [...(formData.restrictions || []), newRestriction] });
+                input.value = "";
+              }
+            }}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -896,7 +1260,9 @@ function Step3KnowledgeBases({
 
 function Step4Appearance({ formData, onUpdate }: Step1Props) {
   const [customColor, setCustomColor] = useState(formData.appearance.primary_color || "#3b82f6");
+  const [customSecondaryColor, setCustomSecondaryColor] = useState(formData.appearance.secondary_color || "#8b5cf6");
   const [colorError, setColorError] = useState("");
+  const [secondaryColorError, setSecondaryColorError] = useState("");
   const [avatarError, setAvatarError] = useState("");
 
   const colorOptions = [
@@ -1068,6 +1434,122 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
         )}
       </div>
 
+      {/* Secondary Color */}
+      <div className="space-y-3">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+          Secondary Color
+        </Label>
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          Used for accents, links, and buttons
+        </p>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-[200px]">
+            <Input
+              value={customSecondaryColor}
+              onChange={(e) => {
+                let color = e.target.value;
+                if (color && !color.startsWith("#")) {
+                  color = "#" + color;
+                }
+                setCustomSecondaryColor(color);
+                if (color && isValidHex(color)) {
+                  setSecondaryColorError("");
+                  onUpdate({
+                    appearance: { ...formData.appearance, secondary_color: color },
+                  });
+                } else if (color && color.length >= 4) {
+                  setSecondaryColorError("Invalid hex format");
+                }
+              }}
+              placeholder="#8b5cf6"
+              className={cn(
+                "h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono text-sm pl-10",
+                secondaryColorError && "border-red-500"
+              )}
+            />
+            <div
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded border border-gray-300 dark:border-gray-500"
+              style={{ backgroundColor: isValidHex(customSecondaryColor) ? customSecondaryColor : "#ccc" }}
+            />
+          </div>
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+            Hex color
+          </span>
+        </div>
+        {secondaryColorError && (
+          <p className="text-sm text-red-500 font-manrope">{secondaryColorError}</p>
+        )}
+      </div>
+
+      {/* Font Family */}
+      <div className="space-y-3">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+          Font Family
+        </Label>
+        <Select
+          value={formData.appearance.font_family || "Inter"}
+          onValueChange={(value) =>
+            onUpdate({
+              appearance: { ...formData.appearance, font_family: value },
+            })
+          }
+        >
+          <SelectTrigger className="h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
+            <SelectValue placeholder="Select font" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Inter">Inter (Recommended)</SelectItem>
+            <SelectItem value="System">System Default</SelectItem>
+            <SelectItem value="Mono">Monospace</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          Font used in the chat widget
+        </p>
+      </div>
+
+      {/* Bubble Style */}
+      <div className="space-y-3">
+        <Label className="text-gray-900 dark:text-gray-100 font-manrope">
+          Bubble Style
+        </Label>
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            onClick={() =>
+              onUpdate({
+                appearance: { ...formData.appearance, bubble_style: "rounded" },
+              })
+            }
+            className={cn(
+              "flex-1 font-manrope",
+              (formData.appearance.bubble_style || "rounded") === "rounded" &&
+                "ring-2 ring-blue-500 border-blue-500"
+            )}
+          >
+            Rounded
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() =>
+              onUpdate({
+                appearance: { ...formData.appearance, bubble_style: "square" },
+              })
+            }
+            className={cn(
+              "flex-1 font-manrope",
+              formData.appearance.bubble_style === "square" &&
+                "ring-2 ring-blue-500 border-blue-500"
+            )}
+          >
+            Square
+          </Button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+          Shape of chat message bubbles
+        </p>
+      </div>
+
       {/* Widget Position */}
       <div className="space-y-3">
         <Label className="text-gray-900 dark:text-gray-100 font-manrope">
@@ -1144,6 +1626,516 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
               step={5}
               className="w-full"
             />
+          </div>
+        )}
+      </div>
+
+      {/* Lead Capture Settings */}
+      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Lead Capture
+            </Label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+              Collect visitor information before or during chat
+            </p>
+          </div>
+          <Switch
+            checked={formData.lead_capture?.enabled || false}
+            onCheckedChange={(checked) =>
+              onUpdate({
+                lead_capture: {
+                  ...formData.lead_capture,
+                  enabled: checked,
+                  timing: formData.lead_capture?.timing || "before_chat",
+                  required_fields: formData.lead_capture?.required_fields || ["email"],
+                },
+              })
+            }
+          />
+        </div>
+
+        {formData.lead_capture?.enabled && (
+          <div className="space-y-4 pt-2">
+            {/* Timing Selection */}
+            <div className="space-y-2">
+              <Label className="text-gray-900 dark:text-gray-100 font-manrope text-sm">
+                When to collect?
+              </Label>
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  { value: "before_chat", label: "Before Chat" },
+                  { value: "during_chat", label: "During Chat" },
+                  { value: "after_chat", label: "After Chat" },
+                ].map((timing) => (
+                  <Button
+                    key={timing.value}
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          timing: timing.value as "before_chat" | "during_chat" | "after_chat",
+                        },
+                      })
+                    }
+                    className={cn(
+                      "font-manrope",
+                      formData.lead_capture?.timing === timing.value &&
+                        "ring-2 ring-blue-500 border-blue-500"
+                    )}
+                  >
+                    {timing.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Required Fields */}
+            <div className="space-y-2">
+              <Label className="text-gray-900 dark:text-gray-100 font-manrope text-sm">
+                Fields to collect
+              </Label>
+              <div className="flex gap-4 flex-wrap">
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <Checkbox checked disabled />
+                  <span>Email (required)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <Checkbox
+                    checked={formData.lead_capture?.required_fields?.includes("name") || false}
+                    onCheckedChange={(checked) => {
+                      const fields = [...(formData.lead_capture?.required_fields || ["email"])];
+                      if (checked && !fields.includes("name")) {
+                        fields.push("name");
+                      } else if (!checked) {
+                        const idx = fields.indexOf("name");
+                        if (idx >= 0) fields.splice(idx, 1);
+                      }
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          required_fields: fields,
+                        },
+                      });
+                    }}
+                  />
+                  <span>Name</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <Checkbox
+                    checked={formData.lead_capture?.required_fields?.includes("phone") || false}
+                    onCheckedChange={(checked) => {
+                      const fields = [...(formData.lead_capture?.required_fields || ["email"])];
+                      if (checked && !fields.includes("phone")) {
+                        fields.push("phone");
+                      } else if (!checked) {
+                        const idx = fields.indexOf("phone");
+                        if (idx >= 0) fields.splice(idx, 1);
+                      }
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          required_fields: fields,
+                        },
+                      });
+                    }}
+                  />
+                  <span>Phone</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Leads will be available in the Leads section of your dashboard
+              </p>
+            </div>
+
+            {/* Platform-Specific Settings */}
+            <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-600">
+              <Label className="text-gray-900 dark:text-gray-100 font-manrope text-sm">
+                Platform Settings
+              </Label>
+
+              {/* Widget Settings */}
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Website Widget</span>
+                  </div>
+                  <Switch
+                    checked={formData.lead_capture?.platforms?.widget?.enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          platforms: {
+                            ...formData.lead_capture?.platforms,
+                            widget: {
+                              ...formData.lead_capture?.platforms?.widget,
+                              enabled: checked,
+                            },
+                          },
+                        },
+                      })
+                    }
+                  />
+                </div>
+                {(formData.lead_capture?.platforms?.widget?.enabled ?? true) && (
+                  <div className="space-y-2 pl-6">
+                    <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.widget?.capture_ip ?? true}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                widget: {
+                                  ...formData.lead_capture?.platforms?.widget,
+                                  enabled: true,
+                                  capture_ip: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Capture IP for geolocation</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.widget?.capture_referrer ?? true}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                widget: {
+                                  ...formData.lead_capture?.platforms?.widget,
+                                  enabled: true,
+                                  capture_referrer: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Capture referrer URL</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* WhatsApp Settings - Highlight auto phone capture */}
+              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-700 dark:text-green-400">WhatsApp</span>
+                    <span className="text-xs bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full">
+                      Auto-captures phone!
+                    </span>
+                  </div>
+                  <Switch
+                    checked={formData.lead_capture?.platforms?.whatsapp?.enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          platforms: {
+                            ...formData.lead_capture?.platforms,
+                            whatsapp: {
+                              ...formData.lead_capture?.platforms?.whatsapp,
+                              enabled: checked,
+                            },
+                          },
+                        },
+                      })
+                    }
+                  />
+                </div>
+                {(formData.lead_capture?.platforms?.whatsapp?.enabled ?? true) && (
+                  <div className="space-y-2 pl-6">
+                    <label className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.whatsapp?.auto_capture_phone ?? true}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                whatsapp: {
+                                  ...formData.lead_capture?.platforms?.whatsapp,
+                                  enabled: true,
+                                  auto_capture_phone: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Auto-capture verified phone on first message</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.whatsapp?.prompt_for_email ?? false}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                whatsapp: {
+                                  ...formData.lead_capture?.platforms?.whatsapp,
+                                  enabled: true,
+                                  prompt_for_email: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Also prompt for email via conversation</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Telegram Settings */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Send className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-400">Telegram</span>
+                  </div>
+                  <Switch
+                    checked={formData.lead_capture?.platforms?.telegram?.enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          platforms: {
+                            ...formData.lead_capture?.platforms,
+                            telegram: {
+                              ...formData.lead_capture?.platforms?.telegram,
+                              enabled: checked,
+                            },
+                          },
+                        },
+                      })
+                    }
+                  />
+                </div>
+                {(formData.lead_capture?.platforms?.telegram?.enabled ?? true) && (
+                  <div className="space-y-2 pl-6">
+                    <label className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.telegram?.auto_capture_username ?? true}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                telegram: {
+                                  ...formData.lead_capture?.platforms?.telegram,
+                                  enabled: true,
+                                  auto_capture_username: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Auto-capture username & name</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.telegram?.prompt_for_email ?? false}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                telegram: {
+                                  ...formData.lead_capture?.platforms?.telegram,
+                                  enabled: true,
+                                  prompt_for_email: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Prompt for email via conversation</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Discord Settings */}
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-indigo-600" />
+                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">Discord</span>
+                  </div>
+                  <Switch
+                    checked={formData.lead_capture?.platforms?.discord?.enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      onUpdate({
+                        lead_capture: {
+                          ...formData.lead_capture,
+                          enabled: formData.lead_capture?.enabled ?? true,
+                          platforms: {
+                            ...formData.lead_capture?.platforms,
+                            discord: {
+                              ...formData.lead_capture?.platforms?.discord,
+                              enabled: checked,
+                            },
+                          },
+                        },
+                      })
+                    }
+                  />
+                </div>
+                {(formData.lead_capture?.platforms?.discord?.enabled ?? true) && (
+                  <div className="space-y-2 pl-6">
+                    <label className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.discord?.auto_capture_username ?? true}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                discord: {
+                                  ...formData.lead_capture?.platforms?.discord,
+                                  enabled: true,
+                                  auto_capture_username: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Auto-capture username</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
+                      <Checkbox
+                        checked={formData.lead_capture?.platforms?.discord?.capture_guild_context ?? true}
+                        onCheckedChange={(checked) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              platforms: {
+                                ...formData.lead_capture?.platforms,
+                                discord: {
+                                  ...formData.lead_capture?.platforms?.discord,
+                                  enabled: true,
+                                  capture_guild_context: !!checked,
+                                },
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>Capture guild/server context (B2B valuable)</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Privacy & Consent Settings */}
+              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lock className="h-4 w-4 text-purple-600" />
+                  <span className="text-sm font-medium text-purple-700 dark:text-purple-400">Privacy & Consent</span>
+                </div>
+                <div className="space-y-2 pl-6">
+                  <label className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400">
+                    <Checkbox
+                      checked={formData.lead_capture?.privacy?.require_consent ?? false}
+                      onCheckedChange={(checked) =>
+                        onUpdate({
+                          lead_capture: {
+                            ...formData.lead_capture,
+                            enabled: formData.lead_capture?.enabled ?? true,
+                            privacy: {
+                              ...formData.lead_capture?.privacy,
+                              require_consent: !!checked,
+                            },
+                          },
+                        })
+                      }
+                    />
+                    <span>Require explicit consent before collecting data</span>
+                  </label>
+                  {formData.lead_capture?.privacy?.require_consent && (
+                    <div className="pt-2">
+                      <Input
+                        placeholder="Consent message (e.g., 'I agree to share my information')"
+                        value={formData.lead_capture?.privacy?.consent_message || ""}
+                        onChange={(e) =>
+                          onUpdate({
+                            lead_capture: {
+                              ...formData.lead_capture,
+                              enabled: formData.lead_capture?.enabled ?? true,
+                              privacy: {
+                                ...formData.lead_capture?.privacy,
+                                require_consent: true,
+                                consent_message: e.target.value,
+                              },
+                            },
+                          })
+                        }
+                        className="text-xs"
+                      />
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 pt-1">
+                    <Checkbox
+                      checked={formData.lead_capture?.privacy?.gdpr_compliant ?? false}
+                      onCheckedChange={(checked) =>
+                        onUpdate({
+                          lead_capture: {
+                            ...formData.lead_capture,
+                            enabled: formData.lead_capture?.enabled ?? true,
+                            privacy: {
+                              ...formData.lead_capture?.privacy,
+                              gdpr_compliant: !!checked,
+                            },
+                          },
+                        })
+                      }
+                    />
+                    <span>GDPR compliant mode</span>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1227,6 +2219,7 @@ function Step5Deploy({
     { type: DeploymentChannel.WEBSITE, icon: Globe, description: "Website widget" },
     { type: DeploymentChannel.TELEGRAM, icon: Send, description: "Telegram bot" },
     { type: DeploymentChannel.DISCORD, icon: MessageCircle, description: "Discord bot" },
+    { type: DeploymentChannel.WHATSAPP, icon: Phone, description: "WhatsApp Business" },
     { type: DeploymentChannel.API, icon: Settings, description: "REST API access" },
   ];
 
@@ -1394,7 +2387,7 @@ function Step5Deploy({
             {channelOptions.map((channel) => {
               const Icon = channel.icon;
               const enabled = isChannelEnabled(channel.type);
-              const needsCredential = channel.type === DeploymentChannel.TELEGRAM || channel.type === DeploymentChannel.DISCORD;
+              const needsCredential = channel.type === DeploymentChannel.TELEGRAM || channel.type === DeploymentChannel.DISCORD || channel.type === DeploymentChannel.WHATSAPP;
               return (
                 <div key={channel.type} className="space-y-2">
                   <div
@@ -1437,10 +2430,22 @@ function Step5Deploy({
                   {enabled && needsCredential && (
                     <div className="ml-8">
                       <CredentialSelector
-                        provider={channel.type === DeploymentChannel.TELEGRAM ? "telegram" : "discord"}
+                        provider={
+                          channel.type === DeploymentChannel.TELEGRAM
+                            ? "telegram"
+                            : channel.type === DeploymentChannel.DISCORD
+                            ? "discord"
+                            : "whatsapp"
+                        }
                         selectedId={getChannelCredentialId(channel.type)}
                         onSelect={(credentialId) => updateChannelCredential(channel.type, credentialId)}
-                        label={`${channel.type === DeploymentChannel.TELEGRAM ? "Telegram" : "Discord"} Bot Token`}
+                        label={
+                          channel.type === DeploymentChannel.TELEGRAM
+                            ? "Telegram Bot Token"
+                            : channel.type === DeploymentChannel.DISCORD
+                            ? "Discord Bot Token"
+                            : "WhatsApp Access Token"
+                        }
                         required={true}
                       />
                     </div>

@@ -185,7 +185,7 @@ async def update_lead(
         )
 
     # Update fields
-    allowed_fields = ["status", "notes", "metadata"]
+    allowed_fields = ["status", "notes", "custom_fields"]
     for key, value in updates.items():
         if key in allowed_fields and hasattr(lead, key):
             setattr(lead, key, value)
@@ -409,7 +409,7 @@ async def export_leads_csv(
             lead.status,
             str(lead.bot_id),
             str(lead.session_id) if lead.session_id else "",
-            lead.source or "",
+            lead.channel or "",
             lead.created_at.isoformat(),
             lead.notes or ""
         ])
@@ -489,8 +489,8 @@ async def export_leads_json(
             "status": lead.status,
             "bot_id": str(lead.bot_id),
             "session_id": str(lead.session_id) if lead.session_id else None,
-            "source": lead.source,
-            "metadata": lead.metadata,
+            "channel": lead.channel,
+            "custom_fields": lead.custom_fields,
             "notes": lead.notes,
             "created_at": lead.created_at.isoformat()
         }

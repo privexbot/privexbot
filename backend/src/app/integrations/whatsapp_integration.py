@@ -125,17 +125,35 @@ class WhatsAppIntegration:
         from_number = message.get("from")
         message_id = message.get("id")
 
+        # Extract profile info if available
+        contacts = value.get("contacts", [])
+        profile_name = None
+        if contacts:
+            profile = contacts[0].get("profile", {})
+            profile_name = profile.get("name")
+
         # Determine bot type
         bot_type, bot = self._get_bot(db, entity_id)
 
         # Session ID (unique per WhatsApp user)
         session_id = f"whatsapp_{from_number}"
 
+        # Auto-capture phone on first message (WhatsApp's strength!)
+        await self._auto_capture_lead(
+            db=db,
+            bot=bot,
+            bot_type=bot_type,
+            session_id=session_id,
+            phone=from_number,
+            profile_name=profile_name
+        )
+
         # Channel context
         channel_context = {
             "platform": "whatsapp",
             "from_number": from_number,
-            "message_id": message_id
+            "message_id": message_id,
+            "profile_name": profile_name
         }
 
         # Route to appropriate service
@@ -209,6 +227,87 @@ class WhatsAppIntegration:
             }
         )
 
+
+    async def _auto_capture_lead(
+        self,
+        db: Session,
+        bot: Any,
+        bot_type: str,
+        session_id: str,
+        phone: str,
+        profile_name: str = None
+    ):
+        """
+        Auto-capture lead from WhatsApp on first message.
+
+        WHY: WhatsApp provides VERIFIED phone - highest value lead
+        HOW: Check lead_capture_config, capture if enabled
+
+        CRITICAL: Phone is verified by WhatsApp. This is the most
+                  valuable lead capture opportunity.
+        """
+
+        # Check if lead capture is enabled
+        lead_config = getattr(bot, "lead_capture_config", None) or {}
+        if not lead_config.get("enabled"):
+            return  # Lead capture not enabled
+
+        # Check platform-specific settings
+        platforms = lead_config.get("platforms", {})
+        whatsapp_config = platforms.get("whatsapp", {})
+
+        # Default: auto_capture_phone is True for WhatsApp
+        if not whatsapp_config.get("enabled", True):
+            return  # WhatsApp lead capture disabled
+
+        if not whatsapp_config.get("auto_capture_phone", True):
+            return  # Auto-capture disabled
+
+        # Check if lead already exists for this session
+        from app.services.lead_capture_service import lead_capture_service
+
+        existing_lead = await lead_capture_service.check_lead_exists(
+            db=db,
+            workspace_id=bot.workspace_id,
+            session_id=session_id
+        )
+
+        if existing_lead:
+            return  # Lead already captured
+
+        # Check privacy settings - require consent
+        privacy = lead_config.get("privacy", {})
+        require_consent = privacy.get("require_consent", False)
+
+        # If strict consent required, check session for consent status
+        if require_consent:
+            from app.models.chat_session import ChatSession
+
+            session = db.query(ChatSession).filter(
+                ChatSession.session_id == session_id
+            ).first()
+
+            if session:
+                metadata = session.session_metadata or {}
+                # Only capture if user explicitly gave consent
+                if not metadata.get("consent_given"):
+                    return  # Consent not given yet - don't capture
+
+        # For WhatsApp, we capture with implicit consent since user initiated contact
+        # If strict consent required, we'll set consent_given=False and prompt later
+        consent_given = not require_consent
+
+        # Auto-capture the lead
+        await lead_capture_service.auto_capture_whatsapp_phone(
+            db=db,
+            workspace_id=bot.workspace_id,
+            bot_id=bot.id,
+            bot_type=bot_type,
+            session_id=session_id,
+            phone=phone,
+            profile_name=profile_name,
+            consent_given=consent_given
+        )
 
     def _get_bot(self, db: Session, entity_id: UUID) -> Tuple[str, Any]:
         """Get bot by ID (chatbot or chatflow)."""
