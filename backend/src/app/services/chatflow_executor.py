@@ -267,6 +267,156 @@ class ResponseNodeExecutor(BaseNodeExecutor):
             }
 
 
+class KBNodeExecutor(BaseNodeExecutor):
+    """
+    Knowledge Base retrieval node executor.
+
+    WHY: Retrieve context from vector store
+    HOW: Delegate to KBNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.kb_node import KBNode
+            node = KBNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class VariableNodeExecutor(BaseNodeExecutor):
+    """
+    Variable manipulation node executor.
+
+    WHY: Set, transform, or extract variables
+    HOW: Delegate to VariableNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.variable_node import VariableNode
+            node = VariableNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class CodeNodeExecutor(BaseNodeExecutor):
+    """
+    Python code execution node executor.
+
+    WHY: Execute custom Python code safely
+    HOW: Delegate to CodeNode implementation (sandboxed)
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.code_node import CodeNode
+            node = CodeNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class MemoryNodeExecutor(BaseNodeExecutor):
+    """
+    Chat history/memory node executor.
+
+    WHY: Retrieve conversation history for context
+    HOW: Delegate to MemoryNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.memory_node import MemoryNode
+            node = MemoryNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class DatabaseNodeExecutor(BaseNodeExecutor):
+    """
+    SQL database query node executor.
+
+    WHY: Execute SQL queries against external databases
+    HOW: Delegate to DatabaseNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.database_node import DatabaseNode
+            node = DatabaseNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class LoopNodeExecutor(BaseNodeExecutor):
+    """
+    Array iteration loop node executor.
+
+    WHY: Iterate over arrays and execute sub-workflows
+    HOW: Delegate to LoopNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.loop_node import LoopNode
+            node = LoopNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
 class ChatflowExecutor:
     """
     Chatflow node executor registry.
@@ -283,11 +433,22 @@ class ChatflowExecutor:
         HOW: Dictionary of executors
         """
         self.executors = {
+            # Core flow nodes
             "trigger": TriggerNodeExecutor(),
-            "llm": LLMNodeExecutor(),
-            "http_request": HTTPRequestNodeExecutor(),
+            "response": ResponseNodeExecutor(),
             "condition": ConditionNodeExecutor(),
-            "response": ResponseNodeExecutor()
+            # AI & Knowledge nodes
+            "llm": LLMNodeExecutor(),
+            "kb": KBNodeExecutor(),
+            "memory": MemoryNodeExecutor(),
+            # Integration nodes
+            "http_request": HTTPRequestNodeExecutor(),
+            "http": HTTPRequestNodeExecutor(),  # Alias for frontend compatibility
+            "database": DatabaseNodeExecutor(),
+            # Data manipulation nodes
+            "variable": VariableNodeExecutor(),
+            "code": CodeNodeExecutor(),
+            "loop": LoopNodeExecutor(),
         }
 
     async def execute_node(

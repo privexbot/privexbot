@@ -2,25 +2,31 @@
  * ChatflowBuilder - Visual drag-and-drop workflow editor
  *
  * WHY:
- * - Complex multi-step chatbots
- * - Visual workflow design
- * - Branching logic and conditions
- * - API integrations
+ * - Complex multi-step chatbots with branching logic
+ * - Visual workflow design with drag-and-drop
+ * - Real-time auto-save and validation
  *
  * HOW:
- * - ReactFlow for visual editor
- * - Custom node types
- * - Graph validation
- * - Auto-save drafts
+ * - ReactFlow for visual canvas
+ * - Custom node components with handles
+ * - Sidebar for node palette and configuration
+ * - Consistent with dashboard design patterns
  *
- * DEPENDENCIES:
- * - reactflow
- * - react-hook-form
- * - zod
- * - @tanstack/react-query
+ * NODE TYPES (matching backend):
+ * - trigger: Start node (user message entry)
+ * - llm: AI text generation
+ * - kb: Knowledge base retrieval
+ * - condition: Branching logic
+ * - http: API calls
+ * - variable: Variable manipulation
+ * - code: Python code execution
+ * - memory: Chat history access
+ * - database: SQL queries
+ * - loop: Iteration over arrays
+ * - response: Final output
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -32,370 +38,1016 @@ import ReactFlow, {
   Edge,
   Node,
   NodeTypes,
-  Panel,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+  Handle,
+  Position,
+  BackgroundVariant,
+} from "reactflow";
+import "reactflow/dist/style.css";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Workflow,
-  Save,
   Play,
   AlertCircle,
-  Plus,
   Rocket,
   Sparkles,
   Database,
   GitBranch,
   Globe,
   Code,
-  MessageSquare,
-} from 'lucide-react';
+  ArrowLeft,
+  ChevronRight,
+  Settings,
+  Zap,
+  History,
+  Repeat,
+  MessageCircle,
+  X,
+  Check,
+  Loader2,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { useAutoSave } from '@/hooks/useAutoSave';
-import { useWorkspaceStore } from '@/store/workspace-store';
-import apiClient, { handleApiError } from '@/lib/api-client';
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { useApp } from "@/contexts/AppContext";
+import { cn } from "@/lib/utils";
+import { chatflowDraftApi } from "@/api/chatflow";
 
-// Custom Node Types
+// Node configuration panel for type-specific settings
+import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
+import { KBNodeConfig } from "@/components/chatflow/configs/KBNodeConfig";
+import { ConditionNodeConfig } from "@/components/chatflow/configs/ConditionNodeConfig";
+import { HTTPNodeConfig } from "@/components/chatflow/configs/HTTPNodeConfig";
+import { VariableNodeConfig } from "@/components/chatflow/configs/VariableNodeConfig";
+import { CodeNodeConfig } from "@/components/chatflow/configs/CodeNodeConfig";
+import { MemoryNodeConfig } from "@/components/chatflow/configs/MemoryNodeConfig";
+import { DatabaseNodeConfig } from "@/components/chatflow/configs/DatabaseNodeConfig";
+
+// ========================================
+// NODE COMPONENT DEFINITIONS
+// ========================================
+
+interface NodeData {
+  label: string;
+  config?: Record<string, unknown>;
+}
+
+// Base node wrapper with handles
+function BaseNode({
+  children,
+  className,
+  hasInput = true,
+  hasOutput = true,
+  selected,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  hasInput?: boolean;
+  hasOutput?: boolean;
+  selected?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative min-w-[160px] transition-all duration-200",
+        selected && "ring-2 ring-purple-500 ring-offset-2 ring-offset-gray-900",
+        className
+      )}
+    >
+      {hasInput && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-3 !h-3 !bg-gray-400 !border-2 !border-gray-600 hover:!bg-purple-500 transition-colors"
+        />
+      )}
+      {children}
+      {hasOutput && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-3 !h-3 !bg-gray-400 !border-2 !border-gray-600 hover:!bg-purple-500 transition-colors"
+        />
+      )}
+    </div>
+  );
+}
+
+// Trigger Node (Start)
+function TriggerNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode hasInput={false} selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg border border-emerald-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Zap className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Trigger</div>
+            <div className="text-xs opacity-80">{data.label || "User Message"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// LLM Node
+function LLMNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 text-white shadow-lg border border-purple-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">LLM</div>
+            <div className="text-xs opacity-80">{data.label || "AI Generation"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// KB Node
+function KBNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-lg border border-blue-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Database className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Knowledge Base</div>
+            <div className="text-xs opacity-80">{data.label || "Retrieve Context"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Condition Node (with two outputs)
+function ConditionNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "relative min-w-[160px] transition-all duration-200",
+        selected && "ring-2 ring-purple-500 ring-offset-2 ring-offset-gray-900"
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!w-3 !h-3 !bg-gray-400 !border-2 !border-gray-600 hover:!bg-purple-500 transition-colors"
+      />
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg border border-amber-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <GitBranch className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Condition</div>
+            <div className="text-xs opacity-80">{data.label || "If/Else"}</div>
+          </div>
+        </div>
+      </div>
+      {/* True/False handles */}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="true"
+        style={{ left: "30%" }}
+        className="!w-3 !h-3 !bg-green-500 !border-2 !border-green-600"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="false"
+        style={{ left: "70%" }}
+        className="!w-3 !h-3 !bg-red-500 !border-2 !border-red-600"
+      />
+    </div>
+  );
+}
+
+// HTTP Node
+function HTTPNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg border border-green-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Globe className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">HTTP Request</div>
+            <div className="text-xs opacity-80">{data.label || "API Call"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Variable Node
+function VariableNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg border border-indigo-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Settings className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Variable</div>
+            <div className="text-xs opacity-80">{data.label || "Set Value"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Code Node
+function CodeNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 text-white shadow-lg border border-gray-500">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Code className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Code</div>
+            <div className="text-xs opacity-80">{data.label || "Python Script"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Memory Node
+function MemoryNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg border border-teal-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <History className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Memory</div>
+            <div className="text-xs opacity-80">{data.label || "Chat History"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Database Node
+function DatabaseNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 text-white shadow-lg border border-slate-500">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Database className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Database</div>
+            <div className="text-xs opacity-80">{data.label || "SQL Query"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Loop Node
+function LoopNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-lg border border-rose-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Repeat className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Loop</div>
+            <div className="text-xs opacity-80">{data.label || "Iterate Array"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Response Node
+function ResponseNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode hasOutput={false} selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg border border-red-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <MessageCircle className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Response</div>
+            <div className="text-xs opacity-80">{data.label || "Final Output"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Register all node types
 const nodeTypes: NodeTypes = {
+  trigger: TriggerNode,
   llm: LLMNode,
   kb: KBNode,
   condition: ConditionNode,
   http: HTTPNode,
   variable: VariableNode,
   code: CodeNode,
+  memory: MemoryNode,
+  database: DatabaseNode,
+  loop: LoopNode,
   response: ResponseNode,
 };
 
-// Node Components
-function LLMNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white border-2 border-purple-600">
-      <div className="flex items-center gap-2">
-        <Sparkles className="w-4 h-4" />
-        <div className="font-bold">LLM</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'AI Generation'}</div>
-    </div>
-  );
-}
+// ========================================
+// NODE PALETTE DEFINITION
+// ========================================
 
-function KBNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white border-2 border-blue-600">
-      <div className="flex items-center gap-2">
-        <Database className="w-4 h-4" />
-        <div className="font-bold">Knowledge Base</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'Retrieve Context'}</div>
-    </div>
-  );
-}
+const NODE_CATEGORIES = [
+  {
+    title: "Flow Control",
+    nodes: [
+      { type: "trigger", label: "Trigger", icon: Zap, color: "from-emerald-500 to-green-600", description: "Start of the workflow" },
+      { type: "condition", label: "Condition", icon: GitBranch, color: "from-amber-500 to-orange-600", description: "Branching logic" },
+      { type: "loop", label: "Loop", icon: Repeat, color: "from-rose-500 to-pink-600", description: "Iterate over arrays" },
+      { type: "response", label: "Response", icon: MessageCircle, color: "from-red-500 to-rose-600", description: "Final output" },
+    ],
+  },
+  {
+    title: "AI & Knowledge",
+    nodes: [
+      { type: "llm", label: "LLM", icon: Sparkles, color: "from-purple-500 to-pink-600", description: "AI text generation" },
+      { type: "kb", label: "Knowledge Base", icon: Database, color: "from-blue-500 to-cyan-600", description: "RAG retrieval" },
+      { type: "memory", label: "Memory", icon: History, color: "from-teal-500 to-cyan-600", description: "Chat history" },
+    ],
+  },
+  {
+    title: "Data & Integration",
+    nodes: [
+      { type: "http", label: "HTTP Request", icon: Globe, color: "from-green-500 to-emerald-600", description: "External API calls" },
+      { type: "variable", label: "Variable", icon: Settings, color: "from-indigo-500 to-violet-600", description: "Set/transform data" },
+      { type: "code", label: "Code", icon: Code, color: "from-gray-700 to-gray-900", description: "Python scripts" },
+      { type: "database", label: "Database", icon: Database, color: "from-slate-600 to-slate-800", description: "SQL queries" },
+    ],
+  },
+];
 
-function ConditionNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-yellow-500 to-orange-500 text-white border-2 border-yellow-600">
-      <div className="flex items-center gap-2">
-        <GitBranch className="w-4 h-4" />
-        <div className="font-bold">Condition</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'If/Else'}</div>
-    </div>
-  );
-}
-
-function HTTPNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 text-white border-2 border-green-600">
-      <div className="flex items-center gap-2">
-        <Globe className="w-4 h-4" />
-        <div className="font-bold">HTTP Request</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'API Call'}</div>
-    </div>
-  );
-}
-
-function VariableNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-2 border-indigo-600">
-      <div className="flex items-center gap-2">
-        <Code className="w-4 h-4" />
-        <div className="font-bold">Variable</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'Set Value'}</div>
-    </div>
-  );
-}
-
-function CodeNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-gray-700 to-gray-900 text-white border-2 border-gray-600">
-      <div className="flex items-center gap-2">
-        <Code className="w-4 h-4" />
-        <div className="font-bold">Code</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'Execute Python'}</div>
-    </div>
-  );
-}
-
-function ResponseNode({ data }: { data: any }) {
-  return (
-    <div className="px-4 py-2 shadow-lg rounded-lg bg-gradient-to-r from-rose-500 to-red-500 text-white border-2 border-rose-600">
-      <div className="flex items-center gap-2">
-        <MessageSquare className="w-4 h-4" />
-        <div className="font-bold">Response</div>
-      </div>
-      <div className="text-xs mt-1 opacity-90">{data.label || 'Final Output'}</div>
-    </div>
-  );
-}
+// ========================================
+// MAIN COMPONENT
+// ========================================
 
 export default function ChatflowBuilder() {
   const { draftId } = useParams<{ draftId?: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace } = useApp();
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [flowName, setFlowName] = useState("Untitled Chatflow");
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  // Load or create draft
-  const { data: draft, isLoading } = useQuery({
-    queryKey: ['chatflow-draft', draftId],
-    queryFn: async () => {
-      if (draftId) {
-        const response = await apiClient.get(`/chatflows/drafts/${draftId}`);
-        return response.data;
-      } else {
-        const response = await apiClient.post('/chatflows/drafts', {
-          workspace_id: currentWorkspace?.id,
-          initial_data: {
-            name: 'Untitled Chatflow',
-            nodes: [],
-            edges: [],
-          },
-        });
-        navigate(`/chatflows/builder/${response.data.draft_id}`, { replace: true });
-        return response.data;
-      }
-    },
-    enabled: !!currentWorkspace,
+  // Load draft
+  const { data: draft, isLoading: isLoadingDraft } = useQuery({
+    queryKey: ["chatflow-draft", draftId],
+    queryFn: () => (draftId ? chatflowDraftApi.get(draftId) : null),
+    enabled: !!draftId,
   });
+
+  // Create draft if none exists
+  const createDraftMutation = useMutation({
+    mutationFn: chatflowDraftApi.create,
+    onSuccess: (data) => {
+      navigate(`/chatflows/builder/${data.draft_id}`, { replace: true });
+    },
+  });
+
+  // Create draft on mount if no draftId
+  useEffect(() => {
+    if (!draftId && currentWorkspace && !createDraftMutation.isPending) {
+      createDraftMutation.mutate({
+        workspace_id: currentWorkspace.id,
+        initial_data: {
+          name: "Untitled Chatflow",
+          nodes: [
+            {
+              id: "trigger_1",
+              type: "trigger",
+              position: { x: 250, y: 50 },
+              data: { label: "User Message" },
+            },
+          ],
+          edges: [],
+        },
+      });
+    }
+  }, [draftId, currentWorkspace]);
 
   // Load nodes and edges from draft
   useEffect(() => {
-    if (draft?.data?.nodes) {
-      setNodes(draft.data.nodes);
-      setEdges(draft.data.edges || []);
+    if (draft?.data) {
+      setFlowName(draft.data.name || "Untitled Chatflow");
+      if (draft.data.nodes) {
+        // Cast draft nodes to ReactFlow Node type
+        setNodes(draft.data.nodes as Node[]);
+      }
+      if (draft.data.edges) {
+        // Cast draft edges to ReactFlow Edge type
+        setEdges(draft.data.edges as Edge[]);
+      }
     }
   }, [draft, setNodes, setEdges]);
 
-  // Auto-save
-  const { save, isSaving, lastSaved } = useAutoSave({
-    draftId: draftId || '',
-    draftType: 'chatflow',
-    endpoint: '/chatflows/drafts',
+  // Auto-save mutation
+  const saveMutation = useMutation({
+    mutationFn: (data: { nodes: Node[]; edges: Edge[]; name: string }) =>
+      chatflowDraftApi.update(draftId!, {
+        nodes: data.nodes,
+        edges: data.edges,
+        name: data.name,
+      }),
+    onSuccess: () => {
+      setLastSaved(new Date());
+      setIsSaving(false);
+    },
+    onError: () => {
+      setIsSaving(false);
+    },
   });
 
-  // Save nodes and edges on change
+  // Auto-save on changes
   useEffect(() => {
-    if (draftId && nodes.length > 0) {
-      save({ nodes, edges });
-    }
-  }, [nodes, edges, draftId, save]);
+    if (!draftId || nodes.length === 0) return;
+
+    const timeoutId = setTimeout(() => {
+      setIsSaving(true);
+      saveMutation.mutate({ nodes, edges, name: flowName });
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [nodes, edges, flowName, draftId]);
 
   // Add edge handler
   const onConnect = useCallback(
     (connection: Connection) => {
-      setEdges((eds) => addEdge(connection, eds));
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            animated: true,
+            style: { stroke: "#9333ea", strokeWidth: 2 },
+          },
+          eds
+        )
+      );
     },
     [setEdges]
   );
 
   // Add node handler
-  const addNode = (type: string) => {
-    const newNode: Node = {
-      id: `${type}_${Date.now()}`,
-      type,
-      position: { x: Math.random() * 400, y: Math.random() * 400 },
-      data: { label: `New ${type}` },
-    };
-    setNodes((nds) => [...nds, newNode]);
-  };
+  const addNode = useCallback(
+    (type: string, label: string) => {
+      const newNode: Node = {
+        id: `${type}_${Date.now()}`,
+        type,
+        position: {
+          x: 250 + Math.random() * 100,
+          y: 150 + nodes.length * 100,
+        },
+        data: { label },
+      };
+      setNodes((nds) => [...nds, newNode]);
+    },
+    [nodes.length, setNodes]
+  );
 
-  // Validate graph
-  const validateMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiClient.post(`/chatflows/drafts/${draftId}/validate`, {
-        nodes,
-        edges,
-      });
-      return response.data;
-    },
-    onSuccess: (data) => {
-      if (data.is_valid) {
-        toast({ title: 'Chatflow is valid!', description: 'Ready to deploy' });
-        setValidationErrors([]);
-      } else {
-        toast({
-          title: 'Validation errors found',
-          description: `${data.errors.length} issues detected`,
-          variant: 'destructive',
-        });
-        setValidationErrors(data.errors);
-      }
-    },
-  });
+  // Node selection handler
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNode(node);
+  }, []);
 
-  // Finalize (deploy)
-  const finalizeMutation = useMutation({
-    mutationFn: async (deploymentConfig: any) => {
-      const response = await apiClient.post(`/chatflows/drafts/${draftId}/finalize`, deploymentConfig);
-      return response.data;
+  // Handler for node config changes - updates node.data.config
+  const handleNodeConfigChange = useCallback(
+    (newConfig: Record<string, unknown>) => {
+      if (!selectedNode) return;
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === selectedNode.id
+            ? { ...n, data: { ...n.data, config: newConfig } }
+            : n
+        )
+      );
+      // Update selectedNode to keep it in sync
+      setSelectedNode((prev) =>
+        prev ? { ...prev, data: { ...prev.data, config: newConfig } } : null
+      );
     },
-    onSuccess: (data) => {
+    [selectedNode, setNodes]
+  );
+
+  // Render node-specific configuration panel
+  const renderNodeConfig = useCallback(() => {
+    if (!selectedNode) return null;
+    const config = (selectedNode.data?.config || {}) as Record<string, unknown>;
+
+    switch (selectedNode.type) {
+      case "llm":
+        return <LLMNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "kb":
+        return <KBNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "condition":
+        return <ConditionNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "http":
+        return <HTTPNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "variable":
+        return <VariableNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "code":
+        return <CodeNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "memory":
+        return <MemoryNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "database":
+        return <DatabaseNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "trigger":
+        return (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              The trigger node starts the chatflow when a message is received.
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              No additional configuration required.
+            </p>
+          </div>
+        );
+      case "response":
+        return (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              The response node sends the final message back to the user.
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Uses the output from the previous node as the response.
+            </p>
+          </div>
+        );
+      case "loop":
+        return (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              The loop node iterates over an array and processes each item.
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Configuration coming soon.
+            </p>
+          </div>
+        );
+      default:
+        return (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No configuration available for this node type.
+          </p>
+        );
+    }
+  }, [selectedNode, handleNodeConfigChange]);
+
+  // Deploy mutation
+  const deployMutation = useMutation({
+    mutationFn: () => chatflowDraftApi.finalize(draftId!, { channels: ["website"] }),
+    onSuccess: () => {
       toast({
-        title: 'Chatflow deployed!',
-        description: `Chatflow ID: ${data.chatflow_id}`,
+        title: "Chatflow Deployed!",
+        description: "Your chatflow is now live.",
       });
-      navigate(`/chatflows/${data.chatflow_id}`);
+      navigate("/studio");
     },
     onError: (error) => {
       toast({
-        title: 'Deployment failed',
-        description: handleApiError(error),
-        variant: 'destructive',
+        title: "Deployment Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
       });
     },
   });
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  // Validate workflow
+  const validateWorkflow = useCallback(() => {
+    const errors: string[] = [];
+
+    // Check for trigger node
+    const hasTrigger = nodes.some((n) => n.type === "trigger");
+    if (!hasTrigger) {
+      errors.push("Workflow must have a Trigger node");
+    }
+
+    // Check for response node
+    const hasResponse = nodes.some((n) => n.type === "response");
+    if (!hasResponse) {
+      errors.push("Workflow must have a Response node");
+    }
+
+    // Check for disconnected nodes
+    const connectedNodeIds = new Set<string>();
+    edges.forEach((e) => {
+      connectedNodeIds.add(e.source);
+      connectedNodeIds.add(e.target);
+    });
+    const disconnected = nodes.filter(
+      (n) => n.type !== "trigger" && !connectedNodeIds.has(n.id)
+    );
+    if (disconnected.length > 0) {
+      errors.push(`${disconnected.length} node(s) are not connected`);
+    }
+
+    setValidationErrors(errors);
+    return errors.length === 0;
+  }, [nodes, edges]);
+
+  // Loading state
+  if (isLoadingDraft || createDraftMutation.isPending) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            <p className="text-gray-600 dark:text-gray-400">Loading workflow...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header */}
-      <div className="border-b bg-background p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Workflow className="w-6 h-6 text-primary" />
-          <div>
-            <h1 className="text-xl font-bold">{draft?.data?.name || 'Untitled Chatflow'}</h1>
-            <p className="text-sm text-muted-foreground">
-              {isSaving ? (
-                <span className="flex items-center gap-1">
-                  <Save className="w-3 h-3 animate-pulse" />
-                  Saving...
-                </span>
-              ) : lastSaved ? (
-                `Saved ${new Date(lastSaved).toLocaleTimeString()}`
-              ) : (
-                'Auto-save enabled'
+    <DashboardLayout>
+      <div className="flex h-[calc(100vh-4rem)] bg-gray-50 dark:bg-gray-900">
+        {/* Left Sidebar - Node Palette */}
+        <AnimatePresence>
+          {isSidebarOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 280, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              className="border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden"
+            >
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="font-semibold text-gray-900 dark:text-gray-100">
+                  Node Palette
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Drag nodes to the canvas
+                </p>
+              </div>
+              <ScrollArea className="h-[calc(100%-80px)]">
+                <div className="p-4 space-y-6">
+                  {NODE_CATEGORIES.map((category) => (
+                    <div key={category.title}>
+                      <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                        {category.title}
+                      </h3>
+                      <div className="space-y-2">
+                        {category.nodes.map((node) => {
+                          const Icon = node.icon;
+                          return (
+                            <button
+                              key={node.type}
+                              onClick={() => addNode(node.type, node.label)}
+                              className="w-full p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={cn(
+                                    "p-2 rounded-lg bg-gradient-to-br text-white",
+                                    node.color
+                                  )}
+                                >
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                    {node.label}
+                                  </p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    {node.description}
+                                  </p>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Main Canvas Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Header */}
+          <div className="h-14 px-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/studio")}
+                className="text-gray-600 dark:text-gray-400"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+              <Separator orientation="vertical" className="h-6" />
+              <div className="flex items-center gap-2">
+                <Workflow className="w-5 h-5 text-purple-600" />
+                <Input
+                  value={flowName}
+                  onChange={(e) => setFlowName(e.target.value)}
+                  className="h-8 w-48 bg-transparent border-none focus:ring-1 focus:ring-purple-500 font-medium"
+                />
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : lastSaved ? (
+                  <>
+                    <Check className="w-3 h-3 text-green-500" />
+                    <span>Saved {lastSaved.toLocaleTimeString()}</span>
+                  </>
+                ) : (
+                  <span>Auto-save enabled</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {validationErrors.length > 0 && (
+                <Badge variant="destructive" className="gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {validationErrors.length} issues
+                </Badge>
               )}
-            </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (validateWorkflow()) {
+                    toast({
+                      title: "Validation Passed",
+                      description: "Workflow is ready to deploy",
+                    });
+                  }
+                }}
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Validate
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => deployMutation.mutate()}
+                disabled={deployMutation.isPending}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {deployMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Rocket className="w-4 h-4 mr-2" />
+                )}
+                Deploy
+              </Button>
+            </div>
+          </div>
+
+          {/* Validation Errors Banner */}
+          <AnimatePresence>
+            {validationErrors.length > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 px-4 py-2"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                      Validation Errors:
+                    </p>
+                    <ul className="text-xs text-red-700 dark:text-red-300 mt-1 space-y-0.5">
+                      {validationErrors.map((error, i) => (
+                        <li key={i}>- {error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setValidationErrors([])}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ReactFlow Canvas */}
+          <div className="flex-1">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              nodeTypes={nodeTypes}
+              fitView
+              defaultEdgeOptions={{
+                animated: true,
+                style: { stroke: "#9333ea", strokeWidth: 2 },
+              }}
+              className="bg-gray-100 dark:bg-gray-900"
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={20}
+                size={1}
+                className="bg-gray-100 dark:bg-gray-900"
+              />
+              <Controls className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg" />
+              <MiniMap
+                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+                nodeColor={(node) => {
+                  switch (node.type) {
+                    case "trigger":
+                      return "#10b981";
+                    case "llm":
+                      return "#a855f7";
+                    case "kb":
+                      return "#3b82f6";
+                    case "condition":
+                      return "#f59e0b";
+                    case "response":
+                      return "#ef4444";
+                    default:
+                      return "#6b7280";
+                  }
+                }}
+              />
+            </ReactFlow>
+          </div>
+
+          {/* Stats Footer */}
+          <div className="h-10 px-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-4">
+              <span>Nodes: {nodes.length}</span>
+              <span>Edges: {edges.length}</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              >
+                {isSidebarOpen ? "Hide" : "Show"} Palette
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => validateMutation.mutate()}
-            disabled={validateMutation.isPending}
-          >
-            <Play className="w-4 h-4 mr-2" />
-            Validate
-          </Button>
+        {/* Right Sidebar - Node Configuration (Sheet) */}
+        <Sheet open={!!selectedNode} onOpenChange={() => setSelectedNode(null)}>
+          <SheetContent className="w-[400px] sm:w-[540px]">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                Configure Node
+              </SheetTitle>
+              <SheetDescription>
+                Configure the settings and behavior for this node.
+              </SheetDescription>
+            </SheetHeader>
+            {selectedNode && (
+              <ScrollArea className="h-[calc(100vh-10rem)]">
+                <div className="mt-6 space-y-4 pr-4">
+                  {/* Node Type Badge */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm font-medium">Node Type</Label>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 capitalize mt-1">
+                        {selectedNode.type}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="capitalize">
+                      {selectedNode.type}
+                    </Badge>
+                  </div>
 
-          <Button onClick={() => finalizeMutation.mutate({ channels: ['website'] })}>
-            <Rocket className="w-4 h-4 mr-2" />
-            Deploy
-          </Button>
-        </div>
+                  {/* Node Label */}
+                  <div>
+                    <Label className="text-sm font-medium">Label</Label>
+                    <Input
+                      value={selectedNode.data.label || ""}
+                      onChange={(e) => {
+                        const newLabel = e.target.value;
+                        setNodes((nds) =>
+                          nds.map((n) =>
+                            n.id === selectedNode.id
+                              ? { ...n, data: { ...n.data, label: newLabel } }
+                              : n
+                          )
+                        );
+                        setSelectedNode((prev) =>
+                          prev ? { ...prev, data: { ...prev.data, label: newLabel } } : null
+                        );
+                      }}
+                      className="mt-1.5"
+                      placeholder="Enter node label..."
+                    />
+                  </div>
+
+                  <Separator />
+
+                  {/* Node-specific Configuration */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium">Configuration</h4>
+                    {renderNodeConfig()}
+                  </div>
+
+                  <Separator />
+
+                  {/* Delete Node Button */}
+                  <div className="pt-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
+                        setEdges((eds) =>
+                          eds.filter(
+                            (e) =>
+                              e.source !== selectedNode.id &&
+                              e.target !== selectedNode.id
+                          )
+                        );
+                        setSelectedNode(null);
+                      }}
+                    >
+                      Delete Node
+                    </Button>
+                  </div>
+                </div>
+              </ScrollArea>
+            )}
+          </SheetContent>
+        </Sheet>
       </div>
-
-      {/* Validation Errors */}
-      {validationErrors.length > 0 && (
-        <div className="bg-destructive/10 border-b border-destructive p-3">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-destructive mt-0.5" />
-            <div>
-              <p className="font-medium text-destructive">Validation Errors:</p>
-              <ul className="text-sm text-destructive/90 mt-1 space-y-1">
-                {validationErrors.map((error, i) => (
-                  <li key={i}>• {error}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Canvas */}
-      <div className="flex-1 relative">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          fitView
-        >
-          <Background />
-          <Controls />
-          <MiniMap />
-
-          {/* Node Toolbar */}
-          <Panel position="top-left" className="bg-background border rounded-lg shadow-lg p-3">
-            <p className="text-xs font-medium mb-2">Add Nodes</p>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => addNode('llm')}>
-                <Sparkles className="w-3 h-3 mr-1" />
-                LLM
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => addNode('kb')}>
-                <Database className="w-3 h-3 mr-1" />
-                KB
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => addNode('condition')}>
-                <GitBranch className="w-3 h-3 mr-1" />
-                Condition
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => addNode('http')}>
-                <Globe className="w-3 h-3 mr-1" />
-                HTTP
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => addNode('code')}>
-                <Code className="w-3 h-3 mr-1" />
-                Code
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => addNode('response')}>
-                <MessageSquare className="w-3 h-3 mr-1" />
-                Response
-              </Button>
-            </div>
-          </Panel>
-
-          {/* Stats Panel */}
-          <Panel position="bottom-right" className="bg-background border rounded-lg shadow-lg p-3">
-            <div className="text-xs space-y-1">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Nodes:</span>
-                <span className="font-medium">{nodes.length}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Edges:</span>
-                <span className="font-medium">{edges.length}</span>
-              </div>
-            </div>
-          </Panel>
-        </ReactFlow>
-      </div>
-    </div>
+    </DashboardLayout>
   );
 }

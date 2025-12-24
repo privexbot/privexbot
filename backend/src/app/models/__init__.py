@@ -30,6 +30,9 @@ from app.models.kb_analytics import KBAnalyticsEvent
 # Chatbot models
 from app.models.chatbot import Chatbot, ChatbotStatus
 
+# Chatflow models (visual workflow builder)
+from app.models.chatflow import Chatflow
+
 # Chat session and message models
 from app.models.chat_session import ChatSession, SessionStatus, BotType
 from app.models.chat_message import ChatMessage, MessageRole, ContentType
@@ -45,9 +48,6 @@ from app.models.credential import Credential, CredentialType
 
 # Lead capture
 from app.models.lead import Lead, LeadStatus
-
-# NOTE: The following models are still pseudocode and not imported yet:
-# - Chatflow (chatflow.py is documentation only)
 
 __all__ = [
     # Core
@@ -71,6 +71,8 @@ __all__ = [
     # Chatbot
     "Chatbot",
     "ChatbotStatus",
+    # Chatflow
+    "Chatflow",
     # Chat Session/Message
     "ChatSession",
     "SessionStatus",

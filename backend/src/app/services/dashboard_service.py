@@ -24,8 +24,8 @@ from app.models.lead import Lead
 from app.models.knowledge_base import KnowledgeBase
 from app.models.chat_session import ChatSession
 
-# Note: Chatflow model is not yet implemented (pseudocode only)
-# Chatflow functionality will return 0 until the model is created
+# Chatflow model is now implemented
+from app.models.chatflow import Chatflow
 
 
 class DashboardService:
@@ -55,7 +55,7 @@ class DashboardService:
 
         # Current period counts
         total_chatbots = self._count_chatbots(workspace_id)
-        total_chatflows = 0  # Chatflow model not yet implemented
+        total_chatflows = self._count_chatflows(workspace_id)
         total_knowledge_bases = self._count_knowledge_bases(workspace_id)
         total_leads = self._count_leads(workspace_id)
         total_conversations = self._count_conversations(workspace_id)
@@ -92,7 +92,10 @@ class DashboardService:
             "total_conversations": total_conversations,
             "active_conversations": active_conversations,
             "chatbots_delta": self._calculate_delta(chatbots_new, chatbots_prev_new),
-            "chatflows_delta": 0.0,  # Chatflow model not yet implemented
+            "chatflows_delta": self._calculate_delta(
+                self._count_chatflows(workspace_id, after=current_start),
+                self._count_chatflows(workspace_id, after=previous_start, before=current_start)
+            ),
             "knowledge_bases_delta": self._calculate_delta(kbs_new, kbs_prev),
             "leads_delta": self._calculate_delta(leads_new, leads_prev_new),
             "conversations_delta": self._calculate_delta(
@@ -137,13 +140,33 @@ class DashboardService:
         workspace_id: UUID,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
-        """Get recent chatflows for the dashboard.
+        """Get recent chatflows for the dashboard."""
+        chatflows = (
+            self.db.query(Chatflow)
+            .filter(
+                Chatflow.workspace_id == workspace_id,
+                Chatflow.is_deleted == False
+            )
+            .order_by(Chatflow.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
 
-        Note: Chatflow model is not yet implemented (pseudocode only).
-        Returns empty list until the model is created.
-        """
-        # Chatflow model not yet implemented
-        return []
+        return [
+            {
+                "id": str(cf.id),
+                "name": cf.name,
+                "description": cf.description,
+                "status": "active" if cf.is_active else "inactive",
+                "nodes_count": len(cf.config.get("nodes", [])) if cf.config else 0,
+                "conversations_count": 0,  # TODO: Add when chat sessions support chatflows
+                "last_active_at": self._get_last_session_time(cf.id, "chatflow"),
+                "created_at": cf.created_at.isoformat() if cf.created_at else None,
+                "updated_at": cf.updated_at.isoformat() if cf.updated_at else None,
+                "deployed_at": cf.deployed_at.isoformat() if cf.deployed_at else None,
+            }
+            for cf in chatflows
+        ]
 
     def get_recent_knowledge_bases(
         self,
@@ -306,6 +329,23 @@ class DashboardService:
             query = query.filter(Chatbot.created_at >= after)
         if before:
             query = query.filter(Chatbot.created_at < before)
+        return query.scalar() or 0
+
+    def _count_chatflows(
+        self,
+        workspace_id: UUID,
+        after: Optional[datetime] = None,
+        before: Optional[datetime] = None
+    ) -> int:
+        """Count chatflows with optional date filters."""
+        query = self.db.query(func.count(Chatflow.id)).filter(
+            Chatflow.workspace_id == workspace_id,
+            Chatflow.is_deleted == False
+        )
+        if after:
+            query = query.filter(Chatflow.created_at >= after)
+        if before:
+            query = query.filter(Chatflow.created_at < before)
         return query.scalar() or 0
 
     def _count_knowledge_bases(

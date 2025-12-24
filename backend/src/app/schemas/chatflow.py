@@ -1,244 +1,118 @@
 """
-Pydantic schemas for Chatflow API requests and responses.
+Pydantic schemas for Chatflow API.
 
 WHY:
 - Validate chatflow creation/update data
-- Support advanced drag-and-drop workflow configuration
-- Separate from simple chatbot schemas
+- Support visual workflow builder (ReactFlow)
+- Match frontend ChatflowBuilder expectations
 
-IMPORTANT:
-- Chatflows are DIFFERENT from chatbots
-- Chatflow: Advanced visual workflow builder with ReactFlow
-- Chatbot: Simple form-based configuration
-
-PSEUDOCODE:
------------
-from pydantic import BaseModel, UUID4
+HOW:
+- CreateChatflowDraftRequest: Create new draft in Redis
+- UpdateChatflowDraftRequest: Auto-save updates from frontend
+- FinalizeChatflowRequest: Deploy draft to database
+- ChatflowResponse: Return deployed chatflow data
+"""
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from uuid import UUID
 from datetime import datetime
 
-# ReactFlow Node schema
-class ChatflowNode(BaseModel):
-    \"\"\"
-    WHY: Represent a single node in the workflow
-    HOW: Matches ReactFlow node structure
-    \"\"\"
-    id: str
-        WHY: Unique node identifier within the flow
 
-    type: str
-        WHY: Node type determines behavior
-        TYPES: 'llm', 'condition', 'api_call', 'memory', 'start', 'end', 'variable_set', 'loop'
+# =============================================================================
+# DRAFT PHASE SCHEMAS (Phase 1 - Redis operations)
+# =============================================================================
 
-    data: dict
-        WHY: Node-specific configuration
-        EXAMPLE for 'llm': {"model": "gpt-4", "temperature": 0.7, "prompt": "..."}
-        EXAMPLE for 'condition': {"condition": "variable > 10", "true": "node2", "false": "node3"}
-        EXAMPLE for 'api_call': {"url": "...", "method": "POST", "headers": {...}}
-
-    position: dict
-        WHY: Visual position in ReactFlow canvas
-        STRUCTURE: {"x": 100, "y": 200}
-
-# ReactFlow Edge schema
-class ChatflowEdge(BaseModel):
-    \"\"\"
-    WHY: Represent connections between nodes
-    HOW: Defines workflow execution path
-    \"\"\"
-    id: str
-        WHY: Unique edge identifier
-
-    source: str
-        WHY: Source node ID
-
-    target: str
-        WHY: Target node ID
-
-    condition: str | None
-        WHY: Conditional edge (for branching)
-        EXAMPLE: "true", "false", "error"
-
-# Chatflow Configuration
-class ChatflowConfig(BaseModel):
-    \"\"\"
-    WHY: Complete chatflow workflow configuration
-    HOW: Stores all nodes, edges, variables, and settings
-    \"\"\"
-    nodes: list[ChatflowNode]
-        WHY: All workflow nodes
-        EXAMPLE: [LLM node, condition node, API call node, etc.]
-
-    edges: list[ChatflowEdge]
-        WHY: All connections between nodes
-        EXAMPLE: Flow from start -> LLM -> condition -> end
-
-    variables: dict[str, any] = {}
-        WHY: Workflow-level variables
-        EXAMPLE: {"user_name": "", "ticket_id": "", "priority": "normal"}
-
-    settings: dict | None = {}
-        WHY: Global workflow settings
-        EXAMPLE: {
-            "enable_logging": true,
-            "max_iterations": 10,
-            "timeout_seconds": 30
+class CreateChatflowDraftRequest(BaseModel):
+    """Request to create a new chatflow draft in Redis."""
+    workspace_id: UUID
+    initial_data: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "name": "Untitled Chatflow",
+            "nodes": [],
+            "edges": [],
+            "variables": {},
+            "settings": {}
         }
+    )
 
-# Create Chatflow Request
-class ChatflowCreate(BaseModel):
-    \"\"\"
-    WHY: Validate chatflow creation
-    HOW: Used in POST /chatflows
-    \"\"\"
-    name: str (min_length=1, max_length=100)
-        WHY: Chatflow display name
 
-    workspace_id: UUID4
-        WHY: REQUIRED - determines tenant ownership
-        SECURITY: Must verify user has access to this workspace
+class UpdateChatflowDraftRequest(BaseModel):
+    """Request to update chatflow draft (auto-save from frontend)."""
+    nodes: Optional[List[Dict[str, Any]]] = None
+    edges: Optional[List[Dict[str, Any]]] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    variables: Optional[Dict[str, Any]] = None
+    settings: Optional[Dict[str, Any]] = None
 
-    config: ChatflowConfig
-        WHY: Complete workflow definition
 
-    version: int = 1
-        WHY: Initial version number
+class FinalizeChatflowRequest(BaseModel):
+    """Request to deploy chatflow from draft to database."""
+    channels: List[str] = Field(default=["website"])
 
-    is_active: bool = True
-        WHY: Deploy immediately or save as draft
 
-# Update Chatflow Request
-class ChatflowUpdate(BaseModel):
-    \"\"\"
-    WHY: Partial updates allowed
-    HOW: All fields optional
-    \"\"\"
-    name: str | None
-    config: ChatflowConfig | None
-    version: int | None
-        WHY: Increment when making breaking changes
-    is_active: bool | None
+# =============================================================================
+# DEPLOYED CHATFLOW SCHEMAS (Phase 3 - Database operations)
+# =============================================================================
 
-# Chatflow Response
 class ChatflowResponse(BaseModel):
-    \"\"\"
-    WHY: Return chatflow data
-    HOW: Includes workspace/org context
-    \"\"\"
-    id: UUID4
+    """Response schema for deployed chatflow."""
+    id: UUID
     name: str
-    workspace_id: UUID4
-    workspace_name: str
-    organization_id: UUID4
-    config: ChatflowConfig
+    description: Optional[str] = None
+    workspace_id: UUID
+    config: Dict[str, Any]
     version: int
     is_active: bool
-    created_by: UUID4 | None
     created_at: datetime
     updated_at: datetime
+    deployed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
-# Chatflow List Response
-class ChatflowListResponse(BaseModel):
-    \"\"\"
-    WHY: Paginated list of chatflows
-    \"\"\"
-    chatflows: list[ChatflowResponse]
-    total: int
-    page: int
-    page_size: int
 
-# Chatflow Summary (lightweight)
 class ChatflowSummary(BaseModel):
-    \"\"\"
-    WHY: Quick overview for lists/dropdowns
-    \"\"\"
-    id: UUID4
+    """Lightweight chatflow summary for lists."""
+    id: str
     name: str
-    workspace_id: UUID4
-    version: int
+    description: Optional[str] = None
     is_active: bool
     node_count: int
-        WHY: Show complexity (number of nodes in workflow)
+    created_at: Optional[str] = None
 
-NODE TYPE REFERENCE:
---------------------
-'start': Entry point of workflow
-'end': Exit point of workflow
-'llm': AI model interaction (GPT-4, Claude, etc.)
-'condition': Branching logic (if/else)
-'api_call': External API integration
-'memory': Conversation memory management
-'variable_set': Set/update workflow variables
-'loop': Iterate over data
-'human_input': Wait for human intervention
-'webhook': Trigger external webhooks
 
-USAGE EXAMPLES:
----------------
-# Create chatflow
-POST /api/v1/chatflows
-{
-    "name": "Customer Support Workflow",
-    "workspace_id": "uuid",
-    "config": {
-        "nodes": [
-            {
-                "id": "start",
-                "type": "start",
-                "data": {},
-                "position": {"x": 0, "y": 0}
-            },
-            {
-                "id": "llm1",
-                "type": "llm",
-                "data": {
-                    "model": "gpt-4",
-                    "temperature": 0.7,
-                    "prompt": "You are a customer support assistant..."
-                },
-                "position": {"x": 200, "y": 0}
-            },
-            {
-                "id": "condition1",
-                "type": "condition",
-                "data": {
-                    "condition": "intent == 'urgent'",
-                    "true": "escalate",
-                    "false": "respond"
-                },
-                "position": {"x": 400, "y": 0}
-            }
-        ],
-        "edges": [
-            {"id": "e1", "source": "start", "target": "llm1"},
-            {"id": "e2", "source": "llm1", "target": "condition1"}
-        ],
-        "variables": {
-            "intent": "",
-            "user_id": "",
-            "ticket_id": ""
-        }
-    }
-}
+class ChatflowListResponse(BaseModel):
+    """Paginated list of chatflows."""
+    items: List[ChatflowSummary]
+    total: int
+    skip: int
+    limit: int
 
-CHATFLOW vs CHATBOT COMPARISON:
---------------------------------
-Feature          | Chatbot Schema              | Chatflow Schema
------------------|-----------------------------|--------------------------
-Config Type      | SimpleChatbotConfig         | ChatflowConfig
-Structure        | Flat settings               | Nodes + Edges
-Complexity       | Simple (few fields)         | Complex (workflow graph)
-UI Builder       | Form inputs                 | ReactFlow canvas
-Validation       | Basic field validation      | Graph validation (cycles, etc.)
-API Endpoints    | /chatbots                   | /chatflows
-Model/Table      | chatbots                    | chatflows
 
-WHY SEPARATE SCHEMAS:
-- Different validation rules
-- Different structure (flat vs graph)
-- Different API endpoints
-- Cleaner code organization
-- Type safety for both formats
-"""
+# =============================================================================
+# DRAFT RESPONSE SCHEMAS
+# =============================================================================
+
+class DraftCreatedResponse(BaseModel):
+    """Response when draft is created."""
+    draft_id: str
+    expires_at: str
+
+
+class DraftUpdatedResponse(BaseModel):
+    """Response when draft is updated."""
+    status: str = "updated"
+    draft_id: str
+
+
+class ChatflowDeployedResponse(BaseModel):
+    """Response when chatflow is deployed."""
+    status: str = "deployed"
+    chatflow_id: str
+
+
+class ChatflowDeletedResponse(BaseModel):
+    """Response when chatflow is deleted."""
+    status: str = "deleted"
+    chatflow_id: str
