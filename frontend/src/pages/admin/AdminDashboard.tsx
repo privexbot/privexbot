@@ -33,22 +33,19 @@ interface StatCardProps {
   value: number;
   icon: React.ElementType;
   color: string;
-  bgColor: string;
 }
 
-function StatCard({ label, value, icon: Icon, color, bgColor }: StatCardProps) {
+function StatCard({ label, value, icon: Icon, color }: StatCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+          <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">{label}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1 font-manrope">
             {value.toLocaleString()}
           </p>
         </div>
-        <div className={cn("p-3 rounded-lg", bgColor)}>
-          <Icon className={cn("h-6 w-6", color)} />
-        </div>
+        <Icon className={cn("h-6 w-6 flex-shrink-0", color)} />
       </div>
     </div>
   );
@@ -157,20 +154,21 @@ export function AdminDashboard() {
   if (!stats) return null;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="p-6 max-w-7xl mx-auto space-y-8">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 font-manrope">
           Backoffice Dashboard
         </h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-gray-600 dark:text-gray-400 mt-1 font-manrope">
           System-wide statistics and overview
         </p>
       </div>
 
       {/* Total Counts */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 font-manrope">
           Platform Totals
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -178,50 +176,44 @@ export function AdminDashboard() {
             label="Total Users"
             value={stats.total_users}
             icon={Users}
-            color="text-blue-600"
-            bgColor="bg-blue-100 dark:bg-blue-900/30"
+            color="text-blue-600 dark:text-blue-400"
           />
           <StatCard
             label="Organizations"
             value={stats.total_organizations}
             icon={Building2}
-            color="text-purple-600"
-            bgColor="bg-purple-100 dark:bg-purple-900/30"
+            color="text-purple-600 dark:text-purple-400"
           />
           <StatCard
             label="Workspaces"
             value={stats.total_workspaces}
             icon={Layers}
-            color="text-indigo-600"
-            bgColor="bg-indigo-100 dark:bg-indigo-900/30"
+            color="text-indigo-600 dark:text-indigo-400"
           />
           <StatCard
             label="Chatbots"
             value={stats.total_chatbots}
             icon={Bot}
-            color="text-green-600"
-            bgColor="bg-green-100 dark:bg-green-900/30"
+            color="text-green-600 dark:text-green-400"
           />
           <StatCard
             label="Chatflows"
             value={stats.total_chatflows}
             icon={Workflow}
-            color="text-orange-600"
-            bgColor="bg-orange-100 dark:bg-orange-900/30"
+            color="text-orange-600 dark:text-orange-400"
           />
           <StatCard
             label="Knowledge Bases"
             value={stats.total_knowledge_bases}
             icon={BookOpen}
-            color="text-cyan-600"
-            bgColor="bg-cyan-100 dark:bg-cyan-900/30"
+            color="text-cyan-600 dark:text-cyan-400"
           />
         </div>
       </div>
 
       {/* Activity Stats */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 font-manrope">
           Recent Activity
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -229,46 +221,42 @@ export function AdminDashboard() {
             label="Active Users (7d)"
             value={stats.active_users_7d}
             icon={TrendingUp}
-            color="text-emerald-600"
-            bgColor="bg-emerald-100 dark:bg-emerald-900/30"
+            color="text-emerald-600 dark:text-emerald-400"
           />
           <StatCard
             label="New Users (7d)"
             value={stats.new_users_7d}
             icon={UserPlus}
-            color="text-teal-600"
-            bgColor="bg-teal-100 dark:bg-teal-900/30"
+            color="text-teal-600 dark:text-teal-400"
           />
           <StatCard
             label="New Users (30d)"
             value={stats.new_users_30d}
             icon={UserPlus}
-            color="text-sky-600"
-            bgColor="bg-sky-100 dark:bg-sky-900/30"
+            color="text-sky-600 dark:text-sky-400"
           />
           <StatCard
             label="New Orgs (7d)"
             value={stats.new_organizations_7d}
             icon={Building2}
-            color="text-violet-600"
-            bgColor="bg-violet-100 dark:bg-violet-900/30"
+            color="text-violet-600 dark:text-violet-400"
           />
         </div>
       </div>
 
       {/* Quick Links */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 font-manrope">
           Quick Actions
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Link
             to="/admin/users"
-            className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary/50 transition-all group"
+            className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary/50 transition-all group"
           >
             <div className="flex items-center gap-3">
-              <Users className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-              <span className="font-medium text-gray-900 dark:text-white">
+              <Users className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
                 Search Users
               </span>
             </div>
@@ -276,11 +264,11 @@ export function AdminDashboard() {
           </Link>
           <Link
             to="/admin/organizations"
-            className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary/50 transition-all group"
+            className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary/50 transition-all group"
           >
             <div className="flex items-center gap-3">
-              <Building2 className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-              <span className="font-medium text-gray-900 dark:text-white">
+              <Building2 className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
                 Browse Organizations
               </span>
             </div>
@@ -293,17 +281,17 @@ export function AdminDashboard() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
               Beta Invite Codes
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
               Generate and manage invite codes for beta testers
             </p>
           </div>
           <button
             onClick={generateCode}
             disabled={isGenerating}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-colors font-manrope"
           >
             {isGenerating ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -315,12 +303,12 @@ export function AdminDashboard() {
         </div>
 
         {codeError && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm font-manrope">
             {codeError}
           </div>
         )}
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           {isLoadingCodes ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -328,8 +316,8 @@ export function AdminDashboard() {
           ) : inviteCodes.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <KeyRound className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-2" />
-              <p className="text-gray-500 dark:text-gray-400">No invite codes yet</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500">
+              <p className="text-gray-600 dark:text-gray-400 font-manrope">No invite codes yet</p>
+              <p className="text-sm text-gray-500 dark:text-gray-500 font-manrope">
                 Generate a code to invite beta testers
               </p>
             </div>
@@ -337,16 +325,16 @@ export function AdminDashboard() {
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider font-manrope">
                     Code
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider font-manrope">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider font-manrope">
                     Expires
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider font-manrope">
                     Actions
                   </th>
                 </tr>
@@ -355,22 +343,22 @@ export function AdminDashboard() {
                 {inviteCodes.map((code) => (
                   <tr key={code.code} className="hover:bg-gray-50 dark:hover:bg-gray-900/30">
                     <td className="px-4 py-3">
-                      <span className="font-mono font-medium text-gray-900 dark:text-white">
+                      <span className="font-mono font-medium text-gray-900 dark:text-gray-100">
                         {code.code}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       {code.is_redeemed ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-manrope">
                           Redeemed
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-manrope">
                           Available
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 font-manrope">
                       {new Date(code.expires_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -403,6 +391,7 @@ export function AdminDashboard() {
             </table>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

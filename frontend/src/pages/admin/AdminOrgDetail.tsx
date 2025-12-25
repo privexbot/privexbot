@@ -52,10 +52,10 @@ export function AdminOrgDetail() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading organization...</p>
+          <p className="text-sm text-muted-foreground font-manrope">Loading organization...</p>
         </div>
       </div>
     );
@@ -63,18 +63,20 @@ export function AdminOrgDetail() {
 
   if (error || !org) {
     return (
-      <div className="p-6">
-        <Link
-          to="/admin/organizations"
-          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-6"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Organizations
-        </Link>
-        <div className="flex items-center justify-center min-h-[300px]">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <AlertCircle className="h-10 w-10 text-destructive" />
-            <p className="text-sm text-destructive">{error || "Organization not found"}</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="p-6">
+          <Link
+            to="/admin/organizations"
+            className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-6 font-manrope"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Organizations
+          </Link>
+          <div className="flex items-center justify-center min-h-[300px]">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <AlertCircle className="h-10 w-10 text-destructive" />
+              <p className="text-sm text-destructive font-manrope">{error || "Organization not found"}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -82,26 +84,25 @@ export function AdminOrgDetail() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="p-6 max-w-7xl mx-auto space-y-8">
       {/* Back Link */}
       <Link
         to="/admin/organizations"
-        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-6"
+        className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 font-manrope"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Organizations
       </Link>
 
       {/* Header */}
-      <div className="flex items-start gap-4 mb-8">
-        <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-          <Building2 className="h-8 w-8 text-purple-600" />
-        </div>
+      <div className="flex items-start gap-4">
+        <Building2 className="h-8 w-8 text-purple-600 dark:text-purple-400 flex-shrink-0" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 font-manrope">
             {org.name}
           </h1>
-          <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-600 dark:text-gray-400 font-manrope">
             {org.billing_email && (
               <span className="flex items-center gap-1">
                 <Mail className="h-4 w-4" />
@@ -117,7 +118,7 @@ export function AdminOrgDetail() {
             {org.subscription_tier && (
               <span
                 className={cn(
-                  "px-2 py-0.5 rounded-full text-xs font-medium",
+                  "px-2 py-0.5 rounded-full text-xs font-medium font-manrope",
                   org.subscription_tier === "pro"
                     ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                     : org.subscription_tier === "enterprise"
@@ -134,13 +135,13 @@ export function AdminOrgDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Workspaces */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Layers className="h-5 w-5 text-indigo-600" />
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2 font-manrope">
+            <Layers className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
             Workspaces ({org.workspaces.length})
           </h2>
           {org.workspaces.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">No workspaces</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">No workspaces</p>
           ) : (
             <div className="space-y-3">
               {org.workspaces.map((ws) => (
@@ -149,14 +150,14 @@ export function AdminOrgDetail() {
                   className="p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium text-gray-900 dark:text-white">
+                    <h3 className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
                       {ws.name}
                       {ws.is_default && (
-                        <span className="ml-2 text-xs text-gray-500">(default)</span>
+                        <span className="ml-2 text-xs text-gray-500 font-manrope">(default)</span>
                       )}
                     </h3>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400 font-manrope">
                     <span className="flex items-center gap-1">
                       <Bot className="h-3 w-3" />
                       {ws.chatbot_count} chatbots
@@ -177,13 +178,13 @@ export function AdminOrgDetail() {
         </div>
 
         {/* Members */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Users className="h-5 w-5 text-blue-600" />
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2 font-manrope">
+            <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             Members ({org.members.length})
           </h2>
           {org.members.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">No members</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">No members</p>
           ) : (
             <div className="space-y-3">
               {org.members.map((member) => (
@@ -194,19 +195,19 @@ export function AdminOrgDetail() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="h-8 w-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-300 font-manrope">
                         {member.username[0].toUpperCase()}
                       </span>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-white">
+                      <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
                         {member.username}
                       </p>
-                      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 font-manrope">
                         <span
                           className={cn(
                             "flex items-center gap-1",
-                            member.role === "owner" && "text-amber-600"
+                            member.role === "owner" && "text-amber-600 dark:text-amber-400"
                           )}
                         >
                           <Shield className="h-3 w-3" />
@@ -223,6 +224,7 @@ export function AdminOrgDetail() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
