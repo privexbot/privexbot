@@ -333,3 +333,34 @@ async def get_current_workspace(
         )
 
     return workspace
+
+
+async def get_staff_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Require staff access for admin/backoffice routes.
+
+    WHY: Protect admin routes from non-staff users
+    HOW: Check is_staff flag on user, reject if not staff
+
+    Args:
+        current_user: Authenticated user from get_current_user
+
+    Returns:
+        User object if user is staff
+
+    Raises:
+        HTTPException(403): If user is not staff
+
+    Usage:
+        @router.get("/admin/users")
+        def list_all_users(staff: User = Depends(get_staff_user)):
+            # Only staff can access this endpoint
+    """
+    if not current_user.is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff access required"
+        )
+    return current_user

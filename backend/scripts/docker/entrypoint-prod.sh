@@ -551,6 +551,18 @@ else
     echo "⚠️  Could not determine data update status - continuing with startup"
 fi
 
+# Step: Run initial staff setup script
+echo ""
+echo "👥 Running initial staff setup..."
+# Run from /app (where scripts/ is located)
+cd /app
+python scripts/set_initial_staff.py && echo "✅ Initial staff setup completed" || {
+    echo "⚠️  Initial staff setup had issues (non-blocking, continuing...)"
+    # Non-blocking: Don't exit - users may not have registered yet
+    # Staff will be auto-granted on first login/signup if they match configured identifiers
+}
+cd /app/src
+
 echo "🎭 Checking Playwright browsers..."
 # Ensure Playwright browsers are installed (handles volume mount issues)
 PLAYWRIGHT_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/app/cache/ms-playwright}"

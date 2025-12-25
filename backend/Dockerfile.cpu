@@ -85,6 +85,9 @@ RUN PLAYWRIGHT_BROWSERS_PATH=/app/cache/ms-playwright python -m playwright insta
 COPY scripts/docker/entrypoint-prod.sh /app/scripts/
 RUN chmod +x /app/scripts/entrypoint-prod.sh
 
+# Copy initial staff setup script (runs after migrations to set admin users)
+COPY scripts/set_initial_staff.py /app/scripts/
+
 # Copy application code
 COPY src/ ./src/
 

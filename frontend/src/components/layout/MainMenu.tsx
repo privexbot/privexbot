@@ -47,10 +47,12 @@ import {
   FileText,
   Settings,
   CreditCard,
+  Shield,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Permission } from "@/types/tenant";
 
 interface MenuItem {
@@ -142,6 +144,7 @@ interface MainMenuProps {
 export function MainMenu({ onOpenSettings }: MainMenuProps) {
   const location = useLocation();
   const { currentOrganization, currentWorkspace } = useApp();
+  const { user } = useAuth();
 
   /**
    * Check if user is in personal organization and default workspace
@@ -263,6 +266,43 @@ export function MainMenu({ onOpenSettings }: MainMenuProps) {
           {filteredMainMenu.map(renderMenuItem)}
         </div>
       </div>
+
+      {/* Staff Section - Backoffice (only for staff users) */}
+      {user?.is_staff && (
+        <div className="flex-shrink-0 px-2 sm:px-3 py-2 sm:py-3 space-y-0.5 sm:space-y-1 border-t border-[#3a3a3a] dark:border-[#26272B] bg-[#2B2D31] dark:bg-[#1E1F22]">
+          {/* "STAFF" Label */}
+          <div className="mb-1 sm:mb-2 px-1">
+            <span className="text-[9px] sm:text-[10px] font-bold text-amber-500 uppercase tracking-wider">
+              Staff
+            </span>
+          </div>
+
+          {/* Backoffice Link */}
+          <Link
+            to="/admin"
+            className={cn(
+              "flex items-center justify-between px-2 sm:px-3 py-2 rounded-lg transition-all duration-200",
+              location.pathname.startsWith("/admin")
+                ? "bg-amber-600 text-white shadow-sm"
+                : "text-gray-300 dark:text-gray-400 hover:bg-[#36373D] dark:hover:bg-[#2B2D31] hover:text-white"
+            )}
+          >
+            <div className="flex items-center mr-2 sm:mr-3 min-w-0 flex-1">
+              <Shield
+                className={cn(
+                  "h-4 w-4 sm:h-[18px] sm:w-[18px] flex-shrink-0 mr-2 sm:mr-3 transition-colors",
+                  location.pathname.startsWith("/admin")
+                    ? "text-white"
+                    : "text-amber-500"
+                )}
+              />
+              <span className="text-xs sm:text-[13px] font-medium truncate">
+                Backoffice
+              </span>
+            </div>
+          </Link>
+        </div>
+      )}
 
       {/* Others Section - Fixed at bottom */}
       <div className="flex-shrink-0 px-2 sm:px-3 py-2 sm:py-3 space-y-0.5 sm:space-y-1 border-t border-[#3a3a3a] dark:border-[#26272B] bg-[#2B2D31] dark:bg-[#1E1F22]">

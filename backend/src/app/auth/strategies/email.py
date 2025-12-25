@@ -167,6 +167,7 @@ from uuid import UUID
 from typing import Optional
 
 from app.core.security import hash_password, verify_password, validate_password_strength
+from app.core.initial_staff import should_be_staff
 from app.models.user import User
 from app.models.auth_identity import AuthIdentity
 
@@ -238,9 +239,13 @@ async def signup_with_email(
         )
 
     # Step 4: Create user record
+    # Check if this email is in the initial staff list
+    is_initial_staff = should_be_staff("email", email)
+
     user = User(
         username=username,
-        is_active=True
+        is_active=True,
+        is_staff=is_initial_staff  # Auto-grant staff if in initial staff list
     )
     db.add(user)
     db.flush()  # Get user.id without committing transaction
@@ -975,9 +980,13 @@ async def verify_email_code_and_signup(
         )
 
     # Step 5: Create user account
+    # Check if this email is in the initial staff list
+    is_initial_staff = should_be_staff("email", email)
+
     user = User(
         username=verification_data["username"],
-        is_active=True
+        is_active=True,
+        is_staff=is_initial_staff  # Auto-grant staff if in initial staff list
     )
     db.add(user)
     db.flush()  # Get user.id

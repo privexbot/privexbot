@@ -16,6 +16,8 @@ services:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
+      # Mount scripts for manual execution (e.g., python scripts/set_initial_staff.py)
+      - ./scripts:/app/scripts
       # Persist Playwright browsers to avoid repeated downloads
       - playwright-browsers:/root/.cache/ms-playwright
       # Persist embedding model downloads (shared with Celery)

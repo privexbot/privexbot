@@ -4,6 +4,8 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { StaffRoute } from "@/components/auth/StaffRoute";
+import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Toaster } from "@/components/ui/toaster";
 
 // Create a single QueryClient instance for the app
@@ -58,6 +60,13 @@ import { ProfilePage } from "@/pages/ProfilePage";
 import { AboutPage } from "@/pages/AboutPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
+import {
+  AdminDashboard,
+  AdminOrganizations,
+  AdminOrgDetail,
+  AdminUsers,
+  AdminUserDetail,
+} from "@/pages/admin";
 
 function App() {
   return (
@@ -324,6 +333,22 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+              {/* Admin Routes - Staff Only */}
+              <Route
+                path="/admin"
+                element={
+                  <StaffRoute>
+                    <AdminLayout />
+                  </StaffRoute>
+                }
+              >
+                <Route index element={<AdminDashboard />} />
+                <Route path="organizations" element={<AdminOrganizations />} />
+                <Route path="organizations/:orgId" element={<AdminOrgDetail />} />
+                <Route path="users" element={<AdminUsers />} />
+                <Route path="users/:userId" element={<AdminUserDetail />} />
+              </Route>
 
               {/* 404 Catch-all Route */}
               <Route path="*" element={<NotFoundPage />} />
