@@ -5,6 +5,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StaffRoute } from "@/components/auth/StaffRoute";
+import { BetaAccessGate } from "@/components/beta/BetaAccessGate";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -185,7 +186,9 @@ function App() {
                 path="/knowledge-bases/create"
                 element={
                   <ProtectedRoute>
-                    <CreateKnowledgeBasePage />
+                    <BetaAccessGate>
+                      <CreateKnowledgeBasePage />
+                    </BetaAccessGate>
                   </ProtectedRoute>
                 }
               />

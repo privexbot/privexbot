@@ -28,3 +28,6 @@ from app.tasks.kb_maintenance_tasks import (  # noqa: F401
     health_check_qdrant_collections_task,
     manual_cleanup_kb_task
 )
+from app.tasks.chatbot_metrics_tasks import (  # noqa: F401
+    refresh_chatbot_metrics_scheduled
+)

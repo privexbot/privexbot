@@ -30,6 +30,12 @@ from app.schemas.admin import (
     UpdateStaffStatusRequest,
     UpdateStaffStatusResponse,
 )
+from app.schemas.invite_code import (
+    GenerateInviteCodeRequest,
+    GenerateInviteCodeResponse,
+    InviteCodeInfo,
+)
+from app.services.invite_code_service import invite_code_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -240,3 +246,95 @@ async def update_user_staff_status(
         is_staff=user.is_staff,
         message=message
     )
+
+
+# ============================================================================
+# Invite Code Endpoints
+# ============================================================================
+
+
+@router.post("/invite-codes", response_model=GenerateInviteCodeResponse)
+async def generate_invite_code(
+    request: GenerateInviteCodeRequest = None,
+    staff: User = Depends(get_staff_user),
+) -> GenerateInviteCodeResponse:
+    """
+    Generate a new invite code for beta testers.
+
+    Requires staff access.
+
+    Args:
+        request: Optional TTL customization (default: 7 days)
+
+    Returns:
+        GenerateInviteCodeResponse: The generated code with expiration info
+    """
+    ttl_days = request.ttl_days if request else 7
+
+    code_data = invite_code_service.generate_code(
+        created_by=staff.id,
+        ttl_days=ttl_days
+    )
+
+    return GenerateInviteCodeResponse(
+        code=code_data["code"],
+        created_at=code_data["created_at"],
+        expires_at=code_data["expires_at"],
+        message=f"Invite code generated successfully. Valid for {ttl_days} days."
+    )
+
+
+@router.get("/invite-codes", response_model=list[InviteCodeInfo])
+async def list_invite_codes(
+    staff: User = Depends(get_staff_user),
+) -> list[InviteCodeInfo]:
+    """
+    List all active invite codes.
+
+    Requires staff access.
+
+    Returns:
+        List of invite codes with their status
+    """
+    codes = invite_code_service.list_codes()
+
+    return [
+        InviteCodeInfo(
+            code=code["code"],
+            created_by=code["created_by"],
+            created_at=code["created_at"],
+            expires_at=code["expires_at"],
+            ttl_seconds=code.get("ttl_seconds", 0),
+            is_redeemed=code.get("redeemed_by") is not None,
+            redeemed_by=code.get("redeemed_by"),
+            redeemed_at=code.get("redeemed_at"),
+        )
+        for code in codes
+    ]
+
+
+@router.delete("/invite-codes/{code}")
+async def revoke_invite_code(
+    code: str,
+    staff: User = Depends(get_staff_user),
+) -> dict:
+    """
+    Revoke (delete) an invite code.
+
+    Requires staff access.
+
+    Args:
+        code: The invite code to revoke
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(404): If code not found
+    """
+    success = invite_code_service.revoke_code(code)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Invite code not found")
+
+    return {"message": f"Invite code {code} has been revoked"}

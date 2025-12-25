@@ -244,7 +244,7 @@ class AdminService:
             db_query = db_query.outerjoin(AuthIdentity).filter(
                 or_(
                     User.username.ilike(f"%{query}%"),
-                    AuthIdentity.identifier.ilike(f"%{query}%")
+                    AuthIdentity.provider_id.ilike(f"%{query}%")
                 )
             ).distinct()
 
@@ -270,7 +270,7 @@ class AdminService:
             items.append({
                 "id": str(user.id),
                 "username": user.username,
-                "email": email_identity.identifier if email_identity else None,
+                "email": email_identity.provider_id if email_identity else None,
                 "is_active": user.is_active,
                 "is_staff": user.is_staff,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
@@ -308,7 +308,7 @@ class AdminService:
         for identity in auth_identities:
             auth_methods.append({
                 "provider": identity.provider,
-                "identifier": identity.identifier,
+                "identifier": identity.provider_id,
                 "created_at": identity.created_at.isoformat() if identity.created_at else None,
             })
 

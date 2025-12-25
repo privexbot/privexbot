@@ -240,13 +240,15 @@ class UserProfile(UserResponse):
     WHY: Provide complete user information including auth methods
     HOW: Returned from /auth/me or /users/{id} endpoints
 
-    Includes: Basic user info + linked authentication methods
+    Includes: Basic user info + linked authentication methods + access flags
 
     Example:
         {
             "id": "123e4567-e89b-12d3-a456-426614174000",
             "username": "alice_wonderland",
             "is_active": true,
+            "is_staff": false,
+            "has_beta_access": true,
             "created_at": "2024-01-15T10:30:00Z",
             "updated_at": "2024-01-15T10:30:00Z",
             "auth_methods": [
@@ -263,6 +265,14 @@ class UserProfile(UserResponse):
             ]
         }
     """
+    is_staff: bool = Field(
+        default=False,
+        description="Whether user has staff/admin access to backoffice"
+    )
+    has_beta_access: bool = Field(
+        default=False,
+        description="Whether user has beta access (via invite code redemption)"
+    )
     auth_methods: List[AuthMethodInfo] = Field(
         default_factory=list,
         description="List of authentication methods linked to this account"

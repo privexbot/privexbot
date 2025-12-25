@@ -148,6 +148,29 @@ export interface UpdateStaffStatusResponse {
   message: string;
 }
 
+// Invite Code Types
+export interface GenerateInviteCodeRequest {
+  ttl_days?: number;
+}
+
+export interface GenerateInviteCodeResponse {
+  code: string;
+  created_at: string;
+  expires_at: string;
+  message: string;
+}
+
+export interface InviteCodeInfo {
+  code: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  ttl_seconds: number;
+  is_redeemed: boolean;
+  redeemed_by?: string;
+  redeemed_at?: string;
+}
+
 // ============== API Functions ==============
 
 export const adminApi = {
@@ -223,6 +246,36 @@ export const adminApi = {
       { is_staff: isStaff }
     );
     return response.data;
+  },
+
+  // ============== Invite Code Methods ==============
+
+  /**
+   * Generate a new invite code
+   */
+  generateInviteCode: async (
+    ttlDays?: number
+  ): Promise<GenerateInviteCodeResponse> => {
+    const response = await apiClient.post<GenerateInviteCodeResponse>(
+      "/admin/invite-codes",
+      ttlDays ? { ttl_days: ttlDays } : undefined
+    );
+    return response.data;
+  },
+
+  /**
+   * List all active invite codes
+   */
+  listInviteCodes: async (): Promise<InviteCodeInfo[]> => {
+    const response = await apiClient.get<InviteCodeInfo[]>("/admin/invite-codes");
+    return response.data;
+  },
+
+  /**
+   * Revoke an invite code
+   */
+  revokeInviteCode: async (code: string): Promise<void> => {
+    await apiClient.delete(`/admin/invite-codes/${code}`);
   },
 };
 

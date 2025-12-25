@@ -11,6 +11,7 @@ export interface User {
   avatar_url?: string;
   is_active: boolean;
   is_staff?: boolean;
+  has_beta_access?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +24,8 @@ export interface AuthMethod {
 
 export interface UserProfile extends User {
   email?: string;
+  is_staff: boolean;
+  has_beta_access: boolean;
   auth_methods: AuthMethod[];
 }
 

@@ -73,6 +73,7 @@ class User(Base):
     username = Column(String(255), unique=True, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_staff = Column(Boolean, default=False, server_default="false", nullable=False)  # Staff access for backoffice
+    has_beta_access = Column(Boolean, default=False, server_default="false", nullable=False)  # Beta tester access
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
