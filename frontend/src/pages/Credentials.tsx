@@ -64,13 +64,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { useWorkspaceStore } from '@/store/workspace-store';
+import { useApp } from '@/contexts/AppContext';
 import apiClient, { handleApiError } from '@/lib/api-client';
 
 interface Credential {
   id: string;
   name: string;
-  credential_type: 'openai' | 'notion' | 'google_drive' | 'slack' | 'telegram';
+  credential_type: 'openai' | 'notion' | 'google_drive' | 'slack' | 'telegram' | 'discord' | 'whatsapp';
   is_valid: boolean;
   last_verified_at?: string;
   created_at: string;
@@ -82,12 +82,14 @@ const CREDENTIAL_TYPES = [
   { value: 'google_drive', label: 'Google Drive', icon: '📁', requiresOAuth: true },
   { value: 'slack', label: 'Slack', icon: '💬', requiresOAuth: true },
   { value: 'telegram', label: 'Telegram Bot', icon: '✈️', requiresOAuth: false },
+  { value: 'discord', label: 'Discord Bot', icon: '🎮', requiresOAuth: false },
+  { value: 'whatsapp', label: 'WhatsApp Business', icon: '💬', requiresOAuth: false },
 ];
 
 export default function Credentials() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { currentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace } = useApp();
   const [searchParams] = useSearchParams();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -187,7 +189,15 @@ export default function Credentials() {
 
   // OAuth initiation
   const initiateOAuth = (credentialType: string) => {
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=${credentialType}&workspace_id=${currentWorkspace?.id}`;
+    if (!currentWorkspace?.id) {
+      toast({
+        title: 'Workspace not selected',
+        description: 'Please select a workspace before connecting credentials.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=${credentialType}&workspace_id=${currentWorkspace.id}`;
     window.location.href = oauthUrl;
   };
 

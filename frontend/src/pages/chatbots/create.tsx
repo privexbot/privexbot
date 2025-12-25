@@ -2230,6 +2230,7 @@ interface Step5Props extends Step1Props {
   onDeploy: () => Promise<void>;
   onSendTestMessage: (message: string) => Promise<void>;
   onClearTest: () => void;
+  workspaceId?: string;
 }
 
 function Step5Deploy({
@@ -2242,6 +2243,7 @@ function Step5Deploy({
   onDeploy,
   onSendTestMessage,
   onClearTest,
+  workspaceId,
 }: Step5Props) {
   const [testInput, setTestInput] = useState("");
   const [copiedApiKey, setCopiedApiKey] = useState(false);
@@ -2509,6 +2511,7 @@ function Step5Deploy({
                             : "WhatsApp Access Token"
                         }
                         required={true}
+                        workspaceId={workspaceId}
                       />
                     </div>
                   )}
@@ -2911,6 +2914,7 @@ export default function CreateChatbotPage() {
                       onDeploy={handleDeploy}
                       onSendTestMessage={sendTestMessage}
                       onClearTest={clearTestConversation}
+                      workspaceId={currentWorkspace?.id}
                     />
                   )}
                 </motion.div>

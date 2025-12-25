@@ -58,6 +58,7 @@ import { MarketplacePage } from "@/pages/MarketplacePage";
 import { ReferralsPage } from "@/pages/ReferralsPage";
 import { DocumentationPage } from "@/pages/DocumentationPage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import Credentials from "@/pages/Credentials";
 import { AboutPage } from "@/pages/AboutPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -309,6 +310,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <ProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/credentials"
+                element={
+                  <ProtectedRoute>
+                    <Credentials />
                   </ProtectedRoute>
                 }
               />

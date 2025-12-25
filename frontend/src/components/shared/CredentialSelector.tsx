@@ -70,6 +70,7 @@ interface CredentialSelectorProps {
   required?: boolean;
   allowMultiple?: boolean;
   providers?: CredentialProvider[];
+  workspaceId?: string; // Explicitly pass workspace ID to avoid context mismatch
 }
 
 export default function CredentialSelector({
@@ -79,18 +80,22 @@ export default function CredentialSelector({
   label = 'Credential',
   required = false,
   allowMultiple = false,
+  workspaceId: propWorkspaceId,
 }: CredentialSelectorProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentWorkspace } = useWorkspaceStore();
 
+  // Use prop workspaceId if provided, otherwise fall back to store
+  const workspaceId = propWorkspaceId || currentWorkspace?.id;
+
   // Fetch credentials from API
   const { data: credentials, isLoading, error } = useQuery({
-    queryKey: ['credentials', currentWorkspace?.id, provider],
+    queryKey: ['credentials', workspaceId, provider],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (currentWorkspace?.id) {
-        params.append('workspace_id', currentWorkspace.id);
+      if (workspaceId) {
+        params.append('workspace_id', workspaceId);
       }
       // Use provider filter (service name like 'telegram', 'discord')
       if (provider) {
@@ -101,7 +106,7 @@ export default function CredentialSelector({
       // API returns { items: [...], total, skip, limit }
       return response.data.items as Credential[];
     },
-    enabled: !!currentWorkspace?.id,
+    enabled: !!workspaceId,
   });
 
   // Delete credential mutation
@@ -123,7 +128,15 @@ export default function CredentialSelector({
   });
 
   const initiateOAuthFlow = (selectedProvider: CredentialProvider) => {
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=${selectedProvider}&workspace_id=${currentWorkspace?.id}`;
+    if (!workspaceId) {
+      toast({
+        title: 'Workspace not selected',
+        description: 'Please select a workspace before connecting credentials.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=${selectedProvider}&workspace_id=${workspaceId}`;
     window.location.href = oauthUrl;
   };
 
@@ -161,9 +174,9 @@ export default function CredentialSelector({
   };
 
   const isOAuthProvider = (providerName: CredentialProvider) => {
-    // Telegram, Discord, and WhatsApp use tokens, not OAuth in traditional sense
-    // but we can use the OAuth flow UI for them
-    return ['telegram', 'discord', 'whatsapp'].includes(providerName);
+    // Only Google and Notion use true OAuth flows
+    // Telegram, Discord, WhatsApp use bot tokens entered manually
+    return ['google', 'notion'].includes(providerName);
   };
 
   // Filter active credentials
