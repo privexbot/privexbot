@@ -76,6 +76,11 @@ class UpdateChatbotDraftRequest(BaseModel):
     appearance: Optional[dict] = None
     memory: Optional[dict] = None
     lead_capture: Optional[dict] = None
+    variables_config: Optional[dict] = None
+    grounding_mode: Optional[str] = Field(
+        None,
+        description="Grounding mode: 'strict' (KB-only), 'guided' (prefer KB), 'flexible' (enhance with KB)"
+    )
 
 
 class AttachKBRequest(BaseModel):
@@ -753,6 +758,18 @@ async def update_chatbot(
     # Update lead capture
     if "lead_capture" in updates:
         chatbot.lead_capture_config = updates["lead_capture"]
+
+    # Update variables config
+    if "variables_config" in updates:
+        prompt_config = chatbot.prompt_config.copy() if chatbot.prompt_config else {}
+        prompt_config["variables_config"] = updates["variables_config"]
+        chatbot.prompt_config = prompt_config
+
+    # Update grounding mode
+    if "grounding_mode" in updates:
+        behavior_config = chatbot.behavior_config.copy() if chatbot.behavior_config else {}
+        behavior_config["grounding_mode"] = updates["grounding_mode"]
+        chatbot.behavior_config = behavior_config
 
     db.commit()
     db.refresh(chatbot)

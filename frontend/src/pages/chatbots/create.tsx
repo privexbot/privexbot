@@ -38,6 +38,7 @@ import {
   MessageCircle,
   Phone,
   Users,
+  Shield,
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
@@ -51,6 +52,7 @@ import {
   ChatbotFormErrors,
   VariableField,
   VariableFieldType,
+  GroundingMode,
 } from "@/types/chatbot";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,6 +76,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -682,6 +685,65 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
               })
             }
           />
+        </div>
+
+        {/* Grounding Mode - How strictly AI uses knowledge base */}
+        <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+          <div className="flex items-center gap-3">
+            <Shield className="h-4 w-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                Knowledge Base Usage
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                Control how strictly the AI uses your knowledge base
+              </p>
+            </div>
+          </div>
+
+          <RadioGroup
+            value={formData.behavior?.grounding_mode || GroundingMode.STRICT}
+            onValueChange={(value: GroundingMode) =>
+              onUpdate({
+                behavior: { ...formData.behavior, grounding_mode: value },
+              })
+            }
+            className="space-y-2 pl-7"
+          >
+            <div className="flex items-start space-x-3">
+              <RadioGroupItem value={GroundingMode.STRICT} id="grounding-strict" className="mt-1" />
+              <div className="flex-1">
+                <Label htmlFor="grounding-strict" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                  Strict (Recommended)
+                </Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                  Only answer from knowledge base. Refuses if information not found.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <RadioGroupItem value={GroundingMode.GUIDED} id="grounding-guided" className="mt-1" />
+              <div className="flex-1">
+                <Label htmlFor="grounding-guided" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                  Guided
+                </Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                  Prefers knowledge base but can use general knowledge (with disclosure).
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <RadioGroupItem value={GroundingMode.FLEXIBLE} id="grounding-flexible" className="mt-1" />
+              <div className="flex-1">
+                <Label htmlFor="grounding-flexible" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                  Flexible
+                </Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                  Uses knowledge base to enhance responses, freely uses general knowledge.
+                </p>
+              </div>
+            </div>
+          </RadioGroup>
         </div>
 
         {/* Conversation Openers */}

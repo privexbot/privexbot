@@ -74,6 +74,21 @@ export const PersonaTone = {
 export type PersonaTone = (typeof PersonaTone)[keyof typeof PersonaTone];
 
 /**
+ * Grounding Mode - How strictly AI uses knowledge base
+ *
+ * STRICT: AI ONLY answers from KB, refuses if not found (Recommended)
+ * GUIDED: AI prefers KB but can supplement with general knowledge (with disclosure)
+ * FLEXIBLE: AI uses KB to enhance responses, freely uses general knowledge
+ */
+export const GroundingMode = {
+  STRICT: "strict",
+  GUIDED: "guided",
+  FLEXIBLE: "flexible",
+} as const;
+
+export type GroundingMode = (typeof GroundingMode)[keyof typeof GroundingMode];
+
+/**
  * Widget Position Options
  */
 export const WidgetPosition = {
@@ -164,6 +179,7 @@ export interface BehaviorConfig {
   enable_citations?: boolean;
   enable_follow_up_questions?: boolean;
   conversation_openers?: string[];
+  grounding_mode?: GroundingMode;
 }
 
 /**
@@ -808,6 +824,7 @@ export const DEFAULT_BEHAVIOR: BehaviorConfig = {
   enable_citations: false,
   enable_follow_up_questions: false,
   conversation_openers: [],
+  grounding_mode: GroundingMode.STRICT,
 };
 
 export const DEFAULT_FORM_DATA: ChatbotFormData = {

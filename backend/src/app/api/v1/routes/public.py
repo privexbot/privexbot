@@ -47,6 +47,10 @@ class ChatRequest(BaseModel):
     metadata: Optional[dict] = None
     # WHY: Additional context (IP, user agent, etc.)
 
+    variables: Optional[dict] = None
+    # WHY: Collected variables for {{variable}} substitution in prompts
+    # HOW: Frontend collects via variable_config forms, sends with each request
+
 
 class ChatResponse(BaseModel):
     """Chat response to client."""
@@ -173,7 +177,8 @@ async def chat(
                 chatbot=bot,
                 user_message=request.message,
                 session_id=session_id,
-                channel_context=channel_context
+                channel_context=channel_context,
+                collected_variables=request.variables
             )
 
         else:  # chatflow

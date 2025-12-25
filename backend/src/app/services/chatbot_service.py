@@ -536,6 +536,15 @@ class ChatbotService:
         WHY: Modern LLMs (OpenAI, Gemini, etc.) work better with structured messages
         HOW: Build list of role/content dicts with system, history, and user messages
 
+        APPLIES ALL CONFIGURATIONS:
+        - system_prompt: Base personality and role
+        - persona: Name, tone, style settings
+        - instructions: Specific behaviors to follow
+        - restrictions: Things to avoid
+        - grounding_mode: How strictly to use KB (strict/guided/flexible)
+        - behavior.show_citations: Whether to cite sources
+        - behavior.show_followups: Whether to suggest follow-up questions
+
         RETURNS:
             [
                 {"role": "system", "content": "You are a helpful assistant..."},
@@ -545,26 +554,99 @@ class ChatbotService:
             ]
         """
         messages = []
+        config = chatbot.config
 
-        # 1. System prompt (with optional KB context embedded)
-        system_prompt = chatbot.config.get("system_prompt", "You are a helpful assistant.")
+        # 1. Build the complete system prompt with all configurations
+        system_parts = []
 
-        # Substitute variables in system prompt if provided
-        # Example: "You are helping {{user_name}} from {{company}}."
-        # becomes: "You are helping John from Acme Inc."
+        # 1a. Base system prompt
+        base_prompt = config.get("system_prompt", "You are a helpful assistant.")
         if collected_variables:
-            system_prompt = self._substitute_variables(system_prompt, collected_variables)
+            base_prompt = self._substitute_variables(base_prompt, collected_variables)
+        system_parts.append(base_prompt)
 
-        # If we have KB context, add it to system prompt
+        # 1b. Persona settings (name, tone, style)
+        persona = config.get("persona", {})
+        if persona:
+            persona_parts = []
+            if persona.get("name"):
+                persona_parts.append(f"Your name is {persona['name']}.")
+            if persona.get("tone"):
+                persona_parts.append(f"Use a {persona['tone']} tone.")
+            if persona.get("style"):
+                persona_parts.append(f"Your communication style is {persona['style']}.")
+            if persona_parts:
+                system_parts.append("\n".join(persona_parts))
+
+        # 1c. Instructions (specific behaviors to follow)
+        instructions = config.get("instructions", [])
+        if instructions:
+            instruction_text = "\n\nINSTRUCTIONS - Follow these behaviors:\n"
+            for i, instr in enumerate(instructions, 1):
+                if isinstance(instr, dict):
+                    instruction_text += f"{i}. {instr.get('text', instr.get('content', ''))}\n"
+                else:
+                    instruction_text += f"{i}. {instr}\n"
+            system_parts.append(instruction_text)
+
+        # 1d. Restrictions (things to avoid)
+        restrictions = config.get("restrictions", [])
+        if restrictions:
+            restriction_text = "\nRESTRICTIONS - Do NOT do the following:\n"
+            for i, restr in enumerate(restrictions, 1):
+                if isinstance(restr, dict):
+                    restriction_text += f"- {restr.get('text', restr.get('content', ''))}\n"
+                else:
+                    restriction_text += f"- {restr}\n"
+            system_parts.append(restriction_text)
+
+        # 1e. Behavior settings (citations, follow-ups)
+        behavior = config.get("behavior", {})
+        behavior_parts = []
+
+        if behavior.get("show_citations", False):
+            behavior_parts.append("When using information from the knowledge base, cite your sources by mentioning where the information came from.")
+
+        if behavior.get("show_followups", False):
+            behavior_parts.append("At the end of your response, suggest 1-2 relevant follow-up questions the user might want to ask.")
+
+        if behavior_parts:
+            system_parts.append("\nRESPONSE FORMAT:\n" + "\n".join(f"- {bp}" for bp in behavior_parts))
+
+        # 1f. Knowledge base context with grounding mode
         if context:
-            system_content = f"""{system_prompt}
+            grounding_mode = config.get("grounding_mode", behavior.get("grounding_mode", "strict"))
 
-Use the following context from the knowledge base to answer questions. If the context doesn't contain relevant information, say so honestly.
+            # Import guardrails service for proper grounding prompts
+            try:
+                from app.services.guardrails import get_guardrails_service, GroundingMode
+
+                guardrails = get_guardrails_service()
+
+                # Map string to enum
+                mode_map = {
+                    "strict": GroundingMode.STRICT,
+                    "guided": GroundingMode.GUIDED,
+                    "flexible": GroundingMode.FLEXIBLE
+                }
+                mode = mode_map.get(grounding_mode, GroundingMode.STRICT)
+
+                # Get the appropriate grounding prompt (without custom_prompt since we're building it)
+                from app.services.guardrails import GROUNDING_PROMPTS
+                grounding_prompt = GROUNDING_PROMPTS[mode].format(context=context)
+                system_parts.append(grounding_prompt)
+
+            except ImportError:
+                # Fallback if guardrails not available
+                system_parts.append(f"""
+KNOWLEDGE BASE CONTEXT:
+Use the following context to answer questions. If the context doesn't contain relevant information, say so honestly.
 
 Context:
-{context}"""
-        else:
-            system_content = system_prompt
+{context}""")
+
+        # Combine all system parts
+        system_content = "\n\n".join(part for part in system_parts if part.strip())
 
         messages.append({"role": "system", "content": system_content})
 
