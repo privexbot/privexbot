@@ -147,6 +147,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Step 7: Calculate permissions
       const perms = calculatePermissions(targetOrg, targetWorkspace);
       setPermissions(perms);
+
+      // Step 8: CRITICAL - Sync JWT token with current workspace context
+      // This ensures the backend receives the correct workspace_id in the JWT
+      // Without this, localStorage workspace != JWT workspace → 403 errors
+      try {
+        const response = await workspaceApi.switchOrganization({
+          organization_id: targetOrg.id,
+          workspace_id: targetWorkspace.id,
+        });
+        if (response.access_token) {
+          localStorage.setItem("access_token", response.access_token);
+          console.log("[AppContext] JWT synced with workspace context");
+        }
+      } catch (syncError) {
+        console.warn("[AppContext] Failed to sync JWT, may cause 403 errors:", syncError);
+      }
     } catch (err: any) {
       console.error("Failed to refresh app data:", err);
       setError(err.message || "Failed to load app data");

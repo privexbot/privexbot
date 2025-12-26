@@ -33,11 +33,16 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  AlertCircle,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +50,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -66,14 +72,18 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useApp } from '@/contexts/AppContext';
 import apiClient, { handleApiError } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 
 interface Credential {
   id: string;
   name: string;
-  credential_type: 'openai' | 'notion' | 'google_drive' | 'slack' | 'telegram' | 'discord' | 'whatsapp';
-  is_valid: boolean;
-  last_verified_at?: string;
+  credential_type: string;  // api_key, oauth2, etc. (auth mechanism)
+  provider?: string;        // openai, telegram, discord, etc. (service name)
+  is_active: boolean;       // Whether credential is active
+  usage_count: number;
+  last_used_at?: string;
   created_at: string;
+  updated_at: string;
 }
 
 const CREDENTIAL_TYPES = [
@@ -86,6 +96,175 @@ const CREDENTIAL_TYPES = [
   { value: 'whatsapp', label: 'WhatsApp Business', icon: '💬', requiresOAuth: false },
 ];
 
+// ========================================
+// EMPTY STATE COMPONENT
+// ========================================
+
+function EmptyState({ onAddCredential }: { onAddCredential: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="text-center py-16"
+    >
+      <div className="mx-auto w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+        <Key className="h-8 w-8 text-gray-400 dark:text-gray-500" />
+      </div>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope mb-2">
+        No Credentials Yet
+      </h3>
+      <p className="text-gray-600 dark:text-gray-400 font-manrope mb-6 max-w-md mx-auto">
+        Add your first API credential to start integrating services with your chatbots
+      </p>
+      <Button
+        onClick={onAddCredential}
+        className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
+      >
+        <Plus className="h-4 w-4 mr-2" />
+        Add Your First Credential
+      </Button>
+    </motion.div>
+  );
+}
+
+// ========================================
+// CREDENTIAL CARD COMPONENT
+// ========================================
+
+interface CredentialCardProps {
+  credential: Credential;
+  onTest: (id: string) => void;
+  onToggleShow: (id: string) => void;
+  onDelete: (id: string) => void;
+  showSecret: boolean;
+  isTesting: boolean;
+  index: number;
+}
+
+function CredentialCard({
+  credential,
+  onTest,
+  onToggleShow,
+  onDelete,
+  showSecret,
+  isTesting,
+  index,
+}: CredentialCardProps) {
+  // Find type by provider (service name), not credential_type (auth mechanism)
+  const type = CREDENTIAL_TYPES.find((t) => t.value === credential.provider);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3, delay: index * 0.05 }}
+    >
+      <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+        <CardContent className="p-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            {/* Left: Icon + Details */}
+            <div className="flex items-center gap-4 flex-1 min-w-0">
+              {/* Icon Container */}
+              <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-2xl flex-shrink-0">
+                {type?.icon || '🔑'}
+              </div>
+
+              {/* Details */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-1 flex-wrap">
+                  <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 font-manrope truncate">
+                    {credential.name}
+                  </h3>
+                  {/* Status Badge */}
+                  <div
+                    className={cn(
+                      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border',
+                      credential.is_active
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800'
+                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                    )}
+                  >
+                    {credential.is_active ? (
+                      <CheckCircle className="h-3 w-3" />
+                    ) : (
+                      <XCircle className="h-3 w-3" />
+                    )}
+                    <span className="font-manrope">{credential.is_active ? 'Active' : 'Inactive'}</span>
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                  {type?.label || credential.provider || 'Unknown'} • Created {new Date(credential.created_at).toLocaleDateString()}
+                </p>
+
+                {credential.last_used_at && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+                    Last used: {new Date(credential.last_used_at).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Action Buttons */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onTest(credential.id)}
+                disabled={isTesting}
+                className="flex-1 sm:flex-none font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+              >
+                {isTesting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                <span className="ml-1.5 hidden sm:inline">Test</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onToggleShow(credential.id)}
+                className="flex-1 sm:flex-none font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <span className="ml-1.5 hidden sm:inline">{showSecret ? 'Hide' : 'Show'}</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onDelete(credential.id)}
+                className="flex-1 sm:flex-none font-manrope rounded-lg border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span className="ml-1.5 hidden sm:inline">Delete</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Secret Display */}
+          {showSecret && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <Label className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                API Key / Token
+              </Label>
+              <div className="mt-1.5 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg font-mono text-sm text-gray-700 dark:text-gray-300 break-all">
+                {type?.requiresOAuth ? 'OAuth token (managed securely)' : 'sk-••••••••••••••••'}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ========================================
+// MAIN COMPONENT
+// ========================================
+
 export default function Credentials() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -97,15 +276,16 @@ export default function Credentials() {
   const [credentialToDelete, setCredentialToDelete] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
-  // Form state
+  // Form state - provider is the service (openai, telegram, etc.)
+  // credential_type is the auth mechanism (api_key, oauth2, etc.)
   const [formData, setFormData] = useState({
     name: '',
-    credential_type: 'openai' as const,
+    provider: 'openai' as string,  // Service provider
     api_key: '',
   });
 
   // Fetch credentials
-  const { data: credentials, isLoading } = useQuery({
+  const { data: credentials, isLoading, error } = useQuery({
     queryKey: ['credentials', currentWorkspace?.id],
     queryFn: async () => {
       const response = await apiClient.get('/credentials/', {
@@ -119,9 +299,18 @@ export default function Credentials() {
   // Create credential mutation
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      // Backend expects:
+      // - credential_type: "api_key" (auth mechanism)
+      // - provider: "openai", "telegram", etc. (service name)
+      // - data: { api_key: "..." } (credentials wrapped in data object)
       const response = await apiClient.post('/credentials/', {
         workspace_id: currentWorkspace?.id,
-        ...data,
+        name: data.name,
+        credential_type: 'api_key',  // All non-OAuth services use api_key
+        provider: data.provider,
+        data: {
+          api_key: data.api_key,
+        },
       });
       return response.data;
     },
@@ -129,7 +318,7 @@ export default function Credentials() {
       toast({ title: 'Credential added successfully' });
       queryClient.invalidateQueries({ queryKey: ['credentials'] });
       setDialogOpen(false);
-      setFormData({ name: '', credential_type: 'openai', api_key: '' });
+      setFormData({ name: '', provider: 'openai', api_key: '' });
     },
     onError: (error) => {
       toast({
@@ -166,7 +355,7 @@ export default function Credentials() {
       const response = await apiClient.post(`/credentials/${credentialId}/test`);
       return response.data;
     },
-    onSuccess: (data, credentialId) => {
+    onSuccess: (data) => {
       if (data.is_valid) {
         toast({ title: 'Credential is valid', description: 'Connection successful' });
       } else {
@@ -216,269 +405,250 @@ export default function Credentials() {
     setShowSecrets((prev) => ({ ...prev, [credentialId]: !prev[credentialId] }));
   };
 
-  const selectedType = CREDENTIAL_TYPES.find((t) => t.value === formData.credential_type);
+  const selectedType = CREDENTIAL_TYPES.find((t) => t.value === formData.provider);
 
-  if (isLoading) {
+  // Error state
+  if (error) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-muted-foreground">Loading credentials...</p>
-      </div>
+      <DashboardLayout>
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+          <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
+            <Alert
+              variant="destructive"
+              className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 rounded-xl"
+            >
+              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+              <AlertDescription className="text-red-700 dark:text-red-300 font-manrope">
+                Failed to load credentials. Please try again.
+              </AlertDescription>
+            </Alert>
+            <Button
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['credentials'] })}
+              className="mt-4 font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg"
+            >
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div className="container mx-auto py-6 max-w-5xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Key className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold">API Credentials</h1>
-            <p className="text-muted-foreground">
-              Manage integrations and API keys
-            </p>
-          </div>
-        </div>
+    <DashboardLayout>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 sm:space-y-8">
+          {/* Header Section */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 font-manrope">
+                API Credentials
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1 font-manrope">
+                Manage integrations and API keys for your chatbots
+              </p>
+            </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="lg">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Credential
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Credential</DialogTitle>
-              <DialogDescription>
-                Connect a third-party service or add an API key
-              </DialogDescription>
-            </DialogHeader>
+            <div className="flex gap-3 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['credentials'] })}
+                className="flex-1 sm:flex-none font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
 
-            <div className="space-y-4 mt-4">
-              <div>
-                <Label>Service Type</Label>
-                <Select
-                  value={formData.credential_type}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, credential_type: value as any })
-                  }
-                >
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CREDENTIAL_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.icon} {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>Name</Label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Production OpenAI Key"
-                  className="mt-2"
-                />
-              </div>
-
-              {selectedType?.requiresOAuth ? (
-                <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
-                  <p className="text-sm mb-3">
-                    This service requires OAuth authentication. You'll be redirected to authorize access.
-                  </p>
-                  <Button
-                    onClick={() => initiateOAuth(formData.credential_type)}
-                    className="w-full"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Connect with {selectedType.label}
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="flex-1 sm:flex-none font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all">
+                    <Plus className="h-4 w-4 mr-2" />
+                    <span className="hidden sm:inline">Add Credential</span>
+                    <span className="sm:hidden">Add</span>
                   </Button>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <Label>API Key</Label>
-                    <Input
-                      type="password"
-                      value={formData.api_key}
-                      onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-                      placeholder="sk-..."
-                      className="mt-2 font-mono"
-                    />
-                  </div>
+                </DialogTrigger>
+                <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+                      <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      Add New Credential
+                    </DialogTitle>
+                    <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                      Connect a third-party service or add an API key
+                    </DialogDescription>
+                  </DialogHeader>
 
-                  <Button
-                    onClick={() => createMutation.mutate(formData)}
-                    disabled={!formData.name || !formData.api_key || createMutation.isPending}
-                    className="w-full"
-                  >
-                    {createMutation.isPending ? (
+                  <div className="space-y-4 mt-4">
+                    {/* Service Type Select */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                        Service Type
+                      </Label>
+                      <Select
+                        value={formData.provider}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, provider: value })
+                        }
+                      >
+                        <SelectTrigger className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                          {CREDENTIAL_TYPES.map((type) => (
+                            <SelectItem
+                              key={type.value}
+                              value={type.value}
+                              className="font-manrope text-gray-700 dark:text-gray-300"
+                            >
+                              {type.icon} {type.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Name Input */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                        Name
+                      </Label>
+                      <Input
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        placeholder="e.g., Production Telegram Bot"
+                        className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                      />
+                    </div>
+
+                    {/* OAuth or API Key Section */}
+                    {selectedType?.requiresOAuth ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Adding...
+                        <Alert className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                          <AlertDescription className="text-sm text-blue-700 dark:text-blue-300 font-manrope">
+                            This service requires OAuth authentication. You'll be redirected to
+                            authorize access.
+                          </AlertDescription>
+                        </Alert>
+                        <Button
+                          onClick={() => initiateOAuth(formData.provider)}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-manrope"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Connect with {selectedType.label}
+                        </Button>
                       </>
                     ) : (
-                      'Add Credential'
+                      <>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                            API Key / Bot Token
+                          </Label>
+                          <Input
+                            type="password"
+                            value={formData.api_key}
+                            onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
+                            placeholder="Enter your API key or bot token..."
+                            className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                          />
+                        </div>
+
+                        <DialogFooter>
+                          <Button
+                            onClick={() => createMutation.mutate(formData)}
+                            disabled={!formData.name || !formData.api_key || createMutation.isPending}
+                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-manrope"
+                          >
+                            {createMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Adding...
+                              </>
+                            ) : (
+                              'Add Credential'
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </>
                     )}
-                  </Button>
-                </>
-              )}
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* OAuth Callback Success */}
-      {searchParams.get('oauth') === 'success' && (
-        <div className="mb-6 p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <p className="font-medium text-green-800 dark:text-green-200">
-              Successfully connected! Your credential has been saved.
-            </p>
           </div>
+
+          {/* OAuth Callback Success */}
+          {searchParams.get('oauth') === 'success' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Alert className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl">
+                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <AlertDescription className="text-green-700 dark:text-green-300 font-manrope">
+                  Successfully connected! Your credential has been saved.
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
+
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-16">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isLoading && (!credentials || credentials.length === 0) && (
+            <EmptyState onAddCredential={() => setDialogOpen(true)} />
+          )}
+
+          {/* Credentials List */}
+          {!isLoading && credentials && credentials.length > 0 && (
+            <div className="space-y-4">
+              {credentials.map((credential, index) => (
+                <CredentialCard
+                  key={credential.id}
+                  credential={credential}
+                  onTest={(id) => testMutation.mutate(id)}
+                  onToggleShow={toggleShowSecret}
+                  onDelete={handleDelete}
+                  showSecret={showSecrets[credential.id] || false}
+                  isTesting={testMutation.isPending}
+                  index={index}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Credentials List */}
-      {!credentials || credentials.length === 0 ? (
-        <div className="text-center py-16 bg-card border rounded-lg">
-          <Key className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-xl font-semibold mb-2">No credentials yet</h3>
-          <p className="text-muted-foreground mb-6">
-            Add your first API credential to start integrating services
-          </p>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Credential
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {credentials.map((credential) => {
-            const type = CREDENTIAL_TYPES.find((t) => t.value === credential.credential_type);
-
-            return (
-              <div
-                key={credential.id}
-                className="bg-card border rounded-lg p-6 hover:shadow-md transition"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-2xl">
-                      {type?.icon || '🔑'}
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-semibold text-lg">{credential.name}</h3>
-                        {credential.is_valid ? (
-                          <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
-                            <CheckCircle className="w-4 h-4" />
-                            Valid
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1 text-sm text-destructive">
-                            <XCircle className="w-4 h-4" />
-                            Invalid
-                          </div>
-                        )}
-                      </div>
-
-                      <p className="text-sm text-muted-foreground mb-3">
-                        {type?.label} • Created {new Date(credential.created_at).toLocaleDateString()}
-                      </p>
-
-                      {credential.last_verified_at && (
-                        <p className="text-xs text-muted-foreground">
-                          Last verified: {new Date(credential.last_verified_at).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => testMutation.mutate(credential.id)}
-                      disabled={testMutation.isPending}
-                    >
-                      {testMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4" />
-                      )}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleShowSecret(credential.id)}
-                    >
-                      {showSecrets[credential.id] ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(credential.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                {showSecrets[credential.id] && (
-                  <div className="mt-4 pt-4 border-t">
-                    <Label className="text-xs">API Key / Token</Label>
-                    <div className="mt-1 p-2 bg-muted rounded font-mono text-sm break-all">
-                      {type?.requiresOAuth ? (
-                        <span className="text-muted-foreground">OAuth token (managed securely)</span>
-                      ) : (
-                        'sk-••••••••••••••••'
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Credential?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Delete Credential
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
               This will permanently delete this credential. Any integrations using this credential
               will stop working.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-red-600 hover:bg-red-700 text-white font-manrope rounded-lg"
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </DashboardLayout>
   );
 }
