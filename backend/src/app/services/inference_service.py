@@ -17,6 +17,7 @@ HOW:
 
 SUPPORTED PROVIDERS:
 - Secret AI (OpenAI-compatible endpoint) - DEFAULT for PrivexBot
+- Akash ML (OpenAI-compatible) - First fallback, decentralized AI
 - Ollama (local inference)
 - OpenAI
 - DeepSeek
@@ -55,6 +56,7 @@ from app.core.config import settings
 class InferenceProvider(str, Enum):
     """Supported inference providers."""
     SECRET_AI = "secret_ai"
+    AKASH_ML = "akash_ml"  # First fallback - decentralized AI inference
     OLLAMA = "ollama"
     OPENAI = "openai"
     DEEPSEEK = "deepseek"
@@ -132,6 +134,14 @@ PROVIDER_CONFIGS = {
         "timeout": 120.0,  # Longer timeout for Secret AI (TEE processing)
         "description": "Secret AI - Privacy-preserving inference via Trusted Execution Environment",
     },
+    InferenceProvider.AKASH_ML: {
+        "base_url": "https://api.akashml.com/v1",
+        "api_key_env": "AKASHML_API_KEY",
+        "default_model": "deepseek-ai/DeepSeek-V3.1",
+        "model_prefixes": ["akash-", "akashml-"],
+        "timeout": 90.0,
+        "description": "Akash ML - Decentralized AI inference",
+    },
     InferenceProvider.OLLAMA: {
         "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
         "api_key_env": None,
@@ -167,6 +177,7 @@ PROVIDER_CONFIGS = {
 
 # Fallback order when primary provider fails
 FALLBACK_ORDER = [
+    InferenceProvider.AKASH_ML,  # First fallback after Secret AI
     InferenceProvider.GEMINI,
     InferenceProvider.OPENAI,
     InferenceProvider.DEEPSEEK,
