@@ -1,8 +1,8 @@
 """
-Inference Service - Flexible LLM inference with multiple provider support.
+Inference Service - Decentralized AI inference for PrivexBot.
 
 WHY:
-- Centralized AI API calls (Secret AI, Ollama, OpenAI, Gemini, DeepSeek, etc.)
+- Centralized AI API calls using decentralized providers
 - Used by both chatbots and chatflows
 - Backend-only (never expose API keys to frontend)
 - Error handling and retry logic
@@ -10,19 +10,13 @@ WHY:
 
 HOW:
 - Abstract provider interface with concrete implementations
-- OpenAI-compatible provider for most services
-- Gemini provider using Google's genai SDK
+- OpenAI-compatible provider (both Secret AI and Akash ML use this)
 - Automatic provider detection based on model prefix or config
 - Structured message format internally, converted per-provider
 
 SUPPORTED PROVIDERS:
-- Secret AI (OpenAI-compatible endpoint) - DEFAULT for PrivexBot
-- Akash ML (OpenAI-compatible) - First fallback, decentralized AI
-- Ollama (local inference)
-- OpenAI
-- DeepSeek
-- Gemini (Google AI)
-- Any OpenAI-compatible API
+- Secret AI (OpenAI-compatible) - PRIMARY, privacy-preserving via TEE
+- Akash ML (OpenAI-compatible) - FALLBACK, decentralized AI inference
 
 MESSAGE FORMAT:
 All methods accept structured messages:
@@ -38,7 +32,7 @@ and converts it to a user message internally.
 
 NETWORK NOTES:
 - Secret AI is the PRIMARY provider for PrivexBot (runs on SecretVM)
-- If Secret AI is blocked by your local network, use fallback providers
+- If Secret AI is blocked by your local network, Akash ML is used as fallback
 - In production (SecretVM), Secret AI should work without network issues
 - Configure INFERENCE_FALLBACK_ENABLED=true to enable automatic fallback
 """
@@ -54,14 +48,10 @@ from app.core.config import settings
 
 
 class InferenceProvider(str, Enum):
-    """Supported inference providers."""
-    SECRET_AI = "secret_ai"
-    AKASH_ML = "akash_ml"  # First fallback - decentralized AI inference
-    OLLAMA = "ollama"
-    OPENAI = "openai"
-    DEEPSEEK = "deepseek"
-    GEMINI = "gemini"
-    CUSTOM = "custom"
+    """Supported inference providers - focused on decentralized AI."""
+    SECRET_AI = "secret_ai"  # Primary - privacy-preserving via TEE
+    AKASH_ML = "akash_ml"    # Fallback - decentralized AI inference
+    CUSTOM = "custom"        # For custom OpenAI-compatible endpoints
 
 
 class InferenceError(Exception):
@@ -123,15 +113,15 @@ class InferenceResponse:
         }
 
 
-# Provider configurations
-# SECRET_AI is the primary provider for PrivexBot
+# Provider configurations - Decentralized AI only
+# SECRET_AI is the primary provider, AKASH_ML is the fallback
 PROVIDER_CONFIGS = {
     InferenceProvider.SECRET_AI: {
         "base_url": os.getenv("SECRET_AI_BASE_URL", "https://secretai-api-url.scrtlabs.com:443/v1"),
         "api_key_env": "SECRET_AI_API_KEY",
-        "default_model": "DeepSeek-R1-Distill-Llama-70B",  # Primary model for Secret AI
+        "default_model": "DeepSeek-R1-Distill-Llama-70B",
         "model_prefixes": ["secret-", "secretai-", "secret_ai-"],
-        "timeout": 120.0,  # Longer timeout for Secret AI (TEE processing)
+        "timeout": 120.0,  # Longer timeout for TEE processing
         "description": "Secret AI - Privacy-preserving inference via Trusted Execution Environment",
     },
     InferenceProvider.AKASH_ML: {
@@ -142,46 +132,11 @@ PROVIDER_CONFIGS = {
         "timeout": 90.0,
         "description": "Akash ML - Decentralized AI inference",
     },
-    InferenceProvider.OLLAMA: {
-        "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
-        "api_key_env": None,
-        "default_model": "llama3.2",
-        "model_prefixes": ["ollama/", "ollama-"],
-        "timeout": 60.0,
-        "description": "Ollama - Local LLM inference",
-    },
-    InferenceProvider.OPENAI: {
-        "base_url": "https://api.openai.com/v1",
-        "api_key_env": "OPENAI_API_KEY",
-        "default_model": "gpt-4o-mini",
-        "model_prefixes": ["gpt-", "o1-", "o3-"],
-        "timeout": 60.0,
-        "description": "OpenAI - GPT models",
-    },
-    InferenceProvider.DEEPSEEK: {
-        "base_url": "https://api.deepseek.com/v1",
-        "api_key_env": "DEEPSEEK_API_KEY",
-        "default_model": "deepseek-chat",
-        "model_prefixes": ["deepseek-"],
-        "timeout": 60.0,
-        "description": "DeepSeek - High-quality reasoning models",
-    },
-    InferenceProvider.GEMINI: {
-        "api_key_env": "GEMINI_API_KEY",
-        "default_model": "gemini-2.0-flash",
-        "model_prefixes": ["gemini-"],
-        "timeout": 60.0,
-        "description": "Google Gemini - Multimodal AI",
-    },
 }
 
-# Fallback order when primary provider fails
+# Fallback order when primary provider (Secret AI) fails
 FALLBACK_ORDER = [
-    InferenceProvider.AKASH_ML,  # First fallback after Secret AI
-    InferenceProvider.GEMINI,
-    InferenceProvider.OPENAI,
-    InferenceProvider.DEEPSEEK,
-    InferenceProvider.OLLAMA,
+    InferenceProvider.AKASH_ML,  # Only fallback - decentralized AI
 ]
 
 
@@ -450,317 +405,20 @@ class OpenAICompatibleProvider(BaseProvider):
             }
 
 
-class GeminiProvider(BaseProvider):
-    """
-    Provider for Google Gemini API.
-
-    Uses the google-genai SDK with proper message conversion.
-    Gemini uses "model" role instead of "assistant" and requires
-    system_instruction in config rather than in messages.
-    """
-
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        default_model: str = "gemini-2.0-flash"
-    ):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.default_model = default_model
-        self._client = None
-        self._initialized = False
-
-    def _ensure_initialized(self):
-        """Lazy initialization of Gemini client."""
-        if self._initialized:
-            return
-
-        try:
-            from google import genai
-            self._genai = genai
-            self._client = genai.Client(api_key=self.api_key)
-            self._initialized = True
-        except ImportError:
-            raise InferenceError(
-                "google-genai package not installed. "
-                "Install with: pip install google-genai"
-            )
-        except Exception as e:
-            raise AuthError(f"Failed to initialize Gemini client: {e}")
-
-    def _convert_messages_to_gemini(
-        self,
-        messages: List[Dict[str, str]]
-    ) -> tuple:
-        """
-        Convert OpenAI-style messages to Gemini format.
-
-        Returns:
-            (system_instruction, contents)
-
-        OpenAI format:
-            [
-                {"role": "system", "content": "You are..."},
-                {"role": "user", "content": "Hello"},
-                {"role": "assistant", "content": "Hi!"},
-            ]
-
-        Gemini format:
-            system_instruction = "You are..."
-            contents = [
-                Content(role="user", parts=[Part(text="Hello")]),
-                Content(role="model", parts=[Part(text="Hi!")]),
-            ]
-        """
-        from google.genai import types
-
-        system_instruction = None
-        contents = []
-
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-
-            if role == "system":
-                # Gemini uses system_instruction in config, not in contents
-                system_instruction = content
-            elif role == "user":
-                contents.append(
-                    types.Content(
-                        role="user",
-                        parts=[types.Part(text=content)]
-                    )
-                )
-            elif role == "assistant":
-                # Gemini uses "model" instead of "assistant"
-                contents.append(
-                    types.Content(
-                        role="model",
-                        parts=[types.Part(text=content)]
-                    )
-                )
-
-        # If no contents, add a placeholder (shouldn't happen)
-        if not contents:
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=[types.Part(text="Hello")]
-                )
-            )
-
-        return system_instruction, contents
-
-    async def generate_chat(
-        self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        stop: Optional[List[str]] = None,
-        **kwargs
-    ) -> InferenceResponse:
-        self._ensure_initialized()
-        from google.genai import types
-
-        try:
-            system_instruction, contents = self._convert_messages_to_gemini(messages)
-
-            # Build config with optional parameters
-            config_params = {}
-            if system_instruction:
-                config_params["system_instruction"] = system_instruction
-            if temperature is not None:
-                config_params["temperature"] = temperature
-            if max_tokens is not None:
-                config_params["max_output_tokens"] = max_tokens
-            if stop:
-                config_params["stop_sequences"] = stop
-
-            config = types.GenerateContentConfig(**config_params) if config_params else None
-
-            # Generate response
-            use_model = model or self.default_model
-            response = await self._client.aio.models.generate_content(
-                model=use_model,
-                contents=contents,
-                config=config
-            )
-
-            # Extract text
-            text = response.text if hasattr(response, 'text') else ""
-
-            # Extract usage (Gemini provides this differently)
-            usage = {
-                "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0) if hasattr(response, 'usage_metadata') else 0,
-                "completion_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0) if hasattr(response, 'usage_metadata') else 0,
-                "total_tokens": getattr(response.usage_metadata, 'total_token_count', 0) if hasattr(response, 'usage_metadata') else 0,
-            }
-
-            return InferenceResponse(
-                text=text,
-                usage=usage,
-                model=use_model,
-                provider="gemini",
-                raw_response=response
-            )
-
-        except Exception as e:
-            error_str = str(e).lower()
-            if "quota" in error_str or "rate" in error_str or "429" in error_str:
-                raise RateLimitError(f"Gemini rate limit: {e}")
-            elif "api key" in error_str or "auth" in error_str or "403" in error_str:
-                raise AuthError(f"Gemini auth error: {e}")
-            elif any(kw in error_str for kw in ["connect", "timeout", "network", "unreachable"]):
-                raise NetworkError(f"Gemini network error: {e}")
-            else:
-                raise InferenceError(f"Gemini error: {e}")
-
-    def generate_chat_sync(
-        self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        stop: Optional[List[str]] = None,
-        **kwargs
-    ) -> InferenceResponse:
-        self._ensure_initialized()
-        from google.genai import types
-
-        try:
-            system_instruction, contents = self._convert_messages_to_gemini(messages)
-
-            config_params = {}
-            if system_instruction:
-                config_params["system_instruction"] = system_instruction
-            if temperature is not None:
-                config_params["temperature"] = temperature
-            if max_tokens is not None:
-                config_params["max_output_tokens"] = max_tokens
-            if stop:
-                config_params["stop_sequences"] = stop
-
-            config = types.GenerateContentConfig(**config_params) if config_params else None
-
-            use_model = model or self.default_model
-            response = self._client.models.generate_content(
-                model=use_model,
-                contents=contents,
-                config=config
-            )
-
-            text = response.text if hasattr(response, 'text') else ""
-            usage = {
-                "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0) if hasattr(response, 'usage_metadata') else 0,
-                "completion_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0) if hasattr(response, 'usage_metadata') else 0,
-                "total_tokens": getattr(response.usage_metadata, 'total_token_count', 0) if hasattr(response, 'usage_metadata') else 0,
-            }
-
-            return InferenceResponse(
-                text=text,
-                usage=usage,
-                model=use_model,
-                provider="gemini",
-                raw_response=response
-            )
-
-        except Exception as e:
-            error_str = str(e).lower()
-            if "quota" in error_str or "rate" in error_str or "429" in error_str:
-                raise RateLimitError(f"Gemini rate limit: {e}")
-            elif "api key" in error_str or "auth" in error_str or "403" in error_str:
-                raise AuthError(f"Gemini auth error: {e}")
-            elif any(kw in error_str for kw in ["connect", "timeout", "network", "unreachable"]):
-                raise NetworkError(f"Gemini network error: {e}")
-            else:
-                raise InferenceError(f"Gemini error: {e}")
-
-    async def generate_chat_stream(
-        self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        **kwargs
-    ) -> AsyncIterator[str]:
-        self._ensure_initialized()
-        from google.genai import types
-
-        try:
-            system_instruction, contents = self._convert_messages_to_gemini(messages)
-
-            config_params = {}
-            if system_instruction:
-                config_params["system_instruction"] = system_instruction
-            if temperature is not None:
-                config_params["temperature"] = temperature
-            if max_tokens is not None:
-                config_params["max_output_tokens"] = max_tokens
-
-            config = types.GenerateContentConfig(**config_params) if config_params else None
-
-            use_model = model or self.default_model
-
-            # Gemini streaming
-            async for chunk in await self._client.aio.models.generate_content_stream(
-                model=use_model,
-                contents=contents,
-                config=config
-            ):
-                if hasattr(chunk, 'text') and chunk.text:
-                    yield chunk.text
-
-        except Exception as e:
-            raise InferenceError(f"Gemini streaming error: {e}")
-
-    def list_models(self) -> List[str]:
-        self._ensure_initialized()
-        try:
-            models = self._client.models.list()
-            return [m.name for m in models if hasattr(m, 'name')]
-        except Exception as e:
-            print(f"[GeminiProvider] Failed to list models: {e}")
-            return []
-
-    def health_check(self) -> dict:
-        try:
-            self._ensure_initialized()
-            # Try listing models as health check
-            self._client.models.list()
-            return {
-                "healthy": True,
-                "provider": "gemini",
-                "default_model": self.default_model,
-                "error": None
-            }
-        except Exception as e:
-            return {
-                "healthy": False,
-                "provider": "gemini",
-                "default_model": self.default_model,
-                "error": str(e)
-            }
-
-
 class InferenceService:
     """
-    Unified inference service that routes to appropriate providers.
+    Unified inference service for decentralized AI providers.
 
     SECRET AI IS THE DEFAULT PROVIDER for PrivexBot.
+    AKASH ML IS THE FALLBACK when Secret AI is unavailable.
 
     This design ensures:
     - Privacy-preserving inference via Secret AI TEE when deployed
-    - Fallback to other providers when Secret AI is unavailable (e.g., local network blocks)
+    - Fallback to Akash ML (decentralized AI) when Secret AI is unavailable
     - Automatic provider detection based on model name prefix
     - Explicit provider selection when needed
 
     Usage:
-        # Auto-detect provider from model
-        response = await inference_service.generate_chat(
-            messages=[{"role": "user", "content": "Hello"}],
-            model="gemini-2.0-flash"  # Routes to Gemini
-        )
-
         # Use default (Secret AI)
         response = await inference_service.generate_chat(
             messages=[{"role": "user", "content": "Hello"}]
@@ -769,8 +427,8 @@ class InferenceService:
         # With explicit provider
         response = await inference_service.generate_chat(
             messages=[...],
-            model="custom-model",
-            provider=InferenceProvider.OLLAMA
+            model="deepseek-ai/DeepSeek-V3.1",
+            provider=InferenceProvider.AKASH_ML
         )
     """
 
@@ -847,29 +505,20 @@ class InferenceService:
         if provider in self._providers:
             return self._providers[provider]
 
-        # Create provider based on type
+        # Create OpenAI-compatible provider (both Secret AI and Akash ML use this)
         config = PROVIDER_CONFIGS.get(provider, {})
+        api_key_env = config.get("api_key_env")
+        api_key = os.getenv(api_key_env, "") if api_key_env else "placeholder"
+        base_url = config.get("base_url", "http://localhost:11434/v1")
+        timeout = config.get("timeout", 60.0)
 
-        if provider == InferenceProvider.GEMINI:
-            api_key = os.getenv(config.get("api_key_env", ""))
-            instance = GeminiProvider(
-                api_key=api_key,
-                default_model=config.get("default_model", "gemini-2.0-flash")
-            )
-        else:
-            # OpenAI-compatible provider
-            api_key_env = config.get("api_key_env")
-            api_key = os.getenv(api_key_env, "") if api_key_env else "placeholder"
-            base_url = config.get("base_url", "http://localhost:11434/v1")
-            timeout = config.get("timeout", 60.0)
-
-            instance = OpenAICompatibleProvider(
-                base_url=base_url,
-                api_key=api_key,
-                default_model=config.get("default_model", "llama3.1"),
-                provider_name=provider.value,
-                timeout=timeout
-            )
+        instance = OpenAICompatibleProvider(
+            base_url=base_url,
+            api_key=api_key,
+            default_model=config.get("default_model", "DeepSeek-R1-Distill-Llama-70B"),
+            provider_name=provider.value,
+            timeout=timeout
+        )
 
         self._providers[provider] = instance
         return instance
