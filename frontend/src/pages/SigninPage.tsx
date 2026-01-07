@@ -243,7 +243,7 @@ export function SigninPage() {
 
       if (!result.code_sent) {
         // Email failed but verification code was created
-        setLocalError("Verification code generated but email delivery failed. Check console for code.");
+        setLocalError("Verification code generated but email delivery failed. Please try again later.");
       }
     } catch (err: any) {
       console.error("Verification code sending failed:", err);
