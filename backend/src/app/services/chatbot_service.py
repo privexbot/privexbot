@@ -682,7 +682,7 @@ Your knowledge base was searched but found NO relevant information.
 
 ═══════════════════════════════════════════════════════════════
 RULE: For any question about a topic, fact, or concept:
-→ Respond: "I don't have information about that in my knowledge base."
+→ Respond: "I don't have that information in my current context, but if you can provide more details or rephrase the question, I'll try to help."
 ═══════════════════════════════════════════════════════════════
 
 EXCEPTIONS (respond naturally):
