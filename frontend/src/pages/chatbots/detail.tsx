@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
   ArrowLeft,
@@ -830,7 +831,7 @@ export default function ChatbotDetailPage() {
               <CardContent className="p-0">
                 {/* Messages */}
                 <div className="h-96 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900/50">
-                  <AnimatePresence>
+                  <AnimatePresence mode="popLayout">
                     {testMessages.map((message) => (
                       <motion.div
                         key={message.id}
@@ -844,7 +845,13 @@ export default function ChatbotDetailPage() {
                             ? 'bg-blue-600 text-white rounded-br-md'
                             : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded-bl-md'
                         }`}>
-                          <p className="text-sm font-manrope whitespace-pre-wrap">{message.content}</p>
+                          {message.role === 'user' ? (
+                            <p className="text-sm font-manrope whitespace-pre-wrap">{message.content}</p>
+                          ) : (
+                            <div className="text-sm font-manrope prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-900 dark:prose-p:text-gray-100 prose-li:text-gray-900 dark:prose-li:text-gray-100 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-700 prose-pre:text-gray-900 dark:prose-pre:text-gray-100 prose-code:bg-gray-100 dark:prose-code:bg-gray-700 prose-code:text-gray-900 dark:prose-code:text-gray-100 prose-code:px-1 prose-code:rounded prose-pre:whitespace-pre-wrap prose-pre:break-words">
+                              <ReactMarkdown>{message.content.replace(/^[ \t]+/gm, '')}</ReactMarkdown>
+                            </div>
+                          )}
                           {message.sources && message.sources.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                               <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mb-1">Sources:</p>

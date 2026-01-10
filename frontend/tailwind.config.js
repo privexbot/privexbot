@@ -191,6 +191,7 @@ export default {
   },
   plugins: [
     require("tailwindcss-animate"),
+    require("@tailwindcss/typography"),
     function({ addUtilities, addComponents, theme }) {
       addUtilities({
         // Grid Background Utilities

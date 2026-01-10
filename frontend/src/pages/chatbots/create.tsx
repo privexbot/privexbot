@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   ArrowLeft,
@@ -2632,7 +2633,13 @@ function Step5Deploy({
                   )}
                   style={msg.role === "user" ? { backgroundColor: formData.appearance.primary_color || "#3b82f6" } : {}}
                 >
-                  <p className={cn("text-sm font-manrope", msg.role === "assistant" && "p-3")}>{msg.content}</p>
+                  {msg.role === "user" ? (
+                    <p className="text-sm font-manrope p-3">{msg.content}</p>
+                  ) : (
+                    <div className="text-sm font-manrope p-3 prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-900 dark:prose-p:text-gray-100 prose-li:text-gray-900 dark:prose-li:text-gray-100 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-700 prose-pre:text-gray-900 dark:prose-pre:text-gray-100 prose-code:bg-gray-100 dark:prose-code:bg-gray-700 prose-code:text-gray-900 dark:prose-code:text-gray-100 prose-code:px-1 prose-code:rounded prose-pre:whitespace-pre-wrap prose-pre:break-words">
+                      <ReactMarkdown>{msg.content.replace(/^[ \t]+/gm, '')}</ReactMarkdown>
+                    </div>
+                  )}
                   {/* Display sources/citations for assistant messages */}
                   {msg.role === "assistant" && msg.sources && msg.sources.length > 0 && formData.behavior?.enable_citations && (
                     <div className="px-3 pb-3 pt-1 border-t border-gray-100 dark:border-gray-700">
