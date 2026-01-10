@@ -340,14 +340,42 @@ class Chatbot(Base):
         """
         Legacy config property for backward compatibility with existing services.
         Returns merged configuration from all config columns.
+
+        IMPORTANT: This property is used by chatbot_service._build_messages() to construct
+        the AI prompt. All fields must be included for proper functionality:
+        - persona, instructions, restrictions: For prompt construction
+        - behavior: For show_citations, show_followups, grounding_mode
+        - grounding_mode: For KB context injection mode (strict/guided/flexible)
         """
+        # Build behavior dict with proper field mapping
+        # Maps stored field names to what chatbot_service expects
+        behavior = {
+            "show_citations": self.kb_config.get("citation_style", "none") != "none",
+            "show_followups": self.behavior_config.get("follow_up_questions", False),
+            "grounding_mode": self.kb_config.get("grounding_mode", "strict"),
+        }
+
         return {
+            # From prompt_config (for persona, instructions, restrictions)
             "system_prompt": self.prompt_config.get("system_prompt", ""),
+            "persona": self.prompt_config.get("persona", {}),
+            "instructions": self.prompt_config.get("instructions", []),
+            "restrictions": self.prompt_config.get("restrictions", []),
+
+            # From ai_config
             "model": self.ai_config.get("model", "secret-ai-v1"),
             "temperature": self.ai_config.get("temperature", 0.7),
             "max_tokens": self.ai_config.get("max_tokens", 2000),
+
+            # From kb_config (for knowledge base retrieval)
             "knowledge_bases": self.kb_config.get("knowledge_bases", []),
+            "grounding_mode": self.kb_config.get("grounding_mode", "strict"),
+
+            # From behavior_config
             "memory": self.behavior_config.get("memory", {}),
+            "behavior": behavior,
+
+            # Other configs
             "branding": self.branding_config,
             "lead_capture": self.lead_capture_config,
             "variables": self.variables_config,

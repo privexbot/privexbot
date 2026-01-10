@@ -488,6 +488,11 @@ class ChatbotService:
         # Combine context
         context = "\n\n".join(context_parts)
 
+        # Debug logging to trace KB context retrieval
+        print(f"[ChatbotService] Retrieved context: {len(context)} chars from {len(all_sources)} sources")
+        if context:
+            print(f"[ChatbotService] Context preview: {context[:200]}...")
+
         return {
             "context": context,
             "sources": all_sources
@@ -515,8 +520,12 @@ class ChatbotService:
 
         def replace_var(match):
             var_name = match.group(1).strip()
-            # Return the value if exists, otherwise keep the placeholder
-            return str(variables.get(var_name, match.group(0)))
+            value = variables.get(var_name)
+            if value is not None:
+                return str(value)
+            # Fallback: Use empty string instead of keeping {{var}} literal
+            # This prevents template syntax from leaking into AI responses
+            return ""
 
         # Match {{variable_name}} patterns (with optional whitespace)
         pattern = r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
@@ -565,39 +574,50 @@ class ChatbotService:
             base_prompt = self._substitute_variables(base_prompt, collected_variables)
         system_parts.append(base_prompt)
 
-        # 1b. Persona settings (name, tone, style)
+        # 1b. Persona settings (name, tone, style) - with variable substitution
         persona = config.get("persona", {})
         if persona:
             persona_parts = []
             if persona.get("name"):
-                persona_parts.append(f"Your name is {persona['name']}.")
+                name = self._substitute_variables(persona['name'], collected_variables) if collected_variables else persona['name']
+                persona_parts.append(f"Your name is {name}.")
             if persona.get("tone"):
-                persona_parts.append(f"Use a {persona['tone']} tone.")
+                tone = self._substitute_variables(persona['tone'], collected_variables) if collected_variables else persona['tone']
+                persona_parts.append(f"Use a {tone} tone.")
             if persona.get("style"):
-                persona_parts.append(f"Your communication style is {persona['style']}.")
+                style = self._substitute_variables(persona['style'], collected_variables) if collected_variables else persona['style']
+                persona_parts.append(f"Your communication style is {style}.")
             if persona_parts:
                 system_parts.append("\n".join(persona_parts))
 
-        # 1c. Instructions (specific behaviors to follow)
+        # 1c. Instructions (specific behaviors to follow) - with variable substitution
         instructions = config.get("instructions", [])
         if instructions:
             instruction_text = "\n\nINSTRUCTIONS - Follow these behaviors:\n"
             for i, instr in enumerate(instructions, 1):
                 if isinstance(instr, dict):
-                    instruction_text += f"{i}. {instr.get('text', instr.get('content', ''))}\n"
+                    text = instr.get('text', instr.get('content', ''))
                 else:
-                    instruction_text += f"{i}. {instr}\n"
+                    text = str(instr)
+                # Apply variable substitution to instruction text
+                if collected_variables:
+                    text = self._substitute_variables(text, collected_variables)
+                instruction_text += f"{i}. {text}\n"
             system_parts.append(instruction_text)
 
-        # 1d. Restrictions (things to avoid)
+        # 1d. Restrictions (things to avoid) - with variable substitution
         restrictions = config.get("restrictions", [])
         if restrictions:
             restriction_text = "\nRESTRICTIONS - Do NOT do the following:\n"
             for i, restr in enumerate(restrictions, 1):
                 if isinstance(restr, dict):
-                    restriction_text += f"- {restr.get('text', restr.get('content', ''))}\n"
+                    text = restr.get('text', restr.get('content', ''))
                 else:
-                    restriction_text += f"- {restr}\n"
+                    text = str(restr)
+                # Apply variable substitution to restriction text
+                if collected_variables:
+                    text = self._substitute_variables(text, collected_variables)
+                restriction_text += f"- {text}\n"
             system_parts.append(restriction_text)
 
         # 1e. Behavior settings (citations, follow-ups)
@@ -614,8 +634,13 @@ class ChatbotService:
             system_parts.append("\nRESPONSE FORMAT:\n" + "\n".join(f"- {bp}" for bp in behavior_parts))
 
         # 1f. Knowledge base context with grounding mode
+        # ALWAYS apply grounding when KB is configured, even if context is empty
+        has_kb_configured = bool(config.get("knowledge_bases"))
+        grounding_mode = config.get("grounding_mode", behavior.get("grounding_mode", "strict"))
+
         if context:
-            grounding_mode = config.get("grounding_mode", behavior.get("grounding_mode", "strict"))
+            # Normal case: KB returned results, apply grounding with context
+            print(f"[ChatbotService] Injecting KB context with grounding_mode={grounding_mode}, context_length={len(context)}")
 
             # Import guardrails service for proper grounding prompts
             try:
@@ -644,6 +669,42 @@ Use the following context to answer questions. If the context doesn't contain re
 
 Context:
 {context}""")
+
+        elif has_kb_configured:
+            # KB is configured but returned NO results - apply empty context grounding
+            print(f"[ChatbotService] KB configured but no context found, applying {grounding_mode} mode restrictions")
+
+            if grounding_mode == "strict":
+                system_parts.append("""
+STRICT MODE - NO KB RESULTS FOR THIS QUERY:
+
+Your knowledge base was searched but found NO relevant information.
+
+═══════════════════════════════════════════════════════════════
+RULE: For any question about a topic, fact, or concept:
+→ Respond: "I don't have information about that in my knowledge base."
+═══════════════════════════════════════════════════════════════
+
+EXCEPTIONS (respond naturally):
+- "hi", "hello" → Greet back
+- "ok", "thanks", "hmm" → Acknowledge
+- Questions about THIS conversation → Clarify
+
+DO NOT provide information from training data.
+DO NOT be "helpful" by answering topic questions without KB.
+DO NOT suggest topics to ask about (you don't know what's in the KB for this query).
+""")
+            elif grounding_mode == "guided":
+                system_parts.append("""
+NOTE - GUIDED KNOWLEDGE BASE MODE:
+Your knowledge base was searched but returned NO relevant information for this query.
+
+You MAY answer using general knowledge, but you MUST clearly disclose this by starting with:
+"I don't have specific information about this in my knowledge base, but based on general knowledge..."
+
+Always be transparent about what comes from the knowledge base vs. general knowledge.
+""")
+            # flexible mode: no restriction needed when no context
 
         # Combine all system parts
         system_content = "\n\n".join(part for part in system_parts if part.strip())

@@ -521,6 +521,7 @@ class UnifiedDraftService:
                 "enabled": bool(data.get("knowledge_bases")),
                 "knowledge_bases": data.get("knowledge_bases", []),
                 "citation_style": citation_style,
+                "grounding_mode": behavior.get("grounding_mode", "strict"),
                 "max_context_tokens": 4000
             },
             # Branding

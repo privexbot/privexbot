@@ -1,0 +1,29 @@
+# Docker Compose for Widget - Development Environment
+# Purpose: Local development with hot reload
+# Usage: docker compose -f docker-compose.dev.yml up
+
+services:
+  widget-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: privexbot-widget-dev
+    ports:
+      - "9000:9000"
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src
+      - ./test.html:/app/test.html
+      - ./webpack.config.js:/app/webpack.config.js
+      - ./package.json:/app/package.json
+      # Don't mount node_modules - use container's version
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    networks:
+      - widget-dev
+    restart: unless-stopped
+
+networks:
+  widget-dev:
+    driver: bridge

@@ -25,19 +25,47 @@ class GroundingMode(str, Enum):
 
 # Grounding prompt templates for each mode
 GROUNDING_PROMPTS = {
-    GroundingMode.STRICT: """You are an AI assistant that ONLY answers using the provided context from the knowledge base.
-
-CRITICAL RULES - YOU MUST FOLLOW THESE:
-1. If the answer is NOT in the context below, you MUST respond: "I don't have information about that in my knowledge base. Please try asking about something else."
-2. NEVER use information from your training data or general knowledge
-3. ALWAYS base your answer directly on the context provided
-4. If a question is only partially covered by the context, answer only what's in the context and clearly state what information is missing
-5. Do not make assumptions or inferences beyond what's explicitly stated in the context
+    GroundingMode.STRICT: """[STRICT KNOWLEDGE BASE MODE]
 
 CONTEXT FROM KNOWLEDGE BASE:
 {context}
 
-Remember: If the context doesn't contain the answer, say so. Do not guess or use external knowledge.""",
+═══════════════════════════════════════════════════════════════
+MANDATORY RULE - YOU MUST FOLLOW THIS EXACTLY:
+═══════════════════════════════════════════════════════════════
+
+For ANY question asking about a topic, concept, fact, or subject:
+1. Check if the answer is in the CONTEXT above
+2. If YES → Answer using ONLY the CONTEXT
+3. If NO → Respond: "I don't have information about that in my knowledge base."
+
+WHAT IS A TOPIC QUESTION (must check CONTEXT):
+- "What is X?" → Check CONTEXT for X
+- "How does Y work?" → Check CONTEXT for Y
+- "Tell me about Z" → Check CONTEXT for Z
+- "Explain W" → Check CONTEXT for W
+
+WHAT IS CONVERSATION (respond naturally):
+- "hi", "hello", "thanks", "bye" → Greet/acknowledge
+- "ok", "got it", "I see" → Acknowledge
+- "hmm", "interesting" → Acknowledge
+
+CRITICAL - DO NOT DO THIS:
+- User asks about X, X not in CONTEXT → You answer from training data ✗
+- User asks about Y, CONTEXT has Z → You answer about Y from training data ✗
+- Provide "general knowledge" when CONTEXT is silent ✗
+- Suggest topics NOT in the CONTEXT (like "try asking about X") ✗
+
+ABOUT SUGGESTING TOPICS:
+- You MAY suggest topics that ARE in the CONTEXT above
+- You must NEVER suggest topics from your training data
+
+EXAMPLE:
+User: "What is document structure?"
+→ Search CONTEXT for "document structure"
+→ Not found in CONTEXT
+→ Response: "I don't have information about that in my knowledge base."
+""",
 
     GroundingMode.GUIDED: """You are an AI assistant that prioritizes information from the provided context.
 

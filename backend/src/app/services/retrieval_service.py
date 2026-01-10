@@ -35,10 +35,12 @@ from app.services.qdrant_service import qdrant_service
 
 
 # Service defaults (lowest priority)
+# Note: threshold 0.5 is appropriate for sentence-transformers models
+# (all-MiniLM-L6-v2 etc.) which produce scores in 0.3-0.7 range for good matches
 SERVICE_DEFAULTS = {
     "top_k": 5,
     "search_method": "hybrid",
-    "threshold": 0.7
+    "threshold": 0.5
 }
 
 # Validation constraints for retrieval_config
@@ -350,7 +352,8 @@ class RetrievalService:
                 {
                     "chunk_id": "uuid",
                     "document_id": "uuid",
-                    "document_name": "FAQ.pdf",
+                    "document_title": "FAQ.pdf",
+                    "document_url": "https://example.com/faq",  # For web sources, null for file uploads
                     "content": "Chunk text...",
                     "score": 0.85,
                     "page": 12,
@@ -462,8 +465,18 @@ class RetrievalService:
         # Re-rank and limit using EFFECTIVE top_k
         results = sorted(results, key=lambda x: x["score"], reverse=True)[:effective_top_k]
 
-        # Filter by EFFECTIVE threshold
-        results = [r for r in results if r["score"] >= effective_threshold]
+        # Debug logging before filter
+        print(f"[RetrievalService] Before final filter: {len(results)} results (method={effective_search_method})")
+
+        # Filter by threshold - SKIP for hybrid search
+        # WHY: Hybrid search applies 0.7 weight to vector scores (line 679), making it
+        # mathematically impossible for results to pass the original threshold.
+        # Hybrid search already manages thresholds internally via _vector_search threshold * 0.8.
+        if effective_search_method != "hybrid":
+            results = [r for r in results if r["score"] >= effective_threshold]
+            print(f"[RetrievalService] After threshold filter ({effective_threshold}): {len(results)} results")
+        else:
+            print(f"[RetrievalService] Skipping threshold filter for hybrid search (results preserved: {len(results)})")
 
         return results
 
@@ -507,7 +520,8 @@ class RetrievalService:
                 results.append({
                     "chunk_id": result.id,
                     "document_id": result.metadata.get("document_id", ""),
-                    "document_name": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                    "document_title": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                    "document_url": result.metadata.get("source_url"),  # Source URL for web sources
                     "content": result_content,
                     "score": result.score,
                     "page": result.metadata.get("page_number", result.metadata.get("chunk_index")),
@@ -522,17 +536,34 @@ class RetrievalService:
                     results.append({
                         "chunk_id": result.id,
                         "document_id": str(chunk.document_id) if chunk.document_id else "",
-                        "document_name": chunk.document.name if chunk.document else "Unknown",
+                        "document_title": chunk.document.name if chunk.document else "Unknown",
+                        "document_url": chunk.document.source_url if chunk.document else None,  # Source URL for web sources
                         "content": chunk.content,
                         "score": result.score,
                         "page": chunk.chunk_metadata.get("page") if chunk.chunk_metadata else None,
-                        "annotations": chunk.annotations,
+                        "annotations": chunk.chunk_metadata.get("annotations") if chunk.chunk_metadata else None,
                         "boosted": False,
                         "storage_type": "postgres_fallback"
                     })
                 else:
-                    # Last resort: Use whatever we have from vector result
-                    print(f"[RetrievalService] Warning: No content found for chunk {result.id}")
+                    # Last resort: Include result with metadata warning
+                    # This helps debugging and ensures results flow through even if content storage is inconsistent
+                    print(f"[RetrievalService] Warning: No content found for chunk {result.id}, including with placeholder")
+                    results.append({
+                        "chunk_id": result.id,
+                        "document_id": result.metadata.get("document_id", ""),
+                        "document_title": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                        "document_url": result.metadata.get("source_url"),  # Source URL for web sources
+                        "content": f"[Content unavailable for chunk {result.id}]",
+                        "score": result.score,
+                        "page": result.metadata.get("page_number", result.metadata.get("chunk_index")),
+                        "annotations": result.metadata.get("annotations"),
+                        "boosted": False,
+                        "storage_type": "missing_content"
+                    })
+
+        # Debug logging
+        print(f"[RetrievalService] Vector search: Qdrant returned {len(vector_results)}, after content filter: {len(results)}")
 
         return results
 
@@ -576,11 +607,12 @@ class RetrievalService:
                 results.append({
                     "chunk_id": str(chunk.id),
                     "document_id": str(chunk.document_id),
-                    "document_name": chunk.document.name if chunk.document else "Unknown",
+                    "document_title": chunk.document.name if chunk.document else "Unknown",
+                    "document_url": chunk.document.source_url if chunk.document else None,  # Source URL for web sources
                     "content": chunk.content,
                     "score": 0.8,  # Fixed score for keyword matches
                     "page": chunk.chunk_metadata.get("page") if chunk.chunk_metadata else None,
-                    "annotations": chunk.annotations,
+                    "annotations": chunk.chunk_metadata.get("annotations") if chunk.chunk_metadata else None,
                     "boosted": False,
                     "storage_type": "postgres"
                 })
@@ -606,7 +638,8 @@ class RetrievalService:
                         results.append({
                             "chunk_id": result.id,
                             "document_id": result.metadata.get("document_id", ""),
-                            "document_name": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                            "document_title": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                            "document_url": result.metadata.get("source_url"),  # Source URL for web sources
                             "content": result.content,
                             "score": result.score,
                             "page": result.metadata.get("page_number", result.metadata.get("chunk_index")),
@@ -684,6 +717,9 @@ class RetrievalService:
             else:
                 combined[chunk_id] = result.copy()
                 combined[chunk_id]["score"] = result["score"] * keyword_weight
+
+        # Debug logging
+        print(f"[RetrievalService] Hybrid search: vector={len(vector_results)}, keyword={len(keyword_results)}, combined={len(combined)}")
 
         return list(combined.values())
 

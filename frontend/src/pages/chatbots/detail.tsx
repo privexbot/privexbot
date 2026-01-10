@@ -848,9 +848,28 @@ export default function ChatbotDetailPage() {
                           {message.sources && message.sources.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                               <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mb-1">Sources:</p>
-                              {message.sources.map((source, idx) => (
+                              {/* Deduplicate sources by URL + title */}
+                              {Array.from(
+                                new Map(
+                                  message.sources.map(s => [
+                                    `${s.document_url || ''}-${s.document_title || ''}`,
+                                    s
+                                  ])
+                                ).values()
+                              ).map((source, idx) => (
                                 <div key={idx} className="text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 rounded p-1 mt-1">
-                                  {source.document_title || `Source ${idx + 1}`}
+                                  {source.document_url ? (
+                                    <a
+                                      href={source.document_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                                    >
+                                      {source.document_title || `Source ${idx + 1}`}
+                                    </a>
+                                  ) : (
+                                    source.document_title || `Source ${idx + 1}`
+                                  )}
                                 </div>
                               ))}
                             </div>
