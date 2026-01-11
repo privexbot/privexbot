@@ -353,12 +353,55 @@ from fastapi import HTTPException, status
 from uuid import UUID
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple
+import re
 
 from app.models.user import User
 from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
+
+
+# ============================================================================
+# SLUG UTILITIES
+# ============================================================================
+
+def slugify(text: str) -> str:
+    """
+    Convert text to URL-safe slug.
+
+    Examples:
+        "My Workspace" → "my-workspace"
+        "Engineering Team!" → "engineering-team"
+    """
+    text = text.lower()
+    text = re.sub(r'[\s_]+', '-', text)
+    text = re.sub(r'[^a-z0-9-]', '', text)
+    text = re.sub(r'-+', '-', text)
+    text = text.strip('-')
+    return text or 'workspace'
+
+
+def generate_unique_workspace_slug(name: str, db: Session) -> str:
+    """
+    Generate a globally unique slug for a workspace.
+
+    Args:
+        name: The workspace name to slugify
+        db: Database session
+
+    Returns:
+        A unique slug string (e.g., "my-workspace", "my-workspace-2")
+    """
+    base_slug = slugify(name)
+    slug = base_slug
+    counter = 1
+
+    while db.query(Workspace).filter(Workspace.slug == slug).first():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
+    return slug
 
 
 # ============================================================================
@@ -412,10 +455,11 @@ def create_organization(
     )
     db.add(org_member)
 
-    # Create default workspace
+    # Create default workspace with unique slug
     default_workspace = Workspace(
         organization_id=org.id,
         name="Default",
+        slug=generate_unique_workspace_slug("Default", db),
         description="Default workspace for organization",
         is_default=True,
         created_by=creator_id
@@ -647,10 +691,11 @@ def create_workspace(
             detail="Workspace name already exists in this organization"
         )
 
-    # Create workspace
+    # Create workspace with unique slug
     workspace = Workspace(
         organization_id=organization_id,
         name=name,
+        slug=generate_unique_workspace_slug(name, db),
         description=description,
         is_default=is_default,
         created_by=creator_id

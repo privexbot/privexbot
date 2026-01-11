@@ -62,6 +62,7 @@ import Credentials from "@/pages/Credentials";
 import { AboutPage } from "@/pages/AboutPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
+import { PublicChatPage } from "@/pages/chat/PublicChatPage";
 import {
   AdminDashboard,
   AdminOrganizations,
@@ -95,6 +96,10 @@ function App() {
               <Route path="/signup" element={<NewSignupPage />} />
               <Route path="/password-reset" element={<PasswordResetPage />} />
               <Route path="/auth/test" element={<AuthTestPage />} />
+
+              {/* Public hosted chat page (SecretVM deployment) */}
+              {/* URL format: /chat/{workspace_slug}/{bot_slug} */}
+              <Route path="/chat/:workspaceSlug/:botSlug" element={<PublicChatPage />} />
 
               {/* Legacy auth routes for backward compatibility */}
               <Route path="/auth/login" element={<LoginPage />} />

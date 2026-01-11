@@ -38,6 +38,12 @@ import {
   MousePointer,
   Key,
   RotateCcw,
+  Globe,
+  Plus,
+  Phone,
+  Link2,
+  QrCode,
+  Check,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { useApp } from '@/contexts/AppContext';
@@ -90,8 +96,9 @@ export default function ChatbotDetailPage() {
 
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
-      loadChatbotData();
+      void loadChatbotData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatbotId, currentWorkspace]);
 
   useEffect(() => {
@@ -130,7 +137,7 @@ export default function ChatbotDetailPage() {
       setChatbot(data);
 
       // Add greeting as first message if available
-      const greeting = data.prompt_config?.messages?.greeting;
+      const greeting = data.prompt_config.messages?.greeting;
       if (greeting && testMessages.length === 0) {
         setTestMessages([{
           id: 'greeting',
@@ -202,7 +209,7 @@ export default function ChatbotDetailPage() {
     if (!testInput.trim() || !chatbotId || isTestLoading) return;
 
     const userMessage: ChatMessage = {
-      id: `user_${Date.now()}`,
+      id: `user_${String(Date.now())}`,
       role: 'user',
       content: testInput.trim(),
       timestamp: new Date().toISOString(),
@@ -215,7 +222,7 @@ export default function ChatbotDetailPage() {
     try {
       const response = await chatbotApi.test(chatbotId, {
         message: userMessage.content,
-        session_id: testSessionId || undefined,
+        session_id: testSessionId ?? undefined,
       });
 
       const assistantMessage: ChatMessage = {
@@ -269,12 +276,12 @@ export default function ChatbotDetailPage() {
   const getEmbedCode = () => {
     if (!chatbot) return '';
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    const widgetUrl = import.meta.env.VITE_WIDGET_URL || 'http://localhost:9000/widget.js';
-    const color = chatbot.branding_config?.primary_color || '#6366f1';
-    const position = chatbot.branding_config?.position || 'bottom-right';
-    const greeting = chatbot.prompt_config?.messages?.greeting || 'Hello! How can I help you?';
-    const botName = chatbot.branding_config?.chat_title || chatbot.name;
+    const apiUrl = String(import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1');
+    const widgetUrl = String(import.meta.env.VITE_WIDGET_URL ?? 'http://localhost:9000/widget.js');
+    const color = chatbot.branding_config.primary_color ?? '#6366f1';
+    const position = chatbot.branding_config.position ?? 'bottom-right';
+    const greeting = chatbot.prompt_config.messages?.greeting ?? 'Hello! How can I help you?';
+    const botName = chatbot.branding_config.chat_title ?? chatbot.name;
 
     return `<script src="${widgetUrl}"></script>
 <script>
@@ -293,9 +300,9 @@ export default function ChatbotDetailPage() {
   };
 
   const copyEmbedCode = () => {
-    navigator.clipboard.writeText(getEmbedCode());
+    void navigator.clipboard.writeText(getEmbedCode());
     setEmbedCodeCopied(true);
-    setTimeout(() => setEmbedCodeCopied(false), 2000);
+    setTimeout(() => { setEmbedCodeCopied(false); }, 2000);
     toast({
       title: 'Copied!',
       description: 'Embed code copied to clipboard',
@@ -324,15 +331,17 @@ export default function ChatbotDetailPage() {
   // Load analytics when tab is selected or days change
   useEffect(() => {
     if (activeTab === 'analytics' && chatbotId) {
-      loadAnalytics();
+      void loadAnalytics();
     }
-  }, [activeTab, analyticsDays]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, analyticsDays, chatbotId]);
 
   // Load API keys when embed tab is selected
   useEffect(() => {
     if (activeTab === 'embed' && chatbotId) {
-      loadApiKeys();
+      void loadApiKeys();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, chatbotId]);
 
   const loadApiKeys = async () => {
@@ -402,9 +411,9 @@ export default function ChatbotDetailPage() {
 
   const copyNewApiKey = () => {
     if (newApiKey) {
-      navigator.clipboard.writeText(newApiKey);
+      void navigator.clipboard.writeText(newApiKey);
       setNewApiKeyCopied(true);
-      setTimeout(() => setNewApiKeyCopied(false), 2000);
+      setTimeout(() => { setNewApiKeyCopied(false); }, 2000);
       toast({
         title: 'Copied!',
         description: 'API key copied to clipboard',
@@ -475,7 +484,7 @@ export default function ChatbotDetailPage() {
               Chatbot not found or you don't have access to it.
             </AlertDescription>
           </Alert>
-          <Button className="mt-4" onClick={() => navigate('/chatbots')}>
+          <Button className="mt-4" onClick={() => { navigate('/chatbots'); }}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Chatbots
           </Button>
@@ -491,7 +500,7 @@ export default function ChatbotDetailPage() {
         <div>
           <Button
             variant="ghost"
-            onClick={() => navigate('/chatbots')}
+            onClick={() => { navigate('/chatbots'); }}
             className="mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -534,7 +543,7 @@ export default function ChatbotDetailPage() {
                     </span>
                   )}
                   <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg">
-                    {chatbot.ai_config?.model || 'secret-ai-v1'}
+                    {chatbot.ai_config.model}
                   </span>
                 </div>
               </div>
@@ -542,7 +551,7 @@ export default function ChatbotDetailPage() {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => navigate(`/chatbots/${chatbotId}/edit`)}
+                  onClick={() => { navigate(`/chatbots/${String(chatbotId)}/edit`); }}
                   className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 flex-shrink-0 transition-all duration-200 font-manrope"
                 >
                   <Settings className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
@@ -556,13 +565,13 @@ export default function ChatbotDetailPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="font-manrope bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 rounded-xl shadow-lg backdrop-blur-sm min-w-[160px]">
-                    <DropdownMenuItem onClick={loadChatbotData} className="hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-700 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                    <DropdownMenuItem onClick={() => { void loadChatbotData(); }} className="hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-700 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-300 transition-colors duration-200 rounded-lg mx-1 my-1">
                       <RefreshCw className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-3" />
                       Refresh
                     </DropdownMenuItem>
                     {chatbot.status === 'active' ? (
                       <DropdownMenuItem
-                        onClick={() => handleStatusChange('paused')}
+                        onClick={() => { void handleStatusChange('paused'); }}
                         className="hover:bg-amber-50 dark:hover:bg-amber-900/30 text-gray-700 dark:text-gray-300 hover:text-amber-700 dark:hover:text-amber-300 transition-colors duration-200 rounded-lg mx-1 my-1"
                       >
                         <Pause className="h-4 w-4 text-amber-600 dark:text-amber-400 mr-3" />
@@ -570,14 +579,14 @@ export default function ChatbotDetailPage() {
                       </DropdownMenuItem>
                     ) : chatbot.status === 'paused' ? (
                       <DropdownMenuItem
-                        onClick={() => handleStatusChange('active')}
+                        onClick={() => { void handleStatusChange('active'); }}
                         className="hover:bg-green-50 dark:hover:bg-green-900/30 text-gray-700 dark:text-gray-300 hover:text-green-700 dark:hover:text-green-300 transition-colors duration-200 rounded-lg mx-1 my-1"
                       >
                         <Play className="h-4 w-4 text-green-600 dark:text-green-400 mr-3" />
                         Resume
                       </DropdownMenuItem>
                     ) : null}
-                    <DropdownMenuItem onClick={() => setArchiveDialogOpen(true)} className="hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-700 dark:text-gray-300 hover:text-red-700 dark:hover:text-red-300 transition-colors duration-200 rounded-lg mx-1 my-1">
+                    <DropdownMenuItem onClick={() => { setArchiveDialogOpen(true); }} className="hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-700 dark:text-gray-300 hover:text-red-700 dark:hover:text-red-300 transition-colors duration-200 rounded-lg mx-1 my-1">
                       <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400 mr-3" />
                       Archive
                     </DropdownMenuItem>
@@ -597,7 +606,7 @@ export default function ChatbotDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={handleRefreshMetrics}
+              onClick={() => { void handleRefreshMetrics(); }}
               disabled={metricsRefreshing}
               className="border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30"
             >
@@ -613,7 +622,7 @@ export default function ChatbotDetailPage() {
                 <div>
                   <p className="text-sm font-medium text-blue-700 dark:text-blue-300 font-manrope">Conversations</p>
                   <p className="text-2xl font-bold text-blue-900 dark:text-blue-100 font-manrope">
-                    {chatbot.cached_metrics?.total_conversations || 0}
+                    {chatbot.cached_metrics.total_conversations}
                   </p>
                 </div>
               </div>
@@ -627,7 +636,7 @@ export default function ChatbotDetailPage() {
                 <div>
                   <p className="text-sm font-medium text-green-700 dark:text-green-300 font-manrope">Messages</p>
                   <p className="text-2xl font-bold text-green-900 dark:text-green-100 font-manrope">
-                    {chatbot.cached_metrics?.total_messages || 0}
+                    {chatbot.cached_metrics.total_messages}
                   </p>
                 </div>
               </div>
@@ -641,7 +650,7 @@ export default function ChatbotDetailPage() {
                 <div>
                   <p className="text-sm font-medium text-purple-700 dark:text-purple-300 font-manrope">Avg Response</p>
                   <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 font-manrope">
-                    {chatbot.cached_metrics?.avg_response_time_ms
+                    {chatbot.cached_metrics.avg_response_time_ms
                       ? `${(chatbot.cached_metrics.avg_response_time_ms / 1000).toFixed(1)}s`
                       : '—'}
                   </p>
@@ -657,7 +666,7 @@ export default function ChatbotDetailPage() {
                 <div>
                   <p className="text-sm font-medium text-amber-700 dark:text-amber-300 font-manrope">Knowledge Bases</p>
                   <p className="text-2xl font-bold text-amber-900 dark:text-amber-100 font-manrope">
-                    {chatbot.kb_config?.knowledge_bases?.length || 0}
+                    {(chatbot.kb_config.knowledge_bases ?? []).length}
                   </p>
                 </div>
               </div>
@@ -688,6 +697,20 @@ export default function ChatbotDetailPage() {
             >
               <Code className="h-4 w-4 mr-1" />
               Embed Code
+            </TabsTrigger>
+            <TabsTrigger
+              value="deployment"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <Globe className="h-4 w-4 mr-1" />
+              Deployment
+            </TabsTrigger>
+            <TabsTrigger
+              value="hosted-page"
+              className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <Link2 className="h-4 w-4 mr-1" />
+              Hosted Page
             </TabsTrigger>
             <TabsTrigger
               value="settings"
@@ -722,15 +745,15 @@ export default function ChatbotDetailPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
                       <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-manrope block mb-1">Model</label>
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config?.model || 'secret-ai-v1'}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config.model}</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
                       <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-manrope block mb-1">Temperature</label>
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config?.temperature ?? 0.7}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config.temperature}</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
                       <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-manrope block mb-1">Max Tokens</label>
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config?.max_tokens || 2000}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">{chatbot.ai_config.max_tokens}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -748,9 +771,9 @@ export default function ChatbotDetailPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-6">
-                  {chatbot.kb_config?.knowledge_bases?.length > 0 ? (
+                  {(chatbot.kb_config.knowledge_bases ?? []).length > 0 ? (
                     <div className="space-y-3">
-                      {chatbot.kb_config.knowledge_bases.map((kb, index) => (
+                      {(chatbot.kb_config.knowledge_bases ?? []).map((kb, index) => (
                         <div key={kb.kb_id || index} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
                           <div className="flex items-center gap-3">
                             <Database className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -785,7 +808,7 @@ export default function ChatbotDetailPage() {
                 <CardContent className="p-6">
                   <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
                     <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap">
-                      {chatbot.prompt_config?.system_prompt || 'No system prompt configured'}
+                      {chatbot.prompt_config.system_prompt}
                     </pre>
                   </div>
                 </CardContent>
@@ -811,7 +834,7 @@ export default function ChatbotDetailPage() {
                     onClick={() => {
                       setTestMessages([]);
                       setTestSessionId(null);
-                      const greeting = chatbot.prompt_config?.messages?.greeting;
+                      const greeting = chatbot.prompt_config.messages?.greeting;
                       if (greeting) {
                         setTestMessages([{
                           id: 'greeting',
@@ -859,7 +882,7 @@ export default function ChatbotDetailPage() {
                               {Array.from(
                                 new Map(
                                   message.sources.map(s => [
-                                    `${s.document_url || ''}-${s.document_title || ''}`,
+                                    `${s.document_url ?? ''}-${s.document_title ?? ''}`,
                                     s
                                   ])
                                 ).values()
@@ -872,10 +895,10 @@ export default function ChatbotDetailPage() {
                                       rel="noopener noreferrer"
                                       className="text-blue-600 dark:text-blue-400 hover:underline"
                                     >
-                                      {source.document_title || `Source ${idx + 1}`}
+                                      {source.document_title ?? `Source ${String(idx + 1)}`}
                                     </a>
                                   ) : (
-                                    source.document_title || `Source ${idx + 1}`
+                                    source.document_title ?? `Source ${String(idx + 1)}`
                                   )}
                                 </div>
                               ))}
@@ -909,13 +932,13 @@ export default function ChatbotDetailPage() {
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      handleTestMessage();
+                      void handleTestMessage();
                     }}
                     className="flex gap-3"
                   >
                     <Input
                       value={testInput}
-                      onChange={(e) => setTestInput(e.target.value)}
+                      onChange={(e) => { setTestInput(e.target.value); }}
                       placeholder="Type a message..."
                       disabled={isTestLoading}
                       className="flex-1 font-manrope"
@@ -945,7 +968,7 @@ export default function ChatbotDetailPage() {
                     </div>
                     <Button
                       variant="outline"
-                      onClick={() => setRegenerateDialogOpen(true)}
+                      onClick={() => { setRegenerateDialogOpen(true); }}
                       className="border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30"
                     >
                       <RotateCcw className="h-4 w-4 mr-2" />
@@ -1002,7 +1025,7 @@ export default function ChatbotDetailPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => confirmDeleteApiKey(key)}
+                              onClick={() => { confirmDeleteApiKey(key); }}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                               title="Delete API Key"
                             >
@@ -1066,7 +1089,7 @@ export default function ChatbotDetailPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <Button variant="outline" onClick={() => window.open(`${import.meta.env.VITE_WIDGET_URL?.replace('/widget.js', '') || 'http://localhost:9000'}/test.html`, '_blank')}>
+                    <Button variant="outline" onClick={() => window.open(`${String(import.meta.env.VITE_WIDGET_URL ?? 'http://localhost:9000/widget.js').replace('/widget.js', '')}/test.html`, '_blank')}>
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Open Test Page
                     </Button>
@@ -1074,6 +1097,264 @@ export default function ChatbotDetailPage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Deployment Tab */}
+          <TabsContent value="deployment">
+            <div className="space-y-6">
+              {/* Active Channels */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-b border-green-200 dark:border-green-700 rounded-t-xl p-6">
+                  <div className="flex items-center gap-3">
+                    <Globe className="h-6 w-6 text-green-600 dark:text-green-400" />
+                    <div>
+                      <CardTitle className="text-gray-900 dark:text-gray-100 font-manrope">Active Channels</CardTitle>
+                      <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">Channels where your chatbot is deployed</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="space-y-3">
+                    {/* Website Widget - Always Active */}
+                    <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                      <div className="flex items-center gap-3">
+                        <Globe className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        <div>
+                          <p className="font-medium text-green-900 dark:text-green-100 font-manrope">Website Widget</p>
+                          <p className="text-xs text-green-600 dark:text-green-400 font-manrope">Embed on your website</p>
+                        </div>
+                      </div>
+                      <Badge className="bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-300">Active</Badge>
+                    </div>
+
+                    {/* API Access */}
+                    <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                      <div className="flex items-center gap-3">
+                        <Code className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        <div>
+                          <p className="font-medium text-blue-900 dark:text-blue-100 font-manrope">REST API</p>
+                          <p className="text-xs text-blue-600 dark:text-blue-400 font-manrope">Programmatic access</p>
+                        </div>
+                      </div>
+                      <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
+                    </div>
+
+                    {/* SecretVM */}
+                    <div className="flex items-center justify-between p-4 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-200 dark:border-cyan-700">
+                      <div className="flex items-center gap-3">
+                        <Link2 className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                        <div>
+                          <p className="font-medium text-cyan-900 dark:text-cyan-100 font-manrope">SecretVM</p>
+                          <p className="text-xs text-cyan-600 dark:text-cyan-400 font-manrope">
+                            {chatbot.slug && chatbot.workspace_slug
+                              ? `/chat/${chatbot.workspace_slug}/${chatbot.slug}`
+                              : 'Direct chat URL'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {chatbot.is_public ? (
+                          <Badge className="bg-cyan-100 text-cyan-800 dark:bg-cyan-800/30 dark:text-cyan-300">Active</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-gray-500">Disabled</Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => { setActiveTab('hosted-page'); }}
+                          className="text-cyan-600 dark:text-cyan-400"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Show other channels if configured */}
+                    {(chatbot.deployment_config.channels ?? []).filter(c => c.enabled && !['website', 'api'].includes(c.type)).map((channel, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div className="flex items-center gap-3">
+                          {channel.type === 'discord' && <MessageSquare className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
+                          {channel.type === 'telegram' && <Send className="h-5 w-5 text-blue-500 dark:text-blue-400" />}
+                          {channel.type === 'whatsapp' && <Phone className="h-5 w-5 text-green-500 dark:text-green-400" />}
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope capitalize">{channel.type}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Connected</p>
+                          </div>
+                        </div>
+                        <Badge className="bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-300">Active</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Add More Channels */}
+              <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border-b border-violet-200 dark:border-violet-700 rounded-t-xl p-6">
+                  <div className="flex items-center gap-3">
+                    <Plus className="h-6 w-6 text-violet-600 dark:text-violet-400" />
+                    <div>
+                      <CardTitle className="text-gray-900 dark:text-gray-100 font-manrope">Add Deployment Channels</CardTitle>
+                      <CardDescription className="text-gray-600 dark:text-gray-400 font-manrope">Connect your chatbot to messaging platforms</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Discord */}
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <div className="flex items-center gap-3 mb-3">
+                        <MessageSquare className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">Discord</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Add to servers</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">Connect your chatbot to Discord servers for community support.</p>
+                      <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
+                        Coming Soon
+                      </Button>
+                    </div>
+
+                    {/* Telegram */}
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Send className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">Telegram</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Telegram bot</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">Deploy as a Telegram bot for instant messaging support.</p>
+                      <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
+                        Coming Soon
+                      </Button>
+                    </div>
+
+                    {/* WhatsApp */}
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Phone className="h-5 w-5 text-green-500 dark:text-green-400" />
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">WhatsApp</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Business API</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">Connect via WhatsApp Business API for customer support.</p>
+                      <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
+                        Coming Soon
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Hosted Page Tab - SecretVM Deployment */}
+          <TabsContent value="hosted-page">
+            <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
+              <CardContent className="p-6 space-y-6">
+                {/* Header with Status */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Globe className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">SecretVM</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">Public chat page accessible via direct URL</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {chatbot.is_public ? (
+                      <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 font-manrope">
+                        <Check className="h-3 w-3 mr-1" />
+                        Enabled
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-gray-500 dark:text-gray-400 font-manrope">
+                        Disabled
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* URL and Actions */}
+                {chatbot.slug && chatbot.workspace_slug ? (
+                  <div className="space-y-4">
+                    {/* URL Display */}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={`${window.location.origin}/chat/${chatbot.workspace_slug}/${chatbot.slug}`}
+                        className="font-mono text-sm bg-gray-50 dark:bg-gray-700/50"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(`${window.location.origin}/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`);
+                          toast({
+                            title: 'URL Copied',
+                            description: 'Chat URL copied to clipboard',
+                          });
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => window.open(`/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`, '_blank')}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const url = `${window.location.origin}/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`;
+                          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
+                          const link = document.createElement('a');
+                          link.href = qrUrl;
+                          link.download = `${String(chatbot.slug)}-qr-code.png`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          toast({
+                            title: 'QR Code Downloaded',
+                            description: 'QR code image saved to your downloads',
+                          });
+                        }}
+                        className="font-manrope"
+                      >
+                        <QrCode className="h-4 w-4 mr-2" />
+                        Download QR Code
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { navigate(`/chatbots/${String(chatbotId)}/edit`); }}
+                        className="font-manrope"
+                      >
+                        <Settings className="h-4 w-4 mr-2" />
+                        Edit Appearance
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                    <AlertCircle className="h-10 w-10 mx-auto text-amber-500 mb-3" />
+                    <p className="text-gray-600 dark:text-gray-400 font-manrope">
+                      Hosted page URL will be available after the chatbot is deployed.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Regenerate API Key Confirmation Dialog */}
@@ -1091,14 +1372,14 @@ export default function ChatbotDetailPage() {
               <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-6">
                 <Button
                   variant="outline"
-                  onClick={() => setRegenerateDialogOpen(false)}
+                  onClick={() => { setRegenerateDialogOpen(false); }}
                   className="flex-1 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={() => {
-                    handleRegenerateApiKey();
+                    void handleRegenerateApiKey();
                     setRegenerateDialogOpen(false);
                   }}
                   className="flex-1 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 font-manrope"
@@ -1142,7 +1423,7 @@ export default function ChatbotDetailPage() {
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleDeleteApiKey}
+                  onClick={() => { void handleDeleteApiKey(); }}
                   variant="destructive"
                   className="flex-1 font-manrope"
                 >
@@ -1187,18 +1468,18 @@ export default function ChatbotDetailPage() {
                       <div className="flex items-center gap-2 mt-1">
                         <div
                           className="w-6 h-6 rounded border"
-                          style={{ backgroundColor: chatbot.branding_config?.primary_color || '#6366f1' }}
+                          style={{ backgroundColor: chatbot.branding_config.primary_color ?? '#6366f1' }}
                         />
-                        <span className="text-sm font-mono">{chatbot.branding_config?.primary_color || '#6366f1'}</span>
+                        <span className="text-sm font-mono">{chatbot.branding_config.primary_color ?? '#6366f1'}</span>
                       </div>
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Position</label>
-                      <p className="text-sm font-medium mt-1">{chatbot.branding_config?.position || 'bottom-right'}</p>
+                      <p className="text-sm font-medium mt-1">{chatbot.branding_config.position ?? 'bottom-right'}</p>
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Chat Title</label>
-                      <p className="text-sm font-medium mt-1">{chatbot.branding_config?.chat_title || 'Chat with us'}</p>
+                      <p className="text-sm font-medium mt-1">{chatbot.branding_config.chat_title ?? 'Chat with us'}</p>
                     </div>
                   </div>
                 </div>
@@ -1207,7 +1488,7 @@ export default function ChatbotDetailPage() {
                 <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope mb-3">Deployment Channels</h4>
                   <div className="flex flex-wrap gap-2">
-                    {chatbot.deployment_config?.channels?.map((channel, idx) => (
+                    {(chatbot.deployment_config.channels ?? []).length > 0 ? (chatbot.deployment_config.channels ?? []).map((channel, idx) => (
                       <Badge
                         key={idx}
                         variant="outline"
@@ -1218,13 +1499,13 @@ export default function ChatbotDetailPage() {
                       >
                         {channel.type} {channel.enabled ? '✓' : '✗'}
                       </Badge>
-                    )) || <span className="text-sm text-gray-500">No channels configured</span>}
+                    )) : <span className="text-sm text-gray-500">No channels configured</span>}
                   </div>
                 </div>
 
                 {/* Edit Button */}
                 <div className="flex justify-end">
-                  <Button onClick={() => navigate(`/chatbots/${chatbotId}/edit`)}>
+                  <Button onClick={() => { navigate(`/chatbots/${String(chatbotId)}/edit`); }}>
                     <Settings className="h-4 w-4 mr-2" />
                     Edit Configuration
                   </Button>
@@ -1244,7 +1525,7 @@ export default function ChatbotDetailPage() {
                 <div className="flex items-center gap-2">
                   <select
                     value={analyticsDays}
-                    onChange={(e) => setAnalyticsDays(Number(e.target.value))}
+                    onChange={(e) => { setAnalyticsDays(Number(e.target.value)); }}
                     className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-manrope focus:ring-2 focus:ring-blue-500"
                   >
                     <option value={7}>Last 7 days</option>
@@ -1255,7 +1536,7 @@ export default function ChatbotDetailPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={loadAnalytics}
+                    onClick={() => { void loadAnalytics(); }}
                     disabled={analyticsLoading}
                   >
                     <RefreshCw className={`h-4 w-4 ${analyticsLoading ? 'animate-spin' : ''}`} />
@@ -1278,7 +1559,7 @@ export default function ChatbotDetailPage() {
                           <div>
                             <p className="text-xs font-medium text-blue-700 dark:text-blue-300 font-manrope">Widget Loads</p>
                             <p className="text-xl font-bold text-blue-900 dark:text-blue-100 font-manrope">
-                              {analytics.analytics?.overview?.widget_loads || 0}
+                              {analytics.analytics?.overview.widget_loads ?? 0}
                             </p>
                           </div>
                         </div>
@@ -1292,7 +1573,7 @@ export default function ChatbotDetailPage() {
                           <div>
                             <p className="text-xs font-medium text-green-700 dark:text-green-300 font-manrope">Widget Opens</p>
                             <p className="text-xl font-bold text-green-900 dark:text-green-100 font-manrope">
-                              {analytics.analytics?.engagement?.widget_opens || 0}
+                              {analytics.analytics?.engagement.widget_opens ?? 0}
                             </p>
                           </div>
                         </div>
@@ -1306,7 +1587,7 @@ export default function ChatbotDetailPage() {
                           <div>
                             <p className="text-xs font-medium text-purple-700 dark:text-purple-300 font-manrope">Conversations</p>
                             <p className="text-xl font-bold text-purple-900 dark:text-purple-100 font-manrope">
-                              {analytics.analytics?.overview?.total_conversations || 0}
+                              {analytics.analytics?.overview.total_conversations ?? 0}
                             </p>
                           </div>
                         </div>
@@ -1320,7 +1601,7 @@ export default function ChatbotDetailPage() {
                           <div>
                             <p className="text-xs font-medium text-amber-700 dark:text-amber-300 font-manrope">Engagement Rate</p>
                             <p className="text-xl font-bold text-amber-900 dark:text-amber-100 font-manrope">
-                              {((analytics.analytics?.engagement?.engagement_rate || 0) * 100).toFixed(1)}%
+                              {((analytics.analytics?.engagement.engagement_rate ?? 0) * 100).toFixed(1)}%
                             </p>
                           </div>
                         </div>
@@ -1414,12 +1695,12 @@ export default function ChatbotDetailPage() {
                                 <p className="text-xs text-gray-500">Satisfaction</p>
                               </div>
                             </div>
-                            {analytics.feedback.recent_feedback?.length > 0 && (
+                            {analytics.feedback.recent_feedback.length > 0 && (
                               <div className="border-t pt-3 mt-3">
                                 <p className="text-xs font-medium text-gray-500 mb-2">Recent Comments</p>
                                 {analytics.feedback.recent_feedback.slice(0, 3).map((fb, idx) => (
                                   <div key={idx} className="text-sm text-gray-600 dark:text-gray-400 py-1">
-                                    {fb.rating === 'positive' ? '👍' : '👎'} {fb.comment || fb.message_preview}
+                                    {fb.rating === 'positive' ? '👍' : '👎'} {fb.comment ?? fb.message_preview}
                                   </div>
                                 ))}
                               </div>
@@ -1473,7 +1754,7 @@ export default function ChatbotDetailPage() {
                   <p className="text-gray-500 dark:text-gray-400 mb-4">
                     Analytics will appear once your chatbot starts receiving traffic.
                   </p>
-                  <Button onClick={loadAnalytics} variant="outline">
+                  <Button onClick={() => { void loadAnalytics(); }} variant="outline">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh Analytics
                   </Button>
@@ -1490,7 +1771,7 @@ export default function ChatbotDetailPage() {
               <AlertCircle className="w-12 h-12 mx-auto text-red-600 dark:text-red-400 mb-4" />
               <DialogTitle className="text-xl font-bold text-red-900 dark:text-red-100 font-manrope">Archive Chatbot</DialogTitle>
               <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope leading-relaxed mt-3">
-                Are you sure you want to archive <span className="font-semibold text-red-700 dark:text-red-300">"{chatbot?.name}"</span>?
+                Are you sure you want to archive <span className="font-semibold text-red-700 dark:text-red-300">"{chatbot.name}"</span>?
                 <br /><br />
                 The chatbot will be disabled and won't respond to messages. You can restore it later.
               </DialogDescription>
@@ -1498,14 +1779,14 @@ export default function ChatbotDetailPage() {
             <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-6">
               <Button
                 variant="outline"
-                onClick={() => setArchiveDialogOpen(false)}
+                onClick={() => { setArchiveDialogOpen(false); }}
                 className="flex-1 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope"
               >
                 Cancel
               </Button>
               <Button
                 variant="destructive"
-                onClick={handleArchive}
+                onClick={() => { void handleArchive(); }}
                 className="flex-1 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 font-manrope"
               >
                 <Trash2 className="w-4 h-4 mr-2" />

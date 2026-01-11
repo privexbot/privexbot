@@ -13,7 +13,7 @@ class ChatBubble {
   render() {
     const bubble = document.createElement('div');
     bubble.className = 'privexbot-bubble';
-    bubble.style.background = this.config.color || '#6366f1';
+    bubble.style.background = this.config.color || '#3b82f6';
 
     bubble.innerHTML = `
       <svg class="privexbot-bubble-icon" viewBox="0 0 24 24">

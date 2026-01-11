@@ -9,7 +9,7 @@
  *     apiKey: 'your-api-key-here',
  *     options: {
  *       position: 'bottom-right',
- *       color: '#6366f1',
+ *       color: '#3b82f6',
  *       greeting: 'Hi! How can I help you?',
  *       botName: 'Support Assistant',
  *       showBranding: true
@@ -121,7 +121,7 @@ class PrivexBotWidget {
       apiKey: config.apiKey || options.apiKey,
       baseURL: options.baseURL || config.baseURL || this.getDefaultBaseURL(),
       position: options.position || 'bottom-right',
-      color: options.color || '#6366f1',
+      color: options.color || '#3b82f6',
       greeting: options.greeting || 'Hello! How can I help you today?',
       botName: options.botName || 'Assistant',
       showBranding: options.showBranding !== false,

@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Any
 from uuid import UUID
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc, and_, String
 
 from app.models.widget_event import WidgetEvent, EventType
 from app.models.chat_session import ChatSession, BotType
@@ -381,6 +381,8 @@ class ChatbotAnalyticsService:
         """
         Get breakdown of widget events by type.
 
+        Excludes test/preview sessions to be consistent with other analytics metrics.
+
         Returns:
             {
                 "widget_loaded": 1000,
@@ -393,13 +395,31 @@ class ChatbotAnalyticsService:
 
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        # Get event counts by type
+        # Get test/preview session IDs to exclude (as strings for comparison)
+        # This ensures consistency with get_chatbot_analytics() which excludes test sessions
+        test_session_ids_subquery = db.query(
+            func.cast(ChatSession.id, String).label("session_id")
+        ).filter(
+            ChatSession.bot_id == chatbot_id,
+            ChatSession.session_metadata["platform"].astext.in_(["test", "preview"])
+        ).subquery()
+
+        # Get event counts by type, excluding test/preview sessions
+        # Events with NULL session_id are included (e.g., widget_loaded before chat starts)
         event_counts = db.query(
             WidgetEvent.event_type,
             func.count(WidgetEvent.id).label("count")
         ).filter(
             WidgetEvent.bot_id == chatbot_id,
-            WidgetEvent.created_at >= start_date
+            WidgetEvent.created_at >= start_date,
+            # Exclude events from test/preview sessions
+            # Keep events with NULL session_id (they're legitimate widget loads)
+            ~and_(
+                WidgetEvent.session_id.isnot(None),
+                WidgetEvent.session_id.in_(
+                    db.query(test_session_ids_subquery.c.session_id)
+                )
+            )
         ).group_by(
             WidgetEvent.event_type
         ).all()

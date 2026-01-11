@@ -217,7 +217,7 @@
 }
 
 .privexbot-message.user .privexbot-message-avatar {
-  background: #6366f1;
+  background: #3b82f6;
 }
 
 .privexbot-message-avatar svg {
@@ -240,7 +240,7 @@
 }
 
 .privexbot-message.user .privexbot-message-bubble {
-  background: #6366f1;
+  background: #3b82f6;
   color: white;
   border-bottom-right-radius: 4px;
 }
@@ -309,11 +309,11 @@
 }
 
 .privexbot-input:focus {
-  border-color: #6366f1;
+  border-color: #3b82f6;
 }
 
 .privexbot-send-btn {
-  background: #6366f1;
+  background: #3b82f6;
   color: white;
   border: none;
   border-radius: 8px;
@@ -384,7 +384,7 @@
 }
 
 .privexbot-form-input:focus {
-  border-color: #6366f1;
+  border-color: #3b82f6;
 }
 
 .privexbot-form-error {
@@ -395,7 +395,7 @@
 
 .privexbot-form-submit {
   width: 100%;
-  background: #6366f1;
+  background: #3b82f6;
   color: white;
   border: none;
   border-radius: 8px;
@@ -438,7 +438,7 @@
 }
 
 .privexbot-branding a {
-  color: #6366f1;
+  color: #3b82f6;
   text-decoration: none;
 }
 

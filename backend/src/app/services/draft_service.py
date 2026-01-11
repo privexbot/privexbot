@@ -30,10 +30,32 @@ from uuid import UUID, uuid4
 from datetime import datetime, timedelta
 import redis
 import json
+import re
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+
+
+def slugify(text: str) -> str:
+    """
+    Convert text to URL-safe slug.
+
+    Examples:
+        "My Support Bot" → "my-support-bot"
+        "Hello World! (Test)" → "hello-world-test"
+    """
+    # Convert to lowercase
+    text = text.lower()
+    # Replace spaces and underscores with hyphens
+    text = re.sub(r'[\s_]+', '-', text)
+    # Remove any characters that aren't alphanumeric or hyphens
+    text = re.sub(r'[^a-z0-9-]', '', text)
+    # Remove consecutive hyphens
+    text = re.sub(r'-+', '-', text)
+    # Remove leading/trailing hyphens
+    text = text.strip('-')
+    return text or 'chatbot'
 
 
 class DraftType(str, Enum):
@@ -461,6 +483,74 @@ class UnifiedDraftService:
 
         return result
 
+    def _generate_unique_slug(self, name: str, workspace_id: UUID, db: Session) -> str:
+        """
+        Generate a unique slug for a chatbot within a workspace.
+
+        Args:
+            name: The chatbot name to slugify
+            workspace_id: The workspace to check uniqueness in
+            db: Database session
+
+        Returns:
+            A unique slug string (e.g., "my-support-bot", "my-support-bot-2")
+        """
+        from app.models.chatbot import Chatbot
+
+        base_slug = slugify(name)
+        slug = base_slug
+        counter = 1
+
+        # Keep checking until we find a unique slug
+        while db.query(Chatbot).filter(
+            Chatbot.workspace_id == workspace_id,
+            Chatbot.slug == slug
+        ).first():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
+        return slug
+
+    def _initialize_branding_config(self, branding: dict) -> dict:
+        """
+        Initialize branding config with hosted_page defaults.
+
+        WHY: Ensure hosted_page has sensible defaults when chatbot is deployed
+        HOW: Merge user-provided branding with default hosted_page settings
+
+        Args:
+            branding: User-provided branding configuration
+
+        Returns:
+            Branding config with hosted_page defaults initialized
+        """
+        if not branding:
+            branding = {}
+
+        # Initialize hosted_page with defaults if not present
+        if "hosted_page" not in branding:
+            branding["hosted_page"] = {
+                "enabled": True,  # Enable by default since chatbot is being deployed
+                "background_color": "#f9fafb",  # Tailwind gray-50
+                # Other fields inherit from widget config (primary_color, avatar_url, etc.)
+                "logo_url": None,
+                "header_text": None,
+                "footer_text": None,
+                "background_image": None,
+                "meta_title": None,
+                "meta_description": None,
+                "favicon_url": None,
+                "custom_domain": None,
+                "domain_verified": False
+            }
+        else:
+            # Ensure all expected fields exist with defaults
+            hosted_page = branding["hosted_page"]
+            hosted_page.setdefault("enabled", True)
+            hosted_page.setdefault("background_color", "#f9fafb")
+            hosted_page.setdefault("domain_verified", False)
+
+        return branding
 
     def _deploy_chatbot(self, draft: dict, db: Session) -> dict:
         """
@@ -493,10 +583,15 @@ class UnifiedDraftService:
         if data.get("conversation_openers"):
             messages_config["conversation_openers"] = data.get("conversation_openers")
 
+        # Generate unique slug for hosted page URL
+        workspace_id = UUID(draft["workspace_id"])
+        slug = self._generate_unique_slug(data["name"], workspace_id, db)
+
         # Create chatbot record with proper column mapping
         chatbot = Chatbot(
-            workspace_id=UUID(draft["workspace_id"]),
+            workspace_id=workspace_id,
             name=data["name"],
+            slug=slug,  # URL-friendly identifier for /chat/{slug}
             description=data.get("description"),
             status=ChatbotStatus.ACTIVE,
             # Visibility setting
@@ -524,8 +619,10 @@ class UnifiedDraftService:
                 "grounding_mode": behavior.get("grounding_mode", "strict"),
                 "max_context_tokens": 4000
             },
-            # Branding
-            branding_config=data.get("appearance", data.get("branding", {})),
+            # Branding (with hosted_page defaults)
+            branding_config=self._initialize_branding_config(
+                data.get("appearance", data.get("branding", {}))
+            ),
             # Deployment
             deployment_config=data.get("deployment", {}),
             # Behavior
@@ -578,6 +675,8 @@ class UnifiedDraftService:
         # Add API key to response (only shown once)
         deployment_results["api_key"] = plain_key
         deployment_results["api_key_prefix"] = api_key.key_prefix
+        # Add slug for hosted page URL
+        deployment_results["slug"] = slug
 
         return deployment_results
 

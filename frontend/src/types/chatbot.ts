@@ -30,6 +30,7 @@ export const DeploymentChannel = {
   DISCORD: "discord",
   WHATSAPP: "whatsapp",
   API: "api",
+  SECRETVM: "secretvm",
 } as const;
 
 export type DeploymentChannel = (typeof DeploymentChannel)[keyof typeof DeploymentChannel];
@@ -49,14 +50,10 @@ export type ChatbotCreationStep = (typeof ChatbotCreationStep)[keyof typeof Chat
 
 /**
  * AI Model Options
+ * Backend uses Secret AI (DeepSeek-R1-Distill-Llama-70B)
  */
 export const AIModel = {
   SECRET_AI: "secret-ai-v1",
-  GPT4: "gpt-4",
-  GPT35: "gpt-3.5-turbo",
-  CLAUDE3: "claude-3-opus",
-  CLAUDE3_SONNET: "claude-3-sonnet",
-  LLAMA3: "llama3.1",
 } as const;
 
 export type AIModel = (typeof AIModel)[keyof typeof AIModel];
@@ -529,17 +526,20 @@ export interface ChatbotSummary {
 export interface Chatbot {
   id: string;
   name: string;
+  slug?: string;
+  workspace_slug?: string;
   description?: string;
   status: ChatbotStatus;
+  is_public?: boolean;
   workspace_id: string;
   ai_config: AIConfig;
   prompt_config: PromptConfig;
   kb_config: {
-    knowledge_bases: KBAttachment[];
+    knowledge_bases?: KBAttachment[];
   };
   branding_config: AppearanceConfig;
   deployment_config: {
-    channels: ChannelConfig[];
+    channels?: ChannelConfig[];
   };
   behavior_config: {
     memory: MemoryConfig;
@@ -883,6 +883,8 @@ export function getChannelLabel(channel: DeploymentChannel): string {
       return "WhatsApp";
     case DeploymentChannel.API:
       return "REST API";
+    case DeploymentChannel.SECRETVM:
+      return "SecretVM";
     default:
       return channel;
   }
@@ -895,16 +897,6 @@ export function getModelLabel(model: string): string {
   switch (model) {
     case AIModel.SECRET_AI:
       return "Secret AI (Privacy-Preserving)";
-    case AIModel.GPT4:
-      return "GPT-4";
-    case AIModel.GPT35:
-      return "GPT-3.5 Turbo";
-    case AIModel.CLAUDE3:
-      return "Claude 3 Opus";
-    case AIModel.CLAUDE3_SONNET:
-      return "Claude 3 Sonnet";
-    case AIModel.LLAMA3:
-      return "Llama 3.1";
     default:
       return model;
   }

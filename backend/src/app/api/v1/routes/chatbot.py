@@ -620,6 +620,9 @@ async def list_chatbots(
                 "name": cb.name,
                 "description": cb.description,
                 "status": cb.status.value if hasattr(cb.status, 'value') else cb.status,
+                "slug": cb.slug,
+                "is_public": cb.is_public,
+                "workspace_slug": workspace.slug,
                 "created_at": cb.created_at.isoformat() if cb.created_at else None,
                 "deployed_at": cb.deployed_at.isoformat() if cb.deployed_at else None,
                 "cached_metrics": cb.cached_metrics
@@ -667,6 +670,9 @@ async def get_chatbot(
         "description": chatbot.description,
         "status": chatbot.status.value if hasattr(chatbot.status, 'value') else chatbot.status,
         "workspace_id": str(chatbot.workspace_id),
+        "slug": chatbot.slug,
+        "is_public": chatbot.is_public,
+        "workspace_slug": workspace.slug,
         "ai_config": chatbot.ai_config,
         "prompt_config": chatbot.prompt_config,
         "kb_config": chatbot.kb_config,
@@ -1660,4 +1666,119 @@ async def delete_chatbot_api_key(
         "key_id": str(key_id),
         "key_prefix": key_prefix,
         "message": "API key has been permanently deleted"
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HOSTED PAGE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+class HostedPageConfigUpdate(BaseModel):
+    """Request model for updating hosted page configuration."""
+    enabled: Optional[bool] = None
+    logo_url: Optional[str] = None
+    header_text: Optional[str] = None
+    footer_text: Optional[str] = None
+    background_color: Optional[str] = None
+    background_image: Optional[str] = None
+    meta_title: Optional[str] = None
+    meta_description: Optional[str] = None
+    favicon_url: Optional[str] = None
+    custom_domain: Optional[str] = None
+
+
+@router.patch("/{chatbot_id}/hosted-page", response_model=dict)
+async def update_hosted_page_config(
+    chatbot_id: UUID,
+    config: HostedPageConfigUpdate,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Update hosted page configuration for a chatbot.
+
+    The hosted page is a shareable URL where users can chat with the bot
+    directly without embedding it on a website.
+    """
+    _, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Update hosted_page config within branding_config
+    branding = chatbot.branding_config.copy() if chatbot.branding_config else {}
+    hosted_page = branding.get("hosted_page", {})
+
+    # Only update fields that were provided
+    updates = config.model_dump(exclude_none=True)
+    hosted_page.update(updates)
+
+    branding["hosted_page"] = hosted_page
+    chatbot.branding_config = branding
+
+    db.commit()
+    db.refresh(chatbot)
+
+    return {
+        "status": "updated",
+        "chatbot_id": str(chatbot_id),
+        "hosted_page": hosted_page
+    }
+
+
+@router.get("/{chatbot_id}/hosted-page", response_model=dict)
+async def get_hosted_page_config(
+    chatbot_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """Get hosted page configuration for a chatbot."""
+    _, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    branding = chatbot.branding_config or {}
+    hosted_page = branding.get("hosted_page", {})
+
+    return {
+        "chatbot_id": str(chatbot_id),
+        "slug": chatbot.slug,
+        "hosted_page_url": f"/chat/{chatbot.slug}" if chatbot.slug else None,
+        "is_public": chatbot.is_public,
+        "hosted_page": hosted_page
     }

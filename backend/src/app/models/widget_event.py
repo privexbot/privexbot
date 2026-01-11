@@ -32,6 +32,7 @@ class EventType(str, enum.Enum):
     LEAD_COLLECTED = "lead_collected"
     LEAD_SKIPPED = "lead_skipped"
     FEEDBACK_GIVEN = "feedback_given"
+    PAGE_VIEW = "page_view"  # Hosted chat page visits
     ERROR = "error"
 
 

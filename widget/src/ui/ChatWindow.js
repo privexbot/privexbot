@@ -87,7 +87,7 @@ class ChatWindow {
   createHeader() {
     const header = document.createElement('div');
     header.className = 'privexbot-header';
-    header.style.background = this.config.color || '#6366f1';
+    header.style.background = this.config.color || '#3b82f6';
 
     header.innerHTML = `
       <div class="privexbot-header-info">

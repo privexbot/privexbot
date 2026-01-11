@@ -33,21 +33,19 @@ import {
   Brain,
   Plus,
   Trash2,
-  GripVertical,
   Lock,
   Unlock,
   MessageCircle,
   Phone,
   Users,
   Shield,
+  Link2,
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
 import {
   ChatbotCreationStep,
-  AIModel,
   DeploymentChannel,
-  getModelLabel,
   getChannelLabel,
   DEFAULT_FORM_DATA,
   ChatbotFormErrors,
@@ -90,7 +88,6 @@ import { toast } from "@/components/ui/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useKBStore } from "@/store/kb-store";
-import CredentialSelector from "@/components/shared/CredentialSelector";
 
 // ========================================
 // STEP CONFIGURATION
@@ -207,7 +204,7 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
         <Input
           id="name"
           value={formData.name}
-          onChange={(e) => onUpdate({ name: e.target.value })}
+          onChange={(e) => { onUpdate({ name: e.target.value }); }}
           placeholder="e.g., Customer Support Bot"
           className={cn(
             "h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope",
@@ -229,7 +226,7 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
         <Textarea
           id="description"
           value={formData.description}
-          onChange={(e) => onUpdate({ description: e.target.value })}
+          onChange={(e) => { onUpdate({ description: e.target.value }); }}
           placeholder="Internal description for your team..."
           rows={3}
           className="bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none"
@@ -247,9 +244,9 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
           id="greeting"
           value={formData.messages.greeting || ""}
           onChange={(e) =>
-            onUpdate({
+            { onUpdate({
               messages: { ...formData.messages, greeting: e.target.value },
-            })
+            }); }
           }
           placeholder="Hello! How can I help you today?"
           rows={2}
@@ -271,9 +268,9 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
           id="fallback"
           value={formData.messages.fallback || ""}
           onChange={(e) =>
-            onUpdate({
+            { onUpdate({
               messages: { ...formData.messages, fallback: e.target.value },
-            })
+            }); }
           }
           placeholder="I'm not sure about that. Would you like to speak with a human?"
           rows={2}
@@ -295,9 +292,9 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
           id="goodbye"
           value={formData.messages.goodbye || ""}
           onChange={(e) =>
-            onUpdate({
+            { onUpdate({
               messages: { ...formData.messages, goodbye: e.target.value },
-            })
+            }); }
           }
           placeholder="Thank you for chatting! Have a great day!"
           rows={2}
@@ -499,7 +496,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
             onKeyDown={handlePromptKeyDown}
             onBlur={() => {
               // Delay to allow click on menu item
-              setTimeout(() => setShowVariableMenu(false), 200);
+              setTimeout(() => { setShowVariableMenu(false); }, 200);
             }}
             placeholder="You are a helpful assistant..."
             rows={6}
@@ -519,7 +516,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
                 <button
                   key={variable.id}
                   type="button"
-                  onClick={() => insertVariableInPrompt(variable.name)}
+                  onClick={() => { insertVariableInPrompt(variable.name); }}
                   className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between group"
                 >
                   <div>
@@ -568,28 +565,13 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
           <Label className="text-gray-900 dark:text-gray-100 font-manrope">
             AI Model
           </Label>
-          <Select
-            value={formData.model}
-            onValueChange={(value) => onUpdate({ model: value })}
-          >
-            <SelectTrigger className="h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <SelectItem value={AIModel.SECRET_AI}>
-                {getModelLabel(AIModel.SECRET_AI)}
-              </SelectItem>
-              <SelectItem value={AIModel.GPT4}>
-                {getModelLabel(AIModel.GPT4)}
-              </SelectItem>
-              <SelectItem value={AIModel.GPT35}>
-                {getModelLabel(AIModel.GPT35)}
-              </SelectItem>
-              <SelectItem value={AIModel.LLAMA3}>
-                {getModelLabel(AIModel.LLAMA3)}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-3 h-11 px-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+            <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Secret AI</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Privacy-preserving via TEE</p>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -600,7 +582,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
             type="number"
             value={formData.max_tokens}
             onChange={(e) =>
-              onUpdate({ max_tokens: parseInt(e.target.value) || 2000 })
+              { onUpdate({ max_tokens: parseInt(e.target.value) || 2000 }); }
             }
             min={100}
             max={8000}
@@ -624,7 +606,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
         </div>
         <Slider
           value={[formData.temperature]}
-          onValueChange={([value]) => onUpdate({ temperature: value })}
+          onValueChange={([value]) => { onUpdate({ temperature: value }); }}
           min={0}
           max={2}
           step={0.1}
@@ -658,9 +640,9 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
           <Switch
             checked={formData.behavior?.enable_citations || false}
             onCheckedChange={(checked) =>
-              onUpdate({
+              { onUpdate({
                 behavior: { ...formData.behavior, enable_citations: checked },
-              })
+              }); }
             }
           />
         </div>
@@ -681,9 +663,9 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
           <Switch
             checked={formData.behavior?.enable_follow_up_questions || false}
             onCheckedChange={(checked) =>
-              onUpdate({
+              { onUpdate({
                 behavior: { ...formData.behavior, enable_follow_up_questions: checked },
-              })
+              }); }
             }
           />
         </div>
@@ -703,12 +685,12 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
           </div>
 
           <RadioGroup
-            value={formData.behavior?.grounding_mode || GroundingMode.STRICT}
-            onValueChange={(value: GroundingMode) =>
+            value={formData.behavior?.grounding_mode ?? GroundingMode.STRICT}
+            onValueChange={(value) => {
               onUpdate({
-                behavior: { ...formData.behavior, grounding_mode: value },
-              })
-            }
+                behavior: { ...formData.behavior, grounding_mode: value as GroundingMode },
+              });
+            }}
             className="space-y-2 pl-7"
           >
             <div className="flex items-start space-x-3">
@@ -775,7 +757,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => removeConversationOpener(index)}
+                    onClick={() => { removeConversationOpener(index); }}
                     className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex-shrink-0"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -790,7 +772,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
             <div className="flex gap-2">
               <Input
                 value={newOpener}
-                onChange={(e) => setNewOpener(e.target.value)}
+                onChange={(e) => { setNewOpener(e.target.value); }}
                 onKeyDown={(e) => e.key === "Enter" && addConversationOpener()}
                 placeholder="e.g., What can you help me with?"
                 className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm"
@@ -1016,12 +998,12 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
           <Switch
             checked={formData.variables_config?.enabled || false}
             onCheckedChange={(checked) =>
-              onUpdate({
+              { onUpdate({
                 variables_config: {
                   ...formData.variables_config,
                   enabled: checked,
                 },
-              })
+              }); }
             }
           />
         </div>
@@ -1054,7 +1036,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => insertVariableInPrompt(variable.name)}
+                        onClick={() => { insertVariableInPrompt(variable.name); }}
                         className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30"
                       >
                         Insert
@@ -1062,7 +1044,7 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => removeVariable(variable.id)}
+                        onClick={() => { removeVariable(variable.id); }}
                         className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1090,14 +1072,14 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
                 />
                 <Input
                   value={newVarLabel}
-                  onChange={(e) => setNewVarLabel(e.target.value)}
+                  onChange={(e) => { setNewVarLabel(e.target.value); }}
                   placeholder="Display label (optional)"
                   className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm"
                 />
                 <div className="flex gap-2">
                   <Select
                     value={newVarType}
-                    onValueChange={(value) => setNewVarType(value as VariableFieldType)}
+                    onValueChange={(value) => { setNewVarType(value as VariableFieldType); }}
                   >
                     <SelectTrigger className="h-9 bg-white dark:bg-gray-800 font-manrope text-sm flex-1">
                       <SelectValue />
@@ -1223,7 +1205,7 @@ function Step3KnowledgeBases({
                 <div className="flex items-center gap-3">
                   <Switch
                     checked={kb.enabled}
-                    onCheckedChange={(checked) => onToggleKB(kb.kb_id, checked)}
+                    onCheckedChange={(checked) => { onToggleKB(kb.kb_id, checked); }}
                   />
                   <Button
                     variant="ghost"
@@ -1259,7 +1241,7 @@ function Step3KnowledgeBases({
             </p>
             <Button
               variant="outline"
-              onClick={() => navigate("/knowledge-bases/create")}
+              onClick={() => { navigate("/knowledge-bases/create"); }}
               className="font-manrope"
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -1382,23 +1364,23 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
 
   return (
     <div className="space-y-6">
-      {/* Brand Name / Chat Title */}
+      {/* Widget Display Name */}
       <div className="space-y-2">
         <Label className="text-gray-900 dark:text-gray-100 font-manrope">
-          Brand Name
+          Widget Display Name
         </Label>
         <Input
           value={formData.appearance.chat_title || ""}
           onChange={(e) =>
-            onUpdate({
+            { onUpdate({
               appearance: { ...formData.appearance, chat_title: e.target.value },
-            })
+            }); }
           }
           placeholder="My Assistant"
           className="h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope"
         />
         <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-          Displayed in the chat header
+          This name appears in the chat widget header (different from your internal chatbot name)
         </p>
       </div>
 
@@ -1411,7 +1393,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <div className="flex-1">
             <Input
               value={formData.appearance.avatar_url || ""}
-              onChange={(e) => handleAvatarUrlChange(e.target.value)}
+              onChange={(e) => { handleAvatarUrlChange(e.target.value); }}
               placeholder="https://example.com/avatar.png"
               className={cn(
                 "h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope",
@@ -1432,8 +1414,8 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                 src={formData.appearance.avatar_url}
                 alt="Avatar preview"
                 className="w-full h-full object-cover"
-                onError={() => setAvatarError("Failed to load image")}
-                onLoad={() => setAvatarError("")}
+                onError={() => { setAvatarError("Failed to load image"); }}
+                onLoad={() => { setAvatarError(""); }}
               />
             ) : (
               <Bot className="h-6 w-6 text-gray-400" />
@@ -1451,7 +1433,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           {colorOptions.map((color) => (
             <button
               key={color.value}
-              onClick={() => handleColorPresetClick(color.value)}
+              onClick={() => { handleColorPresetClick(color.value); }}
               className={cn(
                 "w-10 h-10 rounded-full border-2 transition-all",
                 formData.appearance.primary_color === color.value
@@ -1476,7 +1458,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <div className="relative flex-1 max-w-[200px]">
             <Input
               value={customColor}
-              onChange={(e) => handleCustomColorChange(e.target.value)}
+              onChange={(e) => { handleCustomColorChange(e.target.value); }}
               placeholder="#3b82f6"
               className={cn(
                 "h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono text-sm pl-10",
@@ -1552,9 +1534,9 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
         <Select
           value={formData.appearance.font_family || "Inter"}
           onValueChange={(value) =>
-            onUpdate({
+            { onUpdate({
               appearance: { ...formData.appearance, font_family: value },
-            })
+            }); }
           }
         >
           <SelectTrigger className="h-11 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
@@ -1580,9 +1562,9 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <Button
             variant="outline"
             onClick={() =>
-              onUpdate({
+              { onUpdate({
                 appearance: { ...formData.appearance, bubble_style: "rounded" },
-              })
+              }); }
             }
             className={cn(
               "flex-1 font-manrope",
@@ -1595,9 +1577,9 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <Button
             variant="outline"
             onClick={() =>
-              onUpdate({
+              { onUpdate({
                 appearance: { ...formData.appearance, bubble_style: "square" },
-              })
+              }); }
             }
             className={cn(
               "flex-1 font-manrope",
@@ -1622,9 +1604,9 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <Button
             variant="outline"
             onClick={() =>
-              onUpdate({
+              { onUpdate({
                 appearance: { ...formData.appearance, position: "bottom-right" },
-              })
+              }); }
             }
             className={cn(
               "flex-1 font-manrope",
@@ -1637,9 +1619,9 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <Button
             variant="outline"
             onClick={() =>
-              onUpdate({
+              { onUpdate({
                 appearance: { ...formData.appearance, position: "bottom-left" },
-              })
+              }); }
             }
             className={cn(
               "flex-1 font-manrope",
@@ -1669,7 +1651,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <Switch
             checked={formData.memory.enabled}
             onCheckedChange={(checked) =>
-              onUpdate({ memory: { ...formData.memory, enabled: checked } })
+              { onUpdate({ memory: { ...formData.memory, enabled: checked } }); }
             }
           />
         </div>
@@ -1682,7 +1664,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
             <Slider
               value={[formData.memory.max_messages]}
               onValueChange={([value]) =>
-                onUpdate({ memory: { ...formData.memory, max_messages: value } })
+                { onUpdate({ memory: { ...formData.memory, max_messages: value } }); }
               }
               min={5}
               max={50}
@@ -1708,14 +1690,14 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
           <Switch
             checked={formData.lead_capture?.enabled || false}
             onCheckedChange={(checked) =>
-              onUpdate({
+              { onUpdate({
                 lead_capture: {
                   ...formData.lead_capture,
                   enabled: checked,
                   timing: formData.lead_capture?.timing || "before_chat",
                   required_fields: formData.lead_capture?.required_fields || ["email"],
                 },
-              })
+              }); }
             }
           />
         </div>
@@ -1738,13 +1720,13 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      onUpdate({
+                      { onUpdate({
                         lead_capture: {
                           ...formData.lead_capture,
                           enabled: formData.lead_capture?.enabled ?? true,
                           timing: timing.value as "before_chat" | "during_chat" | "after_chat",
                         },
-                      })
+                      }); }
                     }
                     className={cn(
                       "font-manrope",
@@ -1834,7 +1816,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                   <Switch
                     checked={formData.lead_capture?.platforms?.widget?.enabled ?? true}
                     onCheckedChange={(checked) =>
-                      onUpdate({
+                      { onUpdate({
                         lead_capture: {
                           ...formData.lead_capture,
                           enabled: formData.lead_capture?.enabled ?? true,
@@ -1846,7 +1828,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                             },
                           },
                         },
-                      })
+                      }); }
                     }
                   />
                 </div>
@@ -1856,7 +1838,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.widget?.capture_ip ?? true}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -1869,7 +1851,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Capture IP for geolocation</span>
@@ -1878,7 +1860,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.widget?.capture_referrer ?? true}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -1891,7 +1873,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Capture referrer URL</span>
@@ -1913,7 +1895,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                   <Switch
                     checked={formData.lead_capture?.platforms?.whatsapp?.enabled ?? true}
                     onCheckedChange={(checked) =>
-                      onUpdate({
+                      { onUpdate({
                         lead_capture: {
                           ...formData.lead_capture,
                           enabled: formData.lead_capture?.enabled ?? true,
@@ -1925,7 +1907,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                             },
                           },
                         },
-                      })
+                      }); }
                     }
                   />
                 </div>
@@ -1935,7 +1917,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.whatsapp?.auto_capture_phone ?? true}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -1948,7 +1930,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Auto-capture verified phone on first message</span>
@@ -1957,7 +1939,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.whatsapp?.prompt_for_email ?? false}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -1970,7 +1952,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Also prompt for email via conversation</span>
@@ -1989,7 +1971,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                   <Switch
                     checked={formData.lead_capture?.platforms?.telegram?.enabled ?? true}
                     onCheckedChange={(checked) =>
-                      onUpdate({
+                      { onUpdate({
                         lead_capture: {
                           ...formData.lead_capture,
                           enabled: formData.lead_capture?.enabled ?? true,
@@ -2001,7 +1983,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                             },
                           },
                         },
-                      })
+                      }); }
                     }
                   />
                 </div>
@@ -2011,7 +1993,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.telegram?.auto_capture_username ?? true}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -2024,7 +2006,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Auto-capture username & name</span>
@@ -2033,7 +2015,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.telegram?.prompt_for_email ?? false}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -2046,7 +2028,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Prompt for email via conversation</span>
@@ -2065,7 +2047,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                   <Switch
                     checked={formData.lead_capture?.platforms?.discord?.enabled ?? true}
                     onCheckedChange={(checked) =>
-                      onUpdate({
+                      { onUpdate({
                         lead_capture: {
                           ...formData.lead_capture,
                           enabled: formData.lead_capture?.enabled ?? true,
@@ -2077,7 +2059,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                             },
                           },
                         },
-                      })
+                      }); }
                     }
                   />
                 </div>
@@ -2087,7 +2069,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.discord?.auto_capture_username ?? true}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -2100,7 +2082,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Auto-capture username</span>
@@ -2109,7 +2091,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                       <Checkbox
                         checked={formData.lead_capture?.platforms?.discord?.capture_guild_context ?? true}
                         onCheckedChange={(checked) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -2122,7 +2104,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 },
                               },
                             },
-                          })
+                          }); }
                         }
                       />
                       <span>Capture guild/server context (B2B valuable)</span>
@@ -2142,7 +2124,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                     <Checkbox
                       checked={formData.lead_capture?.privacy?.require_consent ?? false}
                       onCheckedChange={(checked) =>
-                        onUpdate({
+                        { onUpdate({
                           lead_capture: {
                             ...formData.lead_capture,
                             enabled: formData.lead_capture?.enabled ?? true,
@@ -2151,7 +2133,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                               require_consent: !!checked,
                             },
                           },
-                        })
+                        }); }
                       }
                     />
                     <span>Require explicit consent before collecting data</span>
@@ -2162,7 +2144,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                         placeholder="Consent message (e.g., 'I agree to share my information')"
                         value={formData.lead_capture?.privacy?.consent_message || ""}
                         onChange={(e) =>
-                          onUpdate({
+                          { onUpdate({
                             lead_capture: {
                               ...formData.lead_capture,
                               enabled: formData.lead_capture?.enabled ?? true,
@@ -2172,7 +2154,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                                 consent_message: e.target.value,
                               },
                             },
-                          })
+                          }); }
                         }
                         className="text-xs"
                       />
@@ -2182,7 +2164,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                     <Checkbox
                       checked={formData.lead_capture?.privacy?.gdpr_compliant ?? false}
                       onCheckedChange={(checked) =>
-                        onUpdate({
+                        { onUpdate({
                           lead_capture: {
                             ...formData.lead_capture,
                             enabled: formData.lead_capture?.enabled ?? true,
@@ -2191,7 +2173,7 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
                               gdpr_compliant: !!checked,
                             },
                           },
-                        })
+                        }); }
                       }
                     />
                     <span>GDPR compliant mode</span>
@@ -2231,7 +2213,6 @@ interface Step5Props extends Step1Props {
   onDeploy: () => Promise<void>;
   onSendTestMessage: (message: string) => Promise<void>;
   onClearTest: () => void;
-  workspaceId?: string;
 }
 
 function Step5Deploy({
@@ -2244,7 +2225,6 @@ function Step5Deploy({
   onDeploy,
   onSendTestMessage,
   onClearTest,
-  workspaceId,
 }: Step5Props) {
   const [testInput, setTestInput] = useState("");
   const [copiedApiKey, setCopiedApiKey] = useState(false);
@@ -2260,7 +2240,7 @@ function Step5Deploy({
     if (deploymentResult?.api_key) {
       navigator.clipboard.writeText(deploymentResult.api_key);
       setCopiedApiKey(true);
-      setTimeout(() => setCopiedApiKey(false), 2000);
+      setTimeout(() => { setCopiedApiKey(false); }, 2000);
     }
   };
 
@@ -2277,15 +2257,14 @@ function Step5Deploy({
   const copyEmbed = () => {
     navigator.clipboard.writeText(embedCode);
     setCopiedEmbed(true);
-    setTimeout(() => setCopiedEmbed(false), 2000);
+    setTimeout(() => { setCopiedEmbed(false); }, 2000);
   };
 
+  // Simplified channel options - other channels can be added in detail page after deployment
   const channelOptions = [
     { type: DeploymentChannel.WEBSITE, icon: Globe, description: "Website widget" },
-    { type: DeploymentChannel.TELEGRAM, icon: Send, description: "Telegram bot" },
-    { type: DeploymentChannel.DISCORD, icon: MessageCircle, description: "Discord bot" },
-    { type: DeploymentChannel.WHATSAPP, icon: Phone, description: "WhatsApp Business" },
     { type: DeploymentChannel.API, icon: Settings, description: "REST API access" },
+    { type: DeploymentChannel.SECRETVM, icon: Link2, description: "Public chat URL" },
   ];
 
   const toggleChannel = (type: DeploymentChannel) => {
@@ -2306,26 +2285,6 @@ function Step5Deploy({
 
   const isChannelEnabled = (type: DeploymentChannel) => {
     return formData.channels.some((c) => c.type === type && c.enabled);
-  };
-
-  const getChannelCredentialId = (type: DeploymentChannel): string | undefined => {
-    return formData.channels.find((c) => c.type === type)?.credential_id;
-  };
-
-  const updateChannelCredential = (type: DeploymentChannel, credentialId: string) => {
-    const channels = [...formData.channels];
-    const existingIndex = channels.findIndex((c) => c.type === type);
-
-    if (existingIndex >= 0) {
-      channels[existingIndex] = {
-        ...channels[existingIndex],
-        credential_id: credentialId,
-      };
-    } else {
-      channels.push({ type, enabled: true, credential_id: credentialId });
-    }
-
-    onUpdate({ channels });
   };
 
   if (deploymentResult) {
@@ -2415,7 +2374,7 @@ function Step5Deploy({
           <div className="flex gap-3">
             <Button
               variant="outline"
-              onClick={() => onUpdate({ is_public: true })}
+              onClick={() => { onUpdate({ is_public: true }); }}
               className={cn(
                 "flex-1 font-manrope justify-start gap-3",
                 formData.is_public && "ring-2 ring-green-500 border-green-500 bg-green-50 dark:bg-green-950/30"
@@ -2429,7 +2388,7 @@ function Step5Deploy({
             </Button>
             <Button
               variant="outline"
-              onClick={() => onUpdate({ is_public: false })}
+              onClick={() => { onUpdate({ is_public: false }); }}
               className={cn(
                 "flex-1 font-manrope justify-start gap-3",
                 !formData.is_public && "ring-2 ring-amber-500 border-amber-500 bg-amber-50 dark:bg-amber-950/30"
@@ -2452,11 +2411,10 @@ function Step5Deploy({
             {channelOptions.map((channel) => {
               const Icon = channel.icon;
               const enabled = isChannelEnabled(channel.type);
-              const needsCredential = channel.type === DeploymentChannel.TELEGRAM || channel.type === DeploymentChannel.DISCORD || channel.type === DeploymentChannel.WHATSAPP;
               return (
                 <div key={channel.type} className="space-y-2">
                   <div
-                    onClick={() => toggleChannel(channel.type)}
+                    onClick={() => { toggleChannel(channel.type); }}
                     className={cn(
                       "flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all",
                       enabled
@@ -2491,35 +2449,13 @@ function Step5Deploy({
                     </div>
                     <Switch checked={enabled} />
                   </div>
-                  {/* Credential selector for Telegram/Discord */}
-                  {enabled && needsCredential && (
-                    <div className="ml-8">
-                      <CredentialSelector
-                        provider={
-                          channel.type === DeploymentChannel.TELEGRAM
-                            ? "telegram"
-                            : channel.type === DeploymentChannel.DISCORD
-                            ? "discord"
-                            : "whatsapp"
-                        }
-                        selectedId={getChannelCredentialId(channel.type)}
-                        onSelect={(credentialId) => updateChannelCredential(channel.type, credentialId)}
-                        label={
-                          channel.type === DeploymentChannel.TELEGRAM
-                            ? "Telegram Bot Token"
-                            : channel.type === DeploymentChannel.DISCORD
-                            ? "Discord Bot Token"
-                            : "WhatsApp Access Token"
-                        }
-                        required={true}
-                        workspaceId={workspaceId}
-                      />
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-2">
+            Add Discord, Telegram, or WhatsApp channels after deployment in the chatbot settings.
+          </p>
         </div>
 
         <Button
@@ -2679,7 +2615,7 @@ function Step5Deploy({
             <div className="flex gap-2">
               <Input
                 value={testInput}
-                onChange={(e) => setTestInput(e.target.value)}
+                onChange={(e) => { setTestInput(e.target.value); }}
                 onKeyDown={(e) => e.key === "Enter" && handleSendTest()}
                 placeholder="Type a message..."
                 className="flex-1 h-10 bg-gray-50 dark:bg-gray-700 font-manrope"
@@ -2750,14 +2686,14 @@ export default function CreateChatbotPage() {
       const timeout = setTimeout(() => {
         saveDraft().catch(console.error);
       }, 1000);
-      return () => clearTimeout(timeout);
+      return () => { clearTimeout(timeout); };
     }
   }, [isDraftDirty, currentDraft, saveDraft]);
 
   const handleStepClick = (step: number) => {
     // Validate current step before moving
     if (step > currentStep) {
-      if (!validateStep(currentStep as ChatbotCreationStep)) {
+      if (!validateStep(currentStep)) {
         return;
       }
       setCompletedSteps((prev) => new Set([...prev, currentStep]));
@@ -2766,7 +2702,7 @@ export default function CreateChatbotPage() {
   };
 
   const handleNext = () => {
-    if (!validateStep(currentStep as ChatbotCreationStep)) {
+    if (!validateStep(currentStep)) {
       return;
     }
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
@@ -2921,7 +2857,6 @@ export default function CreateChatbotPage() {
                       onDeploy={handleDeploy}
                       onSendTestMessage={sendTestMessage}
                       onClearTest={clearTestConversation}
-                      workspaceId={currentWorkspace?.id}
                     />
                   )}
                 </motion.div>
@@ -2957,7 +2892,7 @@ export default function CreateChatbotPage() {
           {deploymentResult && (
             <div className="flex justify-center mt-6">
               <Button
-                onClick={() => navigate("/chatbots")}
+                onClick={() => { navigate("/chatbots"); }}
                 className="font-manrope bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
               >
                 Go to Dashboard
@@ -2983,7 +2918,7 @@ export default function CreateChatbotPage() {
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              onClick={() => setShowExitDialog(false)}
+              onClick={() => { setShowExitDialog(false); }}
               className="font-manrope rounded-lg"
             >
               Keep Editing

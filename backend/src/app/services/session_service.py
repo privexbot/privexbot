@@ -32,19 +32,25 @@ class SessionService:
     Works for BOTH chatbots and chatflows.
     """
 
-    def _parse_or_generate_session_uuid(self, session_id: str) -> UUID:
+    def _parse_or_generate_session_uuid(self, session_id: str, bot_id: UUID) -> UUID:
         """
         Parse session_id as UUID or generate a deterministic UUID from the string.
 
         WHY: session_id can be a UUID or a string like "preview_xxx", "web_xxx"
         HOW: Try UUID parse first, then use uuid5 for deterministic generation
+        NOTE: bot_id is included in the seed to ensure different bots get different sessions
         """
         try:
-            return UUID(session_id)
-        except (ValueError, AttributeError):
-            # Generate deterministic UUID from string using uuid5
+            # If it's already a valid UUID, combine with bot_id for uniqueness
+            parsed_uuid = UUID(session_id)
             import uuid as uuid_module
-            return uuid_module.uuid5(uuid_module.NAMESPACE_DNS, session_id)
+            # Generate bot-specific UUID from the parsed UUID + bot_id
+            return uuid_module.uuid5(uuid_module.NAMESPACE_DNS, f"{parsed_uuid}_{bot_id}")
+        except (ValueError, AttributeError):
+            # Generate deterministic UUID from string + bot_id using uuid5
+            # This ensures same session_id with different bot_id = different UUID
+            import uuid as uuid_module
+            return uuid_module.uuid5(uuid_module.NAMESPACE_DNS, f"{session_id}_{bot_id}")
 
     def get_or_create_session(
         self,
@@ -74,13 +80,15 @@ class SessionService:
         """
 
         # Parse session_id to UUID (handles both UUID strings and arbitrary strings)
-        session_uuid = self._parse_or_generate_session_uuid(session_id)
+        # Include bot_id to ensure different bots get different session UUIDs
+        session_uuid = self._parse_or_generate_session_uuid(session_id, bot_id)
 
-        # Try to get existing session (query by ID only, handle status separately)
-        # FIX: Previous code filtered by status != EXPIRED, causing UniqueViolation
-        # when trying to create a session with the same deterministic UUID
+        # Try to get existing session - MUST match bot_id and bot_type for isolation
+        # This ensures conversations don't leak between different chatbots
         session = db.query(ChatSession).filter(
-            ChatSession.id == session_uuid
+            ChatSession.id == session_uuid,
+            ChatSession.bot_id == bot_id,
+            ChatSession.bot_type == BotType(bot_type)
         ).first()
 
         if session:

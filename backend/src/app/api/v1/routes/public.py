@@ -12,8 +12,6 @@ HOW:
 - Detect bot type
 - Route to appropriate service
 - Return response
-
-PSEUDOCODE follows the existing codebase patterns.
 """
 
 from fastapi import APIRouter, HTTPException, Header, Depends, Request
@@ -116,6 +114,44 @@ class WidgetConfigResponse(BaseModel):
     bubble_style: Optional[str] = None
 
 
+class HostedPageConfigResponse(BaseModel):
+    """Extended configuration for hosted chat page (SecretVM deployment)."""
+
+    # Core identification
+    chatbot_id: str
+    workspace_slug: Optional[str] = None
+    slug: Optional[str] = None
+    name: str
+
+    # Widget/Chat settings (reused from widget)
+    greeting: Optional[str] = None
+    bot_name: Optional[str] = None
+    color: Optional[str] = None
+    secondary_color: Optional[str] = None
+    avatar_url: Optional[str] = None
+    font_family: Optional[str] = None
+
+    # Lead capture
+    lead_config: Optional[dict] = None
+
+    # Hosted page specific branding
+    hosted_page: Optional[dict] = None
+    # Structure:
+    # {
+    #   "enabled": true,
+    #   "logo_url": "https://...",
+    #   "header_text": "Welcome to Support",
+    #   "footer_text": "Powered by MyBrand",
+    #   "background_color": "#ffffff",
+    #   "background_image": "https://...",
+    #   "meta_title": "My Support Bot",
+    #   "meta_description": "Get instant help...",
+    #   "favicon_url": "https://...",
+    #   "custom_domain": "support.mycompany.com",
+    #   "domain_verified": false
+    # }
+
+
 @router.post("/bots/{bot_id}/chat")
 async def chat(
     bot_id: UUID,
@@ -145,18 +181,18 @@ async def chat(
         ChatResponse with AI response
     """
 
-    # Extract API key
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "API key required")
-
-    api_key = authorization.replace("Bearer ", "")
-
-    # Validate API key and get bot
-    bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(
-        db,
-        bot_id,
-        api_key
-    )
+    # Check for API key - if present, validate it; if not, check if bot is public
+    if authorization and authorization.startswith("Bearer "):
+        # API key provided - validate it
+        api_key = authorization.replace("Bearer ", "")
+        bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(
+            db,
+            bot_id,
+            api_key
+        )
+    else:
+        # No API key - check if bot is public
+        bot_type, bot, workspace_id = await _get_public_bot(db, bot_id)
 
     # Generate session ID if not provided
     session_id = request.session_id or f"web_{uuid4().hex[:16]}"
@@ -312,16 +348,16 @@ async def get_widget_config(
     HOW: Return chatbot's branding_config and prompt_config.messages
     """
 
-    # Validate API key
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "API key required")
-
-    api_key = authorization.replace("Bearer ", "")
-    bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(
-        db,
-        bot_id,
-        api_key
-    )
+    # Check for API key - if present, validate it; if not, check if bot is public
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization.replace("Bearer ", "")
+        bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(
+            db,
+            bot_id,
+            api_key
+        )
+    else:
+        bot_type, bot, workspace_id = await _get_public_bot(db, bot_id)
 
     if bot_type != "chatbot":
         raise HTTPException(400, "Only chatbots are supported")
@@ -411,6 +447,238 @@ async def track_widget_event(
             print(f"Failed to store widget event: {e}")
 
     return {"status": "ok", "event_type": request.event_type}
+
+
+# ═══════════════════════════════════════════════════════════════
+# HOSTED PAGE (SecretVM) ENDPOINTS - Slug-based access
+# URL: /chat/{workspace_slug}/{bot_slug}
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/chat/{workspace_slug}/{bot_slug}/config")
+async def get_hosted_page_config(
+    workspace_slug: str,
+    bot_slug: str,
+    db: Session = Depends(get_db)
+) -> HostedPageConfigResponse:
+    """
+    Get chatbot configuration by workspace and bot slugs for hosted page.
+
+    WHY: Allow access to chatbot via friendly slug URL with guaranteed uniqueness
+    HOW: Look up workspace by slug, then chatbot by slug within that workspace
+
+    URL format: /chat/{workspace_slug}/{bot_slug}
+    Example: /chat/acme-corp/support-bot
+
+    This is used by the public /chat/{workspace_slug}/{bot_slug} frontend page.
+    """
+    from app.models.chatbot import Chatbot, ChatbotStatus
+    from app.models.workspace import Workspace
+
+    # Find workspace by slug
+    workspace = db.query(Workspace).filter(
+        Workspace.slug == workspace_slug
+    ).first()
+
+    if not workspace:
+        raise HTTPException(404, "Workspace not found")
+
+    # Find chatbot by slug within the workspace
+    bot = db.query(Chatbot).filter(
+        Chatbot.workspace_id == workspace.id,
+        Chatbot.slug == bot_slug,
+        Chatbot.status == ChatbotStatus.ACTIVE
+    ).first()
+
+    if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    if not bot.is_public:
+        raise HTTPException(401, "This chatbot requires authentication")
+
+    # Extract configurations
+    branding = bot.branding_config or {}
+    prompt_config = bot.prompt_config or {}
+    messages = prompt_config.get("messages", {})
+    hosted_page = branding.get("hosted_page", {})
+
+    return HostedPageConfigResponse(
+        chatbot_id=str(bot.id),
+        workspace_slug=workspace.slug,
+        slug=bot.slug,
+        name=bot.name,
+        greeting=messages.get("greeting"),
+        bot_name=branding.get("chat_title") or prompt_config.get("persona", {}).get("name"),
+        color=branding.get("primary_color"),
+        secondary_color=branding.get("secondary_color"),
+        avatar_url=branding.get("avatar_url"),
+        font_family=branding.get("font_family", "Inter"),
+        lead_config=bot.lead_capture_config,
+        hosted_page=hosted_page if hosted_page.get("enabled") else None
+    )
+
+
+@router.post("/chat/{workspace_slug}/{bot_slug}")
+async def chat_by_slug(
+    workspace_slug: str,
+    bot_slug: str,
+    request: ChatRequest,
+    db: Session = Depends(get_db)
+) -> ChatResponse:
+    """
+    Chat endpoint via slugs (for hosted page).
+
+    WHY: Allow chatting via friendly slug URL with guaranteed uniqueness
+    HOW: Look up workspace by slug, then chatbot by slug within workspace
+
+    URL format: /chat/{workspace_slug}/{bot_slug}
+    Example: /chat/acme-corp/support-bot
+
+    Same as /bots/{bot_id}/chat but uses slugs instead of UUID.
+    """
+    from app.models.chatbot import Chatbot, ChatbotStatus
+    from app.models.workspace import Workspace
+
+    # Find workspace by slug
+    workspace = db.query(Workspace).filter(
+        Workspace.slug == workspace_slug
+    ).first()
+
+    if not workspace:
+        raise HTTPException(404, "Workspace not found")
+
+    # Find chatbot by slug within the workspace
+    bot = db.query(Chatbot).filter(
+        Chatbot.workspace_id == workspace.id,
+        Chatbot.slug == bot_slug,
+        Chatbot.status == ChatbotStatus.ACTIVE
+    ).first()
+
+    if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    if not bot.is_public:
+        raise HTTPException(401, "This chatbot requires authentication")
+
+    # Generate session ID if not provided
+    session_id = request.session_id or f"hosted_{uuid4().hex[:16]}"
+
+    # Build channel context
+    channel_context = {
+        "platform": "hosted_page",
+        "metadata": request.metadata or {}
+    }
+
+    # Process message
+    try:
+        from app.services.chatbot_service import chatbot_service
+
+        response = await chatbot_service.process_message(
+            db=db,
+            chatbot=bot,
+            user_message=request.message,
+            session_id=session_id,
+            channel_context=channel_context,
+            collected_variables=request.variables
+        )
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if "rate limit" in error_str or "429" in error_str or "quota" in error_str:
+            raise HTTPException(429, f"Rate limit exceeded: {str(e)[:200]}")
+        raise HTTPException(500, f"AI generation failed: {str(e)[:200]}")
+
+    return ChatResponse(
+        response=response["response"],
+        sources=response.get("sources"),
+        session_id=response["session_id"],
+        message_id=response["message_id"]
+    )
+
+
+@router.post("/chat/{workspace_slug}/{bot_slug}/events")
+async def track_hosted_page_event(
+    workspace_slug: str,
+    bot_slug: str,
+    request: EventTrackingRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Track analytics events for hosted page.
+
+    WHY: Collect usage analytics for hosted page visits
+    HOW: Look up workspace and chatbot by slugs, store event
+
+    URL format: /chat/{workspace_slug}/{bot_slug}/events
+    Example: /chat/acme-corp/support-bot/events
+    """
+    from app.models.chatbot import Chatbot, ChatbotStatus
+    from app.models.workspace import Workspace
+
+    # Find workspace by slug
+    workspace = db.query(Workspace).filter(
+        Workspace.slug == workspace_slug
+    ).first()
+
+    if not workspace:
+        raise HTTPException(404, "Workspace not found")
+
+    # Find chatbot by slug within the workspace
+    bot = db.query(Chatbot).filter(
+        Chatbot.workspace_id == workspace.id,
+        Chatbot.slug == bot_slug,
+        Chatbot.status == ChatbotStatus.ACTIVE
+    ).first()
+
+    if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    # Store event
+    from app.services.chatbot_analytics_service import chatbot_analytics_service
+
+    try:
+        await chatbot_analytics_service.store_widget_event(
+            db=db,
+            bot_id=bot.id,
+            workspace_id=bot.workspace_id,
+            event_type=request.event_type,
+            event_data=request.event_data,
+            session_id=request.session_id,
+            client_timestamp=request.timestamp,
+            bot_type="chatbot"
+        )
+    except Exception as e:
+        print(f"Failed to store hosted page event: {e}")
+
+    return {"status": "ok", "event_type": request.event_type}
+
+
+async def _get_public_bot(
+    db: Session,
+    bot_id: UUID
+) -> Tuple[str, Any, UUID]:
+    """
+    Get a public bot without API key validation.
+
+    WHY: Public bots should be accessible without authentication
+    HOW: Check is_public flag and return bot if public
+
+    RETURNS:
+        (bot_type, bot, workspace_id) or raises HTTPException
+    """
+    from app.models.chatbot import Chatbot
+
+    # Try to get chatbot
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if bot:
+        if not bot.is_public:
+            raise HTTPException(401, "API key required for private bots")
+        if not bot.is_active:
+            raise HTTPException(400, "Chatbot is not active")
+        return "chatbot", bot, bot.workspace_id
+
+    # Chatflow support - would check chatflows table here
+    # For now, return 404 if not found as chatbot
+    raise HTTPException(404, "Bot not found")
 
 
 async def _validate_api_key_and_get_bot(

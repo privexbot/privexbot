@@ -145,6 +145,7 @@ class Workspace(Base):
 
     # Workspace info
     name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=True, unique=True)  # URL-friendly identifier, globally unique
     description = Column(Text, nullable=True)
     avatar_url = Column(String(512), nullable=True)  # Optional workspace avatar/logo URL
 
@@ -176,6 +177,7 @@ class Workspace(Base):
         UniqueConstraint('organization_id', 'name', name='uq_workspace_org_name'),
         Index('idx_workspace_org', 'organization_id'),
         Index('idx_workspace_created_by', 'created_by'),
+        Index('idx_workspace_slug', 'slug'),  # For fast slug lookups in public URLs
     )
 
     # Relationships
