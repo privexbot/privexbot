@@ -52,7 +52,6 @@ export default function ChatbotEditPage() {
     temperature: 0.7,
     max_tokens: 2000,
     greeting: '',
-    fallback: '',
     primary_color: '#6366f1',
     position: 'bottom-right',
     chat_title: '',
@@ -83,7 +82,6 @@ export default function ChatbotEditPage() {
         temperature: data.ai_config?.temperature ?? 0.7,
         max_tokens: data.ai_config?.max_tokens || 2000,
         greeting: data.prompt_config?.messages?.greeting || '',
-        fallback: data.prompt_config?.messages?.fallback || '',
         primary_color: data.branding_config?.primary_color || '#6366f1',
         position: data.branding_config?.position || 'bottom-right',
         chat_title: data.branding_config?.chat_title || '',
@@ -117,7 +115,6 @@ export default function ChatbotEditPage() {
         max_tokens: formData.max_tokens,
         messages: {
           greeting: formData.greeting,
-          fallback: formData.fallback,
         },
         appearance: {
           primary_color: formData.primary_color,
@@ -428,21 +425,6 @@ export default function ChatbotEditPage() {
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
                     First message shown when user opens the chat
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="fallback" className="font-manrope">Fallback Message</Label>
-                  <Textarea
-                    id="fallback"
-                    value={formData.fallback}
-                    onChange={(e) => setFormData({ ...formData, fallback: e.target.value })}
-                    placeholder="I'm sorry, I didn't understand that. Could you rephrase?"
-                    rows={2}
-                    className="font-manrope"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                    Message shown when the AI can't understand the user
                   </p>
                 </div>
               </CardContent>

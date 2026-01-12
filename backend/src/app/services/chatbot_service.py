@@ -134,12 +134,16 @@ class ChatbotService:
             context = retrieval_result["context"]
             sources = retrieval_result["sources"]
 
-        # 4. Get chat history for memory
-        history = self.session_service.get_context_messages(
-            db=db,
-            session_id=session.id,
-            max_messages=chatbot.config.get("memory", {}).get("max_messages", 10)
-        )
+        # 4. Get chat history for memory (only if enabled)
+        memory_config = chatbot.config.get("memory", {})
+        if memory_config.get("enabled", True):
+            history = self.session_service.get_context_messages(
+                db=db,
+                session_id=session.id,
+                max_messages=memory_config.get("max_messages", 10)
+            )
+        else:
+            history = []  # Memory disabled - stateless conversation
 
         # 5. Build structured messages for AI (with variable substitution)
         messages = self._build_messages(

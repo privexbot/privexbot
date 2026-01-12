@@ -118,7 +118,7 @@ class SessionService:
                 db.commit()
                 return session
             else:
-                # Session is active - update activity
+                # Session is active - update activity timestamps
                 session.updated_at = datetime.utcnow()
                 session.last_message_at = datetime.utcnow()
                 db.commit()

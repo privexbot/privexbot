@@ -256,54 +256,6 @@ function Step1BasicInfo({ formData, formErrors, onUpdate }: Step1Props) {
           This message appears when users first open the chat widget
         </p>
       </div>
-
-      <div className="space-y-2">
-        <Label
-          htmlFor="fallback"
-          className="text-gray-900 dark:text-gray-100 font-manrope"
-        >
-          Fallback Message
-        </Label>
-        <Textarea
-          id="fallback"
-          value={formData.messages.fallback || ""}
-          onChange={(e) =>
-            { onUpdate({
-              messages: { ...formData.messages, fallback: e.target.value },
-            }); }
-          }
-          placeholder="I'm not sure about that. Would you like to speak with a human?"
-          rows={2}
-          className="bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none"
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-          Shown when the bot cannot find a relevant answer
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label
-          htmlFor="goodbye"
-          className="text-gray-900 dark:text-gray-100 font-manrope"
-        >
-          Goodbye Message
-        </Label>
-        <Textarea
-          id="goodbye"
-          value={formData.messages.goodbye || ""}
-          onChange={(e) =>
-            { onUpdate({
-              messages: { ...formData.messages, goodbye: e.target.value },
-            }); }
-          }
-          placeholder="Thank you for chatting! Have a great day!"
-          rows={2}
-          className="bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope resize-none"
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-          Shown when the conversation ends
-        </p>
-      </div>
     </div>
   );
 }

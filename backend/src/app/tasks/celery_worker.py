@@ -57,6 +57,7 @@ celery_app.conf.update(
 
         # Low priority queue
         "app.tasks.kb_maintenance_tasks.*": {"queue": "low_priority"},
+        "app.tasks.session_tasks.*": {"queue": "low_priority"},
     },
 
     # Scheduled tasks (Celery Beat)
@@ -83,6 +84,12 @@ celery_app.conf.update(
         "refresh-chatbot-metrics": {
             "task": "refresh_chatbot_metrics_scheduled",
             "schedule": crontab(minute=30),  # Every hour at :30
+        },
+
+        # Clean up expired sessions daily at 3 AM
+        "cleanup-expired-sessions": {
+            "task": "cleanup_expired_sessions",
+            "schedule": crontab(hour=3, minute=0),  # Daily at 3 AM
         },
     },
 )

@@ -143,8 +143,6 @@ export interface RestrictionItem {
  */
 export interface MessagesConfig {
   greeting?: string;
-  fallback?: string;
-  goodbye?: string;
 }
 
 /**
@@ -816,8 +814,6 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 
 export const DEFAULT_MESSAGES: MessagesConfig = {
   greeting: "Hello! How can I help you today?",
-  fallback: "I'm sorry, I didn't understand that. Could you rephrase?",
-  goodbye: "Thank you for chatting with us!",
 };
 
 export const DEFAULT_BEHAVIOR: BehaviorConfig = {
