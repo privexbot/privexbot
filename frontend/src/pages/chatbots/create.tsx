@@ -35,11 +35,10 @@ import {
   Trash2,
   Lock,
   Unlock,
-  MessageCircle,
-  Phone,
   Users,
   Shield,
   Link2,
+  Info,
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
@@ -52,6 +51,9 @@ import {
   VariableField,
   VariableFieldType,
   GroundingMode,
+  DEFAULT_LEAD_CAPTURE_CONFIG,
+  FieldVisibility,
+  LeadCaptureTiming,
 } from "@/types/chatbot";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,8 +76,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -1627,509 +1629,320 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
         )}
       </div>
 
-      {/* Lead Capture Settings */}
-      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+      {/* Lead Capture Settings - Web-focused configuration */}
+      <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        {/* Header with Toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2">
+            <Label className="text-gray-900 dark:text-gray-100 font-manrope flex items-center gap-2 text-base font-medium">
               <Users className="h-4 w-4" />
               Lead Capture
             </Label>
-            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
-              Collect visitor information before or during chat
+            <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope mt-1">
+              Collect visitor contact information from your website
             </p>
           </div>
           <Switch
             checked={formData.lead_capture?.enabled || false}
-            onCheckedChange={(checked) =>
-              { onUpdate({
-                lead_capture: {
-                  ...formData.lead_capture,
-                  enabled: checked,
-                  timing: formData.lead_capture?.timing || "before_chat",
-                  required_fields: formData.lead_capture?.required_fields || ["email"],
-                },
-              }); }
-            }
+            onCheckedChange={(checked) => {
+              onUpdate({
+                lead_capture: checked
+                  ? { ...DEFAULT_LEAD_CAPTURE_CONFIG, enabled: true }
+                  : { ...DEFAULT_LEAD_CAPTURE_CONFIG, enabled: false },
+              });
+            }}
           />
         </div>
 
         {formData.lead_capture?.enabled && (
-          <div className="space-y-4 pt-2">
+          <div className="space-y-5 pt-2">
             {/* Timing Selection */}
-            <div className="space-y-2">
-              <Label className="text-gray-900 dark:text-gray-100 font-manrope text-sm">
-                When to collect?
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                When to show form
               </Label>
-              <div className="flex gap-2 flex-wrap">
-                {[
-                  { value: "before_chat", label: "Before Chat" },
-                  { value: "during_chat", label: "During Chat" },
-                  { value: "after_chat", label: "After Chat" },
-                ].map((timing) => (
-                  <Button
-                    key={timing.value}
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      { onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          timing: timing.value as "before_chat" | "during_chat" | "after_chat",
-                        },
-                      }); }
-                    }
-                    className={cn(
-                      "font-manrope",
-                      formData.lead_capture?.timing === timing.value &&
-                        "ring-2 ring-blue-500 border-blue-500"
-                    )}
-                  >
-                    {timing.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            {/* Required Fields */}
-            <div className="space-y-2">
-              <Label className="text-gray-900 dark:text-gray-100 font-manrope text-sm">
-                Fields to collect
-              </Label>
-              <div className="flex gap-4 flex-wrap">
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <Checkbox checked disabled />
-                  <span>Email (required)</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <Checkbox
-                    checked={formData.lead_capture?.required_fields?.includes("name") || false}
-                    onCheckedChange={(checked) => {
-                      const fields = [...(formData.lead_capture?.required_fields || ["email"])];
-                      if (checked && !fields.includes("name")) {
-                        fields.push("name");
-                      } else if (!checked) {
-                        const idx = fields.indexOf("name");
-                        if (idx >= 0) fields.splice(idx, 1);
-                      }
-                      onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          required_fields: fields,
-                        },
-                      });
-                    }}
-                  />
-                  <span>Name</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <Checkbox
-                    checked={formData.lead_capture?.required_fields?.includes("phone") || false}
-                    onCheckedChange={(checked) => {
-                      const fields = [...(formData.lead_capture?.required_fields || ["email"])];
-                      if (checked && !fields.includes("phone")) {
-                        fields.push("phone");
-                      } else if (!checked) {
-                        const idx = fields.indexOf("phone");
-                        if (idx >= 0) fields.splice(idx, 1);
-                      }
-                      onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          required_fields: fields,
-                        },
-                      });
-                    }}
-                  />
-                  <span>Phone</span>
-                </label>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                Leads will be available in the Leads section of your dashboard
-              </p>
-            </div>
-
-            {/* Platform-Specific Settings */}
-            <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-600">
-              <Label className="text-gray-900 dark:text-gray-100 font-manrope text-sm">
-                Platform Settings
-              </Label>
-
-              {/* Widget Settings */}
-              <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Website Widget</span>
-                  </div>
-                  <Switch
-                    checked={formData.lead_capture?.platforms?.widget?.enabled ?? true}
-                    onCheckedChange={(checked) =>
-                      { onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          platforms: {
-                            ...formData.lead_capture?.platforms,
-                            widget: {
-                              ...formData.lead_capture?.platforms?.widget,
-                              enabled: checked,
-                            },
-                          },
-                        },
-                      }); }
-                    }
-                  />
-                </div>
-                {(formData.lead_capture?.platforms?.widget?.enabled ?? true) && (
-                  <div className="space-y-2 pl-6">
-                    <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.widget?.capture_ip ?? true}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                widget: {
-                                  ...formData.lead_capture?.platforms?.widget,
-                                  enabled: true,
-                                  capture_ip: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Capture IP for geolocation</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.widget?.capture_referrer ?? true}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                widget: {
-                                  ...formData.lead_capture?.platforms?.widget,
-                                  enabled: true,
-                                  capture_referrer: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Capture referrer URL</span>
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              {/* WhatsApp Settings - Highlight auto phone capture */}
-              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-green-600" />
-                    <span className="text-sm font-medium text-green-700 dark:text-green-400">WhatsApp</span>
-                    <span className="text-xs bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full">
-                      Auto-captures phone!
+              <div className="grid grid-cols-2 gap-3">
+                {/* Before Chat Card */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdate({
+                      lead_capture: {
+                        ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                        ...formData.lead_capture,
+                        timing: LeadCaptureTiming.BEFORE_CHAT,
+                      },
+                    });
+                  }}
+                  className={cn(
+                    "p-3 rounded-lg border-2 text-left transition-all",
+                    formData.lead_capture?.timing === LeadCaptureTiming.BEFORE_CHAT
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                      : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                  )}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <div
+                      className={cn(
+                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                        formData.lead_capture?.timing === LeadCaptureTiming.BEFORE_CHAT
+                          ? "border-blue-500"
+                          : "border-gray-400"
+                      )}
+                    >
+                      {formData.lead_capture?.timing === LeadCaptureTiming.BEFORE_CHAT && (
+                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      )}
+                    </div>
+                    <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                      Before Chat
                     </span>
                   </div>
-                  <Switch
-                    checked={formData.lead_capture?.platforms?.whatsapp?.enabled ?? true}
-                    onCheckedChange={(checked) =>
-                      { onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          platforms: {
-                            ...formData.lead_capture?.platforms,
-                            whatsapp: {
-                              ...formData.lead_capture?.platforms?.whatsapp,
-                              enabled: checked,
-                            },
-                          },
-                        },
-                      }); }
-                    }
-                  />
-                </div>
-                {(formData.lead_capture?.platforms?.whatsapp?.enabled ?? true) && (
-                  <div className="space-y-2 pl-6">
-                    <label className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.whatsapp?.auto_capture_phone ?? true}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                whatsapp: {
-                                  ...formData.lead_capture?.platforms?.whatsapp,
-                                  enabled: true,
-                                  auto_capture_phone: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Auto-capture verified phone on first message</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.whatsapp?.prompt_for_email ?? false}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                whatsapp: {
-                                  ...formData.lead_capture?.platforms?.whatsapp,
-                                  enabled: true,
-                                  prompt_for_email: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Also prompt for email via conversation</span>
-                    </label>
-                  </div>
-                )}
-              </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 ml-6">
+                    Form appears first, then chat begins
+                  </p>
+                </button>
 
-              {/* Telegram Settings */}
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Send className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-700 dark:text-blue-400">Telegram</span>
-                  </div>
-                  <Switch
-                    checked={formData.lead_capture?.platforms?.telegram?.enabled ?? true}
-                    onCheckedChange={(checked) =>
-                      { onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          platforms: {
-                            ...formData.lead_capture?.platforms,
-                            telegram: {
-                              ...formData.lead_capture?.platforms?.telegram,
-                              enabled: checked,
-                            },
-                          },
-                        },
-                      }); }
-                    }
-                  />
-                </div>
-                {(formData.lead_capture?.platforms?.telegram?.enabled ?? true) && (
-                  <div className="space-y-2 pl-6">
-                    <label className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.telegram?.auto_capture_username ?? true}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                telegram: {
-                                  ...formData.lead_capture?.platforms?.telegram,
-                                  enabled: true,
-                                  auto_capture_username: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Auto-capture username & name</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.telegram?.prompt_for_email ?? false}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                telegram: {
-                                  ...formData.lead_capture?.platforms?.telegram,
-                                  enabled: true,
-                                  prompt_for_email: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Prompt for email via conversation</span>
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              {/* Discord Settings */}
-              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="h-4 w-4 text-indigo-600" />
-                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">Discord</span>
-                  </div>
-                  <Switch
-                    checked={formData.lead_capture?.platforms?.discord?.enabled ?? true}
-                    onCheckedChange={(checked) =>
-                      { onUpdate({
-                        lead_capture: {
-                          ...formData.lead_capture,
-                          enabled: formData.lead_capture?.enabled ?? true,
-                          platforms: {
-                            ...formData.lead_capture?.platforms,
-                            discord: {
-                              ...formData.lead_capture?.platforms?.discord,
-                              enabled: checked,
-                            },
-                          },
-                        },
-                      }); }
-                    }
-                  />
-                </div>
-                {(formData.lead_capture?.platforms?.discord?.enabled ?? true) && (
-                  <div className="space-y-2 pl-6">
-                    <label className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.discord?.auto_capture_username ?? true}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                discord: {
-                                  ...formData.lead_capture?.platforms?.discord,
-                                  enabled: true,
-                                  auto_capture_username: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Auto-capture username</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
-                      <Checkbox
-                        checked={formData.lead_capture?.platforms?.discord?.capture_guild_context ?? true}
-                        onCheckedChange={(checked) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              platforms: {
-                                ...formData.lead_capture?.platforms,
-                                discord: {
-                                  ...formData.lead_capture?.platforms?.discord,
-                                  enabled: true,
-                                  capture_guild_context: !!checked,
-                                },
-                              },
-                            },
-                          }); }
-                        }
-                      />
-                      <span>Capture guild/server context (B2B valuable)</span>
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              {/* Privacy & Consent Settings */}
-              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lock className="h-4 w-4 text-purple-600" />
-                  <span className="text-sm font-medium text-purple-700 dark:text-purple-400">Privacy & Consent</span>
-                </div>
-                <div className="space-y-2 pl-6">
-                  <label className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400">
-                    <Checkbox
-                      checked={formData.lead_capture?.privacy?.require_consent ?? false}
-                      onCheckedChange={(checked) =>
-                        { onUpdate({
-                          lead_capture: {
-                            ...formData.lead_capture,
-                            enabled: formData.lead_capture?.enabled ?? true,
-                            privacy: {
-                              ...formData.lead_capture?.privacy,
-                              require_consent: !!checked,
-                            },
-                          },
-                        }); }
-                      }
-                    />
-                    <span>Require explicit consent before collecting data</span>
-                  </label>
-                  {formData.lead_capture?.privacy?.require_consent && (
-                    <div className="pt-2">
-                      <Input
-                        placeholder="Consent message (e.g., 'I agree to share my information')"
-                        value={formData.lead_capture?.privacy?.consent_message || ""}
-                        onChange={(e) =>
-                          { onUpdate({
-                            lead_capture: {
-                              ...formData.lead_capture,
-                              enabled: formData.lead_capture?.enabled ?? true,
-                              privacy: {
-                                ...formData.lead_capture?.privacy,
-                                require_consent: true,
-                                consent_message: e.target.value,
-                              },
-                            },
-                          }); }
-                        }
-                        className="text-xs"
-                      />
-                    </div>
+                {/* After N Messages Card */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdate({
+                      lead_capture: {
+                        ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                        ...formData.lead_capture,
+                        timing: LeadCaptureTiming.AFTER_N_MESSAGES,
+                      },
+                    });
+                  }}
+                  className={cn(
+                    "p-3 rounded-lg border-2 text-left transition-all",
+                    formData.lead_capture?.timing === LeadCaptureTiming.AFTER_N_MESSAGES
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                      : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
                   )}
-                  <label className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 pt-1">
-                    <Checkbox
-                      checked={formData.lead_capture?.privacy?.gdpr_compliant ?? false}
-                      onCheckedChange={(checked) =>
-                        { onUpdate({
-                          lead_capture: {
-                            ...formData.lead_capture,
-                            enabled: formData.lead_capture?.enabled ?? true,
-                            privacy: {
-                              ...formData.lead_capture?.privacy,
-                              gdpr_compliant: !!checked,
-                            },
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <div
+                      className={cn(
+                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                        formData.lead_capture?.timing === LeadCaptureTiming.AFTER_N_MESSAGES
+                          ? "border-blue-500"
+                          : "border-gray-400"
+                      )}
+                    >
+                      {formData.lead_capture?.timing === LeadCaptureTiming.AFTER_N_MESSAGES && (
+                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      )}
+                    </div>
+                    <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                      After Conversation Starts
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 ml-6">
+                    Show after chatting begins
+                  </p>
+                </button>
+              </div>
+
+              {/* Messages Slider - only when "After N Messages" selected */}
+              {formData.lead_capture?.timing === LeadCaptureTiming.AFTER_N_MESSAGES && (
+                <div className="ml-1 space-y-2">
+                  <Label className="text-xs text-gray-600 dark:text-gray-400">
+                    Show form after {formData.lead_capture?.messages_before_prompt || 3} messages
+                  </Label>
+                  <Slider
+                    value={[formData.lead_capture?.messages_before_prompt || 3]}
+                    onValueChange={([value]) => {
+                      onUpdate({
+                        lead_capture: {
+                          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                          ...formData.lead_capture,
+                          messages_before_prompt: value,
+                        },
+                      });
+                    }}
+                    min={1}
+                    max={10}
+                    step={1}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>1</span>
+                    <span>10</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Fields Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Fields to collect
+              </Label>
+              <div className="grid grid-cols-3 gap-3">
+                {/* Email Field */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">Email</Label>
+                  <Select
+                    value={formData.lead_capture?.fields?.email || FieldVisibility.REQUIRED}
+                    onValueChange={(value) => {
+                      onUpdate({
+                        lead_capture: {
+                          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                          ...formData.lead_capture,
+                          fields: {
+                            ...DEFAULT_LEAD_CAPTURE_CONFIG.fields,
+                            ...formData.lead_capture?.fields,
+                            email: value as typeof FieldVisibility[keyof typeof FieldVisibility],
                           },
-                        }); }
-                      }
-                    />
-                    <span>GDPR compliant mode</span>
-                  </label>
+                        },
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={FieldVisibility.REQUIRED}>Required</SelectItem>
+                      <SelectItem value={FieldVisibility.OPTIONAL}>Optional</SelectItem>
+                      <SelectItem value={FieldVisibility.HIDDEN}>Hidden</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Name Field */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">Name</Label>
+                  <Select
+                    value={formData.lead_capture?.fields?.name || FieldVisibility.OPTIONAL}
+                    onValueChange={(value) => {
+                      onUpdate({
+                        lead_capture: {
+                          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                          ...formData.lead_capture,
+                          fields: {
+                            ...DEFAULT_LEAD_CAPTURE_CONFIG.fields,
+                            ...formData.lead_capture?.fields,
+                            name: value as typeof FieldVisibility[keyof typeof FieldVisibility],
+                          },
+                        },
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={FieldVisibility.REQUIRED}>Required</SelectItem>
+                      <SelectItem value={FieldVisibility.OPTIONAL}>Optional</SelectItem>
+                      <SelectItem value={FieldVisibility.HIDDEN}>Hidden</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Phone Field */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">Phone</Label>
+                  <Select
+                    value={formData.lead_capture?.fields?.phone || FieldVisibility.HIDDEN}
+                    onValueChange={(value) => {
+                      onUpdate({
+                        lead_capture: {
+                          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                          ...formData.lead_capture,
+                          fields: {
+                            ...DEFAULT_LEAD_CAPTURE_CONFIG.fields,
+                            ...formData.lead_capture?.fields,
+                            phone: value as typeof FieldVisibility[keyof typeof FieldVisibility],
+                          },
+                        },
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={FieldVisibility.REQUIRED}>Required</SelectItem>
+                      <SelectItem value={FieldVisibility.OPTIONAL}>Optional</SelectItem>
+                      <SelectItem value={FieldVisibility.HIDDEN}>Hidden</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {/* Validation hint */}
+              {formData.lead_capture?.fields?.email === FieldVisibility.HIDDEN &&
+               formData.lead_capture?.fields?.name === FieldVisibility.HIDDEN &&
+               formData.lead_capture?.fields?.phone === FieldVisibility.HIDDEN && (
+                <p className="text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  At least one field must be visible
+                </p>
+              )}
+            </div>
+
+            {/* Options Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Options
+              </Label>
+              <div className="space-y-3">
+                {/* Allow Skip */}
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={formData.lead_capture?.allow_skip ?? true}
+                    onCheckedChange={(checked) => {
+                      onUpdate({
+                        lead_capture: {
+                          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                          ...formData.lead_capture,
+                          allow_skip: checked === true,
+                        },
+                      });
+                    }}
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Allow visitors to skip the form
+                  </span>
+                </label>
+
+                {/* Require Consent */}
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={formData.lead_capture?.privacy?.require_consent ?? false}
+                    onCheckedChange={(checked) => {
+                      onUpdate({
+                        lead_capture: {
+                          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+                          ...formData.lead_capture,
+                          privacy: {
+                            ...DEFAULT_LEAD_CAPTURE_CONFIG.privacy,
+                            ...formData.lead_capture?.privacy,
+                            require_consent: checked === true,
+                          },
+                        },
+                      });
+                    }}
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Require consent checkbox (GDPR compliance)
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Info Box */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <strong>Auto-captured:</strong> IP address, location, browser info, referrer URL
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    Custom fields and additional platforms (Telegram, Discord, WhatsApp) can be configured after deployment.
+                  </p>
                 </div>
               </div>
             </div>

@@ -59,7 +59,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { useWorkspaceStore } from '@/store/workspace-store';
+import { useApp } from '@/contexts/AppContext';
 import apiClient from '@/lib/api-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -672,7 +672,7 @@ function EmptyState({ hasSearch }: { hasSearch: boolean }) {
 export default function LeadsDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace } = useApp();
 
   const [viewMode, setViewMode] = useState<'table' | 'grid' | 'map'>('table');
   const [searchQuery, setSearchQuery] = useState('');

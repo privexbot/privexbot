@@ -47,7 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useWorkspaceStore } from '@/store/workspace-store';
+import { useApp } from '@/contexts/AppContext';
 import apiClient from '@/lib/api-client';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -225,7 +225,7 @@ export default function LeadDetailPage() {
   const { leadId } = useParams<{ leadId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace } = useApp();
   const queryClient = useQueryClient();
 
   const [lead, setLead] = useState<Lead | null>(null);

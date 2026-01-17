@@ -39,7 +39,7 @@ class LeadCaptureService:
         bot_id: UUID,
         bot_type: str,
         session_id: str,
-        email: str,
+        email: Optional[str] = None,
         name: Optional[str] = None,
         phone: Optional[str] = None,
         custom_fields: Optional[Dict] = None,
@@ -61,7 +61,7 @@ class LeadCaptureService:
             bot_id: Chatbot/Chatflow UUID
             bot_type: "chatbot" or "chatflow"
             session_id: Chat session ID
-            email: User's email (required)
+            email: User's email (optional - visitors can skip lead form)
             name: User's name (optional)
             phone: User's phone (optional)
             custom_fields: Additional fields (optional)
@@ -86,7 +86,7 @@ class LeadCaptureService:
             "bot_id": bot_id,
             "bot_type": bot_type,
             "session_id": session_id,
-            "email": email,
+            "email": email,  # Can be None - visitors can skip lead form
             "name": name,
             "phone": phone,
             "custom_fields": custom_fields or {},
@@ -94,7 +94,7 @@ class LeadCaptureService:
             "user_agent": user_agent,
             "referrer": referrer,
             "language": language,
-            "channel": "widget",
+            "channel": "website",  # Widget is deployed on website
             "consent_given": "Y" if consent_given else "N",
             "consent_method": "form" if consent_given else None,
             "consent_timestamp": datetime.utcnow() if consent_given else None,
@@ -160,7 +160,7 @@ class LeadCaptureService:
             "bot_id": bot_id,
             "bot_type": bot_type,
             "session_id": session_id,
-            "email": email or f"telegram_{telegram_user_id}@placeholder.local",
+            "email": email,  # Can be None - collected later via conversation
             "name": name,
             "phone": phone,
             "custom_fields": {
@@ -219,7 +219,7 @@ class LeadCaptureService:
             "bot_id": bot_id,
             "bot_type": bot_type,
             "session_id": session_id,
-            "email": email or f"discord_{discord_user_id}@placeholder.local",
+            "email": email,  # Can be None - collected via modal
             "name": discord_username,
             "custom_fields": {
                 "discord_user_id": discord_user_id,
@@ -276,7 +276,7 @@ class LeadCaptureService:
             "bot_id": bot_id,
             "bot_type": bot_type,
             "session_id": session_id,
-            "email": email or f"whatsapp_{phone}@placeholder.local",
+            "email": email,  # Can be None - collected via conversation
             "name": profile_name,
             "phone": phone,  # VERIFIED by WhatsApp!
             "custom_fields": {
@@ -334,22 +334,34 @@ class LeadCaptureService:
         Create new lead or merge with existing.
 
         WHY: Prevent duplicates, enrich existing leads with new data
-        HOW: Check for existing lead by email, merge if found
+        HOW: Check for existing lead by email or session_id, merge if found
 
-        DEDUPLICATION STRATEGY: Merge by email
-        - Same email = same person across platforms
+        DEDUPLICATION STRATEGY:
+        1. If email provided: Merge by email (same email = same person)
+        2. If no email: Check by session_id (same session = same visitor)
         - New platform data enriches existing record
         - WhatsApp phone takes priority (verified)
         """
 
         email = lead_data.get("email")
+        session_id = lead_data.get("session_id")
         workspace_id = lead_data.get("workspace_id")
 
-        # Check for existing lead
-        existing_lead = db.query(Lead).filter(
-            Lead.workspace_id == workspace_id,
-            Lead.email == email
-        ).first()
+        existing_lead = None
+
+        # Strategy 1: Deduplicate by email if provided
+        if email:
+            existing_lead = db.query(Lead).filter(
+                Lead.workspace_id == workspace_id,
+                Lead.email == email
+            ).first()
+
+        # Strategy 2: Deduplicate by session_id if no email match
+        if not existing_lead and session_id:
+            existing_lead = db.query(Lead).filter(
+                Lead.workspace_id == workspace_id,
+                Lead.session_id == session_id
+            ).first()
 
         if existing_lead:
             # Merge: Update with new platform data

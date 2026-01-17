@@ -18,18 +18,21 @@ PSEUDOCODE follows the existing codebase patterns.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
 from datetime import datetime, timedelta
 import csv
 import io
 
 from app.db.session import get_db
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user_with_org
 from app.models.user import User
 from app.models.lead import Lead
 
 router = APIRouter(prefix="/leads", tags=["leads"])
+
+# Type alias for user context from JWT
+UserContext = Tuple[User, str, str]  # (user, org_id, ws_id)
 
 
 @router.get("/")
@@ -42,7 +45,7 @@ async def list_leads(
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     List all leads in workspace with stats for dashboard.
@@ -74,10 +77,13 @@ async def list_leads(
     from sqlalchemy import func
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -165,7 +171,7 @@ async def get_leads_summary(
     workspace_id: UUID,
     days: int = 30,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Get leads summary analytics.
@@ -193,10 +199,13 @@ async def get_leads_summary(
 
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -312,7 +321,7 @@ async def export_leads_csv(
     bot_id: Optional[UUID] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Export leads as CSV.
@@ -326,10 +335,13 @@ async def export_leads_csv(
 
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -401,9 +413,9 @@ async def export_leads_csv(
 async def export_leads_json(
     workspace_id: UUID,
     bot_id: Optional[UUID] = None,
-    status: Optional[str] = None,
+    lead_status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Export leads as JSON.
@@ -424,10 +436,13 @@ async def export_leads_json(
 
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -444,8 +459,8 @@ async def export_leads_json(
     if bot_id:
         query = query.filter(Lead.bot_id == bot_id)
 
-    if status:
-        query = query.filter(Lead.status == status)
+    if lead_status:
+        query = query.filter(Lead.status == lead_status)
 
     leads = query.all()
 
@@ -476,7 +491,7 @@ async def export_leads_json(
 async def get_lead(
     lead_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Get single lead by ID.
@@ -484,6 +499,9 @@ async def get_lead(
     WHY: View lead details
     HOW: Query database, verify access
     """
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
 
     lead = db.query(Lead).filter(
         Lead.id == lead_id
@@ -499,7 +517,7 @@ async def get_lead(
     from app.models.workspace import Workspace
     workspace = db.query(Workspace).filter(
         Workspace.id == lead.workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -516,7 +534,7 @@ async def update_lead(
     lead_id: UUID,
     updates: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Update lead status/notes.
@@ -530,6 +548,9 @@ async def update_lead(
             "notes": "Called customer, interested in product"
         }
     """
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
 
     lead = db.query(Lead).filter(
         Lead.id == lead_id
@@ -545,7 +566,7 @@ async def update_lead(
     from app.models.workspace import Workspace
     workspace = db.query(Workspace).filter(
         Workspace.id == lead.workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -570,7 +591,7 @@ async def update_lead(
 async def delete_lead(
     lead_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Delete lead.
@@ -578,6 +599,9 @@ async def delete_lead(
     WHY: Remove lead
     HOW: Hard delete from database
     """
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
 
     lead = db.query(Lead).filter(
         Lead.id == lead_id
@@ -593,7 +617,7 @@ async def delete_lead(
     from app.models.workspace import Workspace
     workspace = db.query(Workspace).filter(
         Workspace.id == lead.workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:

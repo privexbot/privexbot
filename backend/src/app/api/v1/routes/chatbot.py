@@ -81,6 +81,10 @@ class UpdateChatbotDraftRequest(BaseModel):
         None,
         description="Grounding mode: 'strict' (KB-only), 'guided' (prefer KB), 'flexible' (enhance with KB)"
     )
+    is_public: Optional[bool] = Field(
+        None,
+        description="Whether chatbot is publicly accessible without API key"
+    )
 
 
 class AttachKBRequest(BaseModel):
@@ -771,11 +775,15 @@ async def update_chatbot(
         prompt_config["variables_config"] = updates["variables_config"]
         chatbot.prompt_config = prompt_config
 
-    # Update grounding mode
+    # Update grounding mode (stored in kb_config, not behavior_config)
     if "grounding_mode" in updates:
-        behavior_config = chatbot.behavior_config.copy() if chatbot.behavior_config else {}
-        behavior_config["grounding_mode"] = updates["grounding_mode"]
-        chatbot.behavior_config = behavior_config
+        kb_config = chatbot.kb_config.copy() if chatbot.kb_config else {}
+        kb_config["grounding_mode"] = updates["grounding_mode"]
+        chatbot.kb_config = kb_config
+
+    # Update visibility
+    if "is_public" in updates:
+        chatbot.is_public = updates["is_public"]
 
     db.commit()
     db.refresh(chatbot)

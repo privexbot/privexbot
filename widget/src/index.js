@@ -160,6 +160,16 @@ class PrivexBotWidget {
     this.container.className = `privexbot-widget ${this.config.position}`;
     this.container.id = 'privexbot-widget-container';
 
+    // Apply font family from config
+    if (this.config.font_family) {
+      const fontMap = {
+        'Inter': '"Inter", system-ui, sans-serif',
+        'System': 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+        'Monospace': 'ui-monospace, "SF Mono", "Cascadia Mono", monospace',
+      };
+      this.container.style.fontFamily = fontMap[this.config.font_family] || this.config.font_family;
+    }
+
     // Create bubble
     this.bubble = new ChatBubble(this.config, () => this.toggle());
     this.container.appendChild(this.bubble.render());

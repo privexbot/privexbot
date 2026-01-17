@@ -73,8 +73,8 @@ class Lead(Base):
     # ═══════════════════════════════════════════════════════════════
     # USER-PROVIDED INFORMATION
     # ═══════════════════════════════════════════════════════════════
-    email = Column(String(255), nullable=False, index=True)
-    # Primary contact method - required
+    email = Column(String(255), nullable=True, index=True)
+    # Primary contact method - optional (visitors can skip lead form)
 
     name = Column(String(255), nullable=True)
     # User's name for personalization

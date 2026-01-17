@@ -77,10 +77,11 @@ class LeadCaptureRequest(BaseModel):
     """Lead capture request."""
 
     session_id: str
-    email: str
+    email: Optional[str] = None  # Made optional - validation based on config
     name: Optional[str] = None
     phone: Optional[str] = None
     custom_fields: Optional[dict] = None
+    consent_given: bool = False  # Required for GDPR compliance when configured
     ip_address: Optional[str] = None
     # Browser metadata from widget
     user_agent: Optional[str] = None
@@ -150,6 +151,10 @@ class HostedPageConfigResponse(BaseModel):
     #   "custom_domain": "support.mycompany.com",
     #   "domain_verified": false
     # }
+
+    # Authentication
+    auth_required: bool = False
+    # True if chatbot is private and requires API key to access
 
 
 @router.post("/bots/{bot_id}/chat")
@@ -253,22 +258,38 @@ async def submit_feedback(
 
     WHY: Collect user satisfaction data
     HOW: Update message feedback field
+
+    AUTH: Public bots allow feedback without API key.
+          Private bots require valid API key.
     """
-
-    # Validate API key
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "API key required")
-
-    api_key = authorization.replace("Bearer ", "")
-    await _validate_api_key_and_get_bot(db, bot_id, api_key)
-
-    # Update message
+    from app.models.chatbot import Chatbot
     from app.models.chat_message import ChatMessage
 
-    message = db.query(ChatMessage).get(message_id)
+    # Get the chatbot first to check if it's public
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    # For private bots, require API key validation
+    if not bot.is_public:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(401, "API key required for private bots")
+
+        api_key = authorization.replace("Bearer ", "")
+        await _validate_api_key_and_get_bot(db, bot_id, api_key)
+
+    # Get the message
+    message = db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
     if not message:
         raise HTTPException(404, "Message not found")
 
+    # Verify message belongs to a session of this chatbot
+    from app.models.chat_session import ChatSession
+    session = db.query(ChatSession).filter(ChatSession.id == message.session_id).first()
+    if not session or session.bot_id != bot_id:
+        raise HTTPException(403, "Message does not belong to this chatbot")
+
+    # Update feedback
     message.feedback = {
         "rating": request.rating,
         "comment": request.comment,
@@ -307,6 +328,44 @@ async def capture_lead(
         api_key
     )
 
+    # Check if lead capture is enabled and validate fields
+    lead_config = getattr(bot, "lead_capture_config", None) or {}
+    if not lead_config.get("enabled", False):
+        raise HTTPException(400, "Lead capture is not enabled for this chatbot")
+
+    # Validate required fields based on config
+    fields_config = lead_config.get("fields", {})
+    missing_fields = []
+
+    # Check standard fields
+    if fields_config.get("email") == "required" and not lead_request.email:
+        missing_fields.append("email")
+    if fields_config.get("name") == "required" and not lead_request.name:
+        missing_fields.append("name")
+    if fields_config.get("phone") == "required" and not lead_request.phone:
+        missing_fields.append("phone")
+
+    # Check custom fields
+    custom_fields_config = lead_config.get("custom_fields", [])
+    request_custom_fields = lead_request.custom_fields or {}
+    for cf in custom_fields_config:
+        if cf.get("required") and not request_custom_fields.get(cf.get("name")):
+            missing_fields.append(cf.get("label", cf.get("name")))
+
+    if missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required fields: {', '.join(missing_fields)}"
+        )
+
+    # Check consent if required
+    privacy_config = lead_config.get("privacy", {})
+    if privacy_config.get("require_consent", False) and not lead_request.consent_given:
+        raise HTTPException(
+            status_code=400,
+            detail="Consent is required before submitting your information"
+        )
+
     # Get client IP from headers (handles proxies)
     client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
     if not client_ip:
@@ -329,7 +388,7 @@ async def capture_lead(
         user_agent=lead_request.user_agent,
         referrer=lead_request.referrer,
         language=lead_request.language,
-        consent_given=True  # Widget form implies consent
+        consent_given=lead_request.consent_given  # From form submission
     )
 
     return {"lead_id": str(lead.id)}
@@ -492,14 +551,25 @@ async def get_hosted_page_config(
     if not bot:
         raise HTTPException(404, "Chatbot not found")
 
-    if not bot.is_public:
-        raise HTTPException(401, "This chatbot requires authentication")
-
     # Extract configurations
     branding = bot.branding_config or {}
     prompt_config = bot.prompt_config or {}
     messages = prompt_config.get("messages", {})
     hosted_page = branding.get("hosted_page", {})
+
+    # For private bots, return limited config with auth_required flag
+    # This allows the frontend to show an API key modal instead of blocking completely
+    if not bot.is_public:
+        return HostedPageConfigResponse(
+            chatbot_id=str(bot.id),
+            workspace_slug=workspace.slug,
+            slug=bot.slug,
+            name=bot.name,
+            auth_required=True,
+            # Only expose minimal branding for the auth modal
+            color=branding.get("primary_color"),
+            avatar_url=branding.get("avatar_url"),
+        )
 
     return HostedPageConfigResponse(
         chatbot_id=str(bot.id),
@@ -513,7 +583,8 @@ async def get_hosted_page_config(
         avatar_url=branding.get("avatar_url"),
         font_family=branding.get("font_family", "Inter"),
         lead_config=bot.lead_capture_config,
-        hosted_page=hosted_page if hosted_page.get("enabled") else None
+        hosted_page=hosted_page if hosted_page.get("enabled") else None,
+        auth_required=False,
     )
 
 
@@ -522,6 +593,7 @@ async def chat_by_slug(
     workspace_slug: str,
     bot_slug: str,
     request: ChatRequest,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ) -> ChatResponse:
     """
@@ -534,9 +606,14 @@ async def chat_by_slug(
     Example: /chat/acme-corp/support-bot
 
     Same as /bots/{bot_id}/chat but uses slugs instead of UUID.
+
+    For private bots:
+    - Requires API key in Authorization header: "Bearer sk_live_..."
+    - Returns 401 if no valid API key provided
     """
     from app.models.chatbot import Chatbot, ChatbotStatus
     from app.models.workspace import Workspace
+    from app.models.api_key import APIKey
 
     # Find workspace by slug
     workspace = db.query(Workspace).filter(
@@ -556,8 +633,34 @@ async def chat_by_slug(
     if not bot:
         raise HTTPException(404, "Chatbot not found")
 
+    # For private bots, require valid API key
     if not bot.is_public:
-        raise HTTPException(401, "This chatbot requires authentication")
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(401, "API key required for private chatbots")
+
+        api_key = authorization.replace("Bearer ", "")
+        key_hash = APIKey.hash_key(api_key)
+
+        # Validate API key belongs to this chatbot
+        api_key_obj = db.query(APIKey).filter(
+            APIKey.key_hash == key_hash,
+            APIKey.entity_id == bot.id,
+            APIKey.is_active == True
+        ).first()
+
+        if not api_key_obj:
+            raise HTTPException(401, "Invalid API key")
+
+        if not api_key_obj.is_valid:
+            if api_key_obj.is_expired:
+                raise HTTPException(401, "API key expired")
+            if api_key_obj.is_revoked:
+                raise HTTPException(401, "API key revoked")
+            raise HTTPException(401, "API key inactive")
+
+        # Record usage
+        api_key_obj.record_usage()
+        db.commit()
 
     # Generate session ID if not provided
     session_id = request.session_id or f"hosted_{uuid4().hex[:16]}"
@@ -650,6 +753,152 @@ async def track_hosted_page_event(
         print(f"Failed to store hosted page event: {e}")
 
     return {"status": "ok", "event_type": request.event_type}
+
+
+class HostedLeadCaptureRequest(BaseModel):
+    """Lead capture request for hosted page."""
+
+    session_id: str
+    email: Optional[str] = None  # Made optional to match widget schema and support skip
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    custom_fields: Optional[dict] = None
+    consent_given: bool = False
+    # Browser metadata (auto-captured by frontend)
+    user_agent: Optional[str] = None
+    referrer: Optional[str] = None
+    language: Optional[str] = None
+
+
+@router.post("/chat/{workspace_slug}/{bot_slug}/leads")
+async def capture_lead_hosted_page(
+    workspace_slug: str,
+    bot_slug: str,
+    lead_request: HostedLeadCaptureRequest,
+    http_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Capture lead from hosted chat page.
+
+    WHY: Lead capture for public bots on hosted page (no API key required)
+    HOW: Look up workspace and chatbot by slugs, create lead with geolocation
+
+    URL format: /chat/{workspace_slug}/{bot_slug}/leads
+    Example: /chat/acme-corp/support-bot/leads
+    """
+    from app.models.chatbot import Chatbot, ChatbotStatus
+    from app.models.workspace import Workspace
+    from app.services.lead_capture_service import lead_capture_service
+    from app.services.chatbot_analytics_service import chatbot_analytics_service
+
+    # Find workspace by slug
+    workspace = db.query(Workspace).filter(
+        Workspace.slug == workspace_slug
+    ).first()
+
+    if not workspace:
+        raise HTTPException(404, "Workspace not found")
+
+    # Find chatbot by slug within the workspace
+    bot = db.query(Chatbot).filter(
+        Chatbot.workspace_id == workspace.id,
+        Chatbot.slug == bot_slug,
+        Chatbot.status == ChatbotStatus.ACTIVE
+    ).first()
+
+    if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    # Only allow for public bots (private bots require API key flow)
+    if not bot.is_public:
+        raise HTTPException(401, "Lead capture requires API key for private bots")
+
+    # Check if lead capture is enabled
+    lead_config = bot.lead_capture_config or {}
+    if not lead_config.get("enabled", False):
+        raise HTTPException(400, "Lead capture is not enabled for this chatbot")
+
+    # Validate required fields based on config
+    fields_config = lead_config.get("fields", {})
+    missing_fields = []
+
+    # Check standard fields
+    if fields_config.get("email") == "required" and not lead_request.email:
+        missing_fields.append("email")
+    if fields_config.get("name") == "required" and not lead_request.name:
+        missing_fields.append("name")
+    if fields_config.get("phone") == "required" and not lead_request.phone:
+        missing_fields.append("phone")
+
+    # Check custom fields
+    custom_fields_config = lead_config.get("custom_fields", [])
+    request_custom_fields = lead_request.custom_fields or {}
+    for cf in custom_fields_config:
+        if cf.get("required") and not request_custom_fields.get(cf.get("name")):
+            missing_fields.append(cf.get("label", cf.get("name")))
+
+    if missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required fields: {', '.join(missing_fields)}"
+        )
+
+    # Check consent if required
+    privacy_config = lead_config.get("privacy", {})
+    if privacy_config.get("require_consent", False) and not lead_request.consent_given:
+        raise HTTPException(
+            status_code=400,
+            detail="Consent is required before submitting your information"
+        )
+
+    # Get client IP from headers (handles proxies)
+    client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = http_request.client.host if http_request.client else None
+
+    # Capture lead with geolocation
+    lead = await lead_capture_service.capture_from_widget(
+        db=db,
+        workspace_id=workspace.id,
+        bot_id=bot.id,
+        bot_type="chatbot",
+        session_id=lead_request.session_id,
+        email=lead_request.email,
+        name=lead_request.name,
+        phone=lead_request.phone,
+        custom_fields=lead_request.custom_fields,
+        ip_address=client_ip,
+        user_agent=lead_request.user_agent,
+        referrer=lead_request.referrer,
+        language=lead_request.language,
+        consent_given=lead_request.consent_given
+    )
+
+    # Track lead captured event
+    try:
+        await chatbot_analytics_service.store_widget_event(
+            db=db,
+            bot_id=bot.id,
+            workspace_id=workspace.id,
+            event_type="lead_collected",
+            session_id=lead_request.session_id,
+            event_data={
+                "fields_collected": [
+                    k for k, v in {
+                        "email": lead_request.email,
+                        "name": lead_request.name,
+                        "phone": lead_request.phone
+                    }.items() if v
+                ],
+                "consent_given": lead_request.consent_given
+            },
+            bot_type="chatbot"
+        )
+    except Exception as e:
+        print(f"Failed to track lead capture event: {e}")
+
+    return {"lead_id": str(lead.id), "status": "captured"}
 
 
 async def _get_public_bot(

@@ -710,7 +710,7 @@ export default function ChatbotDetailPage() {
               className="flex-shrink-0 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
             >
               <Link2 className="h-4 w-4 mr-1" />
-              Hosted Page
+              SecretVM
             </TabsTrigger>
             <TabsTrigger
               value="settings"
@@ -1251,7 +1251,7 @@ export default function ChatbotDetailPage() {
             </div>
           </TabsContent>
 
-          {/* Hosted Page Tab - SecretVM Deployment */}
+          {/* SecretVM Tab - SecretVM Deployment */}
           <TabsContent value="hosted-page">
             <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
               <CardContent className="p-6 space-y-6">
@@ -1349,7 +1349,7 @@ export default function ChatbotDetailPage() {
                   <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
                     <AlertCircle className="h-10 w-10 mx-auto text-amber-500 mb-3" />
                     <p className="text-gray-600 dark:text-gray-400 font-manrope">
-                      Hosted page URL will be available after the chatbot is deployed.
+                      SecretVM URL will be available after the chatbot is deployed.
                     </p>
                   </div>
                 )}

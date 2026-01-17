@@ -14,14 +14,25 @@ import {
   RefreshCw,
   AlertCircle,
   Sparkles,
-  Database,
   Palette,
   MessageSquare,
+  Lock,
+  Unlock,
+  Globe,
+  UserPlus,
+  Info,
+  Send,
+  Hash,
+  Phone,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { useApp } from '@/contexts/AppContext';
-import type { Chatbot, UpdateChatbotDraftRequest, KBAttachment } from '@/types/chatbot';
-import { AIModel, getModelLabel, PersonaTone } from '@/types/chatbot';
+import type { Chatbot, UpdateChatbotDraftRequest, LeadCaptureCustomField } from '@/types/chatbot';
+import { AIModel, getModelLabel, LeadCaptureTiming, FieldVisibility, CustomFieldType, DEFAULT_LEAD_CAPTURE_CONFIG } from '@/types/chatbot';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -53,11 +64,78 @@ export default function ChatbotEditPage() {
     max_tokens: 2000,
     greeting: '',
     primary_color: '#6366f1',
+    secondary_color: '#8b5cf6',
     position: 'bottom-right',
     chat_title: '',
+    avatar_url: '',
+    font_family: 'Inter',
+    bubble_style: 'rounded' as 'rounded' | 'square',
     memory_enabled: true,
     memory_max_messages: 20,
+    is_public: true,
+    // Lead capture configuration (new multi-platform structure)
+    lead_capture_enabled: false,
+    lead_capture_timing: LeadCaptureTiming.BEFORE_CHAT as string,
+    lead_capture_messages_before_prompt: 3,
+    lead_capture_allow_skip: true,
+    // Standard fields visibility
+    lead_capture_email_visibility: FieldVisibility.REQUIRED as string,
+    lead_capture_name_visibility: FieldVisibility.OPTIONAL as string,
+    lead_capture_phone_visibility: FieldVisibility.HIDDEN as string,
+    // Custom fields
+    lead_capture_custom_fields: [] as LeadCaptureCustomField[],
+    // Privacy
+    lead_capture_require_consent: false,
+    lead_capture_consent_message: 'I agree to the collection and processing of my data.',
+    lead_capture_auto_capture_notice: 'We collect IP address and browser info for analytics.',
+    // Platform settings
+    lead_capture_web_enabled: true,
+    lead_capture_telegram_enabled: false,
+    lead_capture_telegram_prompt_email: false,
+    lead_capture_telegram_prompt_phone: false,
+    lead_capture_discord_enabled: false,
+    lead_capture_discord_prompt_email: false,
+    lead_capture_whatsapp_enabled: false,
+    lead_capture_whatsapp_prompt_email: false,
   });
+
+  // State for expanded platform sections
+  const [expandedPlatforms, setExpandedPlatforms] = useState<Record<string, boolean>>({
+    telegram: false,
+    discord: false,
+    whatsapp: false,
+  });
+
+  // State for custom field modal
+  const [showCustomFieldModal, setShowCustomFieldModal] = useState(false);
+  const [editingCustomField, setEditingCustomField] = useState<LeadCaptureCustomField | null>(null);
+  const [customFieldForm, setCustomFieldForm] = useState({
+    name: '',
+    label: '',
+    type: CustomFieldType.TEXT as string,
+    required: false,
+    placeholder: '',
+    options: '',
+  });
+
+  // Validation state for appearance
+  const [avatarError, setAvatarError] = useState('');
+  const [colorError, setColorError] = useState('');
+  const [secondaryColorError, setSecondaryColorError] = useState('');
+
+  // Color presets
+  const colorOptions = [
+    { value: '#3b82f6', label: 'Blue' },
+    { value: '#8b5cf6', label: 'Purple' },
+    { value: '#10b981', label: 'Green' },
+    { value: '#f59e0b', label: 'Orange' },
+    { value: '#ef4444', label: 'Red' },
+    { value: '#6b7280', label: 'Gray' },
+  ];
+
+  const isValidHex = (color: string): boolean => {
+    return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color);
+  };
 
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
@@ -73,6 +151,9 @@ export default function ChatbotEditPage() {
       const data = await chatbotApi.get(chatbotId);
       setChatbot(data);
 
+      // Get lead capture config with defaults
+      const leadConfig = data.lead_capture_config || DEFAULT_LEAD_CAPTURE_CONFIG;
+
       // Populate form with existing data
       setFormData({
         name: data.name || '',
@@ -83,10 +164,39 @@ export default function ChatbotEditPage() {
         max_tokens: data.ai_config?.max_tokens || 2000,
         greeting: data.prompt_config?.messages?.greeting || '',
         primary_color: data.branding_config?.primary_color || '#6366f1',
+        secondary_color: data.branding_config?.secondary_color || '#8b5cf6',
         position: data.branding_config?.position || 'bottom-right',
         chat_title: data.branding_config?.chat_title || '',
+        avatar_url: data.branding_config?.avatar_url || '',
+        font_family: data.branding_config?.font_family || 'Inter',
+        bubble_style: (data.branding_config?.bubble_style as 'rounded' | 'square') || 'rounded',
         memory_enabled: data.behavior_config?.memory?.enabled ?? true,
         memory_max_messages: data.behavior_config?.memory?.max_messages || 20,
+        is_public: data.is_public ?? true,
+        // Lead capture configuration (new multi-platform structure)
+        lead_capture_enabled: leadConfig.enabled ?? false,
+        lead_capture_timing: leadConfig.timing || LeadCaptureTiming.BEFORE_CHAT,
+        lead_capture_messages_before_prompt: leadConfig.messages_before_prompt ?? 3,
+        lead_capture_allow_skip: leadConfig.allow_skip ?? true,
+        // Standard fields visibility
+        lead_capture_email_visibility: leadConfig.fields?.email || FieldVisibility.REQUIRED,
+        lead_capture_name_visibility: leadConfig.fields?.name || FieldVisibility.OPTIONAL,
+        lead_capture_phone_visibility: leadConfig.fields?.phone || FieldVisibility.HIDDEN,
+        // Custom fields
+        lead_capture_custom_fields: leadConfig.custom_fields || [],
+        // Privacy
+        lead_capture_require_consent: leadConfig.privacy?.require_consent ?? false,
+        lead_capture_consent_message: leadConfig.privacy?.consent_message || 'I agree to the collection and processing of my data.',
+        lead_capture_auto_capture_notice: leadConfig.privacy?.auto_capture_notice || 'We collect IP address and browser info for analytics.',
+        // Platform settings
+        lead_capture_web_enabled: leadConfig.platforms?.web?.enabled ?? true,
+        lead_capture_telegram_enabled: leadConfig.platforms?.telegram?.enabled ?? false,
+        lead_capture_telegram_prompt_email: leadConfig.platforms?.telegram?.prompt_for_email ?? false,
+        lead_capture_telegram_prompt_phone: leadConfig.platforms?.telegram?.prompt_for_phone ?? false,
+        lead_capture_discord_enabled: leadConfig.platforms?.discord?.enabled ?? false,
+        lead_capture_discord_prompt_email: leadConfig.platforms?.discord?.prompt_for_email ?? false,
+        lead_capture_whatsapp_enabled: leadConfig.platforms?.whatsapp?.enabled ?? false,
+        lead_capture_whatsapp_prompt_email: leadConfig.platforms?.whatsapp?.prompt_for_email ?? false,
       });
     } catch (error) {
       console.error('Failed to load chatbot:', error);
@@ -118,12 +228,50 @@ export default function ChatbotEditPage() {
         },
         appearance: {
           primary_color: formData.primary_color,
+          secondary_color: formData.secondary_color,
           position: formData.position as 'bottom-right' | 'bottom-left',
           chat_title: formData.chat_title,
+          avatar_url: formData.avatar_url,
+          font_family: formData.font_family,
+          bubble_style: formData.bubble_style,
         },
         memory: {
           enabled: formData.memory_enabled,
           max_messages: formData.memory_max_messages,
+        },
+        is_public: formData.is_public,
+        lead_capture: {
+          enabled: formData.lead_capture_enabled,
+          timing: formData.lead_capture_timing as typeof LeadCaptureTiming[keyof typeof LeadCaptureTiming],
+          messages_before_prompt: formData.lead_capture_messages_before_prompt,
+          fields: {
+            email: formData.lead_capture_email_visibility as typeof FieldVisibility[keyof typeof FieldVisibility],
+            name: formData.lead_capture_name_visibility as typeof FieldVisibility[keyof typeof FieldVisibility],
+            phone: formData.lead_capture_phone_visibility as typeof FieldVisibility[keyof typeof FieldVisibility],
+          },
+          custom_fields: formData.lead_capture_custom_fields,
+          allow_skip: formData.lead_capture_allow_skip,
+          privacy: {
+            require_consent: formData.lead_capture_require_consent,
+            consent_message: formData.lead_capture_consent_message,
+            auto_capture_notice: formData.lead_capture_auto_capture_notice,
+          },
+          platforms: {
+            web: { enabled: formData.lead_capture_web_enabled },
+            telegram: {
+              enabled: formData.lead_capture_telegram_enabled,
+              prompt_for_email: formData.lead_capture_telegram_prompt_email,
+              prompt_for_phone: formData.lead_capture_telegram_prompt_phone,
+            },
+            discord: {
+              enabled: formData.lead_capture_discord_enabled,
+              prompt_for_email: formData.lead_capture_discord_prompt_email,
+            },
+            whatsapp: {
+              enabled: formData.lead_capture_whatsapp_enabled,
+              prompt_for_email: formData.lead_capture_whatsapp_prompt_email,
+            },
+          },
         },
       };
 
@@ -249,6 +397,13 @@ export default function ChatbotEditPage() {
               <Palette className="h-4 w-4 mr-2" />
               Appearance
             </TabsTrigger>
+            <TabsTrigger
+              value="leads"
+              className="data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Lead Capture
+            </TabsTrigger>
           </TabsList>
 
           {/* Basic Info Tab */}
@@ -299,6 +454,48 @@ export default function ChatbotEditPage() {
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
                     Instructions that define how the AI should behave
+                  </p>
+                </div>
+
+                {/* Visibility Toggle */}
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <Label className="font-manrope">Visibility</Label>
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setFormData({ ...formData, is_public: true })}
+                      className={`flex-1 font-manrope justify-start gap-3 h-auto py-3 ${
+                        formData.is_public
+                          ? 'ring-2 ring-green-500 border-green-500 bg-green-50 dark:bg-green-950/30'
+                          : ''
+                      }`}
+                    >
+                      <Unlock className={`h-4 w-4 ${formData.is_public ? 'text-green-600' : 'text-gray-400'}`} />
+                      <div className="text-left">
+                        <p className="font-medium">Public</p>
+                        <p className="text-xs text-gray-500">Anyone can access</p>
+                      </div>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setFormData({ ...formData, is_public: false })}
+                      className={`flex-1 font-manrope justify-start gap-3 h-auto py-3 ${
+                        !formData.is_public
+                          ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-50 dark:bg-amber-950/30'
+                          : ''
+                      }`}
+                    >
+                      <Lock className={`h-4 w-4 ${!formData.is_public ? 'text-amber-600' : 'text-gray-400'}`} />
+                      <div className="text-left">
+                        <p className="font-medium">Private</p>
+                        <p className="text-xs text-gray-500">Requires API key</p>
+                      </div>
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                    Private chatbots require an API key for web access. Webhook channels (Discord, Telegram) use platform access control.
                   </p>
                 </div>
               </CardContent>
@@ -444,28 +641,177 @@ export default function ChatbotEditPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="primary_color" className="font-manrope">Primary Color</Label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="color"
-                        id="primary_color"
-                        value={formData.primary_color}
-                        onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-                        className="w-12 h-10 rounded border cursor-pointer"
-                      />
+                {/* Chat Title */}
+                <div className="space-y-2">
+                  <Label htmlFor="chat_title" className="font-manrope">Widget Display Name</Label>
+                  <Input
+                    id="chat_title"
+                    value={formData.chat_title}
+                    onChange={(e) => setFormData({ ...formData, chat_title: e.target.value })}
+                    placeholder="Chat with us"
+                    className="font-manrope"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                    Title displayed in the chat window header
+                  </p>
+                </div>
+
+                {/* Avatar URL */}
+                <div className="space-y-2">
+                  <Label htmlFor="avatar_url" className="font-manrope">Avatar URL</Label>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
                       <Input
-                        value={formData.primary_color}
-                        onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-                        placeholder="#6366f1"
-                        className="font-mono flex-1"
+                        id="avatar_url"
+                        value={formData.avatar_url}
+                        onChange={(e) => {
+                          setFormData({ ...formData, avatar_url: e.target.value });
+                          setAvatarError('');
+                        }}
+                        placeholder="https://example.com/avatar.png"
+                        className={`font-manrope ${avatarError ? 'border-red-500' : ''}`}
                       />
+                      {avatarError && (
+                        <p className="text-sm text-red-500 font-manrope mt-1">{avatarError}</p>
+                      )}
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+                        Image URL for your chatbot avatar (recommended: 64x64px)
+                      </p>
+                    </div>
+                    {/* Avatar Preview */}
+                    <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
+                      {formData.avatar_url ? (
+                        <img
+                          src={formData.avatar_url}
+                          alt="Avatar preview"
+                          className="w-full h-full object-cover"
+                          onError={() => setAvatarError('Failed to load image')}
+                          onLoad={() => setAvatarError('')}
+                        />
+                      ) : (
+                        <Bot className="h-6 w-6 text-gray-400" />
+                      )}
                     </div>
                   </div>
+                </div>
 
+                {/* Primary Color */}
+                <div className="space-y-3">
+                  <Label className="font-manrope">Primary Color</Label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {colorOptions.map((color) => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, primary_color: color.value });
+                          setColorError('');
+                        }}
+                        className={`w-10 h-10 rounded-full border-2 transition-all ${
+                          formData.primary_color === color.value
+                            ? 'ring-2 ring-offset-2 ring-blue-500'
+                            : 'border-gray-200 dark:border-gray-600 hover:scale-110'
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        title={color.label}
+                      />
+                    ))}
+                  </div>
+                  {/* Custom Hex Input */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1 max-w-[200px]">
+                      <Input
+                        value={formData.primary_color}
+                        onChange={(e) => {
+                          let color = e.target.value;
+                          if (color && !color.startsWith('#')) {
+                            color = '#' + color;
+                          }
+                          setFormData({ ...formData, primary_color: color });
+                          if (color && !isValidHex(color) && color.length >= 4) {
+                            setColorError('Invalid hex format');
+                          } else {
+                            setColorError('');
+                          }
+                        }}
+                        placeholder="#3b82f6"
+                        className={`font-mono text-sm pl-10 ${colorError ? 'border-red-500' : ''}`}
+                      />
+                      <div
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded border border-gray-300 dark:border-gray-500"
+                        style={{ backgroundColor: isValidHex(formData.primary_color) ? formData.primary_color : '#ccc' }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                      Custom hex color
+                    </span>
+                  </div>
+                  {colorError && (
+                    <p className="text-sm text-red-500 font-manrope">{colorError}</p>
+                  )}
+                </div>
+
+                {/* Secondary Color */}
+                <div className="space-y-3">
+                  <Label className="font-manrope">Secondary Color</Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                    Used for accents, links, and buttons
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1 max-w-[200px]">
+                      <Input
+                        value={formData.secondary_color}
+                        onChange={(e) => {
+                          let color = e.target.value;
+                          if (color && !color.startsWith('#')) {
+                            color = '#' + color;
+                          }
+                          setFormData({ ...formData, secondary_color: color });
+                          if (color && !isValidHex(color) && color.length >= 4) {
+                            setSecondaryColorError('Invalid hex format');
+                          } else {
+                            setSecondaryColorError('');
+                          }
+                        }}
+                        placeholder="#8b5cf6"
+                        className={`font-mono text-sm pl-10 ${secondaryColorError ? 'border-red-500' : ''}`}
+                      />
+                      <div
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded border border-gray-300 dark:border-gray-500"
+                        style={{ backgroundColor: isValidHex(formData.secondary_color) ? formData.secondary_color : '#ccc' }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                      Hex color
+                    </span>
+                  </div>
+                  {secondaryColorError && (
+                    <p className="text-sm text-red-500 font-manrope">{secondaryColorError}</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Font Family */}
                   <div className="space-y-2">
-                    <Label htmlFor="position" className="font-manrope">Widget Position</Label>
+                    <Label className="font-manrope">Font Family</Label>
+                    <Select
+                      value={formData.font_family}
+                      onValueChange={(value) => setFormData({ ...formData, font_family: value })}
+                    >
+                      <SelectTrigger className="font-manrope">
+                        <SelectValue placeholder="Select font" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Inter" className="font-manrope">Inter (Recommended)</SelectItem>
+                        <SelectItem value="System" className="font-manrope">System Default</SelectItem>
+                        <SelectItem value="Monospace" className="font-manrope">Monospace</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Widget Position */}
+                  <div className="space-y-2">
+                    <Label className="font-manrope">Widget Position</Label>
                     <Select
                       value={formData.position}
                       onValueChange={(value) => setFormData({ ...formData, position: value })}
@@ -481,34 +827,645 @@ export default function ChatbotEditPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="chat_title" className="font-manrope">Chat Title</Label>
-                  <Input
-                    id="chat_title"
-                    value={formData.chat_title}
-                    onChange={(e) => setFormData({ ...formData, chat_title: e.target.value })}
-                    placeholder="Chat with us"
-                    className="font-manrope"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                    Title displayed in the chat window header
-                  </p>
+                {/* Bubble Style */}
+                <div className="space-y-3">
+                  <Label className="font-manrope">Bubble Style</Label>
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setFormData({ ...formData, bubble_style: 'rounded' })}
+                      className={`flex-1 ${formData.bubble_style === 'rounded' ? 'ring-2 ring-blue-500' : ''}`}
+                    >
+                      Rounded
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setFormData({ ...formData, bubble_style: 'square' })}
+                      className={`flex-1 ${formData.bubble_style === 'square' ? 'ring-2 ring-blue-500' : ''}`}
+                    >
+                      Square
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Preview */}
-                <div className="mt-6 p-6 bg-gray-100 dark:bg-gray-900 rounded-xl">
-                  <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope mb-4">Preview</p>
-                  <div className="flex justify-end">
+                <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-900 rounded-xl">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope mb-3">Preview</p>
+                  <div className="relative h-24 bg-gray-200 dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600">
                     <div
-                      className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg cursor-pointer transition-transform hover:scale-110"
+                      className={`absolute bottom-3 w-14 h-14 flex items-center justify-center shadow-lg cursor-pointer transition-all hover:scale-110 overflow-hidden ${
+                        formData.bubble_style === 'rounded' ? 'rounded-full' : 'rounded-lg'
+                      } ${formData.position === 'bottom-right' ? 'right-3' : 'left-3'}`}
                       style={{ backgroundColor: formData.primary_color }}
                     >
-                      <MessageSquare className="h-6 w-6 text-white" />
+                      {formData.avatar_url ? (
+                        <img
+                          src={formData.avatar_url}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <MessageSquare className="h-6 w-6 text-white" />
+                      )}
                     </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Lead Capture Tab */}
+          <TabsContent value="leads">
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border-b border-cyan-200 dark:border-cyan-700 rounded-t-xl p-6">
+                <div className="flex items-center gap-3">
+                  <UserPlus className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
+                  <div>
+                    <CardTitle className="text-lg font-bold text-cyan-900 dark:text-cyan-100 font-manrope">Lead Capture</CardTitle>
+                    <CardDescription className="text-cyan-700 dark:text-cyan-300 font-manrope">Collect visitor information across all platforms</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                {/* Enable/Disable Toggle */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+                  <div>
+                    <Label className="font-manrope font-medium">Enable Lead Capture</Label>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope mt-1">
+                      Collect visitor information from enabled platforms
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.lead_capture_enabled}
+                      onChange={(e) => setFormData({ ...formData, lead_capture_enabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cyan-300 dark:peer-focus:ring-cyan-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
+                  </label>
+                </div>
+
+                {/* Timing Selection */}
+                <div className={`space-y-4 ${!formData.lead_capture_enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <Label className="font-manrope">When to Collect Information</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, lead_capture_timing: LeadCaptureTiming.BEFORE_CHAT })}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        formData.lead_capture_timing === LeadCaptureTiming.BEFORE_CHAT
+                          ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">Before Chat</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">Form shows before user can chat</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, lead_capture_timing: LeadCaptureTiming.AFTER_N_MESSAGES })}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        formData.lead_capture_timing === LeadCaptureTiming.AFTER_N_MESSAGES
+                          ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">After N Messages</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">Form shows after user sends N messages</p>
+                    </button>
+                  </div>
+
+                  {/* Messages before prompt slider */}
+                  {formData.lead_capture_timing === LeadCaptureTiming.AFTER_N_MESSAGES && (
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="font-manrope text-sm">Messages before prompt: {formData.lead_capture_messages_before_prompt}</Label>
+                      </div>
+                      <Slider
+                        value={[formData.lead_capture_messages_before_prompt]}
+                        onValueChange={(value) => setFormData({ ...formData, lead_capture_messages_before_prompt: value[0] })}
+                        min={1}
+                        max={10}
+                        step={1}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <span>1</span>
+                        <span>5</span>
+                        <span>10</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Standard Fields Configuration */}
+                <div className={`space-y-4 ${!formData.lead_capture_enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <Label className="font-manrope">Standard Fields (Web Form)</Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope -mt-2">
+                    Configure which fields appear on the web lead form
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Email Field */}
+                    <div className="space-y-2">
+                      <Label className="font-manrope text-sm flex items-center gap-2">
+                        <Send className="h-4 w-4 text-gray-400" />
+                        Email
+                      </Label>
+                      <Select
+                        value={formData.lead_capture_email_visibility}
+                        onValueChange={(value) => setFormData({ ...formData, lead_capture_email_visibility: value })}
+                      >
+                        <SelectTrigger className="font-manrope">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={FieldVisibility.REQUIRED} className="font-manrope">Required</SelectItem>
+                          <SelectItem value={FieldVisibility.OPTIONAL} className="font-manrope">Optional</SelectItem>
+                          <SelectItem value={FieldVisibility.HIDDEN} className="font-manrope">Hidden</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Name Field */}
+                    <div className="space-y-2">
+                      <Label className="font-manrope text-sm flex items-center gap-2">
+                        <Hash className="h-4 w-4 text-gray-400" />
+                        Name
+                      </Label>
+                      <Select
+                        value={formData.lead_capture_name_visibility}
+                        onValueChange={(value) => setFormData({ ...formData, lead_capture_name_visibility: value })}
+                      >
+                        <SelectTrigger className="font-manrope">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={FieldVisibility.REQUIRED} className="font-manrope">Required</SelectItem>
+                          <SelectItem value={FieldVisibility.OPTIONAL} className="font-manrope">Optional</SelectItem>
+                          <SelectItem value={FieldVisibility.HIDDEN} className="font-manrope">Hidden</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Phone Field */}
+                    <div className="space-y-2">
+                      <Label className="font-manrope text-sm flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-gray-400" />
+                        Phone
+                      </Label>
+                      <Select
+                        value={formData.lead_capture_phone_visibility}
+                        onValueChange={(value) => setFormData({ ...formData, lead_capture_phone_visibility: value })}
+                      >
+                        <SelectTrigger className="font-manrope">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={FieldVisibility.REQUIRED} className="font-manrope">Required</SelectItem>
+                          <SelectItem value={FieldVisibility.OPTIONAL} className="font-manrope">Optional</SelectItem>
+                          <SelectItem value={FieldVisibility.HIDDEN} className="font-manrope">Hidden</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Fields */}
+                <div className={`space-y-4 ${!formData.lead_capture_enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="font-manrope">Custom Fields</Label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">
+                        Add additional fields to collect specific information
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditingCustomField(null);
+                        setCustomFieldForm({ name: '', label: '', type: CustomFieldType.TEXT, required: false, placeholder: '', options: '' });
+                        setShowCustomFieldModal(true);
+                      }}
+                      className="font-manrope"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Field
+                    </Button>
+                  </div>
+
+                  {/* Custom Fields List */}
+                  {formData.lead_capture_custom_fields.length > 0 ? (
+                    <div className="space-y-2">
+                      {formData.lead_capture_custom_fields.map((field, index) => (
+                        <div key={field.id || index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <span className="font-manrope text-gray-900 dark:text-gray-100">{field.label}</span>
+                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded font-manrope">
+                              {field.type}
+                            </span>
+                            {field.required && (
+                              <span className="text-xs bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded font-manrope">
+                                Required
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const newFields = formData.lead_capture_custom_fields.filter((_, i) => i !== index);
+                              setFormData({ ...formData, lead_capture_custom_fields: newFields });
+                            }}
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg text-center">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">
+                        No custom fields added yet
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Platform Settings */}
+                <div className={`space-y-4 ${!formData.lead_capture_enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <Label className="font-manrope">Platform Settings</Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope -mt-2">
+                    Enable lead capture per platform and configure prompts
+                  </p>
+
+                  {/* Web Platform */}
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Globe className="h-5 w-5 text-blue-500" />
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">Web (Widget + Public Page)</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Uses form with fields configured above</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.lead_capture_web_enabled}
+                          onChange={(e) => setFormData({ ...formData, lead_capture_web_enabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope pl-8">
+                      Auto-captures: IP, location, browser, referrer, language
+                    </p>
+                  </div>
+
+                  {/* Telegram Platform */}
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Send className="h-5 w-5 text-sky-500" />
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">Telegram</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Auto-captures: user_id, username, name</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedPlatforms({ ...expandedPlatforms, telegram: !expandedPlatforms.telegram })}
+                          className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                        >
+                          {expandedPlatforms.telegram ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </button>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_telegram_enabled}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_telegram_enabled: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                    {expandedPlatforms.telegram && formData.lead_capture_telegram_enabled && (
+                      <div className="pl-8 space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_telegram_prompt_email}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_telegram_prompt_email: e.target.checked })}
+                            className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                          />
+                          <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for email in conversation</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_telegram_prompt_phone}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_telegram_prompt_phone: e.target.checked })}
+                            className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                          />
+                          <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for phone in conversation</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Discord Platform */}
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <MessageSquare className="h-5 w-5 text-indigo-500" />
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">Discord</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Auto-captures: user_id, username, guild context</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedPlatforms({ ...expandedPlatforms, discord: !expandedPlatforms.discord })}
+                          className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                        >
+                          {expandedPlatforms.discord ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </button>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_discord_enabled}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_discord_enabled: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                    {expandedPlatforms.discord && formData.lead_capture_discord_enabled && (
+                      <div className="pl-8 space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_discord_prompt_email}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_discord_prompt_email: e.target.checked })}
+                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for email in conversation</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* WhatsApp Platform */}
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Phone className="h-5 w-5 text-green-500" />
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">WhatsApp</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Auto-captures: verified phone, wa_id, profile name</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedPlatforms({ ...expandedPlatforms, whatsapp: !expandedPlatforms.whatsapp })}
+                          className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                        >
+                          {expandedPlatforms.whatsapp ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </button>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_whatsapp_enabled}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_whatsapp_enabled: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                    {expandedPlatforms.whatsapp && formData.lead_capture_whatsapp_enabled && (
+                      <div className="pl-8 space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.lead_capture_whatsapp_prompt_email}
+                            onChange={(e) => setFormData({ ...formData, lead_capture_whatsapp_prompt_email: e.target.checked })}
+                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                          />
+                          <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for email in conversation</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Skip Option */}
+                <div className={`flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl ${!formData.lead_capture_enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div>
+                    <Label className="font-manrope font-medium">Allow Users to Skip (Web only)</Label>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope mt-1">
+                      Let users skip the lead form and chat without providing info
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.lead_capture_allow_skip}
+                      onChange={(e) => setFormData({ ...formData, lead_capture_allow_skip: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cyan-300 dark:peer-focus:ring-cyan-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
+                  </label>
+                </div>
+
+                {/* Privacy & Consent */}
+                <div className={`space-y-4 ${!formData.lead_capture_enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <Label className="font-manrope">Privacy & Consent</Label>
+
+                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+                    <div>
+                      <Label className="font-manrope font-medium">Require Explicit Consent (GDPR)</Label>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope mt-1">
+                        User must agree before submitting their data
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.lead_capture_require_consent}
+                        onChange={(e) => setFormData({ ...formData, lead_capture_require_consent: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cyan-300 dark:peer-focus:ring-cyan-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
+                    </label>
+                  </div>
+
+                  {formData.lead_capture_require_consent && (
+                    <div className="space-y-2">
+                      <Label htmlFor="consent_message" className="font-manrope">Consent Message</Label>
+                      <Textarea
+                        id="consent_message"
+                        value={formData.lead_capture_consent_message}
+                        onChange={(e) => setFormData({ ...formData, lead_capture_consent_message: e.target.value })}
+                        placeholder="I agree to the collection and processing of my data."
+                        rows={2}
+                        className="font-manrope"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Auto-Capture Info */}
+                <div className={`p-4 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800 ${!formData.lead_capture_enabled ? 'opacity-50' : ''}`}>
+                  <div className="flex gap-3">
+                    <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-blue-900 dark:text-blue-100 font-manrope">Automatically Captured Data</p>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1 font-manrope">
+                        Each platform captures specific data transparently. Web: IP, location, browser, referrer.
+                        Messaging platforms: user identifiers, usernames, and platform-specific metadata.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Custom Field Modal */}
+            {showCustomFieldModal && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md mx-4 shadow-xl">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white font-manrope mb-4">
+                    {editingCustomField ? 'Edit Custom Field' : 'Add Custom Field'}
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="font-manrope">Field Name (internal)</Label>
+                      <Input
+                        value={customFieldForm.name}
+                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                        placeholder="company_name"
+                        className="font-manrope"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="font-manrope">Label (displayed)</Label>
+                      <Input
+                        value={customFieldForm.label}
+                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, label: e.target.value })}
+                        placeholder="Company Name"
+                        className="font-manrope"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="font-manrope">Field Type</Label>
+                      <Select
+                        value={customFieldForm.type}
+                        onValueChange={(value) => setCustomFieldForm({ ...customFieldForm, type: value })}
+                      >
+                        <SelectTrigger className="font-manrope">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={CustomFieldType.TEXT} className="font-manrope">Text</SelectItem>
+                          <SelectItem value={CustomFieldType.EMAIL} className="font-manrope">Email</SelectItem>
+                          <SelectItem value={CustomFieldType.PHONE} className="font-manrope">Phone</SelectItem>
+                          <SelectItem value={CustomFieldType.SELECT} className="font-manrope">Select (Dropdown)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {customFieldForm.type === CustomFieldType.SELECT && (
+                      <div className="space-y-2">
+                        <Label className="font-manrope">Options (comma-separated)</Label>
+                        <Input
+                          value={customFieldForm.options}
+                          onChange={(e) => setCustomFieldForm({ ...customFieldForm, options: e.target.value })}
+                          placeholder="Option 1, Option 2, Option 3"
+                          className="font-manrope"
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label className="font-manrope">Placeholder</Label>
+                      <Input
+                        value={customFieldForm.placeholder}
+                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, placeholder: e.target.value })}
+                        placeholder="Enter your company name"
+                        className="font-manrope"
+                      />
+                    </div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={customFieldForm.required}
+                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, required: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                      />
+                      <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Required field</span>
+                    </label>
+                  </div>
+                  <div className="flex justify-end gap-3 mt-6">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowCustomFieldModal(false)}
+                      className="font-manrope"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (customFieldForm.name && customFieldForm.label) {
+                          const newField: LeadCaptureCustomField = {
+                            id: editingCustomField?.id || `cf_${Date.now()}`,
+                            name: customFieldForm.name,
+                            label: customFieldForm.label,
+                            type: customFieldForm.type as typeof CustomFieldType[keyof typeof CustomFieldType],
+                            required: customFieldForm.required,
+                            placeholder: customFieldForm.placeholder || undefined,
+                            options: customFieldForm.type === CustomFieldType.SELECT
+                              ? customFieldForm.options.split(',').map(o => o.trim()).filter(Boolean)
+                              : undefined,
+                          };
+                          if (editingCustomField) {
+                            const newFields = formData.lead_capture_custom_fields.map(f =>
+                              f.id === editingCustomField.id ? newField : f
+                            );
+                            setFormData({ ...formData, lead_capture_custom_fields: newFields });
+                          } else {
+                            setFormData({
+                              ...formData,
+                              lead_capture_custom_fields: [...formData.lead_capture_custom_fields, newField]
+                            });
+                          }
+                          setShowCustomFieldModal(false);
+                        }
+                      }}
+                      className="font-manrope"
+                    >
+                      {editingCustomField ? 'Save Changes' : 'Add Field'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 

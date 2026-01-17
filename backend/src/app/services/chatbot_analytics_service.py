@@ -178,10 +178,11 @@ class ChatbotAnalyticsService:
         ).count()
         successful_responses = total_responses - failed_responses
 
-        # Calculate error rate
+        # Calculate error rate (AI failures only - NOT client errors)
+        # Client errors are network issues, not AI quality issues
         error_rate = round(failed_responses / total_responses, 3) if total_responses > 0 else 0
 
-        # Get widget event stats
+        # Get widget event stats (for external embeds)
         widget_opens = db.query(func.count(WidgetEvent.id)).filter(
             WidgetEvent.bot_id == chatbot_id,
             WidgetEvent.event_type == EventType.WIDGET_OPENED,
@@ -194,6 +195,13 @@ class ChatbotAnalyticsService:
             WidgetEvent.created_at >= start_date
         ).scalar() or 0
 
+        # Get hosted page views
+        page_views = db.query(func.count(WidgetEvent.id)).filter(
+            WidgetEvent.bot_id == chatbot_id,
+            WidgetEvent.event_type == EventType.PAGE_VIEW,
+            WidgetEvent.created_at >= start_date
+        ).scalar() or 0
+
         # Unique visitors (by session_id)
         unique_sessions = db.query(
             func.count(func.distinct(WidgetEvent.session_id))
@@ -203,10 +211,16 @@ class ChatbotAnalyticsService:
             WidgetEvent.session_id.isnot(None)
         ).scalar() or 0
 
-        # Calculate engagement rate
+        # Calculate engagement rate (includes both widget AND hosted page)
+        # Impressions = widget loads + page views (how many people saw the bot)
+        # Engagements = conversations only (actual meaningful engagement)
+        # NOTE: Don't add widget_opens to avoid double-counting (open + chat = 2 for 1 user)
+        total_impressions = widget_loads + page_views
+        total_engagements = session_stats.total_sessions or 0
         engagement_rate = 0
-        if widget_loads > 0:
-            engagement_rate = round(widget_opens / widget_loads, 2)
+        if total_impressions > 0:
+            # Cap at 1.0 to prevent mathematically invalid rates (>100%)
+            engagement_rate = min(1.0, round(total_engagements / total_impressions, 2))
 
         # Get daily trends
         daily_trends = await self._get_daily_trends(db, chatbot_id, days)
@@ -224,13 +238,16 @@ class ChatbotAnalyticsService:
             },
             "engagement": {
                 "widget_opens": widget_opens,
+                "widget_loads": widget_loads,
+                "page_views": page_views,
                 "conversation_starts": session_stats.total_sessions or 0,
-                "engagement_rate": engagement_rate
+                "engagement_rate": engagement_rate,
+                "total_impressions": total_impressions
             },
             "response_quality": {
                 "total_responses": total_responses,
                 "successful_responses": successful_responses,
-                "failed_responses": failed_responses,
+                "failed_responses": failed_responses,  # AI inference failures only
                 "error_rate": error_rate,
                 "success_rate": round(1 - error_rate, 3) if total_responses > 0 else 1
             },

@@ -17,6 +17,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import time
 from uuid import UUID, uuid4
 from datetime import datetime
 from typing import Optional
@@ -46,6 +47,30 @@ class ChatbotService:
         self.inference_service = inference_service
         self.session_service = session_service
         self.retrieval_service = retrieval_service
+
+    def _update_session_metadata(self, db: Session, session, updates: dict):
+        """
+        Atomically update session metadata using PostgreSQL JSONB merge.
+
+        WHY: Prevents race conditions when multiple requests update metadata concurrently.
+        The || operator atomically merges JSONB objects at the database level,
+        ensuring no data is lost from concurrent updates.
+
+        HOW: Uses PostgreSQL's native JSONB || operator which:
+        1. Takes existing metadata (or {} if null)
+        2. Merges with new updates (new values win on key collision)
+        3. All in a single atomic operation
+        """
+        import json
+        from sqlalchemy import text
+
+        db.execute(text("""
+            UPDATE chat_sessions
+            SET session_metadata = COALESCE(session_metadata, '{}')::jsonb || CAST(:updates AS jsonb)
+            WHERE id = :session_id
+        """), {"session_id": str(session.id), "updates": json.dumps(updates)})
+        db.commit()
+        db.refresh(session)
 
 
     async def process_message(
@@ -102,12 +127,11 @@ class ChatbotService:
         if metadata.get("consent_prompted") and metadata.get("consent_given") is None:
             consent_response = self._parse_consent_response(user_message)
             if consent_response is not None:
-                session.session_metadata = {
-                    **metadata,
+                # Use atomic update to prevent race conditions
+                self._update_session_metadata(db, session, {
                     "consent_given": consent_response,
                     "consent_timestamp": datetime.utcnow().isoformat()
-                }
-                db.commit()
+                })
 
                 if consent_response:
                     # Trigger lead capture now that consent is given
@@ -158,12 +182,14 @@ class ChatbotService:
         # This automatically routes to the correct provider based on model prefix
         # e.g., "gemini-2.0-flash" -> Gemini, "gpt-4o" -> OpenAI, etc.
         try:
+            start_time = time.time()
             ai_response = await self.inference_service.generate_chat(
                 messages=messages,
                 model=chatbot.config.get("model"),  # None = use default
                 temperature=chatbot.config.get("temperature"),  # None = use provider default
                 max_tokens=chatbot.config.get("max_tokens", 2000)
             )
+            latency_ms = int((time.time() - start_time) * 1000)
 
             response_text = ai_response["text"]
             tokens_used = ai_response["usage"]
@@ -182,7 +208,8 @@ class ChatbotService:
                     "tokens_used": tokens_used,
                     "sources": sources,
                     "has_citations": len(sources) > 0,
-                    "citation_count": len(sources)
+                    "citation_count": len(sources),
+                    "latency_ms": latency_ms
                 },
                 prompt_tokens=tokens_used.get("prompt_tokens"),
                 completion_tokens=tokens_used.get("completion_tokens")
@@ -191,29 +218,8 @@ class ChatbotService:
             # 8. Update cached metrics for dashboard consistency
             self._update_cached_metrics(db, chatbot)
 
-            # 9. Check if we should append consent or email prompts
-            # Consent prompt (only if not already prompted)
-            consent_prompt = await self._should_prompt_for_consent(db, session, chatbot)
-            if consent_prompt:
-                response_text = f"{response_text}\n\n---\n\n{consent_prompt}"
-                session.session_metadata = {
-                    **(session.session_metadata or {}),
-                    "consent_prompted": True,
-                    "consent_prompted_at": datetime.utcnow().isoformat()
-                }
-                db.commit()
-
-            # Email prompt (only if consent given or not required, and not already prompted)
-            elif not consent_prompt:  # Only check email if consent prompt wasn't shown
-                email_prompt = await self._should_prompt_for_email(db, session, chatbot)
-                if email_prompt:
-                    response_text = f"{response_text}\n\n---\n\n{email_prompt}"
-                    session.session_metadata = {
-                        **(session.session_metadata or {}),
-                        "email_prompted": True,
-                        "email_prompted_at": datetime.utcnow().isoformat()
-                    }
-                    db.commit()
+            # Note: Consent and email prompts are now handled by the LeadCaptureForm UI
+            # No longer appended to chat responses
 
             return {
                 "response": response_text,
@@ -223,15 +229,23 @@ class ChatbotService:
             }
 
         except Exception as e:
-            # Save error message
-            error_msg = self.session_service.save_message(
-                db=db,
-                session_id=session.id,
-                role="assistant",
-                content="I'm sorry, I encountered an error processing your message.",
-                error=str(e),
-                error_code="generation_error"
-            )
+            # Rollback any uncommitted changes to ensure clean state
+            db.rollback()
+
+            try:
+                # Save error message in a clean transaction
+                error_msg = self.session_service.save_message(
+                    db=db,
+                    session_id=session.id,
+                    role="assistant",
+                    content="I'm sorry, I encountered an error processing your message.",
+                    error=str(e),
+                    error_code="generation_error"
+                )
+                db.commit()
+            except Exception as save_error:
+                # If we can't save the error message, just log it
+                print(f"[ChatbotService] Failed to save error message: {save_error}")
 
             raise
 
@@ -275,13 +289,15 @@ class ChatbotService:
         chatbot: Chatbot
     ) -> Optional[str]:
         """
-        Check if we should prompt user for email.
+        Check if we should prompt user for email (messaging platforms only).
 
-        WHY: Capture email for leads after X messages
-        HOW: Check lead_capture_config, message count, and existing lead
+        WHY: Capture email for leads after X messages on messaging platforms
+        HOW: Check lead_capture_config timing, platform settings, message count
 
         RETURNS:
             Email prompt message if should prompt, None otherwise
+
+        NOTE: Web/widget platforms use form-based capture, not conversation prompts
         """
         lead_config = getattr(chatbot, "lead_capture_config", None) or {}
 
@@ -289,18 +305,31 @@ class ChatbotService:
         if not lead_config.get("enabled"):
             return None
 
-        # Check platform settings
-        # Platform is stored in session_metadata from channel_context
+        # Check timing - only prompt for email when timing is "after_n_messages"
+        # "before_chat" uses form-based capture on web, handled elsewhere
+        timing = lead_config.get("timing", "before_chat")
+        if timing != "after_n_messages":
+            return None
+
+        # Get platform from session metadata
         metadata = session.session_metadata or {}
         platform = metadata.get("platform") or "widget"
+
+        # Skip web/widget platforms - they use form-based capture
+        if platform in ("widget", "web", "website"):
+            return None
+
+        # Check platform-specific settings
         platforms = lead_config.get("platforms", {})
         platform_config = platforms.get(platform, {})
 
+        # Platform must be enabled AND prompt_for_email must be true
+        if not platform_config.get("enabled", False):
+            return None
         if not platform_config.get("prompt_for_email", False):
             return None
 
         # Check if already prompted
-        metadata = session.session_metadata or {}
         if metadata.get("email_prompted"):
             return None
 
@@ -322,8 +351,8 @@ class ChatbotService:
         if existing_lead and existing_lead.email and "@placeholder" not in existing_lead.email:
             return None  # Already have real email
 
-        return lead_config.get("email_prompt_message",
-            "Would you like to share your email so we can follow up with you?")
+        # Return default prompt message
+        return "Would you like to share your email so we can follow up with you?"
 
     def _parse_consent_response(self, message: str) -> Optional[bool]:
         """

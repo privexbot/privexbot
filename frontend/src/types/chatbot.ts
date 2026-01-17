@@ -96,15 +96,37 @@ export const WidgetPosition = {
 export type WidgetPosition = (typeof WidgetPosition)[keyof typeof WidgetPosition];
 
 /**
- * Lead Capture Trigger Options
+ * Lead Capture Timing Options (Simplified)
  */
-export const LeadCaptureTrigger = {
+export const LeadCaptureTiming = {
   BEFORE_CHAT: "before_chat",
-  AFTER_FIRST_MESSAGE: "after_first_message",
-  ON_DEMAND: "on_demand",
+  AFTER_N_MESSAGES: "after_n_messages",
 } as const;
 
-export type LeadCaptureTrigger = (typeof LeadCaptureTrigger)[keyof typeof LeadCaptureTrigger];
+export type LeadCaptureTiming = (typeof LeadCaptureTiming)[keyof typeof LeadCaptureTiming];
+
+/**
+ * Field Visibility Options for Standard Fields
+ */
+export const FieldVisibility = {
+  REQUIRED: "required",
+  OPTIONAL: "optional",
+  HIDDEN: "hidden",
+} as const;
+
+export type FieldVisibility = (typeof FieldVisibility)[keyof typeof FieldVisibility];
+
+/**
+ * Custom Field Types (Basic)
+ */
+export const CustomFieldType = {
+  TEXT: "text",
+  EMAIL: "email",
+  PHONE: "phone",
+  SELECT: "select",
+} as const;
+
+export type CustomFieldType = (typeof CustomFieldType)[keyof typeof CustomFieldType];
 
 // ========================================
 // CONFIGURATION TYPES
@@ -178,62 +200,118 @@ export interface BehaviorConfig {
 }
 
 /**
- * Lead Capture Field
+ * Lead Capture Field - For form-based capture (web)
  */
 export interface LeadCaptureField {
   name: string;
-  type: "text" | "email" | "phone" | "select";
+  type: CustomFieldType;
   label: string;
   required: boolean;
-  options?: string[];
+  placeholder?: string;
+  options?: string[];  // For 'select' type
+}
+
+/**
+ * Custom Field Definition - User-defined fields
+ */
+export interface LeadCaptureCustomField {
+  id: string;              // Unique identifier (e.g., "cf_company")
+  name: string;            // Field name (e.g., "company")
+  type: CustomFieldType;
+  label: string;           // Display label (e.g., "Company Name")
+  required: boolean;
+  placeholder?: string;
+  options?: string[];      // For 'select' type
+}
+
+/**
+ * Standard Fields Configuration - email, name, phone visibility
+ */
+export interface StandardFieldsConfig {
+  email: FieldVisibility;
+  name: FieldVisibility;
+  phone: FieldVisibility;
 }
 
 /**
  * Platform-specific lead capture settings
  */
 export interface LeadCapturePlatformConfig {
-  enabled?: boolean;
-  capture_ip?: boolean;
-  capture_referrer?: boolean;
-  auto_capture_phone?: boolean;
-  auto_capture_username?: boolean;
-  prompt_for_email?: boolean;
-  capture_guild_context?: boolean;
+  enabled: boolean;            // Enable lead capture for this platform
+  prompt_for_email?: boolean;  // Messaging: prompt for email in conversation
+  prompt_for_phone?: boolean;  // Messaging: prompt for phone in conversation (Telegram only)
 }
 
 /**
  * Privacy & consent settings
  */
 export interface LeadCapturePrivacyConfig {
-  require_consent?: boolean;
-  consent_message?: string;
-  gdpr_compliant?: boolean;
-  retention_days?: number;
+  require_consent: boolean;
+  consent_message: string;
+  auto_capture_notice: string;  // Transparency message about IP/browser capture
 }
 
 /**
- * Lead Capture Configuration
+ * Lead Capture Configuration - Multi-Platform Support
+ *
+ * Stored in chatbot.lead_capture_config (JSONB)
+ * One chatbot = one lead form config
  */
 export interface LeadCaptureConfig {
+  // Master switch
   enabled: boolean;
-  fields?: LeadCaptureField[];
-  trigger?: LeadCaptureTrigger;
-  // Simpler wizard fields
-  timing?: "before_chat" | "during_chat" | "after_chat";
-  required_fields?: string[];  // ["email", "name", "phone"]
-  // Email prompting via conversation
-  messages_before_prompt?: number;  // After how many messages to prompt for email
-  email_prompt_message?: string;    // Custom message to ask for email
-  // Platform-specific settings
-  platforms?: {
-    widget?: LeadCapturePlatformConfig;
-    whatsapp?: LeadCapturePlatformConfig;
-    telegram?: LeadCapturePlatformConfig;
-    discord?: LeadCapturePlatformConfig;
+
+  // Timing configuration
+  timing: LeadCaptureTiming;
+  messages_before_prompt?: number;  // 1-10, used when timing='after_n_messages'
+
+  // Standard fields configuration (for web form)
+  fields: StandardFieldsConfig;
+
+  // Custom fields (optional, user-defined)
+  custom_fields?: LeadCaptureCustomField[];
+
+  // Allow skip option (web form only)
+  allow_skip: boolean;
+
+  // Privacy & consent
+  privacy: LeadCapturePrivacyConfig;
+
+  // Platform-specific settings (each can be enabled independently)
+  platforms: {
+    web: LeadCapturePlatformConfig;       // Widget + Public page (share same config)
+    telegram: LeadCapturePlatformConfig;
+    discord: LeadCapturePlatformConfig;
+    whatsapp: LeadCapturePlatformConfig;
   };
-  // Privacy settings
-  privacy?: LeadCapturePrivacyConfig;
 }
+
+/**
+ * Default Lead Capture Configuration
+ */
+export const DEFAULT_LEAD_CAPTURE_CONFIG: LeadCaptureConfig = {
+  enabled: false,
+  timing: LeadCaptureTiming.BEFORE_CHAT,
+  messages_before_prompt: 3,
+  fields: {
+    email: FieldVisibility.REQUIRED,
+    name: FieldVisibility.OPTIONAL,
+    phone: FieldVisibility.HIDDEN,
+  },
+  custom_fields: [],
+  allow_skip: true,
+  privacy: {
+    require_consent: false,
+    consent_message: 'I agree to the collection and processing of my data.',
+    auto_capture_notice: 'We collect IP address and browser info for analytics.',
+  },
+  platforms: {
+    web: { enabled: true },
+    telegram: { enabled: false, prompt_for_email: false },
+    discord: { enabled: false, prompt_for_email: false },
+    whatsapp: { enabled: false, prompt_for_email: false },
+  },
+};
 
 // ========================================
 // VARIABLE COLLECTION TYPES
@@ -441,6 +519,7 @@ export interface UpdateChatbotDraftRequest {
   memory?: MemoryConfig;
   lead_capture?: LeadCaptureConfig;
   variables_config?: VariablesConfig;
+  is_public?: boolean;
 }
 
 /**
