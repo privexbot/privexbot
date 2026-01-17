@@ -1167,8 +1167,17 @@ export const kbApi = {
   /**
    * List KB chunks
    * GET /api/v1/kbs/{kb_id}/chunks
+   *
+   * Returns full response including total_chunks for accurate stats
    */
-  async getChunks(kbId: string, page?: number, limit?: number): Promise<any[]> {
+  async getChunks(kbId: string, page?: number, limit?: number): Promise<{
+    kb_id: string;
+    total_chunks: number;
+    chunks: any[];
+    page: number;
+    limit: number;
+    total_pages: number;
+  }> {
     try {
       const params = new URLSearchParams();
       if (page) params.append('page', String(page));
@@ -1182,7 +1191,9 @@ export const kbApi = {
         limit: number;
         total_pages: number;
       }>(`/kbs/${kbId}/chunks?${params}`);
-      return response.data.chunks || [];
+
+      // Return full response for accurate chunk count stats
+      return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
     }

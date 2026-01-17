@@ -48,22 +48,34 @@ export default function KBDetailPage() {
 
   const [kb, setKb] = useState<KnowledgeBase | null>(null);
   const [documents, setDocuments] = useState<KBDocument[]>([]);
-  const [chunks, setChunks] = useState<any[]>([]);
+  // Store full chunks response for accurate total_chunks count
+  const [chunksData, setChunksData] = useState<{
+    chunks: any[];
+    total_chunks: number;
+    page: number;
+    limit: number;
+    total_pages: number;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   /**
    * Calculate effective chunk count from multiple sources
-   * Priority: kb.total_chunks > sum of document chunk_counts > PostgreSQL chunks
+   * Priority: API total_chunks > kb.total_chunks > sum of document chunk_counts > chunks array length
    */
   const getEffectiveChunkCount = (): number => {
-    // Priority 1: Use total_chunks from KB if available
+    // Priority 1: Use total_chunks from chunks API response (MOST ACCURATE)
+    if (chunksData?.total_chunks && chunksData.total_chunks > 0) {
+      return chunksData.total_chunks;
+    }
+
+    // Priority 2: Use total_chunks from KB if available
     if (kb && (kb as any).total_chunks && (kb as any).total_chunks > 0) {
       return (kb as any).total_chunks;
     }
 
-    // Priority 2: Sum from documents' chunk_count
+    // Priority 3: Sum from documents' chunk_count
     if (Array.isArray(documents) && documents.length > 0) {
       const totalFromDocs = documents.reduce(
         (sum: number, doc: KBDocument) => sum + (doc.chunk_count || 0), 0
@@ -71,8 +83,8 @@ export default function KBDetailPage() {
       if (totalFromDocs > 0) return totalFromDocs;
     }
 
-    // Priority 3: Fallback to PostgreSQL chunks
-    return Array.isArray(chunks) ? chunks.length : 0;
+    // Priority 4: Fallback to fetched chunks array length
+    return chunksData?.chunks?.length || 0;
   };
 
   /**
@@ -81,8 +93,9 @@ export default function KBDetailPage() {
    */
   const getAverageChunkSize = (): number => {
     // If we have PostgreSQL chunks with character counts
-    if (Array.isArray(chunks) && chunks.length > 0) {
-      const totalChars = chunks.reduce((acc, chunk) => acc + (chunk.character_count || 0), 0);
+    const chunks = chunksData?.chunks || [];
+    if (chunks.length > 0) {
+      const totalChars = chunks.reduce((acc: number, chunk: any) => acc + (chunk.character_count || 0), 0);
       return Math.round(totalChars / chunks.length);
     }
 
@@ -184,14 +197,14 @@ export default function KBDetailPage() {
       setKb(kbData);
 
       // Load documents and chunks in parallel
-      const [documentsData, chunksData] = await Promise.all([
+      const [documentsData, chunksResponse] = await Promise.all([
         kbClient.kb.getDocuments(kbId),
         kbClient.kb.getChunks(kbId, 1, 100) // Fetch up to 100 chunks to show all
       ]);
 
 
       setDocuments(documentsData || []);
-      setChunks(chunksData || []);
+      setChunksData(chunksResponse || null);
     } catch (error) {
       console.error('Failed to load KB data:', error);
       toast({
@@ -752,7 +765,7 @@ export default function KBDetailPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-6">
-                {!Array.isArray(chunks) || chunks.length === 0 ? (
+                {!chunksData?.chunks || chunksData.chunks.length === 0 ? (
                   (() => {
                     // Get storage info from documents for enhanced metadata display
                     const storageInfo = documents.find(
@@ -814,12 +827,15 @@ export default function KBDetailPage() {
                   })()
                 ) : (
                   <div className="space-y-4">
-                    {Array.isArray(chunks) && chunks.slice(0, 20).map((chunk, index) => (
+                    {chunksData?.chunks?.slice(0, 20).map((chunk, index) => {
+                      // Calculate global index based on pagination (page is 1-indexed)
+                      const globalIndex = ((chunksData.page - 1) * chunksData.limit) + index + 1;
+                      return (
                       <div key={chunk.id} className="bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-xl p-4 hover:shadow-md transition-shadow">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
                             <Database className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-                            <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 font-manrope">Chunk {chunk.position || index + 1}</span>
+                            <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 font-manrope">Chunk {globalIndex}</span>
                             {chunk.document_name && (
                               <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-manrope">
                                 {chunk.document_name}
@@ -836,12 +852,13 @@ export default function KBDetailPage() {
                           </p>
                         </div>
                       </div>
-                    ))}
-                    {Array.isArray(chunks) && chunks.length > 20 && (
+                      );
+                    })}
+                    {chunksData && chunksData.total_chunks > 20 && (
                       <div className="text-center py-6">
                         <div className="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 border border-cyan-200 dark:border-cyan-700 rounded-xl p-4">
                           <p className="text-cyan-700 dark:text-cyan-300 font-manrope">
-                            Showing first 20 chunks of {Array.isArray(chunks) ? chunks.length : 0} total
+                            Showing first 20 chunks of {chunksData.total_chunks.toLocaleString()} total
                           </p>
                         </div>
                       </div>
