@@ -6,10 +6,10 @@
  * Consistent with KnowledgeBasesPage and ChatbotsPage design patterns
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 import { format } from 'date-fns';
 import {
   Users,
@@ -684,6 +684,10 @@ export default function LeadsDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Vanilla Leaflet map with proper StrictMode cleanup
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+
   // Reset to page 1 when filters change
   const handleFilterChange = (
     setter: React.Dispatch<React.SetStateAction<string>>,
@@ -794,6 +798,62 @@ export default function LeadsDashboard() {
       (lead) => lead.location?.latitude && lead.location?.longitude
     );
   }, [filteredLeads]);
+
+  // Initialize Leaflet map with proper StrictMode cleanup
+  useEffect(() => {
+    // Only init when map tab is visible and container exists
+    if (viewMode !== 'map' || !mapContainerRef.current) return;
+
+    // Already initialized
+    if (mapInstanceRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      scrollWheelZoom: false,
+    }).setView([20, 0], 2);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    mapInstanceRef.current = map;
+
+    // Cleanup - runs BEFORE next mount in StrictMode
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [viewMode]);
+
+  // Update markers when leads change
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Clear existing markers (keep tile layer)
+    map.eachLayer((layer) => {
+      if (layer instanceof L.Marker) {
+        map.removeLayer(layer);
+      }
+    });
+
+    // Add markers for leads with location
+    leadsWithLocation.forEach((lead) => {
+      if (lead.location?.latitude && lead.location?.longitude) {
+        const popupContent = `
+          <div class="p-2">
+            <h4 class="font-semibold mb-1">${lead.name || 'Anonymous'}</h4>
+            ${lead.email ? `<p class="text-xs mb-1">${lead.email}</p>` : ''}
+            ${lead.city ? `<p class="text-xs text-gray-500">${lead.city}${lead.country ? `, ${lead.country}` : ''}</p>` : ''}
+          </div>
+        `;
+        L.marker([lead.location.latitude, lead.location.longitude])
+          .bindPopup(popupContent)
+          .addTo(map);
+      }
+    });
+  }, [leadsWithLocation, viewMode]);
 
   // Export to CSV via backend
   const [isExporting, setIsExporting] = useState(false);
@@ -1150,47 +1210,11 @@ export default function LeadsDashboard() {
                 >
                   <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden relative">
                     <div style={{ height: '600px' }}>
-                      <MapContainer
-                        center={[20, 0]}
-                        zoom={2}
+                      {/* Vanilla Leaflet container - managed by useEffect */}
+                      <div
+                        ref={mapContainerRef}
                         style={{ height: '100%', width: '100%' }}
-                        scrollWheelZoom={false}
-                      >
-                        <TileLayer
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
-
-                        {leadsWithLocation.map((lead) => (
-                          <Marker
-                            key={lead.id}
-                            position={[lead.location!.latitude!, lead.location!.longitude!]}
-                          >
-                            <Popup>
-                              <div className="p-2">
-                                <h4 className="font-semibold mb-1 font-manrope">
-                                  {lead.name || 'Anonymous'}
-                                </h4>
-                                {lead.email && (
-                                  <p className="text-xs mb-1 font-manrope">{lead.email}</p>
-                                )}
-                                {lead.city && (
-                                  <p className="text-xs text-gray-500 font-manrope">
-                                    {lead.city}
-                                    {lead.country ? `, ${lead.country}` : ''}
-                                  </p>
-                                )}
-                                <p className="text-xs text-gray-400 mt-2 font-manrope">
-                                  {format(
-                                    new Date(lead.captured_at || lead.created_at || new Date()),
-                                    'MMM d, yyyy'
-                                  )}
-                                </p>
-                              </div>
-                            </Popup>
-                          </Marker>
-                        ))}
-                      </MapContainer>
+                      />
                     </div>
 
                     {leadsWithLocation.length === 0 && (
