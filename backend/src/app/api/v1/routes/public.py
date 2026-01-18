@@ -202,6 +202,9 @@ async def chat(
     # Generate session ID if not provided
     session_id = request.session_id or f"web_{uuid4().hex[:16]}"
 
+    # DEBUG: Log session handling to diagnose context loss
+    print(f"[Public API] Session: received={request.session_id}, using={session_id}")
+
     # Build channel context
     channel_context = {
         "platform": "web",

@@ -35,12 +35,12 @@ from app.services.qdrant_service import qdrant_service
 
 
 # Service defaults (lowest priority)
-# Note: threshold 0.5 is appropriate for sentence-transformers models
+# Note: threshold 0.35 is appropriate for sentence-transformers models
 # (all-MiniLM-L6-v2 etc.) which produce scores in 0.3-0.7 range for good matches
 SERVICE_DEFAULTS = {
     "top_k": 5,
     "search_method": "hybrid",
-    "threshold": 0.5
+    "threshold": 0.35
 }
 
 # Validation constraints for retrieval_config
@@ -188,8 +188,13 @@ class RetrievalService:
             print(f"[RetrievalService] 🚨 DIMENSION MISMATCH ERROR for KB {kb.id}:")
             print(f"  → KB indexed dimensions: {kb_dimensions}")
             print(f"  → Query model dimensions: {query_dimensions}")
-            print(f"  → Search will FAIL! Reindex KB with correct model or update query model.")
-            # Don't raise - let search fail naturally with clearer Qdrant error
+            print(f"  → Search will FAIL! Reindex KB with correct model or fix embedding config.")
+            # Raise error to make the problem obvious instead of silently returning 0 results
+            raise ValueError(
+                f"Embedding dimension mismatch for KB {kb.id}: "
+                f"KB expects {kb_dimensions} dimensions but query model '{query_model}' produces {query_dimensions}. "
+                f"Either reindex the KB with '{query_model}' or fix kb.embedding_config to match the indexed model."
+            )
         else:
             print(f"[RetrievalService] ✓ Embedding model: {query_model} (dimensions: {query_dimensions})")
 
@@ -468,15 +473,21 @@ class RetrievalService:
         # Debug logging before filter
         print(f"[RetrievalService] Before final filter: {len(results)} results (method={effective_search_method})")
 
-        # Filter by threshold - SKIP for hybrid search
-        # WHY: Hybrid search applies 0.7 weight to vector scores (line 679), making it
-        # mathematically impossible for results to pass the original threshold.
-        # Hybrid search already manages thresholds internally via _vector_search threshold * 0.8.
+        # Filter by threshold
         if effective_search_method != "hybrid":
             results = [r for r in results if r["score"] >= effective_threshold]
             print(f"[RetrievalService] After threshold filter ({effective_threshold}): {len(results)} results")
         else:
-            print(f"[RetrievalService] Skipping threshold filter for hybrid search (results preserved: {len(results)})")
+            # Hybrid search: apply minimum threshold to filter truly irrelevant results
+            # WHY: Keyword-only results get 0.85 * 0.3 = 0.255 score after weighting.
+            # Using 0.20 threshold allows:
+            # - Keyword-only results (0.85 * 0.3 = 0.255 > 0.20) ✓
+            # - Vector-only results (0.35+ * 0.7 = 0.245+) ✓
+            # - Combined results (higher scores) ✓
+            min_hybrid_threshold = 0.20
+            original_count = len(results)
+            results = [r for r in results if r["score"] >= min_hybrid_threshold]
+            print(f"[RetrievalService] Hybrid threshold filter ({min_hybrid_threshold}): {original_count} → {len(results)} results")
 
         return results
 
@@ -598,9 +609,14 @@ class RetrievalService:
 
         # STEP 1: Try PostgreSQL full-text search
         try:
+            # Use @@ operator directly with plainto_tsquery to properly convert user query
+            # NOTE: .match() already wraps in plainto_tsquery, so we use op('@@') to avoid double-wrapping
+            # This handles multi-word queries, removes stop words, and creates proper boolean query
             chunks = db.query(Chunk).filter(
                 Chunk.kb_id == kb_id,
-                func.to_tsvector('english', Chunk.content).match(query)
+                func.to_tsvector('english', Chunk.content).op('@@')(
+                    func.plainto_tsquery('english', query)
+                )
             ).limit(top_k).all()
 
             for chunk in chunks:
@@ -610,7 +626,7 @@ class RetrievalService:
                     "document_title": chunk.document.name if chunk.document else "Unknown",
                     "document_url": chunk.document.source_url if chunk.document else None,  # Source URL for web sources
                     "content": chunk.content,
-                    "score": 0.8,  # Fixed score for keyword matches
+                    "score": 0.85,  # Must be > 0.833 to pass 0.25 threshold after 0.3 weight
                     "page": chunk.chunk_metadata.get("page") if chunk.chunk_metadata else None,
                     "annotations": chunk.chunk_metadata.get("annotations") if chunk.chunk_metadata else None,
                     "boosted": False,
@@ -618,6 +634,14 @@ class RetrievalService:
                 })
         except Exception as e:
             print(f"[RetrievalService] PostgreSQL keyword search error: {e}")
+            # CRITICAL: Reset transaction state so subsequent queries work
+            # Without this, the transaction stays in "aborted" state and ALL
+            # subsequent queries (including history retrieval) return empty results
+            try:
+                db.rollback()
+                print(f"[RetrievalService] Transaction rolled back after FTS error")
+            except Exception as rollback_error:
+                print(f"[RetrievalService] Rollback failed: {rollback_error}")
 
         # STEP 2: If no PostgreSQL results, try Qdrant text search (for Option A)
         if not results:

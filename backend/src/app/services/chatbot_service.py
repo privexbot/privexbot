@@ -17,6 +17,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import re
 import time
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -169,6 +170,33 @@ class ChatbotService:
         else:
             history = []  # Memory disabled - stateless conversation
 
+        # Debug: Log history retrieval for troubleshooting context loss
+        print(f"[ChatbotService] Memory enabled: {memory_config.get('enabled', True)}, Retrieved {len(history)} messages from history")
+        if history:
+            for i, msg in enumerate(history):
+                preview = msg.content[:50].replace('\n', ' ')
+                print(f"[ChatbotService]   History[{i}]: {msg.role.value}: {preview}...")
+
+        # 4b. AFFIRMATIVE FALLBACK: If KB returned 0 results AND message is affirmative
+        # WHY: "yes please" returns 0 KB results, breaking follow-up conversation
+        # HOW: Detect affirmative, use previous AI response as continuation context
+        # CRITICAL: Only enable in GUIDED/FLEXIBLE modes. In STRICT mode, previous
+        # responses may have been hallucinated, so we can't safely continue from them.
+        grounding_mode = chatbot.config.get("grounding_mode",
+                         chatbot.config.get("behavior", {}).get("grounding_mode", "strict"))
+        allow_affirmative_fallback = grounding_mode != "strict"
+
+        if allow_affirmative_fallback and not context and self._is_affirmative_response(user_message) and history:
+            # Find the last assistant message
+            last_ai_msg = next(
+                (msg for msg in reversed(history) if msg.role.value == "assistant"),
+                None
+            )
+            if last_ai_msg:
+                # Use previous AI response as context for continuation
+                context = f"CONTINUING FROM YOUR PREVIOUS RESPONSE:\n{last_ai_msg.content}\n\nThe user said '{user_message}' to affirm/continue. Please continue naturally from where you left off."
+                print(f"[ChatbotService] KB=0 + affirmative detected - using previous AI context for continuation")
+
         # 5. Build structured messages for AI (with variable substitution)
         messages = self._build_messages(
             chatbot=chatbot,
@@ -193,6 +221,88 @@ class ChatbotService:
 
             response_text = ai_response["text"]
             tokens_used = ai_response["usage"]
+
+            # 6a. CRITICAL: Substitute variables in AI response BEFORE saving
+            # WHY: Without this, {{name}} and [name] leak into saved history
+            # HOW: Reuse the same substitution method used for system prompts
+            response_text = self._substitute_variables(response_text, collected_variables)
+
+            # 6b. Clear sources if AI indicates no information found
+            # WHY: Don't show sources when AI couldn't answer from KB - it's confusing
+            # HOW: Check for common "I don't have information" phrases + hallucination indicators
+            response_lower = response_text.lower()
+            no_info_indicators = [
+                # Existing patterns - explicit refusals
+                "i don't have that information",
+                "i don't have information",
+                "i don't have any specific information",
+                "don't have any specific information",
+                "i don't have specific information",
+                "not in my current context",
+                "i'm not sure about that",
+                "i cannot find",
+                "no relevant information",
+                "don't have specific information",
+                "i don't have any information",
+                "i couldn't find",
+                "not available in my knowledge",
+                # NEW: Patterns indicating AI used general/training knowledge
+                "based on general knowledge",
+                "from what i know",
+                "generally speaking",
+                "while the document doesn't",
+                "although the context doesn't",
+                "the document doesn't specifically mention",
+                "not mentioned in the context",
+                "outside of the provided context",
+                "beyond what's in the knowledge base",
+                "from my understanding",
+                "in my experience",
+                "based on my training",
+                "from technical documentation",  # AI lie when hallucinating
+            ]
+            if any(indicator in response_lower for indicator in no_info_indicators):
+                print(f"[ChatbotService] AI indicated no info found, clearing {len(sources)} sources")
+                sources = []
+
+            # 6c. Validate sources are actually relevant to response
+            # WHY: Don't cite sources if AI didn't use retrieved content
+            # HOW: Check for meaningful word overlap between source and response
+            if sources and context:
+                validated_sources = []
+
+                for source in sources:
+                    source_content = source.get("content", "").lower()
+                    # Check for meaningful overlap (not just common words)
+                    source_words = set(source_content.split())
+                    response_words = set(response_lower.split())
+
+                    # Remove common stop words
+                    stop_words = {
+                        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+                        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+                        "should", "may", "might", "must", "shall", "can", "need", "to", "and",
+                        "but", "or", "nor", "for", "yet", "so", "in", "on", "at", "by", "with",
+                        "from", "as", "into", "through", "during", "before", "after", "above",
+                        "below", "between", "under", "again", "further", "then", "once", "here",
+                        "there", "when", "where", "why", "how", "all", "each", "few", "more",
+                        "most", "other", "some", "such", "no", "not", "only", "own", "same",
+                        "than", "too", "very", "just", "also", "now", "of", "it", "i", "you",
+                        "he", "she", "we", "they", "this", "that", "these", "those", "about",
+                        "what", "which", "who", "whom", "your", "my", "me", "him", "her", "its"
+                    }
+                    source_words = source_words - stop_words
+                    response_words = response_words - stop_words
+
+                    # Require at least 3 meaningful word matches
+                    overlap = len(source_words & response_words)
+                    if overlap >= 3:
+                        validated_sources.append(source)
+
+                if len(validated_sources) < len(sources):
+                    print(f"[ChatbotService] Source validation: {len(sources)} → {len(validated_sources)} (removed irrelevant)")
+
+                sources = validated_sources
 
             # 7. Save assistant message
             assistant_msg = self.session_service.save_message(
@@ -224,7 +334,7 @@ class ChatbotService:
             return {
                 "response": response_text,
                 "sources": sources,
-                "session_id": str(session.id),
+                "session_id": session_id,  # Return original string, not UUID (prevents feedback loop)
                 "message_id": str(assistant_msg.id)
             }
 
@@ -379,6 +489,50 @@ class ChatbotService:
 
         return None  # Unclear response
 
+    def _is_affirmative_response(self, message: str) -> bool:
+        """
+        Detect if user message is an affirmative response to AI's suggestion.
+
+        WHY: "yes please" returns 0 KB results, breaking conversation flow.
+             When KB returns empty AND user message is affirmative, we should
+             use the previous AI response as context for continuation.
+        HOW: Pattern matching for common affirmative phrases
+
+        RETURNS:
+            True if message appears to be affirming a previous suggestion
+        """
+        message_lower = message.lower().strip()
+
+        # Direct affirmatives
+        affirmatives = [
+            "yes", "yeah", "yep", "yup", "sure", "ok", "okay",
+            "yes please", "please", "go ahead", "continue",
+            "tell me more", "more info", "more details",
+            "sounds good", "that sounds good", "perfect",
+            "i'd like that", "i would like that", "definitely",
+            "absolutely", "of course", "why not", "let's do it"
+        ]
+
+        # Ordinal selections (for "Would you like X or Y?" suggestions)
+        ordinals = [
+            "the first one", "the second one", "the first", "the second",
+            "first one", "second one", "option 1", "option 2",
+            "1", "2", "a", "b"
+        ]
+
+        # Check exact match or starts with
+        for pattern in affirmatives + ordinals:
+            if message_lower == pattern or message_lower.startswith(pattern + " "):
+                return True
+
+        # Check if message is very short and contains affirmative keyword
+        if len(message_lower) < 25:
+            for pattern in ["yes", "sure", "ok", "please", "go ahead"]:
+                if pattern in message_lower:
+                    return True
+
+        return False
+
     async def _trigger_lead_capture_after_consent(
         self,
         db: Session,
@@ -477,12 +631,25 @@ class ChatbotService:
 
         all_sources = []
         context_parts = []
+        kbs_with_results = 0  # Track how many KBs contributed results
 
         for kb_config in chatbot.config.get("knowledge_bases", []):
             if not kb_config.get("enabled"):
                 continue
 
             kb_id = kb_config["kb_id"]
+
+            # Log KB state for debugging 0-result issues
+            from app.models.knowledge_base import KnowledgeBase
+            kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+            if kb:
+                print(f"[ChatbotService] KB {kb_id}: status={kb.status}, chunks={kb.total_chunks}")
+                if kb.status != "ready":
+                    print(f"[ChatbotService] ⚠️ KB {kb_id} not ready (status={kb.status})")
+                if kb.total_chunks == 0:
+                    print(f"[ChatbotService] ⚠️ KB {kb_id} has 0 chunks - search will return empty")
+            else:
+                print(f"[ChatbotService] ⚠️ KB {kb_id} not found in database")
 
             # Get chatbot-level override settings (if any)
             # If override is specified, use it; otherwise pass None to use KB config
@@ -506,12 +673,13 @@ class ChatbotService:
                     threshold=caller_threshold  # None = use KB config
                 )
 
-                # Add to sources
-                all_sources.extend(results)
-
-                # Add to context
-                for result in results:
-                    context_parts.append(result["content"])
+                if results:
+                    kbs_with_results += 1
+                    # Add to sources
+                    all_sources.extend(results)
+                    # Add to context
+                    for result in results:
+                        context_parts.append(result["content"])
 
             except Exception as e:
                 # Log error but continue with other KBs
@@ -520,6 +688,10 @@ class ChatbotService:
 
         # Combine context
         context = "\n\n".join(context_parts)
+
+        # Add synthesis hint when multiple KBs contributed results
+        if kbs_with_results > 1 and context:
+            context = f"The following information comes from your knowledge base:\n\n{context}\n\n(Synthesize this information naturally - don't mention multiple sources)"
 
         # Debug logging to trace KB context retrieval
         print(f"[ChatbotService] Retrieved context: {len(context)} chars from {len(all_sources)} sources")
@@ -539,26 +711,32 @@ class ChatbotService:
         WHY: Allow dynamic prompt customization based on user-provided data
         HOW: Simple regex replacement of {{variable}} patterns
 
+        CRITICAL: Even when variables=None, we MUST remove {{var}} placeholders
+        to prevent literal template syntax from appearing in AI responses.
+
         ARGS:
             text: Text containing {{variable}} placeholders
             variables: Dict of variable_name -> value mappings
 
         RETURNS:
-            Text with placeholders replaced by values
+            Text with placeholders replaced by values (or [var_name] if undefined)
         """
-        import re
-
-        if not variables or not text:
+        if not text:
             return text
+
+        # Use empty dict if variables is None - this ensures regex ALWAYS runs
+        # to remove any {{var}} placeholders that would otherwise appear literally
+        vars_dict = variables or {}
 
         def replace_var(match):
             var_name = match.group(1).strip()
-            value = variables.get(var_name)
+            value = vars_dict.get(var_name)
             if value is not None:
                 return str(value)
-            # Fallback: Use empty string instead of keeping {{var}} literal
-            # This prevents template syntax from leaking into AI responses
-            return ""
+            # Return descriptive placeholder instead of empty string
+            # This helps AI understand it's a variable that will be filled later
+            # e.g., {{name}} → [name], {{email}} → [email]
+            return f"[{var_name}]"
 
         # Match {{variable_name}} patterns (with optional whitespace)
         pattern = r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
@@ -601,44 +779,65 @@ class ChatbotService:
         # 1. Build the complete system prompt with all configurations
         system_parts = []
 
-        # 1a. Base system prompt
+        # 1a. Base system prompt - always substitute variables (removes {{var}} even if undefined)
         base_prompt = config.get("system_prompt", "You are a helpful assistant.")
-        if collected_variables:
-            base_prompt = self._substitute_variables(base_prompt, collected_variables)
+        base_prompt = self._substitute_variables(base_prompt, collected_variables)
         system_parts.append(base_prompt)
 
-        # 1b. Persona settings (name, tone, style) - with variable substitution
+        # 1b. Persona settings (name, tone, style) - always substitute variables
         persona = config.get("persona", {})
         if persona:
             persona_parts = []
             if persona.get("name"):
-                name = self._substitute_variables(persona['name'], collected_variables) if collected_variables else persona['name']
+                name = self._substitute_variables(persona['name'], collected_variables)
                 persona_parts.append(f"Your name is {name}.")
             if persona.get("tone"):
-                tone = self._substitute_variables(persona['tone'], collected_variables) if collected_variables else persona['tone']
+                tone = self._substitute_variables(persona['tone'], collected_variables)
                 persona_parts.append(f"Use a {tone} tone.")
             if persona.get("style"):
-                style = self._substitute_variables(persona['style'], collected_variables) if collected_variables else persona['style']
+                style = self._substitute_variables(persona['style'], collected_variables)
                 persona_parts.append(f"Your communication style is {style}.")
             if persona_parts:
                 system_parts.append("\n".join(persona_parts))
 
-        # 1c. Instructions (specific behaviors to follow) - with variable substitution
+        # 1c. Instructions (specific behaviors to follow) - always substitute variables
         instructions = config.get("instructions", [])
         if instructions:
-            instruction_text = "\n\nINSTRUCTIONS - Follow these behaviors:\n"
+            # Build conversation summary from history and inject BEFORE instructions
+            # WHY: LLMs prioritize system prompt instructions over history context.
+            # By placing a summary RIGHT BEFORE instructions, the LLM sees what's
+            # already happened and naturally skips completed actions.
+            if history and len(history) > 0:
+                summary_parts = []
+                for msg in history[-6:]:  # Last 6 messages for context
+                    role = "User" if msg.role.value == "user" else "Assistant"
+                    # Truncate content for brevity but keep enough for context
+                    content_preview = msg.content[:80].replace('\n', ' ')
+                    if len(msg.content) > 80:
+                        content_preview += "..."
+                    summary_parts.append(f"- {role}: {content_preview}")
+
+                conversation_summary = "\n".join(summary_parts)
+                instruction_text = f"""
+CONVERSATION SO FAR:
+{conversation_summary}
+
+INSTRUCTIONS (DO NOT repeat actions already completed above):
+"""
+            else:
+                instruction_text = "\n\nINSTRUCTIONS:\n"
+
             for i, instr in enumerate(instructions, 1):
                 if isinstance(instr, dict):
                     text = instr.get('text', instr.get('content', ''))
                 else:
                     text = str(instr)
-                # Apply variable substitution to instruction text
-                if collected_variables:
-                    text = self._substitute_variables(text, collected_variables)
+                # Always apply variable substitution (removes {{var}} even if undefined)
+                text = self._substitute_variables(text, collected_variables)
                 instruction_text += f"{i}. {text}\n"
             system_parts.append(instruction_text)
 
-        # 1d. Restrictions (things to avoid) - with variable substitution
+        # 1d. Restrictions (things to avoid) - always substitute variables
         restrictions = config.get("restrictions", [])
         if restrictions:
             restriction_text = "\nRESTRICTIONS - Do NOT do the following:\n"
@@ -647,9 +846,8 @@ class ChatbotService:
                     text = restr.get('text', restr.get('content', ''))
                 else:
                     text = str(restr)
-                # Apply variable substitution to restriction text
-                if collected_variables:
-                    text = self._substitute_variables(text, collected_variables)
+                # Always apply variable substitution (removes {{var}} even if undefined)
+                text = self._substitute_variables(text, collected_variables)
                 restriction_text += f"- {text}\n"
             system_parts.append(restriction_text)
 
@@ -661,7 +859,7 @@ class ChatbotService:
             behavior_parts.append("When using information from the knowledge base, cite your sources by mentioning where the information came from.")
 
         if behavior.get("show_followups", False):
-            behavior_parts.append("At the end of your response, suggest 1-2 relevant follow-up questions the user might want to ask.")
+            behavior_parts.append("At the end of your response, suggest 1-2 follow-up questions ONLY about topics that are actually in your knowledge base context. Never suggest topics from your general training data.")
 
         if behavior_parts:
             system_parts.append("\nRESPONSE FORMAT:\n" + "\n".join(f"- {bp}" for bp in behavior_parts))
@@ -709,23 +907,16 @@ Context:
 
             if grounding_mode == "strict":
                 system_parts.append("""
-STRICT MODE - NO KB RESULTS FOR THIS QUERY:
+NOTE: No specific match was found in your knowledge base for this query.
 
-Your knowledge base was searched but found NO relevant information.
+RULES:
+- For greetings/conversation ("hi", "hello", "thanks", "ok"): Respond naturally AND follow your behavioral instructions
+- For topic questions: Say "I don't have specific information about that topic. Could you try rephrasing or ask about something else?"
+- NEVER say "I don't have a general knowledge base" - you DO have one, this query just didn't match
+- NEVER expose internal workings ("based on the provided context", "according to my context", "in my knowledge base")
+- Speak naturally as if the knowledge is yours
 
-═══════════════════════════════════════════════════════════════
-RULE: For any question about a topic, fact, or concept:
-→ Respond: "I don't have that information in my current context, but if you can provide more details or rephrase the question, I'll try to help."
-═══════════════════════════════════════════════════════════════
-
-EXCEPTIONS (respond naturally):
-- "hi", "hello" → Greet back
-- "ok", "thanks", "hmm" → Acknowledge
-- Questions about THIS conversation → Clarify
-
-DO NOT provide information from training data.
-DO NOT be "helpful" by answering topic questions without KB.
-DO NOT suggest topics to ask about (you don't know what's in the KB for this query).
+Custom BEHAVIORAL INSTRUCTIONS defined earlier (like "ask for user's name") MUST still be followed.
 """)
             elif grounding_mode == "guided":
                 system_parts.append("""
@@ -737,7 +928,16 @@ You MAY answer using general knowledge, but you MUST clearly disclose this by st
 
 Always be transparent about what comes from the knowledge base vs. general knowledge.
 """)
-            # flexible mode: no restriction needed when no context
+            elif grounding_mode == "flexible":
+                system_parts.append("""
+NOTE - FLEXIBLE KNOWLEDGE BASE MODE:
+Your knowledge base was searched but returned NO relevant information for this query.
+
+You may answer using general knowledge without disclosure. However:
+- For vague requests like "tell me something", ask what they're interested in
+- If they ask about a topic later that IS in your KB, use that KB info
+- Never claim to have KB info you don't have
+""")
 
         # Combine all system parts
         system_content = "\n\n".join(part for part in system_parts if part.strip())
@@ -745,10 +945,14 @@ Always be transparent about what comes from the knowledge base vs. general knowl
         messages.append({"role": "system", "content": system_content})
 
         # 2. Chat history (previous messages)
+        # Sanitize history to remove any leftover {{var}} patterns from old responses
+        var_pattern = re.compile(r'\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\}')
         if history:
             for msg in history:
                 role = "user" if msg.role.value == "user" else "assistant"
-                messages.append({"role": role, "content": msg.content})
+                # Remove any {{variable}} patterns that might have leaked into old responses
+                sanitized_content = var_pattern.sub('', msg.content)
+                messages.append({"role": role, "content": sanitized_content})
 
         # 3. Current user message
         messages.append({"role": "user", "content": user_message})

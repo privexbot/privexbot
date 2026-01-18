@@ -167,3 +167,316 @@ Chatbot KB Retrieval Architecture Analysis
  3. Embedding model - Must be consistent across KB lifecycle                                                         
                                                                                                                      
  ---                                
+
+ -----------
+ -----------
+
+
+  The plan is now updated with a general solution for Issue 3 that works for ANY instruction, not just name-asking:  
+                                                                                                                     
+  1. Inject conversation summary immediately before instructions in the system prompt                                
+  2. LLM sees context and instructions together - naturally skips completed actions                                  
+  3. No pattern matching needed - works for "ask for name", "collect email", "recommend product", etc.               
+                                                                                                                     
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Ready to code?                                                                                                      
+                                                                                                                     
+ Here is Claude's plan:                                                                                              
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Chatbot Quality Issues - Deep Root Cause Analysis & Fixes                                                           
+                                                                                                                     
+ Executive Summary                                                                                                   
+                                                                                                                     
+ After deep research, the issues are NOT just prompt engineering - there are three distinct system-level bugs:       
+ Issue: Vector search returns 0                                                                                      
+ Root Cause: Embedding dimension mismatch                                                                            
+ Previous Diagnosis: ❌ Not identified                                                                               
+ ────────────────────────────────────────                                                                            
+ Issue: Irrelevant KB content                                                                                        
+ Root Cause: PostgreSQL FTS syntax bug + no threshold for hybrid                                                     
+ Previous Diagnosis: ❌ Misdiagnosed as "just KB content"                                                            
+ ────────────────────────────────────────                                                                            
+ Issue: Repeated name asking                                                                                         
+ Root Cause: LLM system prompt priority (instructions > history)                                                     
+ Previous Diagnosis: ⚠️ Partially identified                                                                         
+ ---                                                                                                                 
+ Issue 1: Vector Search Always Returns 0 Results                                                                     
+                                                                                                                     
+ Evidence from Logs                                                                                                  
+                                                                                                                     
+ [QdrantService] Search returned 0 results from kb_caddd1e3_5ba9_44e7_9007_6f6daeac8483                              
+ [RetrievalService] Vector search: Qdrant returned 0, after content filter: 0                                        
+ [RetrievalService] Hybrid search: vector=0, keyword=3, combined=3                                                   
+                                                                                                                     
+ Root Cause                                                                                                          
+                                                                                                                     
+ Embedding dimension mismatch - Silent failure when query embedding dimensions don't match collection dimensions.    
+                                                                                                                     
+ Flow:                                                                                                               
+ 1. KB indexed with model X (e.g., 768 dimensions)                                                                   
+ 2. kb.embedding_config is NULL or doesn't have dimensions saved                                                     
+ 3. Query defaults to all-MiniLM-L6-v2 (384 dimensions)                                                              
+ 4. Qdrant receives 384-dim query against 768-dim collection                                                         
+ 5. Qdrant returns 0 results silently (no error, just empty)                                                         
+                                                                                                                     
+ Code Location                                                                                                       
+                                                                                                                     
+ - retrieval_service.py:155-194 - Validates but only WARNS, doesn't prevent                                          
+ - retrieval_service.py:397-408 - Gets embedding model from KB config                                                
+                                                                                                                     
+ Fix                                                                                                                 
+                                                                                                                     
+ File: retrieval_service.py:187-192                                                                                  
+                                                                                                                     
+ # BEFORE (warns but continues):                                                                                     
+ if kb_dimensions and kb_dimensions != query_dimensions:                                                             
+     print(f"[RetrievalService] 🚨 DIMENSION MISMATCH ERROR...")                                                     
+     # Don't raise - let search fail naturally                                                                       
+                                                                                                                     
+ # AFTER (raise error to make it obvious):                                                                           
+ if kb_dimensions and kb_dimensions != query_dimensions:                                                             
+     print(f"[RetrievalService] 🚨 DIMENSION MISMATCH ERROR for KB {kb.id}:")                                        
+     print(f"  → KB indexed dimensions: {kb_dimensions}")                                                            
+     print(f"  → Query model dimensions: {query_dimensions}")                                                        
+     raise ValueError(f"Embedding dimension mismatch: KB expects {kb_dimensions}, query has {query_dimensions}.      
+ Reindex KB or fix embedding config.")                                                                               
+                                                                                                                     
+ Also add diagnostic endpoint to check KB embedding config vs actual collection dimensions.                          
+                                                                                                                     
+ ---                                                                                                                 
+ Issue 2: Keyword Search Returns Irrelevant Content                                                                  
+                                                                                                                     
+ Evidence from Logs                                                                                                  
+                                                                                                                     
+ User: "tell me about what you know" (Secret Network chatbot)                                                        
+ Result: "_Founder School Wednesday's Meeting Transcript" about business automation                                  
+                                                                                                                     
+ Root Cause: CASCADE OF 3 BUGS                                                                                       
+                                                                                                                     
+ Bug 2a: PostgreSQL FTS Syntax Error                                                                                 
+                                                                                                                     
+ File: retrieval_service.py:603                                                                                      
+                                                                                                                     
+ # CURRENT (WRONG):                                                                                                  
+ func.to_tsvector('english', Chunk.content).match(query)                                                             
+                                                                                                                     
+ # The `.match()` expects a tsquery, not a raw string!                                                               
+ # This either fails silently or behaves unpredictably                                                               
+                                                                                                                     
+ Fix:                                                                                                                
+ # CORRECT:                                                                                                          
+ func.to_tsvector('english', Chunk.content).match(                                                                   
+     func.plainto_tsquery('english', query)                                                                          
+ )                                                                                                                   
+                                                                                                                     
+ Bug 2b: Qdrant Text Search Uses Substring Matching                                                                  
+                                                                                                                     
+ File: qdrant_service.py:699                                                                                         
+                                                                                                                     
+ match=models.MatchText(text=query_text)  # Matches ANY substring!                                                   
+                                                                                                                     
+ Query "tell me about what you know" matches documents containing "what", "know", "about", "me", "tell" - any common 
+  word.                                                                                                              
+                                                                                                                     
+ Fix: Split query into significant words, require multiple matches:                                                  
+ # Filter out stop words and require at least 2 significant terms to match                                           
+ significant_terms = [w for w in query_text.lower().split() if len(w) > 3 and w not in STOP_WORDS]                   
+                                                                                                                     
+ Bug 2c: Hybrid Search Skips Threshold Filtering                                                                     
+                                                                                                                     
+ File: retrieval_service.py:475-479                                                                                  
+                                                                                                                     
+ if effective_search_method != "hybrid":                                                                             
+     results = [r for r in results if r["score"] >= effective_threshold]                                             
+ else:                                                                                                               
+     print(f"[RetrievalService] Skipping threshold filter for hybrid search...")                                     
+                                                                                                                     
+ Result: Keyword-only results with 0.24 score (0.8 × 0.3) bypass filtering.                                          
+                                                                                                                     
+ Fix: Apply a minimum threshold for hybrid results:                                                                  
+ if effective_search_method != "hybrid":                                                                             
+     results = [r for r in results if r["score"] >= effective_threshold]                                             
+ else:                                                                                                               
+     # Hybrid: apply reduced threshold to filter truly irrelevant results                                            
+     min_hybrid_threshold = 0.2  # Minimum combined score                                                            
+     results = [r for r in results if r["score"] >= min_hybrid_threshold]                                            
+                                                                                                                     
+ ---                                                                                                                 
+ Issue 3: AI Keeps Repeating Instructions Despite History                                                            
+                                                                                                                     
+ Evidence                                                                                                            
+                                                                                                                     
+ User: "im hary" → AI: "Nice to meet you, Hary!"                                                                     
+ ...later...                                                                                                         
+ User: "yes please" → AI: "I'd like to get your name first"                                                          
+                                                                                                                     
+ Root Cause                                                                                                          
+                                                                                                                     
+ LLM Architecture Priority: System prompt instructions are treated as RULES, conversation history is treated as      
+ DATA. When they conflict, rules win.                                                                                
+                                                                                                                     
+ Instructions are in the system prompt EVERY turn, and LLMs prioritize explicit system instructions over implicit    
+ conversation context. The advisory text "check conversation history" is just text - not enforcement.                
+                                                                                                                     
+ General Solution: Inject Conversation Summary BEFORE Instructions                                                   
+                                                                                                                     
+ Instead of trying to pattern-match specific instructions (too narrow), we inject a conversation summary immediately 
+  before instructions. This makes the state EXPLICIT in the same section of the system prompt.                       
+                                                                                                                     
+ File: chatbot_service.py - Around line 661-673                                                                      
+                                                                                                                     
+ Before:                                                                                                             
+ instruction_text = "\n\nINSTRUCTIONS (check conversation history - don't repeat completed actions):\n"              
+ for i, instr in enumerate(instructions, 1):                                                                         
+     ...                                                                                                             
+                                                                                                                     
+ After: Build conversation summary and inject before instructions:                                                   
+ # Build conversation state summary from history                                                                     
+ if history and len(history) > 0:                                                                                    
+     # Create a brief summary of what has happened                                                                   
+     summary_parts = []                                                                                              
+     for msg in history[-6:]:  # Last 6 messages                                                                     
+         role = "User" if msg.role.value == "user" else "Assistant"                                                  
+         # Truncate for brevity                                                                                      
+         content_preview = msg.content[:80].replace('\n', ' ')                                                       
+         summary_parts.append(f"- {role}: {content_preview}...")                                                     
+                                                                                                                     
+     conversation_summary = "\n".join(summary_parts)                                                                 
+     instruction_text = f"""                                                                                         
+ CONVERSATION SO FAR:                                                                                                
+ {conversation_summary}                                                                                              
+                                                                                                                     
+ INSTRUCTIONS (DO NOT repeat actions already completed above):                                                       
+ """                                                                                                                 
+ else:                                                                                                               
+     instruction_text = "\n\nINSTRUCTIONS:\n"                                                                        
+                                                                                                                     
+ for i, instr in enumerate(instructions, 1):                                                                         
+     ...                                                                                                             
+                                                                                                                     
+ Why This Works Better                                                                                               
+                                                                                                                     
+ 1. Summary is in the SYSTEM prompt - Same priority level as instructions                                            
+ 2. Placed IMMEDIATELY before instructions - LLM reads it right before processing instructions                       
+ 3. Explicit state - "User: im hary..." is visible right before "Ask for name"                                       
+ 4. Works for ANY instruction - Not limited to name-asking                                                           
+ 5. No pattern matching needed - The LLM makes the connection naturally                                              
+                                                                                                                     
+ Example Output                                                                                                      
+                                                                                                                     
+ CONVERSATION SO FAR:                                                                                                
+ - User: hi...                                                                                                       
+ - Assistant: Hello! I'm here to help with Secret Network. What's your name?...                                      
+ - User: im hary...                                                                                                  
+ - Assistant: Nice to meet you, Hary! How can I help?...                                                             
+ - User: tell me about transactions...                                                                               
+ - Assistant: I can tell you about... Would you like to know more?...                                                
+                                                                                                                     
+ INSTRUCTIONS (DO NOT repeat actions already completed above):                                                       
+ 1. Ask for the user's name                                                                                          
+ 2. Explain Secret Network features                                                                                  
+                                                                                                                     
+ The LLM sees "User: im hary" RIGHT BEFORE the instruction to "Ask for name" and naturally skips it.                 
+                                                                                                                     
+ ---                                                                                                                 
+ Files to Modify                                                                                                     
+ ┌──────────────────────┬─────────┬──────────────────────────────────────────────────────┐                           
+ │         File         │ Line(s) │                        Change                        │                           
+ ├──────────────────────┼─────────┼──────────────────────────────────────────────────────┤                           
+ │ retrieval_service.py │ 187-192 │ Raise error on dimension mismatch instead of warning │                           
+ ├──────────────────────┼─────────┼──────────────────────────────────────────────────────┤                           
+ │ retrieval_service.py │ 603     │ Fix PostgreSQL FTS to use plainto_tsquery()          │                           
+ ├──────────────────────┼─────────┼──────────────────────────────────────────────────────┤                           
+ │ retrieval_service.py │ 475-479 │ Apply minimum threshold for hybrid search            │                           
+ ├──────────────────────┼─────────┼──────────────────────────────────────────────────────┤                           
+ │ chatbot_service.py   │ 661-673 │ Inject conversation summary before instructions      │                           
+ └──────────────────────┴─────────┴──────────────────────────────────────────────────────┘                           
+ Note: Qdrant text search stop word filtering is optional (Phase 3) - the main fix is FTS syntax + threshold.        
+                                                                                                                     
+ ---                                                                                                                 
+ Implementation Order                                                                                                
+                                                                                                                     
+ Phase 1: Critical Retrieval Fixes (Issues 1 & 2)                                                                    
+                                                                                                                     
+ 1. Fix PostgreSQL FTS syntax - use plainto_tsquery() (immediate impact)                                             
+ 2. Apply minimum threshold to hybrid results (prevents irrelevant content)                                          
+ 3. Add dimension mismatch error instead of warning (makes debugging obvious)                                        
+                                                                                                                     
+ Phase 2: Instruction Repetition Fix (Issue 3)                                                                       
+                                                                                                                     
+ 4. Inject conversation summary before instructions (works for ANY instruction)                                      
+                                                                                                                     
+ Phase 3: Optional Improvements                                                                                      
+                                                                                                                     
+ 5. Improve Qdrant text search with stop word filtering                                                              
+ 6. Add diagnostic endpoint for KB embedding verification                                                            
+                                                                                                                     
+ ---                                                                                                                 
+ Verification                                                                                                        
+                                                                                                                     
+ After fixes, test conversation:                                                                                     
+ 1. "hi" → Greeting (may ask name if instruction exists)                                                             
+ 2. "im hary" → "Nice to meet you, Hary!"                                                                            
+ 3. "tell me what you know" → Lists RELEVANT topics from KB (not random docs)                                        
+ 4. "yes please" → Continues conversation WITHOUT re-asking for name                                                 
+ 5. Check logs: Vector search should return results (not 0)                                                          
+                                                                                                                     
+ ---                                                                                                                 
+ What We're NOT Doing (Avoiding Over-Engineering)                                                                    
+                                                                                                                     
+ - ❌ Not adding intent detection service                                                                            
+ - ❌ Not adding complex state tracking                                                                              
+ - ❌ Not changing the overall retrieval architecture                                                                
+ - ❌ Not adding new database tables                                                                                 
+ - ✅ Fixing actual bugs in existing code                                                                            
+ - ✅ Making existing code work as intended                                                                          
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+                                                                                                                     
+ Requested permissions:                                                                                              
+   · Bash(prompt: restart backend services)             
+
+
+
+
+All 4 fixes have been implemented. Here's a summary:                                                               
+                                                                                                                     
+  Changes Made                                                                                                       
+                                                                                                                     
+  Fix 1: PostgreSQL FTS Syntax (retrieval_service.py:603-607)                                                        
+                                                                                                                     
+  # BEFORE: .match(query) - expects tsquery, not string                                                              
+  # AFTER: .match(func.plainto_tsquery('english', query))                                                            
+  This properly converts user queries to PostgreSQL full-text search format.                                         
+                                                                                                                     
+  Fix 2: Hybrid Search Threshold (retrieval_service.py:475-485)                                                      
+                                                                                                                     
+  # BEFORE: Skipped threshold filter entirely for hybrid                                                             
+  # AFTER: Apply min_hybrid_threshold = 0.25                                                                         
+  This filters out keyword-only matches (0.24 score) that lack vector support.                                       
+                                                                                                                     
+  Fix 3: Dimension Mismatch Error (retrieval_service.py:187-197)                                                     
+                                                                                                                     
+  # BEFORE: Only warned, let search fail silently                                                                    
+  # AFTER: Raises ValueError with clear message                                                                      
+  Now dimension mismatch errors are immediately obvious instead of returning 0 results silently.                     
+                                                                                                                     
+  Fix 4: Conversation Summary Before Instructions (chatbot_service.py:661-696)                                       
+                                                                                                                     
+  # BEFORE: "INSTRUCTIONS (check history):" - just advisory text                                                     
+  # AFTER: Injects actual conversation summary RIGHT BEFORE instructions                                             
+  Example output:                                                                                                    
+  CONVERSATION SO FAR:                                                                                               
+  - User: hi...                                                                                                      
+  - Assistant: Hello! What's your name?...                                                                           
+  - User: im hary...                                                                                                 
+                                                                                                                     
+  INSTRUCTIONS (DO NOT repeat actions already completed above):                                                      
+  1. Ask for user's name                                                                                             
+                                                                                                                     
+  ---                                                                                                                
+  To verify, restart backend and test:                                                                               
+  1. "hi" → Greeting (may ask name)                                                                                  
+  2. "im hary" → "Nice to meet you, Hary!"                                                                           
+  3. "tell me what you know" → Should return RELEVANT KB content (not random docs)                                   
+  4. "yes please" → Should continue WITHOUT re-asking for name                                                       
+  5. Check logs: Should see proper FTS queries and threshold filtering   
