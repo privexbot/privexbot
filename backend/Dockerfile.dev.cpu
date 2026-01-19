@@ -1,7 +1,7 @@
 # Development Dockerfile for PrivexBot Backend (CPU-only version)
 # Optimized for faster builds without GPU dependencies
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -27,9 +27,12 @@ COPY pyproject.toml uv.lock ./
 # First install CPU-only PyTorch separately to avoid CUDA dependencies
 RUN pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 
-# Install remaining dependencies
-RUN uv pip install --system -r pyproject.toml --no-deps torch || \
-    uv pip install --system -r pyproject.toml
+# Copy source for editable install
+COPY src/ ./src/
+
+# Install remaining dependencies using uv sync (--prerelease for secret-ai-sdk's betterproto)
+RUN uv sync --system --prerelease allow || \
+    uv pip install --system --prerelease=allow -e .
 
 # Install additional dev tools
 RUN pip install --no-cache-dir \

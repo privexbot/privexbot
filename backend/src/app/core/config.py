@@ -136,6 +136,10 @@ class Settings(BaseSettings):
         default="https://secretai-api-url.scrtlabs.com:443/v1",
         description="Secret AI API base URL (SecretVM endpoint)"
     )
+    USE_SECRET_AI_SDK: bool = Field(
+        default=True,
+        description="Use native secret-ai-sdk instead of OpenAI-compatible API (requires secret-ai-sdk package)"
+    )
 
     # Inference Fallback Settings
     # Enable fallback to other providers when Secret AI is unavailable (e.g., network blocks)

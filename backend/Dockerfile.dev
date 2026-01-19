@@ -1,7 +1,7 @@
 # Development Dockerfile for PrivexBot Backend (CPU-only version)
 # Supports all services: backend, celery, celery-beat, flower
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -36,9 +36,9 @@ RUN pip install --no-cache-dir \
 # Copy source code (required for uv sync to work with editable install)
 COPY src/ ./src/
 
-# Install all other dependencies using uv sync
-RUN uv sync --system || \
-    uv pip install --system -e .
+# Install dependencies to system Python (--prerelease for secret-ai-sdk's betterproto)
+RUN uv sync --system --prerelease allow || \
+    uv pip install --system --prerelease=allow -e .
 
 # Install Playwright browsers and system dependencies (official best practice)
 RUN python -m playwright install chromium

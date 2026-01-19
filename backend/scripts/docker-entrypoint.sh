@@ -64,8 +64,10 @@ fi
 
 echo "🚀 Starting uvicorn server..."
 cd /app
+# Use asyncio loop instead of uvloop for compatibility with secret-ai-sdk (nest_asyncio)
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8000 \
     --reload \
-    --reload-dir /app/src
+    --reload-dir /app/src \
+    --loop asyncio

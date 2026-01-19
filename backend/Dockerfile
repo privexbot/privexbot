@@ -2,7 +2,7 @@
 # Multi-stage build for optimized image size
 
 # Build stage - Install dependencies
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
@@ -12,15 +12,22 @@ RUN pip install --no-cache-dir uv
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
-RUN uv pip install --system -r pyproject.toml
+# Configure uv for system Python
+ENV UV_SYSTEM_PYTHON=1
+
+# Copy source for editable install
+COPY src/ ./src/
+
+# Install dependencies using uv sync (--prerelease for secret-ai-sdk's betterproto)
+RUN uv sync --system --prerelease allow || \
+    uv pip install --system --prerelease=allow -e .
 
 # Install Playwright browsers (required for web scraping)
 RUN python -m playwright install chromium
 RUN python -m playwright install-deps
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -59,7 +66,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install production web server

@@ -597,6 +597,9 @@ except ImportError as e:
     sys.exit(1)
 ' || exit 1
 
+# Use asyncio loop instead of uvloop for compatibility with secret-ai-sdk (nest_asyncio)
+export UVICORN_LOOP=asyncio
+
 echo "🚀 Starting gunicorn with optimized Secret VM settings..."
 exec gunicorn app.main:app \
     --workers 2 \

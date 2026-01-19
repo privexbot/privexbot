@@ -3,7 +3,7 @@
 # Supports all services: backend, celery, celery-beat, flower
 
 # Build stage - Install dependencies
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
@@ -36,12 +36,12 @@ RUN pip install --no-cache-dir \
     torchvision==0.20.1+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install all other dependencies using uv sync
-RUN uv sync --system || \
-    uv pip install --system -e .
+# Install all other dependencies using uv sync (--prerelease for secret-ai-sdk's betterproto)
+RUN uv sync --system --prerelease allow || \
+    uv pip install --system --prerelease=allow -e .
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -55,7 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install production web server

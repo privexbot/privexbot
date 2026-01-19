@@ -667,6 +667,20 @@ class InferenceService:
                 "provider": "secret_ai"
             }
         """
+        # Check if native Secret AI SDK should be used
+        if settings.USE_SECRET_AI_SDK:
+            print("[InferenceService] Using native secret-ai-sdk")
+            from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
+            sdk_provider = get_secret_ai_sdk_provider(
+                temperature=temperature or 0.7
+            )
+            return await sdk_provider.generate_chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+
+        # Use OpenAI-compatible provider (default)
         use_provider, use_model = self._resolve_provider_and_model(model, provider)
 
         async def _generate(provider_instance: BaseProvider, model_to_use: str, **kw) -> InferenceResponse:
