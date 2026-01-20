@@ -17,7 +17,7 @@ PSEUDOCODE follows the existing codebase patterns.
 """
 
 import re
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Tuple
 from urllib.parse import urlparse
 from uuid import UUID
 

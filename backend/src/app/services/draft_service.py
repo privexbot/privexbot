@@ -834,7 +834,8 @@ class UnifiedDraftService:
                         "status": "success",
                         "webhook_url": telegram_result["webhook_url"],
                         "bot_username": telegram_result["bot_username"],
-                        "bot_token_credential_id": credential_id  # Store credential ref for webhook handler
+                        "bot_token_credential_id": credential_id,  # Store credential ref for webhook handler
+                        "webhook_secret": telegram_result.get("webhook_secret")  # For webhook verification
                     }
 
                 elif channel_type == "discord":

@@ -185,13 +185,23 @@ async def telegram_webhook(
             detail="Telegram not enabled for this bot"
         )
 
+    # Verify webhook secret token (Telegram sends this in header if configured)
+    webhook_secret = telegram_config.get("webhook_secret")
+    if webhook_secret:
+        header_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+        if header_token != webhook_secret:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid webhook signature"
+            )
+
     # Check if this chat is allowed (allowlist/blocklist filtering)
     if not _is_chat_allowed(deployment_config, chat_id):
         # Silently ignore messages from blocked/non-allowed chats
         return {"status": "ignored", "reason": "chat_not_allowed"}
 
-    # Generate session ID
-    session_id = f"telegram_{chat_id}"
+    # Generate session ID (includes user_id for per-user isolation in group chats)
+    session_id = f"telegram_{chat_id}_{user_id}"
 
     # Execute chatbot
     # TODO: Add chatflow support when Chatflow model is available

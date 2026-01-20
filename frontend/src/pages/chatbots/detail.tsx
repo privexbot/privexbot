@@ -44,8 +44,10 @@ import {
   Link2,
   QrCode,
   Check,
+  EyeOff,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
+import { credentialApi } from '@/api/credentials';
 import { useApp } from '@/contexts/AppContext';
 import type { Chatbot, ChatMessage, ChatbotAnalytics, APIKeyInfo } from '@/types/chatbot';
 import { Button } from '@/components/ui/button';
@@ -93,6 +95,10 @@ export default function ChatbotDetailPage() {
 
   // Metrics refresh state
   const [metricsRefreshing, setMetricsRefreshing] = useState(false);
+
+  // Telegram channel state
+  const [telegramModalOpen, setTelegramModalOpen] = useState(false);
+  const [telegramConnecting, setTelegramConnecting] = useState(false);
 
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
@@ -457,6 +463,55 @@ export default function ChatbotDetailPage() {
       });
     } finally {
       setMetricsRefreshing(false);
+    }
+  };
+
+  const handleConnectTelegram = async (botToken: string) => {
+    if (!chatbot || !currentWorkspace) return;
+
+    setTelegramConnecting(true);
+    try {
+      // 1. Create credential for bot token
+      const credential = await credentialApi.create({
+        workspace_id: currentWorkspace.id,
+        name: `Telegram Bot - ${chatbot.name}`,
+        credential_type: 'api_key',
+        provider: 'telegram',
+        data: { bot_token: botToken }
+      });
+
+      // 2. Add Telegram channel to chatbot
+      const result = await chatbotApi.addTelegramChannel(
+        chatbot.id,
+        credential.credential_id
+      );
+
+      // 3. Update local state with new telegram config
+      setChatbot({
+        ...chatbot,
+        deployment_config: {
+          ...chatbot.deployment_config,
+          telegram: {
+            status: 'success',
+            ...result.telegram
+          }
+        }
+      });
+
+      setTelegramModalOpen(false);
+      toast({
+        title: 'Telegram Connected',
+        description: `Bot: ${result.telegram.bot_username}`,
+      });
+    } catch (error) {
+      console.error('Failed to connect Telegram:', error);
+      toast({
+        title: 'Connection Failed',
+        description: error instanceof Error ? error.message : 'Failed to connect Telegram bot',
+        variant: 'destructive'
+      });
+    } finally {
+      setTelegramConnecting(false);
     }
   };
 
@@ -1226,9 +1281,21 @@ export default function ChatbotDetailPage() {
                         </div>
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">Deploy as a Telegram bot for instant messaging support.</p>
-                      <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
-                        Coming Soon
-                      </Button>
+                      {chatbot.deployment_config?.telegram?.status === 'success' ? (
+                        <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
+                          <Check className="h-4 w-4 mr-2" />
+                          Connected
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full font-manrope"
+                          onClick={() => setTelegramModalOpen(true)}
+                        >
+                          Connect Bot
+                        </Button>
+                      )}
                     </div>
 
                     {/* WhatsApp */}
@@ -1795,7 +1862,97 @@ export default function ChatbotDetailPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Telegram Configuration Modal */}
+        <Dialog open={telegramModalOpen} onOpenChange={setTelegramModalOpen}>
+          <DialogContent className="bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 rounded-xl shadow-xl max-w-md">
+            <DialogHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <Send className="h-6 w-6 text-blue-500" />
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900 dark:text-gray-100 font-manrope">Connect Telegram Bot</DialogTitle>
+                  <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    Enter your bot token from @BotFather
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <TelegramConfigForm
+              onConnect={handleConnectTelegram}
+              isConnecting={telegramConnecting}
+            />
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
+  );
+}
+
+// Telegram Configuration Form Component
+function TelegramConfigForm({
+  onConnect,
+  isConnecting
+}: {
+  onConnect: (token: string) => void;
+  isConnecting: boolean;
+}) {
+  const [token, setToken] = useState('');
+  const [showToken, setShowToken] = useState(false);
+
+  const isValidToken = /^\d+:[A-Za-z0-9_-]+$/.test(token);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Bot Token</label>
+        <div className="relative mt-1">
+          <Input
+            type={showToken ? 'text' : 'password'}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="123456789:ABC-xyz..."
+            className="pr-10 font-mono"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+            onClick={() => setShowToken(!showToken)}
+          >
+            {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">
+          Get this from{' '}
+          <a
+            href="https://t.me/BotFather"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            @BotFather
+          </a>
+          {' '}on Telegram
+        </p>
+      </div>
+
+      <DialogFooter>
+        <Button
+          onClick={() => onConnect(token)}
+          disabled={!isValidToken || isConnecting}
+          className="w-full font-manrope"
+        >
+          {isConnecting ? (
+            <>
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              Connecting...
+            </>
+          ) : (
+            'Connect Bot'
+          )}
+        </Button>
+      </DialogFooter>
+    </div>
   );
 }

@@ -617,6 +617,12 @@ export interface Chatbot {
   branding_config: AppearanceConfig;
   deployment_config: {
     channels?: ChannelConfig[];
+    telegram?: {
+      status: string;
+      webhook_url: string;
+      bot_username: string;
+      bot_token_credential_id?: string;
+    };
   };
   behavior_config: {
     memory: MemoryConfig;

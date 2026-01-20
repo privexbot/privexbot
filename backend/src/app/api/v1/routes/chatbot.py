@@ -16,6 +16,7 @@ PHASE 3: Active Usage
 - Track analytics and sessions
 """
 
+import requests
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any
@@ -123,6 +124,11 @@ class DeployChatbotRequest(BaseModel):
         default=None,
         description="Suggested conversation starters shown in widget"
     )
+
+
+class AddTelegramChannelRequest(BaseModel):
+    """Request model for adding Telegram channel to deployed chatbot."""
+    credential_id: str = Field(..., description="ID of the credential containing bot token")
 
 
 class ChatbotDraftResponse(BaseModel):
@@ -789,6 +795,120 @@ async def update_chatbot(
     db.refresh(chatbot)
 
     return {"status": "updated", "chatbot_id": str(chatbot.id)}
+
+
+@router.post("/{chatbot_id}/channels/telegram", response_model=dict)
+async def add_telegram_channel(
+    chatbot_id: UUID,
+    request: AddTelegramChannelRequest,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Add Telegram channel to a deployed chatbot.
+
+    WHY: Allow users to connect Telegram bot after initial deployment
+    HOW: Register webhook with Telegram API, update deployment_config
+
+    BODY:
+        {
+            "credential_id": "uuid-of-telegram-bot-token-credential"
+        }
+
+    RETURNS:
+        {
+            "status": "success",
+            "telegram": {
+                "bot_username": "@your_bot",
+                "webhook_url": "https://..."
+            }
+        }
+    """
+    from app.integrations.telegram_integration import telegram_integration
+
+    current_user, org_id, _ = user_context
+
+    # Get chatbot
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Check if Telegram is already connected
+    if chatbot.deployment_config.get("telegram", {}).get("status") == "success":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telegram channel is already connected"
+        )
+
+    try:
+        # Register webhook with Telegram
+        telegram_result = telegram_integration.register_webhook(
+            db=db,
+            entity_id=chatbot.id,
+            entity_type="chatbot",
+            config={"bot_token": request.credential_id}
+        )
+
+        # Update deployment_config
+        deployment_config = chatbot.deployment_config.copy() if chatbot.deployment_config else {}
+        deployment_config["telegram"] = {
+            "status": "success",
+            "webhook_url": telegram_result["webhook_url"],
+            "bot_username": telegram_result["bot_username"],
+            "bot_token_credential_id": request.credential_id,
+            "webhook_secret": telegram_result.get("webhook_secret")
+        }
+        chatbot.deployment_config = deployment_config
+
+        db.commit()
+        db.refresh(chatbot)
+
+        return {
+            "status": "success",
+            "telegram": {
+                "bot_username": telegram_result["bot_username"],
+                "webhook_url": telegram_result["webhook_url"]
+            }
+        }
+
+    except requests.exceptions.HTTPError as e:
+        # Handle Telegram API errors with helpful messages
+        error_msg = str(e)
+        if "400" in error_msg:
+            from app.core.config import settings
+            if "localhost" in settings.API_BASE_URL or "127.0.0.1" in settings.API_BASE_URL:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Telegram requires a public HTTPS URL for webhooks. "
+                           "Localhost URLs won't work. Please deploy to a public server or use a tunneling service like ngrok."
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Telegram rejected the webhook URL. Ensure your server is publicly accessible via HTTPS. Error: {error_msg}"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Telegram API error: {error_msg}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect Telegram: {str(e)}"
+        )
 
 
 @router.delete("/{chatbot_id}", response_model=dict)

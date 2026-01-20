@@ -15,6 +15,8 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import asyncio
+import secrets
 import requests
 from uuid import UUID
 from typing import Any, Optional, Tuple
@@ -23,6 +25,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.credential import Credential
+from app.utils.validation import validate_rate_limit
+
+# Telegram API limits: 30 msgs/sec per bot, 20 msgs/min to same group
+TELEGRAM_MSG_PER_SEC = 25  # Leave buffer from 30 limit
 
 
 class TelegramIntegration:
@@ -76,10 +82,16 @@ class TelegramIntegration:
         # Webhook URL
         webhook_url = f"{settings.API_BASE_URL}/webhooks/telegram/{entity_id}"
 
-        # Register webhook with Telegram
+        # Generate secret token for webhook verification (prevents fake webhooks)
+        webhook_secret = secrets.token_urlsafe(32)
+
+        # Register webhook with Telegram (including secret_token for verification)
         response = requests.post(
             f"https://api.telegram.org/bot{bot_token}/setWebhook",
-            json={"url": webhook_url}
+            json={
+                "url": webhook_url,
+                "secret_token": webhook_secret
+            }
         )
 
         response.raise_for_status()
@@ -93,7 +105,8 @@ class TelegramIntegration:
 
         return {
             "webhook_url": webhook_url,
-            "bot_username": f"@{bot_username}"
+            "bot_username": f"@{bot_username}",
+            "webhook_secret": webhook_secret
         }
 
 
@@ -186,22 +199,52 @@ class TelegramIntegration:
         return {"status": "ok"}
 
 
+    async def _send_single_message(
+        self,
+        chat_id: int,
+        text: str,
+        bot_token: str
+    ):
+        """Send a single message to Telegram (max 4096 chars)."""
+        response = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text[:4096],  # Enforce Telegram limit
+                "parse_mode": "Markdown"
+            }
+        )
+        return response
+
     async def _send_message(
         self,
         chat_id: int,
         text: str,
         bot_token: str
     ):
-        """Send message to Telegram user."""
+        """Send message to Telegram user with rate limiting and chunking."""
+        # Rate limit check (using first 10 chars of token as identifier)
+        try:
+            from app.db.session import redis_client
+            rate_key = f"telegram_rate:{bot_token[:10]}"
 
-        requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "Markdown"  # Support markdown formatting
-            }
-        )
+            if not validate_rate_limit(rate_key, TELEGRAM_MSG_PER_SEC, 1, redis_client):
+                # Wait briefly and retry once
+                await asyncio.sleep(0.1)
+                if not validate_rate_limit(rate_key, TELEGRAM_MSG_PER_SEC, 1, redis_client):
+                    raise Exception("Telegram rate limit exceeded")
+        except ImportError:
+            pass  # Redis not available, skip rate limiting
+
+        # Split into chunks if message exceeds 4096 chars
+        if len(text) <= 4096:
+            await self._send_single_message(chat_id, text, bot_token)
+        else:
+            chunks = [text[i:i+4096] for i in range(0, len(text), 4096)]
+            for i, chunk in enumerate(chunks):
+                await self._send_single_message(chat_id, chunk, bot_token)
+                if i < len(chunks) - 1:
+                    await asyncio.sleep(0.1)  # Small delay between chunks
 
     async def send_message(
         self,
@@ -213,16 +256,9 @@ class TelegramIntegration:
         Public method to send message to Telegram user.
 
         WHY: Called by webhook handler to send responses
-        HOW: Call Telegram sendMessage API
+        HOW: Call Telegram sendMessage API with rate limiting and chunking
         """
-        requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "Markdown"
-            }
-        )
+        await self._send_message(chat_id, message, bot_token)
 
     async def get_webhook_info(self, bot_token: str) -> dict:
         """

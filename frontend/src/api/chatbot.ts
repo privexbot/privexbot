@@ -507,6 +507,42 @@ export const chatbotApi = {
       throw new Error(handleApiError(error));
     }
   },
+
+  // ========================================
+  // CHANNEL MANAGEMENT
+  // ========================================
+
+  /**
+   * Add Telegram channel to a deployed chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/channels/telegram
+   *
+   * Registers webhook with Telegram and updates deployment config
+   */
+  async addTelegramChannel(
+    chatbotId: string,
+    credentialId: string
+  ): Promise<{
+    status: string;
+    telegram: {
+      bot_username: string;
+      webhook_url: string;
+    };
+  }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        telegram: {
+          bot_username: string;
+          webhook_url: string;
+        };
+      }>(`/chatbots/${chatbotId}/channels/telegram`, {
+        credential_id: credentialId,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
 };
 
 // ========================================
