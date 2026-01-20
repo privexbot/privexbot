@@ -222,7 +222,8 @@ async def chat(
                 user_message=request.message,
                 session_id=session_id,
                 channel_context=channel_context,
-                collected_variables=request.variables
+                collected_variables=request.variables,
+                platform="widget"  # Session isolation: widget vs other platforms
             )
 
         else:  # chatflow
@@ -684,7 +685,8 @@ async def chat_by_slug(
             user_message=request.message,
             session_id=session_id,
             channel_context=channel_context,
-            collected_variables=request.variables
+            collected_variables=request.variables,
+            platform="hosted_page"  # Session isolation: hosted page vs widget
         )
 
     except Exception as e:

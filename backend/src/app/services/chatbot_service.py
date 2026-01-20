@@ -81,7 +81,8 @@ class ChatbotService:
         user_message: str,
         session_id: str,
         channel_context: Optional[dict] = None,
-        collected_variables: Optional[dict] = None
+        collected_variables: Optional[dict] = None,
+        platform: str = "web"
     ) -> dict:
         """
         Process user message through chatbot.
@@ -103,6 +104,9 @@ class ChatbotService:
             session_id: Conversation session ID
             channel_context: Channel-specific data (e.g., Telegram user_id)
             collected_variables: User-collected variables for {{variable}} substitution
+            platform: Deployment channel ("widget", "hosted_page", "telegram", etc.)
+                      Used for session isolation - same session_id on different
+                      platforms will create separate sessions.
 
         RETURNS:
             {
@@ -113,14 +117,15 @@ class ChatbotService:
             }
         """
 
-        # 1. Get or create session
+        # 1. Get or create session (isolated by bot_id, workspace_id, platform)
         session = self.session_service.get_or_create_session(
             db=db,
             bot_type="chatbot",
             bot_id=chatbot.id,
             session_id=session_id,
             workspace_id=chatbot.workspace_id,
-            channel_context=channel_context
+            channel_context=channel_context,
+            platform=platform
         )
 
         # 1.5. Check if this is a consent response (early processing)
