@@ -1239,6 +1239,22 @@ export default function ChatbotDetailPage() {
                         <Badge className="bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-300">Active</Badge>
                       </div>
                     ))}
+
+                    {/* Show Telegram if connected (stored separately from channels array) */}
+                    {chatbot.deployment_config?.telegram?.status === 'success' && (
+                      <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                        <div className="flex items-center gap-3">
+                          <Send className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+                          <div>
+                            <p className="font-medium text-blue-900 dark:text-blue-100 font-manrope">Telegram</p>
+                            <p className="text-xs text-blue-600 dark:text-blue-400 font-manrope">
+                              {chatbot.deployment_config.telegram.bot_username}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
