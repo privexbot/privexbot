@@ -5,11 +5,10 @@ Wraps the native secret-ai-sdk for use with existing chatbot architecture.
 Handles message format conversion and maintains API consistency with OpenAI provider.
 
 WHY: Provides an alternative to the OpenAI-compatible API using the native SDK
-HOW: Converts OpenAI message format to LangChain tuple format, wraps sync SDK in async
+HOW: Converts OpenAI message format to LangChain tuple format, uses native async ainvoke
 """
 
 from typing import List, Dict, Optional
-import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -138,16 +137,13 @@ class SecretAISDKProvider:
 
         logger.debug(f"[SecretAISDKProvider] Invoking with {len(sdk_messages)} messages")
 
-        # Call SDK (synchronous - wrap in executor for async compatibility)
-        loop = asyncio.get_event_loop()
+        # Call SDK using native async method (ainvoke)
+        # WHY: Using ainvoke directly instead of wrapping invoke in run_in_executor
+        # HOW: LangChain's ainvoke is the proper async interface, avoiding event loop conflicts
         try:
-            response = await loop.run_in_executor(
-                None,
-                self._client.invoke,
-                sdk_messages
-            )
+            response = await self._client.ainvoke(sdk_messages)
         except Exception as e:
-            logger.error(f"[SecretAISDKProvider] SDK invoke failed: {e}")
+            logger.error(f"[SecretAISDKProvider] SDK ainvoke failed: {e}")
             raise
 
         # Extract text from response

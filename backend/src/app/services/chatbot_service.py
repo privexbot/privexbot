@@ -197,6 +197,19 @@ class ChatbotService:
                 context = f"CONTINUING FROM YOUR PREVIOUS RESPONSE:\n{last_ai_msg.content}\n\nThe user said '{user_message}' to affirm/continue. Please continue naturally from where you left off."
                 print(f"[ChatbotService] KB=0 + affirmative detected - using previous AI context for continuation")
 
+        # 4c. META-QUESTION FALLBACK: If user asks about previous response
+        # WHY: "how did you know that" shouldn't trigger "I don't have info" when we just provided info
+        # HOW: Detect meta-questions and use previous AI response as context
+        if not context and self._is_meta_question(user_message) and history:
+            last_ai_msg = next(
+                (msg for msg in reversed(history) if msg.role.value == "assistant"),
+                None
+            )
+            if last_ai_msg and len(last_ai_msg.content) > 50:
+                # Use previous response as context - they're asking about it
+                context = f"CONTEXT FROM YOUR PREVIOUS RESPONSE (user is asking about this):\n{last_ai_msg.content}\n\nThe user is asking about how you know this or where it came from. Respond naturally - this information came from your knowledge base. Stay in character and don't refer to yourself in third person."
+                print(f"[ChatbotService] Meta-question detected - using previous response as context")
+
         # 5. Build structured messages for AI (with variable substitution)
         messages = self._build_messages(
             chatbot=chatbot,
@@ -530,6 +543,44 @@ class ChatbotService:
             for pattern in ["yes", "sure", "ok", "please", "go ahead"]:
                 if pattern in message_lower:
                     return True
+
+        return False
+
+    def _is_meta_question(self, message: str) -> bool:
+        """
+        Detect if user is asking about a previous response (meta-question).
+
+        WHY: "how did you know that" shouldn't trigger fresh KB search and
+             shouldn't result in "I don't have information" when we just provided info.
+        HOW: Pattern matching for common meta-question phrases
+
+        RETURNS:
+            True if message appears to be asking about the bot's previous response
+        """
+        message_lower = message.lower().strip()
+
+        meta_patterns = [
+            "how did you know",
+            "how do you know",
+            "where did you get",
+            "where did that come from",
+            "what's your source",
+            "what is your source",
+            "how did you find",
+            "where did you find",
+            "tell me more about what you just said",
+            "can you explain that",
+            "what do you mean",
+            "explain that",
+            "how do you know that",
+            "where is that from",
+            "source?",
+            "how come you know",
+        ]
+
+        for pattern in meta_patterns:
+            if pattern in message_lower:
+                return True
 
         return False
 
@@ -905,7 +956,34 @@ Context:
             # KB is configured but returned NO results - apply empty context grounding
             print(f"[ChatbotService] KB configured but no context found, applying {grounding_mode} mode restrictions")
 
-            if grounding_mode == "strict":
+            # Check if we recently provided substantial information (within last 2 turns)
+            # WHY: Don't say "I don't have info" if we JUST provided info - that's contradictory
+            recently_provided_info = False
+            if history and len(history) >= 2:
+                last_ai_msg = next(
+                    (msg for msg in reversed(history) if msg.role.value == "assistant"),
+                    None
+                )
+                if last_ai_msg and len(last_ai_msg.content) > 100:
+                    recently_provided_info = True
+                    print(f"[ChatbotService] Recently provided substantial info ({len(last_ai_msg.content)} chars) - avoiding contradiction")
+
+            if recently_provided_info:
+                # Don't say "I don't have info" if we just provided info - prevent contradiction
+                system_parts.append("""
+NOTE: Your knowledge base search returned no new results for this specific query,
+but you recently provided information in this conversation.
+
+RULES:
+- If the user is asking about your previous response (follow-up, clarification), respond naturally based on what you already said
+- If they're asking about a genuinely NEW topic not in your KB, you may say you don't have specific information on that new topic
+- NEVER contradict information you already provided in this conversation
+- Stay in character - don't refer to yourself as "the assistant" or analyze your own behavior
+- Speak naturally as if the knowledge is yours
+
+Custom BEHAVIORAL INSTRUCTIONS defined earlier (like "ask for user's name") MUST still be followed.
+""")
+            elif grounding_mode == "strict":
                 system_parts.append("""
 NOTE: No specific match was found in your knowledge base for this query.
 

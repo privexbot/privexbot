@@ -5,10 +5,63 @@ Main entry point for the API server
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
+
+
+class PublicAPICORSMiddleware(BaseHTTPMiddleware):
+    """
+    Custom CORS middleware for public/widget API routes.
+
+    WHY: Widget embeds on customer websites need permissive CORS (any origin).
+         Dashboard/auth API needs restricted CORS (specific origins).
+
+    HOW: Intercepts requests to /api/v1/public/* and adds permissive CORS headers.
+         Other routes fall through to the standard CORSMiddleware.
+    """
+
+    PUBLIC_PATHS = ["/api/v1/public/", "/api/v1/chat/"]  # Widget API paths
+
+    async def dispatch(self, request: Request, call_next):
+        # Check if this is a public/widget API route
+        is_public_route = any(
+            request.url.path.startswith(path) for path in self.PUBLIC_PATHS
+        )
+
+        if not is_public_route:
+            # Let standard CORSMiddleware handle non-public routes
+            return await call_next(request)
+
+        # Handle OPTIONS preflight for public routes
+        if request.method == "OPTIONS":
+            return Response(
+                status_code=200,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Max-Age": "86400",  # Cache preflight for 24 hours
+                },
+            )
+
+        # Process the actual request
+        response = await call_next(request)
+
+        # Override CORS headers for public routes (widget API needs permissive CORS)
+        # Note: credentials=false is required when origin=* per CORS spec
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        # Remove credentials header if set by CORSMiddleware (incompatible with origin=*)
+        if "Access-Control-Allow-Credentials" in response.headers:
+            del response.headers["Access-Control-Allow-Credentials"]
+
+        return response
 
 
 @asynccontextmanager
@@ -47,8 +100,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Configuration
-# Allow frontend to communicate with backend
+# CORS Configuration - Two-tier strategy:
+# 1. Public/Widget API (/api/v1/public/*, /api/v1/chat/*): Allow ALL origins
+#    (widgets embed on any customer website, including file:// for local testing)
+# 2. Dashboard/Auth API: Restricted to configured origins (settings.cors_origins)
+#
+# Middleware order matters: last added runs first on requests.
+# Standard CORSMiddleware handles dashboard routes, PublicAPICORSMiddleware handles widget routes.
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -56,6 +115,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add public API CORS middleware (runs BEFORE standard CORSMiddleware)
+app.add_middleware(PublicAPICORSMiddleware)
 
 # Include API routers
 # WHY: Mount all routes under /api/v1 prefix
