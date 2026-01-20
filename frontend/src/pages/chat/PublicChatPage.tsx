@@ -79,6 +79,14 @@ interface ChatResponse {
 // Generate unique ID for messages
 const generateId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+// Generate unique session ID for hosted page
+// Format: hosted_{timestamp}_{random} - consistent with widget naming pattern
+const generateSessionId = () => `hosted_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
+// Session storage key - consistent naming with widget (privexbot_ prefix)
+const getSessionKey = (workspaceSlug: string, botSlug: string) =>
+  `privexbot_hosted_${workspaceSlug}_${botSlug}`;
+
 // API client for public endpoints (no auth required)
 // URL format: /chat/{workspace_slug}/{bot_slug}
 const publicApi = {
@@ -118,7 +126,7 @@ const publicApi = {
   trackEvent: async (workspaceSlug: string, botSlug: string, eventType: string, data: Record<string, unknown> = {}) => {
     try {
       // Use localStorage for session consistency (same as widget)
-      const sessionKey = `chat_session_${workspaceSlug}_${botSlug}`;
+      const sessionKey = getSessionKey(workspaceSlug, botSlug);
       await fetch(`${config.API_BASE_URL}/public/chat/${workspaceSlug}/${botSlug}/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,10 +240,15 @@ export function PublicChatPage() {
         setChatConfig(data);
 
         // Load existing session from localStorage (consistent with widget)
-        const sessionKey = `chat_session_${workspaceSlug}_${botSlug}`;
+        const sessionKey = getSessionKey(workspaceSlug, botSlug);
         const existingSession = localStorage.getItem(sessionKey);
         if (existingSession) {
           setSessionId(existingSession);
+        } else {
+          // Generate new session ID for first-time users
+          const newSessionId = generateSessionId();
+          setSessionId(newSessionId);
+          localStorage.setItem(sessionKey, newSessionId);
         }
 
         // Check if authentication is required for private bots
@@ -312,7 +325,7 @@ export function PublicChatPage() {
 
     await publicApi.submitLead(workspaceSlug, botSlug, {
       ...leadData,
-      session_id: sessionId || `temp_${Date.now()}`,
+      session_id: sessionId || generateSessionId(),
       referrer: document.referrer,
       user_agent: navigator.userAgent,
       language: navigator.language,
@@ -389,7 +402,7 @@ export function PublicChatPage() {
       // Store session ID for conversation continuity (use localStorage for consistency with widget)
       if (response.session_id) {
         setSessionId(response.session_id);
-        const sessionKey = `chat_session_${workspaceSlug}_${botSlug}`;
+        const sessionKey = getSessionKey(workspaceSlug, botSlug);
         localStorage.setItem(sessionKey, response.session_id);
       }
 

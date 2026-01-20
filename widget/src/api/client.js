@@ -25,15 +25,58 @@ class WidgetAPIClient {
       let sessionId = localStorage.getItem(storageKey);
 
       if (!sessionId) {
-        sessionId = `web_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        // Generate session ID with browser-specific component for uniqueness
+        // Format: widget_{timestamp}_{random}_{browserHash}
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).slice(2, 11);
+        const browserHash = this._getBrowserHash();
+        sessionId = `widget_${timestamp}_${random}_${browserHash}`;
         localStorage.setItem(storageKey, sessionId);
       }
 
       return sessionId;
     } catch (e) {
       // localStorage not available (private browsing, etc.)
-      return `web_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      // Use ephemeral session with browser hash for uniqueness
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).slice(2, 11);
+      const browserHash = this._getBrowserHash();
+      return `widget_${timestamp}_${random}_${browserHash}`;
     }
+  }
+
+  /**
+   * Generate a simple browser fingerprint hash for session uniqueness.
+   * This helps differentiate sessions from different browsers/devices
+   * even if they somehow generate the same timestamp+random combination.
+   *
+   * WHY: Prevents session collision across different browsers
+   * HOW: Hash screen dimensions + timezone offset (stable, non-identifying)
+   */
+  _getBrowserHash() {
+    try {
+      // Use stable browser properties that don't identify the user
+      // but help differentiate browsers/devices
+      const screenInfo = `${screen.width}x${screen.height}`;
+      const timezoneOffset = new Date().getTimezoneOffset();
+      const hint = `${screenInfo}_${timezoneOffset}`;
+      return this._simpleHash(hint);
+    } catch (e) {
+      // Fallback if screen API not available
+      return Math.random().toString(36).slice(2, 8);
+    }
+  }
+
+  /**
+   * Simple string hash function (DJB2 algorithm variant)
+   */
+  _simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36).slice(0, 6);
   }
 
   /**
@@ -258,7 +301,10 @@ class WidgetAPIClient {
    * Reset session (start new conversation)
    */
   resetSession() {
-    const newSessionId = `web_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).slice(2, 11);
+    const browserHash = this._getBrowserHash();
+    const newSessionId = `widget_${timestamp}_${random}_${browserHash}`;
     this.sessionId = newSessionId;
 
     try {

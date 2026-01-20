@@ -27,11 +27,9 @@ class ChatWindow {
     container.appendChild(header);
 
     // Content area (either lead form or messages)
+    // CSS handles all styling via #privexbot-content selector
     const content = document.createElement('div');
     content.id = 'privexbot-content';
-    content.style.flex = '1';
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
 
     if (this.config.leadConfig?.enabled && this.showLeadFormFirst) {
       // Show lead form first
