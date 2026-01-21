@@ -194,6 +194,21 @@ class Settings(BaseSettings):
         description="CDN URL for widget JavaScript"
     )
 
+    # Discord Shared Bot (Platform-wide)
+    # ONE bot token serves ALL customers via guild_id → chatbot_id routing
+    DISCORD_SHARED_BOT_TOKEN: str = Field(
+        default="",
+        description="Discord bot token for shared bot architecture (platform-wide, not per-customer)"
+    )
+    DISCORD_SHARED_APPLICATION_ID: str = Field(
+        default="",
+        description="Discord application/client ID for shared bot"
+    )
+    DISCORD_SHARED_PUBLIC_KEY: str = Field(
+        default="",
+        description="Discord public key for Ed25519 signature verification"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env.dev" if os.getenv("ENVIRONMENT") != "production" else None,
         env_file_encoding="utf-8",

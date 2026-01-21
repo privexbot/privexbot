@@ -16,8 +16,10 @@ import {
   RefreshCw,
   MoreHorizontal,
   CheckCircle,
+  CheckCircle2,
   Clock,
   AlertCircle,
+  AlertTriangle,
   XCircle,
   MessageSquare,
   Users,
@@ -48,6 +50,7 @@ import {
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { credentialApi } from '@/api/credentials';
+import { discordApi, type GuildDeployment, type DiscordChannel } from '@/api/discord';
 import { useApp } from '@/contexts/AppContext';
 import type { Chatbot, ChatMessage, ChatbotAnalytics, APIKeyInfo } from '@/types/chatbot';
 import { Button } from '@/components/ui/button';
@@ -99,6 +102,20 @@ export default function ChatbotDetailPage() {
   // Telegram channel state
   const [telegramModalOpen, setTelegramModalOpen] = useState(false);
   const [telegramConnecting, setTelegramConnecting] = useState(false);
+
+  // Discord channel state (shared bot architecture)
+  const [discordModalOpen, setDiscordModalOpen] = useState(false);
+  const [discordConnecting, setDiscordConnecting] = useState(false);
+  const [discordGuilds, setDiscordGuilds] = useState<GuildDeployment[]>([]);
+  const [discordInviteUrl, setDiscordInviteUrl] = useState<string | null>(null);
+
+  // Discord channel configuration state
+  const [channelConfigModalOpen, setChannelConfigModalOpen] = useState(false);
+  const [channelConfigGuild, setChannelConfigGuild] = useState<GuildDeployment | null>(null);
+  const [availableChannels, setAvailableChannels] = useState<DiscordChannel[]>([]);
+  const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+  const [channelsSaving, setChannelsSaving] = useState(false);
 
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
@@ -514,6 +531,159 @@ export default function ChatbotDetailPage() {
       setTelegramConnecting(false);
     }
   };
+
+  // Load Discord guild deployments for this chatbot
+  const loadDiscordGuilds = async () => {
+    if (!chatbot) return;
+    try {
+      const guilds = await discordApi.listDeployments(chatbot.id);
+      setDiscordGuilds(guilds);
+    } catch (error) {
+      console.error('Failed to load Discord guilds:', error);
+    }
+  };
+
+  // Handle Discord server connection
+  const handleConnectDiscord = async (guildId: string, guildName: string) => {
+    if (!chatbot) return;
+
+    setDiscordConnecting(true);
+    try {
+      // Deploy chatbot to the Discord guild
+      const deployment = await discordApi.deployToGuild({
+        chatbot_id: chatbot.id,
+        guild_id: guildId,
+        guild_name: guildName,
+      });
+
+      // Add to local state
+      setDiscordGuilds(prev => [...prev, deployment]);
+      setDiscordModalOpen(false);
+
+      toast({
+        title: 'Discord Server Connected',
+        description: `Server "${guildName || guildId}" is now connected to this chatbot`,
+      });
+    } catch (error) {
+      console.error('Failed to connect Discord:', error);
+      toast({
+        title: 'Connection Failed',
+        description: error instanceof Error ? error.message : 'Failed to connect Discord server',
+        variant: 'destructive'
+      });
+    } finally {
+      setDiscordConnecting(false);
+    }
+  };
+
+  // Handle Discord guild removal
+  const handleRemoveDiscordGuild = async (guildId: string) => {
+    try {
+      await discordApi.removeDeployment(guildId);
+      setDiscordGuilds(prev => prev.filter(g => g.guild_id !== guildId));
+      toast({
+        title: 'Server Disconnected',
+        description: 'Discord server has been disconnected from this chatbot',
+      });
+    } catch (error) {
+      console.error('Failed to remove Discord guild:', error);
+      toast({
+        title: 'Removal Failed',
+        description: error instanceof Error ? error.message : 'Failed to disconnect Discord server',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Open channel configuration modal for a guild
+  const openChannelConfig = async (guild: GuildDeployment) => {
+    setChannelConfigGuild(guild);
+    setSelectedChannelIds(guild.allowed_channel_ids || []);
+    setChannelConfigModalOpen(true);
+    setChannelsLoading(true);
+
+    try {
+      const data = await discordApi.getGuildChannels(guild.guild_id);
+      setAvailableChannels(data.channels);
+    } catch (error) {
+      console.error('Failed to load channels:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load Discord channels. The bot may not have access.',
+        variant: 'destructive'
+      });
+      setAvailableChannels([]);
+    } finally {
+      setChannelsLoading(false);
+    }
+  };
+
+  // Toggle channel selection
+  const handleToggleChannel = (channelId: string) => {
+    setSelectedChannelIds(prev =>
+      prev.includes(channelId)
+        ? prev.filter(id => id !== channelId)
+        : [...prev, channelId]
+    );
+  };
+
+  // Save channel configuration
+  const handleSaveChannelConfig = async () => {
+    if (!channelConfigGuild) return;
+
+    setChannelsSaving(true);
+    try {
+      const updated = await discordApi.updateDeployment(channelConfigGuild.guild_id, {
+        allowed_channel_ids: selectedChannelIds
+      });
+
+      // Update local state
+      setDiscordGuilds(prev => prev.map(g =>
+        g.guild_id === channelConfigGuild.guild_id
+          ? { ...g, allowed_channel_ids: updated.allowed_channel_ids }
+          : g
+      ));
+
+      toast({
+        title: 'Channels Updated',
+        description: selectedChannelIds.length === 0
+          ? 'Bot will now respond in all channels'
+          : `Bot will respond in ${selectedChannelIds.length} selected channel(s)`,
+      });
+
+      setChannelConfigModalOpen(false);
+    } catch (error) {
+      console.error('Failed to save channel config:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to save channel configuration',
+        variant: 'destructive'
+      });
+    } finally {
+      setChannelsSaving(false);
+    }
+  };
+
+  // Load Discord invite URL on mount
+  useEffect(() => {
+    const loadDiscordInviteUrl = async () => {
+      try {
+        const data = await discordApi.getInviteUrl();
+        setDiscordInviteUrl(data.invite_url);
+      } catch {
+        // Discord integration may not be configured - that's okay
+      }
+    };
+    void loadDiscordInviteUrl();
+  }, []);
+
+  // Load Discord guilds when chatbot changes
+  useEffect(() => {
+    if (chatbot) {
+      void loadDiscordGuilds();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatbot?.id]);
 
   if (isLoading) {
     return (
@@ -1255,6 +1425,55 @@ export default function ChatbotDetailPage() {
                         <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
                       </div>
                     )}
+
+                    {/* Show Discord guilds if connected */}
+                    {discordGuilds.map((guild) => (
+                      <div
+                        key={guild.guild_id}
+                        className="flex items-center justify-between p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                      >
+                        <div className="flex items-center gap-3">
+                          <MessageSquare className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
+                          <div>
+                            <p className="font-medium text-indigo-900 dark:text-indigo-100 font-manrope">Discord</p>
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-manrope">
+                              {guild.guild_name || guild.guild_id}
+                            </p>
+                            {guild.allowed_channel_ids.length > 0 && (
+                              <p className="text-xs text-indigo-500 dark:text-indigo-500 font-manrope">
+                                {guild.allowed_channel_ids.length} channel(s) selected
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={guild.is_active
+                            ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-800/30 dark:text-indigo-300"
+                            : "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400"
+                          }>
+                            {guild.is_active ? 'Active' : 'Paused'}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-indigo-500 hover:text-indigo-700"
+                            onClick={() => openChannelConfig(guild)}
+                            title="Configure Channels"
+                          >
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-500 hover:text-red-500"
+                            onClick={() => handleRemoveDiscordGuild(guild.guild_id)}
+                            title="Remove Server"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -1282,9 +1501,27 @@ export default function ChatbotDetailPage() {
                         </div>
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">Connect your chatbot to Discord servers for community support.</p>
-                      <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
-                        Coming Soon
-                      </Button>
+                      {discordGuilds.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full font-manrope"
+                          onClick={() => setDiscordModalOpen(true)}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Server ({discordGuilds.length} connected)
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full font-manrope"
+                          onClick={() => setDiscordModalOpen(true)}
+                          disabled={!discordInviteUrl}
+                        >
+                          {discordInviteUrl ? 'Connect Server' : 'Not Configured'}
+                        </Button>
+                      )}
                     </div>
 
                     {/* Telegram */}
@@ -1899,6 +2136,123 @@ export default function ChatbotDetailPage() {
             />
           </DialogContent>
         </Dialog>
+
+        {/* Discord Configuration Modal */}
+        <Dialog open={discordModalOpen} onOpenChange={setDiscordModalOpen}>
+          <DialogContent className="bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-xl max-w-md">
+            <DialogHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <MessageSquare className="h-6 w-6 text-indigo-500" />
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900 dark:text-gray-100 font-manrope">Connect Discord Server</DialogTitle>
+                  <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    Add your chatbot to a Discord server
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <DiscordConfigForm
+              inviteUrl={discordInviteUrl}
+              onConnect={handleConnectDiscord}
+              isConnecting={discordConnecting}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* Discord Channel Configuration Modal */}
+        <Dialog open={channelConfigModalOpen} onOpenChange={setChannelConfigModalOpen}>
+          <DialogContent className="bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-xl max-w-md">
+            <DialogHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <Settings className="h-6 w-6 text-indigo-500" />
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900 dark:text-gray-100 font-manrope">
+                    Channel Settings
+                  </DialogTitle>
+                  <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+                    {channelConfigGuild?.guild_name || 'Discord Server'}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <Alert className="bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700">
+                <MessageSquare className="h-4 w-4 text-indigo-500" />
+                <AlertDescription className="text-indigo-800 dark:text-indigo-200 text-sm font-manrope">
+                  Select which channels the bot should respond in. Leave empty to respond in all channels.
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
+                  Channels ({selectedChannelIds.length} selected)
+                </label>
+
+                {channelsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin text-indigo-500" />
+                  </div>
+                ) : availableChannels.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400 font-manrope">
+                    <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No text channels found</p>
+                    <p className="text-xs mt-1">The bot may not have access to view channels</p>
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                    {availableChannels.map((channel) => (
+                      <label
+                        key={channel.id}
+                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                          selectedChannelIds.includes(channel.id)
+                            ? 'bg-indigo-100 dark:bg-indigo-900/30 border border-indigo-300 dark:border-indigo-600'
+                            : 'bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 border border-transparent'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedChannelIds.includes(channel.id)}
+                          onChange={() => handleToggleChannel(channel.id)}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-gray-500 dark:text-gray-400">#</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                          {channel.name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedChannelIds([])}
+                  disabled={channelsLoading || selectedChannelIds.length === 0}
+                  className="font-manrope"
+                >
+                  Clear Selection
+                </Button>
+                <Button
+                  onClick={handleSaveChannelConfig}
+                  disabled={channelsLoading || channelsSaving}
+                  className="font-manrope"
+                >
+                  {channelsSaving ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
@@ -1969,6 +2323,261 @@ function TelegramConfigForm({
           )}
         </Button>
       </DialogFooter>
+    </div>
+  );
+}
+
+// Discord Configuration Form Component
+function DiscordConfigForm({
+  inviteUrl,
+  onConnect,
+  isConnecting
+}: {
+  inviteUrl: string | null;
+  onConnect: (guildId: string, guildName: string) => void;
+  isConnecting: boolean;
+}) {
+  const [selectedGuildId, setSelectedGuildId] = useState('');
+  const [manualGuildId, setManualGuildId] = useState('');
+  const [manualGuildName, setManualGuildName] = useState('');
+  const [availableGuilds, setAvailableGuilds] = useState<{ guild_id: string; guild_name: string; guild_icon: string | null }[]>([]);
+  const [isLoadingGuilds, setIsLoadingGuilds] = useState(true);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Fetch available guilds on mount
+  useEffect(() => {
+    const fetchGuilds = async () => {
+      setIsLoadingGuilds(true);
+      setLoadError(null);
+      try {
+        const response = await discordApi.getAvailableGuilds();
+        setAvailableGuilds(response.guilds);
+        // Check for error in response (e.g., invalid token, missing config)
+        if (response.error) {
+          setLoadError(response.error);
+          setShowManualEntry(true);
+        } else if (response.guilds.length === 0) {
+          setShowManualEntry(true);
+        }
+      } catch (error) {
+        console.error('Failed to fetch available guilds:', error);
+        setLoadError('Failed to load servers. Please try again.');
+        setShowManualEntry(true);
+      } finally {
+        setIsLoadingGuilds(false);
+      }
+    };
+    fetchGuilds();
+  }, []);
+
+  const isValidManualGuildId = manualGuildId.length >= 17 && /^\d+$/.test(manualGuildId);
+  const selectedGuild = availableGuilds.find(g => g.guild_id === selectedGuildId);
+
+  const handleConnect = () => {
+    if (showManualEntry) {
+      onConnect(manualGuildId, manualGuildName);
+    } else if (selectedGuild) {
+      onConnect(selectedGuild.guild_id, selectedGuild.guild_name);
+    }
+  };
+
+  const canConnect = showManualEntry ? isValidManualGuildId : !!selectedGuildId;
+
+  return (
+    <div className="space-y-4">
+      {isLoadingGuilds ? (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw className="h-6 w-6 animate-spin text-indigo-500" />
+          <span className="ml-2 text-sm text-gray-600 dark:text-gray-400 font-manrope">
+            Looking for available servers...
+          </span>
+        </div>
+      ) : availableGuilds.length > 0 && !showManualEntry ? (
+        <>
+          {/* Auto-detected servers */}
+          <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <AlertDescription className="text-green-800 dark:text-green-200 text-sm font-manrope">
+              Found {availableGuilds.length} server{availableGuilds.length > 1 ? 's' : ''} with PrivexBot installed. Select one to connect.
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
+              Select Server
+            </label>
+            <div className="space-y-2">
+              {availableGuilds.map((guild) => (
+                <button
+                  key={guild.guild_id}
+                  onClick={() => setSelectedGuildId(guild.guild_id)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                    selectedGuildId === guild.guild_id
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600'
+                  }`}
+                >
+                  {guild.guild_icon ? (
+                    <img
+                      src={guild.guild_icon}
+                      alt={guild.guild_name}
+                      className="w-10 h-10 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-800 flex items-center justify-center">
+                      <span className="text-indigo-600 dark:text-indigo-300 font-bold text-lg">
+                        {guild.guild_name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex-1 text-left">
+                    <p className="font-medium text-gray-900 dark:text-white font-manrope">
+                      {guild.guild_name}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                      {guild.guild_id}
+                    </p>
+                  </div>
+                  {selectedGuildId === guild.guild_id && (
+                    <CheckCircle2 className="h-5 w-5 text-indigo-500" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => setShowManualEntry(true)}
+              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-manrope"
+            >
+              Don't see your server? Enter ID manually
+            </button>
+          </div>
+
+          <DialogFooter>
+            <Button
+              onClick={handleConnect}
+              disabled={!canConnect || isConnecting}
+              className="w-full font-manrope"
+            >
+              {isConnecting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Connect Server'
+              )}
+            </Button>
+          </DialogFooter>
+        </>
+      ) : (
+        <>
+          {/* Manual entry or no guilds found */}
+          {loadError ? (
+            <Alert className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <AlertDescription className="text-red-800 dark:text-red-200 text-sm font-manrope">
+                <span className="font-medium">Discord Configuration Error</span>
+                <br />
+                {loadError}
+                <br />
+                <a
+                  href="https://discord.com/developers/applications"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-red-600 dark:text-red-400 hover:underline inline-flex items-center gap-1 mt-1"
+                >
+                  Check Discord Developer Portal <ExternalLink className="h-3 w-3" />
+                </a>
+                <span className="block mt-2 text-gray-600 dark:text-gray-400">You can still connect manually below.</span>
+              </AlertDescription>
+            </Alert>
+          ) : availableGuilds.length === 0 ? (
+            <Alert className="bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700">
+              <MessageSquare className="h-4 w-4 text-indigo-500" />
+              <AlertDescription className="text-indigo-800 dark:text-indigo-200 text-sm font-manrope">
+                No available servers found. Add the bot to a Discord server first, or enter Server ID manually.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <button
+              onClick={() => setShowManualEntry(false)}
+              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-manrope flex items-center gap-1"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Back to server list
+            </button>
+          )}
+
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+              Add the PrivexBot to your Discord server, then enter the Server ID below.
+            </p>
+
+            {inviteUrl && (
+              <Button
+                variant="outline"
+                className="w-full font-manrope"
+                onClick={() => window.open(inviteUrl, '_blank')}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Add Bot to Server
+              </Button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
+              Server ID (Guild ID)
+            </label>
+            <Input
+              type="text"
+              value={manualGuildId}
+              onChange={(e) => setManualGuildId(e.target.value.replace(/\D/g, ''))}
+              placeholder="1234567890123456789"
+              className="font-mono"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">
+              Enable Developer Mode in Discord Settings → Right-click server → Copy Server ID
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
+              Server Name (Optional)
+            </label>
+            <Input
+              type="text"
+              value={manualGuildName}
+              onChange={(e) => setManualGuildName(e.target.value)}
+              placeholder="My Discord Server"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">
+              For display purposes in the dashboard
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              onClick={handleConnect}
+              disabled={!canConnect || isConnecting}
+              className="w-full font-manrope"
+            >
+              {isConnecting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Connect Server'
+              )}
+            </Button>
+          </DialogFooter>
+        </>
+      )}
     </div>
   );
 }

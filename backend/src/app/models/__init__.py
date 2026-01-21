@@ -49,6 +49,9 @@ from app.models.credential import Credential, CredentialType
 # Lead capture
 from app.models.lead import Lead, LeadStatus
 
+# Discord integration (shared bot architecture)
+from app.models.discord_guild_deployment import DiscordGuildDeployment
+
 __all__ = [
     # Core
     "User",
@@ -93,4 +96,6 @@ __all__ = [
     # Lead capture
     "Lead",
     "LeadStatus",
+    # Discord integration (shared bot)
+    "DiscordGuildDeployment",
 ]

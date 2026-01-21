@@ -198,6 +198,13 @@ class Workspace(Base):
     credentials = relationship("Credential", back_populates="workspace", cascade="all, delete-orphan")
     leads = relationship("Lead", back_populates="workspace", cascade="all, delete-orphan")
 
+    # Discord guild deployments (shared bot architecture)
+    discord_guild_deployments = relationship(
+        "DiscordGuildDeployment",
+        back_populates="workspace",
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<Workspace(id={self.id}, name={self.name}, org_id={self.organization_id})>"
 

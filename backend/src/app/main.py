@@ -10,7 +10,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
 
 
@@ -241,6 +241,13 @@ app.include_router(
     beta.router,
     prefix=settings.API_V1_PREFIX,
     tags=["beta"]
+)
+
+# Discord guild management routes (shared bot architecture)
+app.include_router(
+    discord_guilds.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["discord"]
 )
 
 # Webhook routes (Telegram, Discord, etc.)

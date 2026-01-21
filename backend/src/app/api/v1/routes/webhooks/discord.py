@@ -26,7 +26,9 @@ from app.db.session import get_db
 from app.integrations.discord_integration import discord_integration
 from app.services.chatbot_service import chatbot_service
 from app.services.credential_service import credential_service
+from app.services.discord_guild_service import discord_guild_service
 from app.models.credential import Credential
+from app.core.config import settings
 
 # Chatflow is optional - may not be implemented yet
 try:
@@ -357,3 +359,212 @@ async def get_discord_commands(
     )
 
     return {"commands": commands}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHARED BOT ARCHITECTURE - Routes messages to correct chatbot based on guild_id
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/shared")
+async def discord_shared_webhook(
+    request: Request,
+    x_signature_ed25519: Optional[str] = Header(None),
+    x_signature_timestamp: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Shared Discord bot webhook - routes messages to correct chatbot based on guild_id.
+
+    WHY: ONE Discord bot serves ALL customers
+    HOW: guild_id → DiscordGuildDeployment → chatbot_id → process message
+
+    ARCHITECTURE:
+    1. Shared bot receives message with guild_id
+    2. Lookup DiscordGuildDeployment by guild_id
+    3. Route to correct chatbot for AI processing
+    4. Return response to Discord
+
+    URL:
+        POST /webhooks/discord/shared
+
+    FLOW:
+        User types in Discord → Shared bot receives →
+        Lookup guild deployment → Route to chatbot →
+        AI generates response → Return to Discord
+
+    RETURNS:
+        Discord interaction response
+    """
+    # Get raw body for signature verification
+    body = await request.body()
+
+    # Verify signature using shared bot public key
+    public_key = settings.DISCORD_SHARED_PUBLIC_KEY
+
+    if public_key and x_signature_ed25519 and x_signature_timestamp:
+        is_valid = discord_integration.verify_signature(
+            body=body,
+            signature=x_signature_ed25519,
+            timestamp=x_signature_timestamp,
+            public_key=public_key
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid signature"
+            )
+
+    # Parse interaction
+    interaction = await request.json()
+    interaction_type = interaction.get("type")
+
+    # Type 1: PING (Discord verification)
+    if interaction_type == 1:
+        return {"type": 1}
+
+    # Extract guild_id
+    guild_id = interaction.get("guild_id")
+    if not guild_id:
+        # DM not supported in shared bot architecture
+        return {
+            "type": 4,
+            "data": {
+                "content": "Direct messages are not supported. Please use me in a server.",
+                "flags": 64  # Ephemeral
+            }
+        }
+
+    # Lookup chatbot for this guild
+    result = discord_guild_service.get_chatbot_for_guild(db, guild_id)
+
+    if not result:
+        return {
+            "type": 4,
+            "data": {
+                "content": "This bot is not configured for this server. Please contact your administrator.",
+                "flags": 64  # Ephemeral
+            }
+        }
+
+    chatbot, deployment = result
+
+    # Check channel restrictions
+    channel_id = interaction.get("channel_id")
+    if not deployment.check_channel_access(channel_id):
+        # Silent ignore for restricted channels
+        return {
+            "type": 4,
+            "data": {
+                "content": "",
+                "flags": 64  # Ephemeral empty
+            }
+        }
+
+    # Extract user info
+    member = interaction.get("member", {})
+    user = member.get("user", {}) or interaction.get("user", {})
+    user_id = user.get("id")
+    username = user.get("username")
+
+    # Extract message content based on interaction type
+    if interaction_type == 2:  # APPLICATION_COMMAND (slash command)
+        data = interaction.get("data", {})
+        command_name = data.get("name", "")
+        options = data.get("options", [])
+
+        # Handle different command structures
+        if command_name == "ask" and options:
+            # /ask command with message option
+            message_content = options[0].get("value", "")
+        elif command_name == "chat" and options:
+            # /chat command with message option
+            message_content = options[0].get("value", "")
+        elif options:
+            # Generic: first option value
+            message_content = options[0].get("value", "")
+        else:
+            message_content = f"/{command_name}"
+
+    elif interaction_type == 3:  # MESSAGE_COMPONENT (button, select menu)
+        data = interaction.get("data", {})
+        message_content = data.get("custom_id", "")
+
+    else:
+        message_content = ""
+
+    if not message_content:
+        return {
+            "type": 4,
+            "data": {
+                "content": "Please provide a message.",
+                "flags": 64  # Ephemeral
+            }
+        }
+
+    # Generate session ID (unique per user in channel)
+    session_id = f"discord_{guild_id}_{channel_id}_{user_id}"
+
+    # Update guild metadata (track last message)
+    discord_guild_service.update_guild_metadata(
+        db=db,
+        guild_id=guild_id,
+        metadata_updates={
+            "last_message_at": interaction.get("timestamp"),
+            "total_messages": (deployment.guild_metadata or {}).get("total_messages", 0) + 1
+        }
+    )
+
+    # Process message through chatbot service
+    response = await chatbot_service.process_message(
+        db=db,
+        chatbot=chatbot,
+        user_message=message_content,
+        session_id=session_id,
+        channel_context={
+            "platform": "discord",
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "user_id": user_id,
+            "username": username,
+            "guild_name": deployment.guild_name
+        }
+    )
+
+    # Truncate response to Discord's 2000 char limit
+    response_text = response.get("response", "")[:2000]
+
+    # Return Discord interaction response
+    return {
+        "type": 4,  # CHANNEL_MESSAGE_WITH_SOURCE
+        "data": {
+            "content": response_text
+        }
+    }
+
+
+@router.get("/shared/invite-url")
+async def get_shared_bot_invite_url():
+    """
+    Get the invite URL for the shared Discord bot.
+
+    WHY: Users need to add the shared bot to their server
+    HOW: Generate OAuth2 URL with appropriate permissions
+
+    RETURNS:
+        {
+            "invite_url": "https://discord.com/api/oauth2/authorize?...",
+            "application_id": "123456789"
+        }
+    """
+    try:
+        invite_url = discord_guild_service.generate_invite_url()
+        return {
+            "invite_url": invite_url,
+            "application_id": settings.DISCORD_SHARED_APPLICATION_ID
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )

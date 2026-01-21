@@ -323,6 +323,14 @@ class Chatbot(Base):
     creator = relationship("User", foreign_keys=[created_by])
     archiver = relationship("User", foreign_keys=[archived_by])
 
+    # Discord guild deployments (shared bot architecture)
+    # Multiple guilds can deploy to same chatbot (many-to-one)
+    discord_guild_deployments = relationship(
+        "DiscordGuildDeployment",
+        back_populates="chatbot",
+        cascade="all, delete-orphan"
+    )
+
     # ═══════════════════════════════════════════════════════════════
     # INDEXES
     # ═══════════════════════════════════════════════════════════════
