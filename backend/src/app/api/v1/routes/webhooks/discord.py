@@ -568,3 +568,109 @@ async def get_shared_bot_invite_url():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+@router.post("/shared/register-commands")
+async def register_shared_bot_commands():
+    """
+    Register slash commands for the shared Discord bot.
+
+    WHY: Enable /ask and /chat commands for shared bot architecture
+    HOW: Call Discord API with shared bot credentials
+
+    IMPORTANT: This is a one-time setup operation. Call this after:
+    1. Setting DISCORD_SHARED_BOT_TOKEN and DISCORD_SHARED_APPLICATION_ID in .env
+    2. Setting "Interactions Endpoint URL" in Discord Developer Portal to:
+       https://your-domain.com/api/v1/webhooks/discord/shared
+
+    Commands registered:
+    - /ask <message> - Ask the chatbot a question
+    - /chat <message> - Chat with the chatbot
+
+    RETURNS:
+        {
+            "status": "registered",
+            "commands": [...],
+            "discord_response": {...}
+        }
+    """
+    bot_token = settings.DISCORD_SHARED_BOT_TOKEN
+    application_id = settings.DISCORD_SHARED_APPLICATION_ID
+
+    if not bot_token or not application_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Shared Discord bot not configured. Set DISCORD_SHARED_BOT_TOKEN and DISCORD_SHARED_APPLICATION_ID in environment."
+        )
+
+    # Default slash commands for shared bot
+    commands = [
+        {
+            "name": "ask",
+            "description": "Ask the chatbot a question",
+            "type": 1,  # CHAT_INPUT
+            "options": [
+                {
+                    "name": "message",
+                    "description": "Your question or message",
+                    "type": 3,  # STRING
+                    "required": True
+                }
+            ]
+        },
+        {
+            "name": "chat",
+            "description": "Chat with the chatbot",
+            "type": 1,  # CHAT_INPUT
+            "options": [
+                {
+                    "name": "message",
+                    "description": "Your message",
+                    "type": 3,  # STRING
+                    "required": True
+                }
+            ]
+        }
+    ]
+
+    result = await discord_integration.register_global_commands(
+        bot_token=bot_token,
+        application_id=application_id,
+        commands=commands
+    )
+
+    return {
+        "status": "registered",
+        "commands": commands,
+        "discord_response": result
+    }
+
+
+@router.get("/shared/commands")
+async def get_shared_bot_commands():
+    """
+    Get currently registered commands for the shared Discord bot.
+
+    WHY: View current commands for debugging/verification
+    HOW: Query Discord API with shared bot credentials
+
+    RETURNS:
+        {
+            "commands": [...]
+        }
+    """
+    bot_token = settings.DISCORD_SHARED_BOT_TOKEN
+    application_id = settings.DISCORD_SHARED_APPLICATION_ID
+
+    if not bot_token or not application_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Shared Discord bot not configured. Set DISCORD_SHARED_BOT_TOKEN and DISCORD_SHARED_APPLICATION_ID in environment."
+        )
+
+    commands = await discord_integration.get_global_commands(
+        bot_token=bot_token,
+        application_id=application_id
+    )
+
+    return {"commands": commands}
