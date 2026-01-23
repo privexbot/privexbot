@@ -50,8 +50,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = Field(
-        default="postgresql://privexbot:privexbot_dev@localhost:5432/privexbot_dev",
-        description="PostgreSQL connection string"
+        default="postgresql+psycopg2://privexbot:privexbot_dev@localhost:5432/privexbot_dev",
+        description="PostgreSQL connection string (explicitly uses psycopg2 driver)"
     )
 
     # Redis

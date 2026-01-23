@@ -18,7 +18,7 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
+      - DATABASE_URL=postgresql+psycopg2://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
       - TIKA_URL=http://tika:9998
@@ -67,7 +67,7 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
+      - DATABASE_URL=postgresql+psycopg2://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
@@ -114,7 +114,7 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
+      - DATABASE_URL=postgresql+psycopg2://privexbot:${POSTGRES_PASSWORD}@postgres:5432/privexbot
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
       - CELERY_BROKER_URL=redis://redis:6379/1

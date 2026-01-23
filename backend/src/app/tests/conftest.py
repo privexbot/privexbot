@@ -20,7 +20,7 @@ from app.core.config import settings
 # WHY: SQLite doesn't support UUID type, so we use PostgreSQL
 # HOW: Connect to PostgreSQL instance running in Docker
 # NOTE: hostname is 'postgres' (Docker service name), not 'localhost'
-SQLALCHEMY_DATABASE_URL = "postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev"
+SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://privexbot:privexbot_dev@postgres:5432/privexbot_dev"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
