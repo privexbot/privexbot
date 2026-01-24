@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
+import { config } from "@/config/env";
 import {
   ChatbotCreationStep,
   DeploymentChannel,
@@ -2016,7 +2017,7 @@ function Step5Deploy({
     apiKey: '${deploymentResult.api_key}'
   };
 </script>
-<script src="https://cdn.privexbot.com/widget.js" async></script>`
+<script src="${config.WIDGET_CDN_URL}/widget.js" async></script>`
     : "";
 
   const copyEmbed = () => {

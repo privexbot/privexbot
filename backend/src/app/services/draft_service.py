@@ -892,7 +892,7 @@ class UnifiedDraftService:
     def _generate_embed_code(self, entity_id: UUID, api_key: str) -> str:
         """Generate embed code for website widget."""
 
-        widget_cdn_url = getattr(settings, "WIDGET_CDN_URL", "https://cdn.privexbot.com")
+        widget_cdn_url = settings.WIDGET_CDN_URL
 
         return f"""<script>
   window.privexbotConfig = {{

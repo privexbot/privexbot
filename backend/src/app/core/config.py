@@ -60,6 +60,18 @@ class Settings(BaseSettings):
         description="Redis connection for caching and sessions"
     )
 
+    # Qdrant Vector Database
+    QDRANT_URL: str = Field(
+        default="http://qdrant:6333",
+        description="Qdrant vector database URL"
+    )
+
+    # Tika Document Parsing
+    TIKA_URL: str = Field(
+        default="http://tika:9998",
+        description="Apache Tika server URL for document parsing"
+    )
+
     # JWT/Security
     SECRET_KEY: str = Field(
         default="dev-secret-key-change-in-production",
@@ -152,6 +164,12 @@ class Settings(BaseSettings):
     SECRETVM: str = Field(
         default="false",
         description="Set to 'true' when running on SecretVM"
+    )
+
+    # Akash ML (decentralized AI fallback)
+    AKASHML_API_KEY: str = Field(
+        default="",
+        description="Akash ML API key for decentralized AI inference (fallback provider)"
     )
 
     # Ollama (local inference for development)
