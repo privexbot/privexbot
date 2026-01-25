@@ -109,6 +109,14 @@ from app.models.widget_event import WidgetEvent  # noqa
 # Credentials (encrypted API keys/tokens for chatflow nodes)
 from app.models.credential import Credential  # noqa
 
-# NOTE: The following models are still pseudocode and not imported yet:
-# from app.models.chatflow import Chatflow  # noqa
-# from app.models.lead import Lead  # noqa
+# Chatflow model (advanced drag-and-drop workflow bots)
+from app.models.chatflow import Chatflow  # noqa
+
+# Lead capture model
+from app.models.lead import Lead  # noqa
+
+# Discord guild deployments (shared bot architecture)
+from app.models.discord_guild_deployment import DiscordGuildDeployment  # noqa
+
+# Slug history (for redirect support when slugs change)
+from app.models.slug_history import SlugHistory  # noqa

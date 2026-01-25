@@ -15,6 +15,7 @@ HOW:
 """
 
 from fastapi import APIRouter, HTTPException, Header, Depends, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -23,6 +24,7 @@ from typing import Optional, Any, Tuple
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_db
+from app.services.slug_service import slug_service
 
 
 router = APIRouter(prefix="/public", tags=["public"])
@@ -521,8 +523,9 @@ async def track_widget_event(
 async def get_hosted_page_config(
     workspace_slug: str,
     bot_slug: str,
+    request: Request,
     db: Session = Depends(get_db)
-) -> HostedPageConfigResponse:
+):
     """
     Get chatbot configuration by workspace and bot slugs for hosted page.
 
@@ -533,27 +536,36 @@ async def get_hosted_page_config(
     Example: /chat/acme-corp/support-bot
 
     This is used by the public /chat/{workspace_slug}/{bot_slug} frontend page.
-    """
-    from app.models.chatbot import Chatbot, ChatbotStatus
-    from app.models.workspace import Workspace
 
-    # Find workspace by slug
-    workspace = db.query(Workspace).filter(
-        Workspace.slug == workspace_slug
-    ).first()
+    Redirect behavior:
+    - If old workspace or chatbot slug is used, returns 301 redirect to current URL
+    - This maintains backward compatibility when slugs are updated
+    """
+    from app.models.chatbot import ChatbotStatus
+
+    # Use slug service to resolve slugs (handles history/redirects)
+    workspace, bot, ws_redirect, bot_redirect = slug_service.resolve_chatbot_slug(
+        db=db,
+        workspace_slug=workspace_slug,
+        chatbot_slug=bot_slug
+    )
 
     if not workspace:
         raise HTTPException(404, "Workspace not found")
 
-    # Find chatbot by slug within the workspace
-    bot = db.query(Chatbot).filter(
-        Chatbot.workspace_id == workspace.id,
-        Chatbot.slug == bot_slug,
-        Chatbot.status == ChatbotStatus.ACTIVE
-    ).first()
-
     if not bot:
         raise HTTPException(404, "Chatbot not found")
+
+    # Check if bot is active
+    if bot.status != ChatbotStatus.ACTIVE:
+        raise HTTPException(404, "Chatbot not found")
+
+    # If redirect is needed, return 301
+    if ws_redirect or bot_redirect:
+        new_ws_slug = ws_redirect or workspace_slug
+        new_bot_slug = bot_redirect or bot_slug
+        redirect_url = f"/api/v1/public/chat/{new_ws_slug}/{new_bot_slug}/config"
+        return RedirectResponse(url=redirect_url, status_code=301)
 
     # Extract configurations
     branding = bot.branding_config or {}
@@ -614,27 +626,29 @@ async def chat_by_slug(
     For private bots:
     - Requires API key in Authorization header: "Bearer sk_live_..."
     - Returns 401 if no valid API key provided
+
+    Redirect behavior:
+    - For POST requests, we don't redirect - we just use the resolved entities
+    - This ensures chat messages are processed even with old slugs
     """
-    from app.models.chatbot import Chatbot, ChatbotStatus
-    from app.models.workspace import Workspace
+    from app.models.chatbot import ChatbotStatus
     from app.models.api_key import APIKey
 
-    # Find workspace by slug
-    workspace = db.query(Workspace).filter(
-        Workspace.slug == workspace_slug
-    ).first()
+    # Use slug service to resolve slugs (handles history/redirects)
+    workspace, bot, _, _ = slug_service.resolve_chatbot_slug(
+        db=db,
+        workspace_slug=workspace_slug,
+        chatbot_slug=bot_slug
+    )
 
     if not workspace:
         raise HTTPException(404, "Workspace not found")
 
-    # Find chatbot by slug within the workspace
-    bot = db.query(Chatbot).filter(
-        Chatbot.workspace_id == workspace.id,
-        Chatbot.slug == bot_slug,
-        Chatbot.status == ChatbotStatus.ACTIVE
-    ).first()
-
     if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    # Check if bot is active
+    if bot.status != ChatbotStatus.ACTIVE:
         raise HTTPException(404, "Chatbot not found")
 
     # For private bots, require valid API key
@@ -718,26 +732,26 @@ async def track_hosted_page_event(
 
     URL format: /chat/{workspace_slug}/{bot_slug}/events
     Example: /chat/acme-corp/support-bot/events
-    """
-    from app.models.chatbot import Chatbot, ChatbotStatus
-    from app.models.workspace import Workspace
 
-    # Find workspace by slug
-    workspace = db.query(Workspace).filter(
-        Workspace.slug == workspace_slug
-    ).first()
+    Note: Uses slug resolution with history support but doesn't redirect
+    """
+    from app.models.chatbot import ChatbotStatus
+
+    # Use slug service to resolve slugs (handles history/redirects)
+    workspace, bot, _, _ = slug_service.resolve_chatbot_slug(
+        db=db,
+        workspace_slug=workspace_slug,
+        chatbot_slug=bot_slug
+    )
 
     if not workspace:
         raise HTTPException(404, "Workspace not found")
 
-    # Find chatbot by slug within the workspace
-    bot = db.query(Chatbot).filter(
-        Chatbot.workspace_id == workspace.id,
-        Chatbot.slug == bot_slug,
-        Chatbot.status == ChatbotStatus.ACTIVE
-    ).first()
-
     if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    # Check if bot is active
+    if bot.status != ChatbotStatus.ACTIVE:
         raise HTTPException(404, "Chatbot not found")
 
     # Store event
@@ -791,28 +805,28 @@ async def capture_lead_hosted_page(
 
     URL format: /chat/{workspace_slug}/{bot_slug}/leads
     Example: /chat/acme-corp/support-bot/leads
+
+    Note: Uses slug resolution with history support but doesn't redirect
     """
-    from app.models.chatbot import Chatbot, ChatbotStatus
-    from app.models.workspace import Workspace
+    from app.models.chatbot import ChatbotStatus
     from app.services.lead_capture_service import lead_capture_service
     from app.services.chatbot_analytics_service import chatbot_analytics_service
 
-    # Find workspace by slug
-    workspace = db.query(Workspace).filter(
-        Workspace.slug == workspace_slug
-    ).first()
+    # Use slug service to resolve slugs (handles history/redirects)
+    workspace, bot, _, _ = slug_service.resolve_chatbot_slug(
+        db=db,
+        workspace_slug=workspace_slug,
+        chatbot_slug=bot_slug
+    )
 
     if not workspace:
         raise HTTPException(404, "Workspace not found")
 
-    # Find chatbot by slug within the workspace
-    bot = db.query(Chatbot).filter(
-        Chatbot.workspace_id == workspace.id,
-        Chatbot.slug == bot_slug,
-        Chatbot.status == ChatbotStatus.ACTIVE
-    ).first()
-
     if not bot:
+        raise HTTPException(404, "Chatbot not found")
+
+    # Check if bot is active
+    if bot.status != ChatbotStatus.ACTIVE:
         raise HTTPException(404, "Chatbot not found")
 
     # Only allow for public bots (private bots require API key flow)

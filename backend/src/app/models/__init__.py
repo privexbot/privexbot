@@ -52,6 +52,9 @@ from app.models.lead import Lead, LeadStatus
 # Discord integration (shared bot architecture)
 from app.models.discord_guild_deployment import DiscordGuildDeployment
 
+# Slug history (for redirect support when slugs change)
+from app.models.slug_history import SlugHistory
+
 __all__ = [
     # Core
     "User",
@@ -98,4 +101,6 @@ __all__ = [
     "LeadStatus",
     # Discord integration (shared bot)
     "DiscordGuildDeployment",
+    # Slug history
+    "SlugHistory",
 ]

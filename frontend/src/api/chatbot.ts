@@ -513,6 +513,36 @@ export const chatbotApi = {
   // ========================================
 
   /**
+   * Update chatbot slug (URL identifier)
+   * PATCH /api/v1/chatbots/{chatbot_id}/slug
+   *
+   * Updates the URL slug for the chatbot. Old slugs will redirect to the new one.
+   */
+  async updateSlug(
+    chatbotId: string,
+    newSlug: string
+  ): Promise<{
+    success: boolean;
+    old_slug: string | null;
+    new_slug: string;
+    redirect_active: boolean;
+  }> {
+    try {
+      const response = await apiClient.patch<{
+        success: boolean;
+        old_slug: string | null;
+        new_slug: string;
+        redirect_active: boolean;
+      }>(`/chatbots/${chatbotId}/slug`, {
+        new_slug: newSlug,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
    * Add Telegram channel to a deployed chatbot
    * POST /api/v1/chatbots/{chatbot_id}/channels/telegram
    *

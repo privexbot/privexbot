@@ -59,6 +59,32 @@ from app.services.tenant_service import (
     get_workspace_members,
     verify_organization_permission,
 )
+from app.services.slug_service import slug_service
+from pydantic import BaseModel, Field
+
+
+# ============================================================================
+# SLUG UPDATE SCHEMAS
+# ============================================================================
+
+class UpdateSlugRequest(BaseModel):
+    """Request model for updating workspace/chatbot slug."""
+    new_slug: str = Field(
+        ...,
+        min_length=2,
+        max_length=100,
+        description="New URL-friendly slug (lowercase letters, numbers, hyphens)"
+    )
+
+
+class UpdateSlugResponse(BaseModel):
+    """Response model for slug update."""
+    success: bool
+    old_slug: Optional[str]
+    new_slug: str
+    redirect_active: bool
+    message: Optional[str] = None
+
 
 router = APIRouter()
 
@@ -344,6 +370,87 @@ async def delete_workspace_endpoint(
     )
 
     return None
+
+
+# ============================================================================
+# SLUG MANAGEMENT
+# ============================================================================
+
+@router.patch("/{org_id}/workspaces/{workspace_id}/slug", response_model=UpdateSlugResponse)
+async def update_workspace_slug(
+    org_id: UUID,
+    workspace_id: UUID,
+    request: UpdateSlugRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update workspace slug.
+
+    This allows changing the URL-friendly identifier for the workspace.
+    The old slug will continue to work via redirect (301 Moved Permanently).
+
+    Requires workspace admin role or organization admin/owner.
+
+    Validation rules:
+    - 2-100 characters
+    - Lowercase letters, numbers, and hyphens only
+    - Must start and end with letter or number
+    - Cannot use reserved words (api, admin, public, etc.)
+    - Must be globally unique
+    - Cannot reuse recently deleted slugs (30-day cooldown)
+    """
+    # First verify workspace belongs to organization and user has access
+    workspace = get_workspace(
+        db=db,
+        workspace_id=workspace_id,
+        user_id=current_user.id
+    )
+
+    if workspace.organization_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found in specified organization"
+        )
+
+    # Check user has admin permissions
+    from app.models.workspace_member import WorkspaceMember
+    from app.models.organization_member import OrganizationMember
+
+    has_permission = False
+
+    # Check workspace-level permission
+    ws_member = db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == current_user.id
+    ).first()
+
+    if ws_member and ws_member.role == "admin":
+        has_permission = True
+    else:
+        # Check org-level permission
+        org_member = db.query(OrganizationMember).filter(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.user_id == current_user.id
+        ).first()
+        if org_member and org_member.role in ["owner", "admin"]:
+            has_permission = True
+
+    if not has_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin permission required to update workspace slug"
+        )
+
+    # Update slug using service
+    result = slug_service.update_workspace_slug(
+        db=db,
+        workspace_id=workspace_id,
+        new_slug=request.new_slug,
+        changed_by=current_user.id
+    )
+
+    return UpdateSlugResponse(**result)
 
 
 # ============================================================================

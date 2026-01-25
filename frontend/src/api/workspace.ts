@@ -28,6 +28,15 @@ import type {
 
 const API_BASE_URL = config.API_BASE_URL;
 
+/** Response type for workspace slug update */
+interface UpdateSlugResponse {
+  success: boolean;
+  old_slug: string | null;
+  new_slug: string;
+  redirect_active: boolean;
+  message?: string;
+}
+
 class WorkspaceApiClient {
   private client: AxiosInstance;
 
@@ -176,6 +185,24 @@ class WorkspaceApiClient {
     await this.client.delete(
       `/orgs/${orgId}/workspaces/${workspaceId}/members/${memberId}`
     );
+  }
+
+  /**
+   * Update workspace slug
+   *
+   * Changes the URL-friendly identifier for the workspace.
+   * The old slug will continue to work via redirect (301 Moved Permanently).
+   */
+  async updateSlug(
+    orgId: string,
+    workspaceId: string,
+    newSlug: string
+  ): Promise<UpdateSlugResponse> {
+    const response = await this.client.patch<UpdateSlugResponse>(
+      `/orgs/${orgId}/workspaces/${workspaceId}/slug`,
+      { new_slug: newSlug }
+    );
+    return response.data;
   }
 }
 

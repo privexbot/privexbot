@@ -455,11 +455,12 @@ def create_organization(
     )
     db.add(org_member)
 
-    # Create default workspace with unique slug
+    # Create default workspace with unique slug based on organization name
+    # This gives more meaningful URLs like /chat/acme-corp/my-bot instead of /chat/default/my-bot
     default_workspace = Workspace(
         organization_id=org.id,
         name="Default",
-        slug=generate_unique_workspace_slug("Default", db),
+        slug=generate_unique_workspace_slug(name, db),  # Use org name for slug
         description="Default workspace for organization",
         is_default=True,
         created_by=creator_id

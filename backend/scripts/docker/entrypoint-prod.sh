@@ -264,7 +264,7 @@ from alembic.script import ScriptDirectory
 config = Config('alembic.ini')
 script = ScriptDirectory.from_config(config)
 print(script.get_current_head())
-" 2>/dev/null || echo "e5c1c1c3f41b")
+" 2>/dev/null || echo "b1a30eec0e64")
 
     echo "📌 Using latest revision: $LATEST_REVISION"
     alembic stamp head || {

@@ -32,6 +32,7 @@ from app.models.chatbot import Chatbot, ChatbotStatus
 from app.models.knowledge_base import KnowledgeBase
 from app.services.draft_service import draft_service, DraftType
 from app.services.chatbot_service import chatbot_service
+from app.services.slug_service import slug_service
 
 # Type alias for the user context tuple
 from typing import Tuple
@@ -129,6 +130,25 @@ class DeployChatbotRequest(BaseModel):
 class AddTelegramChannelRequest(BaseModel):
     """Request model for adding Telegram channel to deployed chatbot."""
     credential_id: str = Field(..., description="ID of the credential containing bot token")
+
+
+class UpdateSlugRequest(BaseModel):
+    """Request model for updating chatbot slug."""
+    new_slug: str = Field(
+        ...,
+        min_length=2,
+        max_length=100,
+        description="New URL-friendly slug (lowercase letters, numbers, hyphens)"
+    )
+
+
+class UpdateSlugResponse(BaseModel):
+    """Response model for slug update."""
+    success: bool
+    old_slug: Optional[str]
+    new_slug: str
+    redirect_active: bool
+    message: Optional[str] = None
 
 
 class ChatbotDraftResponse(BaseModel):
@@ -795,6 +815,62 @@ async def update_chatbot(
     db.refresh(chatbot)
 
     return {"status": "updated", "chatbot_id": str(chatbot.id)}
+
+
+@router.patch("/{chatbot_id}/slug", response_model=UpdateSlugResponse)
+async def update_chatbot_slug_endpoint(
+    chatbot_id: UUID,
+    request: UpdateSlugRequest,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Update chatbot slug.
+
+    This allows changing the URL-friendly identifier for the chatbot.
+    The old slug will continue to work via redirect (301 Moved Permanently).
+
+    The chatbot slug must be unique within its workspace.
+
+    Validation rules:
+    - 2-100 characters
+    - Lowercase letters, numbers, and hyphens only
+    - Must start and end with letter or number
+    - Cannot use reserved words (api, admin, public, etc.)
+    - Must be unique within the workspace
+    - Cannot reuse recently deleted slugs (30-day cooldown)
+    """
+    current_user, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Update slug using service
+    result = slug_service.update_chatbot_slug(
+        db=db,
+        chatbot_id=chatbot_id,
+        new_slug=request.new_slug,
+        changed_by=current_user.id
+    )
+
+    return UpdateSlugResponse(**result)
 
 
 @router.post("/{chatbot_id}/channels/telegram", response_model=dict)

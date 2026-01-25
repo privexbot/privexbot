@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
@@ -47,10 +47,14 @@ import {
   QrCode,
   Check,
   EyeOff,
+  Edit2,
+  X,
+  Loader2,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { credentialApi } from '@/api/credentials';
 import { discordApi, type GuildDeployment, type DiscordChannel } from '@/api/discord';
+import { workspaceApi } from '@/api/workspace';
 import { useApp } from '@/contexts/AppContext';
 import type { Chatbot, ChatMessage, ChatbotAnalytics, APIKeyInfo } from '@/types/chatbot';
 import { Button } from '@/components/ui/button';
@@ -67,11 +71,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 export default function ChatbotDetailPage() {
   const { chatbotId } = useParams<{ chatbotId: string }>();
   const navigate = useNavigate();
-  const { currentWorkspace, workspaces } = useApp();
+  const [searchParams] = useSearchParams();
+  const { currentWorkspace, currentOrganization, workspaces } = useApp();
+
+  // Get initial tab from URL parameter, default to 'overview'
+  const initialTab = searchParams.get('tab') ?? 'overview';
+  const validTabs = ['overview', 'test', 'embed', 'deployment', 'hosted-page', 'settings', 'analytics'];
+  const defaultTab = validTabs.includes(initialTab) ? initialTab : 'overview';
 
   const [chatbot, setChatbot] = useState<Chatbot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [embedCodeCopied, setEmbedCodeCopied] = useState(false);
 
@@ -116,6 +126,18 @@ export default function ChatbotDetailPage() {
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [channelsSaving, setChannelsSaving] = useState(false);
+
+  // Chatbot slug editing state
+  const [isEditingSlug, setIsEditingSlug] = useState(false);
+  const [slugInput, setSlugInput] = useState('');
+  const [slugError, setSlugError] = useState<string | null>(null);
+  const [isUpdatingSlug, setIsUpdatingSlug] = useState(false);
+
+  // Workspace slug editing state
+  const [isEditingWorkspaceSlug, setIsEditingWorkspaceSlug] = useState(false);
+  const [workspaceSlugInput, setWorkspaceSlugInput] = useState('');
+  const [workspaceSlugError, setWorkspaceSlugError] = useState<string | null>(null);
+  const [isUpdatingWorkspaceSlug, setIsUpdatingWorkspaceSlug] = useState(false);
 
   useEffect(() => {
     if (chatbotId && currentWorkspace) {
@@ -480,6 +502,206 @@ export default function ChatbotDetailPage() {
       });
     } finally {
       setMetricsRefreshing(false);
+    }
+  };
+
+  // Slug validation constants
+  const RESERVED_SLUGS = ['api', 'admin', 'public', 'chat', 'auth', 'login', 'logout', 'signup', 'register', 'settings', 'dashboard', 'webhook', 'webhooks'];
+
+  const validateSlug = (slug: string): string | null => {
+    if (!slug || slug.trim() === '') {
+      return 'Slug cannot be empty';
+    }
+    if (slug.length < 2) {
+      return 'Slug must be at least 2 characters';
+    }
+    if (slug.length > 100) {
+      return 'Slug cannot exceed 100 characters';
+    }
+    // Check pattern: lowercase alphanumeric + hyphens, must start/end with alphanumeric
+    const validPattern = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+    if (!validPattern.test(slug)) {
+      return 'Use only lowercase letters, numbers, and hyphens. Must start and end with a letter or number.';
+    }
+    // Check for consecutive hyphens
+    if (slug.includes('--')) {
+      return 'Cannot contain consecutive hyphens';
+    }
+    // Check reserved words
+    if (RESERVED_SLUGS.includes(slug.toLowerCase())) {
+      return `"${slug}" is a reserved word`;
+    }
+    return null;
+  };
+
+  const handleSlugEditStart = () => {
+    if (chatbot?.slug) {
+      setSlugInput(chatbot.slug);
+      setSlugError(null);
+      setIsEditingSlug(true);
+    }
+  };
+
+  const handleSlugEditCancel = () => {
+    setIsEditingSlug(false);
+    setSlugInput('');
+    setSlugError(null);
+  };
+
+  const handleSlugInputChange = (value: string) => {
+    // Auto-lowercase and strip invalid characters
+    const sanitized = value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    setSlugInput(sanitized);
+    setSlugError(null);
+  };
+
+  const handleSlugUpdate = async () => {
+    if (!chatbotId || !chatbot || isUpdatingSlug) return;
+
+    // Client-side validation
+    const error = validateSlug(slugInput);
+    if (error) {
+      setSlugError(error);
+      return;
+    }
+
+    // Skip if slug hasn't changed
+    if (slugInput === chatbot.slug) {
+      setIsEditingSlug(false);
+      return;
+    }
+
+    setIsUpdatingSlug(true);
+    try {
+      const result = await chatbotApi.updateSlug(chatbotId, slugInput);
+
+      // Update local state with new slug
+      setChatbot(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          slug: result.new_slug,
+        };
+      });
+
+      setIsEditingSlug(false);
+      setSlugError(null);
+
+      toast({
+        title: 'URL Updated',
+        description: result.redirect_active
+          ? 'URL updated successfully. Old URLs will redirect to the new one.'
+          : 'URL updated successfully.',
+      });
+    } catch (error) {
+      console.error('Failed to update slug:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update URL';
+
+      // Check for specific error types
+      if (errorMessage.toLowerCase().includes('already in use') || errorMessage.toLowerCase().includes('already exists')) {
+        setSlugError('This slug is already in use. Please choose a different one.');
+      } else {
+        setSlugError(errorMessage);
+      }
+    } finally {
+      setIsUpdatingSlug(false);
+    }
+  };
+
+  const handleSlugKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleSlugUpdate();
+    } else if (e.key === 'Escape') {
+      handleSlugEditCancel();
+    }
+  };
+
+  // Workspace slug editing handlers
+  const handleWorkspaceSlugEditStart = () => {
+    if (chatbot?.workspace_slug) {
+      setWorkspaceSlugInput(chatbot.workspace_slug);
+      setWorkspaceSlugError(null);
+      setIsEditingWorkspaceSlug(true);
+    }
+  };
+
+  const handleWorkspaceSlugEditCancel = () => {
+    setIsEditingWorkspaceSlug(false);
+    setWorkspaceSlugInput('');
+    setWorkspaceSlugError(null);
+  };
+
+  const handleWorkspaceSlugInputChange = (value: string) => {
+    // Auto-lowercase and strip invalid characters
+    const sanitized = value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    setWorkspaceSlugInput(sanitized);
+    setWorkspaceSlugError(null);
+  };
+
+  const handleWorkspaceSlugUpdate = async () => {
+    if (!currentOrganization || !currentWorkspace || !chatbot || isUpdatingWorkspaceSlug) return;
+
+    // Client-side validation (reuse same rules)
+    const error = validateSlug(workspaceSlugInput);
+    if (error) {
+      setWorkspaceSlugError(error);
+      return;
+    }
+
+    // Skip if slug hasn't changed
+    if (workspaceSlugInput === chatbot.workspace_slug) {
+      setIsEditingWorkspaceSlug(false);
+      return;
+    }
+
+    setIsUpdatingWorkspaceSlug(true);
+    try {
+      const result = await workspaceApi.updateSlug(
+        currentOrganization.id,
+        currentWorkspace.id,
+        workspaceSlugInput
+      );
+
+      // Update local state with new workspace slug
+      setChatbot(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          workspace_slug: result.new_slug,
+        };
+      });
+
+      setIsEditingWorkspaceSlug(false);
+      setWorkspaceSlugError(null);
+
+      toast({
+        title: 'Workspace URL Updated',
+        description: result.redirect_active
+          ? 'Workspace URL updated successfully. Old URLs will redirect to the new one.'
+          : 'Workspace URL updated successfully.',
+      });
+    } catch (error) {
+      console.error('Failed to update workspace slug:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update workspace URL';
+
+      // Check for specific error types
+      if (errorMessage.toLowerCase().includes('already in use') || errorMessage.toLowerCase().includes('already exists')) {
+        setWorkspaceSlugError('This workspace slug is already in use. Please choose a different one.');
+      } else {
+        setWorkspaceSlugError(errorMessage);
+      }
+    } finally {
+      setIsUpdatingWorkspaceSlug(false);
+    }
+  };
+
+  const handleWorkspaceSlugKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleWorkspaceSlugUpdate();
+    } else if (e.key === 'Escape') {
+      handleWorkspaceSlugEditCancel();
     }
   };
 
@@ -1601,33 +1823,179 @@ export default function ChatbotDetailPage() {
                 {/* URL and Actions */}
                 {chatbot.slug && chatbot.workspace_slug ? (
                   <div className="space-y-4">
-                    {/* URL Display */}
+                    {/* Chat URL Header */}
                     <div className="flex items-center gap-2">
-                      <Input
-                        readOnly
-                        value={`${window.location.origin}/chat/${chatbot.workspace_slug}/${chatbot.slug}`}
-                        className="font-mono text-sm bg-gray-50 dark:bg-gray-700/50"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(`${window.location.origin}/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`);
-                          toast({
-                            title: 'URL Copied',
-                            description: 'Chat URL copied to clipboard',
-                          });
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => window.open(`/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`, '_blank')}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Chat URL</span>
+                    </div>
+
+                    {/* URL Components (Workspace + Chatbot slugs) */}
+                    <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 space-y-3">
+                      {/* Base URL (read-only) */}
+                      <div className="font-mono text-sm text-gray-500 dark:text-gray-400">
+                        {window.location.origin}/chat/
+                      </div>
+
+                      {/* Workspace Slug Row */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-24 font-manrope">Workspace:</span>
+                        {isEditingWorkspaceSlug ? (
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={workspaceSlugInput}
+                                onChange={(e) => { handleWorkspaceSlugInputChange(e.target.value); }}
+                                onKeyDown={handleWorkspaceSlugKeyDown}
+                                className={`font-mono text-sm flex-1 ${
+                                  workspaceSlugError
+                                    ? 'border-red-500 focus-visible:ring-red-500'
+                                    : ''
+                                }`}
+                                placeholder="workspace-slug"
+                                autoFocus
+                                disabled={isUpdatingWorkspaceSlug}
+                              />
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => void handleWorkspaceSlugUpdate()}
+                                disabled={isUpdatingWorkspaceSlug || !workspaceSlugInput}
+                                className="font-manrope"
+                              >
+                                {isUpdatingWorkspaceSlug ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  'Save'
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleWorkspaceSlugEditCancel}
+                                disabled={isUpdatingWorkspaceSlug}
+                                className="font-manrope"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            {workspaceSlugError && (
+                              <p className="text-sm text-red-500 font-manrope">{workspaceSlugError}</p>
+                            )}
+                            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                              Changing workspace URL affects all chatbots in this workspace. Old URLs will redirect.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-mono text-sm text-gray-900 dark:text-gray-100">{chatbot.workspace_slug}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleWorkspaceSlugEditStart}
+                              className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-600"
+                              title="Edit workspace URL"
+                            >
+                              <Edit2 className="h-3 w-3 text-gray-500" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Chatbot Slug Row */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-24 font-manrope">Chatbot:</span>
+                        {isEditingSlug ? (
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={slugInput}
+                                onChange={(e) => { handleSlugInputChange(e.target.value); }}
+                                onKeyDown={handleSlugKeyDown}
+                                className={`font-mono text-sm flex-1 ${
+                                  slugError
+                                    ? 'border-red-500 focus-visible:ring-red-500'
+                                    : ''
+                                }`}
+                                placeholder="chatbot-slug"
+                                autoFocus
+                                disabled={isUpdatingSlug}
+                              />
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => void handleSlugUpdate()}
+                                disabled={isUpdatingSlug || !slugInput}
+                                className="font-manrope"
+                              >
+                                {isUpdatingSlug ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  'Save'
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleSlugEditCancel}
+                                disabled={isUpdatingSlug}
+                                className="font-manrope"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            {slugError && (
+                              <p className="text-sm text-red-500 font-manrope">{slugError}</p>
+                            )}
+                            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                              Use lowercase letters, numbers, and hyphens. Old URLs will redirect.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-mono text-sm text-gray-900 dark:text-gray-100">{chatbot.slug}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleSlugEditStart}
+                              className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-600"
+                              title="Edit chatbot URL"
+                            >
+                              <Edit2 className="h-3 w-3 text-gray-500" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Full URL Display with Actions */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 font-manrope">Full URL:</span>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          readOnly
+                          value={`${window.location.origin}/chat/${chatbot.workspace_slug}/${chatbot.slug}`}
+                          className="font-mono text-sm bg-gray-50 dark:bg-gray-700/50"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(`${window.location.origin}/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`);
+                            toast({
+                              title: 'URL Copied',
+                              description: 'Chat URL copied to clipboard',
+                            });
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => window.open(`/chat/${String(chatbot.workspace_slug)}/${String(chatbot.slug)}`, '_blank')}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Action Buttons */}

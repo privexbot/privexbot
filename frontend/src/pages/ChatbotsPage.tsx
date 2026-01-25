@@ -178,6 +178,8 @@ interface ChatbotCardProps {
   onView: (id: string) => void;
   onEdit: (id: string) => void;
   onTest: (id: string) => void;
+  onStats: (id: string) => void;
+  onEmbed: (id: string) => void;
   onArchive: (id: string) => void;
   onRestore: (id: string) => void;
   onDeletePermanently: (id: string) => void;
@@ -189,6 +191,8 @@ function ChatbotCard({
   onView,
   onEdit,
   onTest,
+  onStats,
+  onEmbed,
   onArchive,
   onRestore,
   onDeletePermanently,
@@ -263,7 +267,7 @@ function ChatbotCard({
                   Edit Settings
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => onView(chatbot.id)}
+                  onClick={() => onEmbed(chatbot.id)}
                   className="font-manrope text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                 >
                   <Code className="h-4 w-4 mr-2" />
@@ -374,32 +378,32 @@ function ChatbotCard({
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 pt-3 mt-2 border-t border-gray-100 dark:border-gray-700">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => onView(chatbot.id)}
-              className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              className="h-8 px-1 text-xs font-manrope text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <Eye className="h-3 w-3 mr-1" />
+              <Eye className="h-3.5 w-3.5 mr-1" />
               View
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => onTest(chatbot.id)}
-              className="font-manrope rounded-lg border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+              className="h-8 px-1 text-xs font-manrope text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
             >
-              <Play className="h-3 w-3 mr-1" />
+              <Play className="h-3.5 w-3.5 mr-1" />
               Test
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={() => onEdit(chatbot.id)}
-              className="font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+              onClick={() => onStats(chatbot.id)}
+              className="h-8 px-1 text-xs font-manrope text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
             >
-              <Activity className="h-3 w-3 mr-1" />
+              <Activity className="h-3.5 w-3.5 mr-1" />
               Stats
             </Button>
           </div>
@@ -524,6 +528,10 @@ export function ChatbotsPage() {
   const handleEditChatbot = (id: string) => navigate(`/chatbots/${id}/edit`);
   const handleTestChatbot = (id: string) =>
     navigate(`/chatbots/${id}?tab=test`);
+  const handleStatsChatbot = (id: string) =>
+    navigate(`/chatbots/${id}?tab=analytics`);
+  const handleEmbedChatbot = (id: string) =>
+    navigate(`/chatbots/${id}?tab=embed`);
 
   // Archive handler (soft delete)
   const handleArchiveChatbot = async () => {
@@ -765,9 +773,11 @@ export function ChatbotsPage() {
                     onView={handleViewChatbot}
                     onEdit={handleEditChatbot}
                     onTest={handleTestChatbot}
-                    onArchive={(id) => setArchiveId(id)}
-                    onRestore={(id) => setRestoreId(id)}
-                    onDeletePermanently={(id) => setDeleteId(id)}
+                    onStats={handleStatsChatbot}
+                    onEmbed={handleEmbedChatbot}
+                    onArchive={(id) => { setArchiveId(id); }}
+                    onRestore={(id) => { setRestoreId(id); }}
+                    onDeletePermanently={(id) => { setDeleteId(id); }}
                     index={index}
                   />
                 ))}

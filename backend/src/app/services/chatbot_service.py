@@ -1136,6 +1136,9 @@ You may answer using general knowledge without disclosure. However:
         Called after each message is processed.
         """
         from datetime import datetime
+        from sqlalchemy import func, Integer
+        from app.models.chat_message import ChatMessage, MessageRole
+        from app.models.chat_session import ChatSession
 
         try:
             # Get real-time stats from session service
@@ -1146,12 +1149,29 @@ You may answer using general knowledge without disclosure. However:
                 bot_id=chatbot.id
             )
 
+            # Calculate average response time from messages
+            session_ids = db.query(ChatSession.id).filter(
+                ChatSession.chatbot_id == chatbot.id
+            ).subquery()
+
+            avg_response_time = db.query(
+                func.avg(
+                    ChatMessage.response_metadata['latency_ms'].astext.cast(Integer)
+                )
+            ).filter(
+                ChatMessage.session_id.in_(session_ids),
+                ChatMessage.role == MessageRole.ASSISTANT,
+                ChatMessage.response_metadata.isnot(None),
+                ChatMessage.response_metadata['latency_ms'].isnot(None)
+            ).scalar() or 0
+
             # Update cached_metrics
             chatbot.cached_metrics = {
                 "total_conversations": stats.get("total_sessions", 0),
                 "total_messages": stats.get("total_messages", 0),
                 "avg_messages_per_session": stats.get("avg_messages_per_session", 0),
                 "active_sessions": stats.get("active_sessions", 0),
+                "avg_response_time_ms": int(avg_response_time),
                 "last_updated": datetime.utcnow().isoformat()
             }
 
