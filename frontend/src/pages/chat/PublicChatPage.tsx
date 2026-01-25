@@ -279,7 +279,7 @@ export function PublicChatPage() {
             const leadKey = `lead_collected_${workspaceSlug}_${botSlug}`;
             if (!localStorage.getItem(leadKey)) {
               // Show lead form based on timing
-              if (leadCfg.timing === LeadCaptureTiming.BEFORE_CHAT || leadCfg.timing === 'before_chat') {
+              if (leadCfg.timing === LeadCaptureTiming.BEFORE_CHAT) {
                 setShowLeadForm(true);
               }
             } else {
@@ -432,9 +432,7 @@ export function PublicChatPage() {
       // Count user messages (excluding greeting)
       const userMessageCount = messages.filter(m => m.role === 'user').length + 1;
       const messagesBeforePrompt = leadConfig?.messages_before_prompt ?? 1;
-      const isAfterNMessages = leadConfig?.timing === LeadCaptureTiming.AFTER_N_MESSAGES ||
-                               leadConfig?.timing === 'after_n_messages' ||
-                               leadConfig?.timing === 'after_first_message'; // backward compatibility
+      const isAfterNMessages = leadConfig?.timing === LeadCaptureTiming.AFTER_N_MESSAGES;
 
       if (
         leadConfig?.enabled &&
