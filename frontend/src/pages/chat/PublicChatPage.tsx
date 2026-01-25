@@ -77,15 +77,20 @@ interface ChatResponse {
 }
 
 // Generate unique ID for messages
-const generateId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+const generateId = () => `msg_${Date.now().toString()}_${Math.random().toString(36).slice(2, 11)}`;
 
 // Generate unique session ID for hosted page
 // Format: hosted_{timestamp}_{random} - consistent with widget naming pattern
-const generateSessionId = () => `hosted_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+const generateSessionId = () => `hosted_${Date.now().toString()}_${Math.random().toString(36).slice(2, 11)}`;
 
 // Session storage key - consistent naming with widget (privexbot_ prefix)
 const getSessionKey = (workspaceSlug: string, botSlug: string) =>
   `privexbot_hosted_${workspaceSlug}_${botSlug}`;
+
+// Error response type for API calls
+interface ApiErrorResponse {
+  detail?: string;
+}
 
 // API client for public endpoints (no auth required)
 // URL format: /chat/{workspace_slug}/{bot_slug}
@@ -93,10 +98,10 @@ const publicApi = {
   getConfig: async (workspaceSlug: string, botSlug: string): Promise<HostedPageConfig> => {
     const response = await fetch(`${config.API_BASE_URL}/public/chat/${workspaceSlug}/${botSlug}/config`);
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to load chatbot' }));
-      throw new Error(error.detail || 'Failed to load chatbot');
+      const error = await response.json().catch(() => ({ detail: 'Failed to load chatbot' })) as ApiErrorResponse;
+      throw new Error(error.detail ?? 'Failed to load chatbot');
     }
-    return response.json();
+    return response.json() as Promise<HostedPageConfig>;
   },
 
   sendMessage: async (workspaceSlug: string, botSlug: string, message: string, sessionId?: string, apiKey?: string): Promise<ChatResponse> => {
@@ -117,10 +122,10 @@ const publicApi = {
       }),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to send message' }));
-      throw new Error(error.detail || 'Failed to send message');
+      const error = await response.json().catch(() => ({ detail: 'Failed to send message' })) as ApiErrorResponse;
+      throw new Error(error.detail ?? 'Failed to send message');
     }
-    return response.json();
+    return response.json() as Promise<ChatResponse>;
   },
 
   trackEvent: async (workspaceSlug: string, botSlug: string, eventType: string, data: Record<string, unknown> = {}) => {
@@ -141,7 +146,7 @@ const publicApi = {
     }
   },
 
-  submitFeedback: async (chatbotId: string, messageId: string, rating: 'positive' | 'negative', apiKey?: string) => {
+  submitFeedback: async (chatbotId: string, messageId: string, rating: 'positive' | 'negative', apiKey?: string): Promise<{ success: boolean }> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`;
@@ -157,7 +162,7 @@ const publicApi = {
     if (!response.ok) {
       throw new Error('Failed to submit feedback');
     }
-    return response.json();
+    return response.json() as Promise<{ success: boolean }>;
   },
 
   submitLead: async (
@@ -169,17 +174,17 @@ const publicApi = {
       user_agent?: string;
       language?: string;
     }
-  ) => {
+  ): Promise<{ success: boolean }> => {
     const response = await fetch(`${config.API_BASE_URL}/public/chat/${workspaceSlug}/${botSlug}/leads`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to submit lead' }));
-      throw new Error(error.detail || 'Failed to submit lead');
+      const error = await response.json().catch(() => ({ detail: 'Failed to submit lead' })) as ApiErrorResponse;
+      throw new Error(error.detail ?? 'Failed to submit lead');
     }
-    return response.json();
+    return response.json() as Promise<{ success: boolean }>;
   },
 };
 
@@ -206,7 +211,7 @@ export function PublicChatPage() {
   const [feedbackState, setFeedbackState] = useState<Record<string, 'positive' | 'negative'>>(() => {
     try {
       const stored = sessionStorage.getItem('chat_feedback');
-      return stored ? JSON.parse(stored) : {};
+      return stored ? JSON.parse(stored) as Record<string, 'positive' | 'negative'> : {};
     } catch {
       return {};
     }
@@ -263,15 +268,15 @@ export function PublicChatPage() {
         }
 
         // Set page title and meta tags
-        if (data.hosted_page?.meta_title || data.name) {
-          document.title = data.hosted_page?.meta_title || data.name;
+        if (data.hosted_page?.meta_title ?? data.name) {
+          document.title = data.hosted_page?.meta_title ?? data.name;
         }
 
         // Handle lead capture configuration
         const leadCfg = data.lead_config as unknown as LeadCaptureConfig | null;
         if (leadCfg?.enabled) {
           // Check if web platform is enabled for lead capture
-          const webPlatformEnabled = leadCfg.platforms?.web?.enabled ?? true;
+          const webPlatformEnabled = leadCfg.platforms.web.enabled;
           if (webPlatformEnabled) {
             setLeadConfig(leadCfg);
 
@@ -303,7 +308,7 @@ export function PublicChatPage() {
         // Track page view (once per session to prevent double-counting on refresh)
         const pageViewKey = `page_view_tracked_${workspaceSlug}_${botSlug}`;
         if (!sessionStorage.getItem(pageViewKey)) {
-          publicApi.trackEvent(workspaceSlug, botSlug, 'page_view', {
+          void publicApi.trackEvent(workspaceSlug, botSlug, 'page_view', {
             referrer: document.referrer,
             user_agent: navigator.userAgent,
           });
@@ -316,7 +321,7 @@ export function PublicChatPage() {
       }
     };
 
-    loadConfig();
+    void loadConfig();
   }, [workspaceSlug, botSlug]);
 
   // Handle lead form submission
@@ -325,7 +330,7 @@ export function PublicChatPage() {
 
     await publicApi.submitLead(workspaceSlug, botSlug, {
       ...leadData,
-      session_id: sessionId || generateSessionId(),
+      session_id: sessionId ?? generateSessionId(),
       referrer: document.referrer,
       user_agent: navigator.userAgent,
       language: navigator.language,
@@ -338,7 +343,7 @@ export function PublicChatPage() {
     setShowLeadForm(false);
 
     // Track lead captured event
-    publicApi.trackEvent(workspaceSlug, botSlug, 'lead_collected', {
+    void publicApi.trackEvent(workspaceSlug, botSlug, 'lead_collected', {
       fields: Object.keys(leadData).filter(k => leadData[k as keyof LeadData]),
     });
   };
@@ -348,13 +353,13 @@ export function PublicChatPage() {
     setShowLeadForm(false);
     // Track lead skipped event
     if (workspaceSlug && botSlug) {
-      publicApi.trackEvent(workspaceSlug, botSlug, 'lead_skipped', {});
+      void publicApi.trackEvent(workspaceSlug, botSlug, 'lead_skipped', {});
     }
   };
 
   // Handle feedback submission
   const handleFeedback = async (messageId: string, rating: 'positive' | 'negative') => {
-    if (!chatConfig || feedbackState[messageId]) return;
+    if (!chatConfig || messageId in feedbackState) return;
 
     // Optimistic update
     const newState = { ...feedbackState, [messageId]: rating };
@@ -362,19 +367,19 @@ export function PublicChatPage() {
     sessionStorage.setItem('chat_feedback', JSON.stringify(newState));
 
     try {
-      await publicApi.submitFeedback(chatConfig.chatbot_id, messageId, rating, apiKey || undefined);
+      await publicApi.submitFeedback(chatConfig.chatbot_id, messageId, rating, apiKey ? apiKey : undefined);
 
       // Track feedback event
       if (workspaceSlug && botSlug) {
-        publicApi.trackEvent(workspaceSlug, botSlug, 'feedback_given', {
+        void publicApi.trackEvent(workspaceSlug, botSlug, 'feedback_given', {
           message_id: messageId,
           rating,
         });
       }
     } catch (error) {
-      // Revert on failure
-      const revertState = { ...feedbackState };
-      delete revertState[messageId];
+      // Revert on failure - create new object without the messageId key
+      const { [messageId]: _, ...revertState } = feedbackState;
+      void _;
       setFeedbackState(revertState);
       sessionStorage.setItem('chat_feedback', JSON.stringify(revertState));
       console.error('Failed to submit feedback:', error);
@@ -397,7 +402,7 @@ export function PublicChatPage() {
     setSending(true);
 
     try {
-      const response = await publicApi.sendMessage(workspaceSlug, botSlug, userMessage.content, sessionId || undefined, apiKey || undefined);
+      const response = await publicApi.sendMessage(workspaceSlug, botSlug, userMessage.content, sessionId ?? undefined, apiKey ? apiKey : undefined);
 
       // Store session ID for conversation continuity (use localStorage for consistency with widget)
       if (response.session_id) {
@@ -414,8 +419,8 @@ export function PublicChatPage() {
         messageId: response.message_id, // Store for feedback
         // Map backend source properties to frontend format
         sources: response.sources?.map(s => ({
-          title: s.document_title || s.title || 'Source',
-          url: s.document_url || s.url,
+          title: s.document_title ?? s.title ?? 'Source',
+          url: s.document_url ?? s.url,
           snippet: s.snippet,
         })),
       };
@@ -423,7 +428,7 @@ export function PublicChatPage() {
       setMessages((prev) => [...prev, botMessage]);
 
       // Track message event
-      publicApi.trackEvent(workspaceSlug, botSlug, 'message_sent', {
+      void publicApi.trackEvent(workspaceSlug, botSlug, 'message_sent', {
         message_length: userMessage.content.length,
         has_sources: !!response.sources?.length,
       });
@@ -441,7 +446,7 @@ export function PublicChatPage() {
         !leadCollected
       ) {
         // Delay slightly to let user see the response first
-        setTimeout(() => setShowLeadForm(true), 1500);
+        setTimeout(() => { setShowLeadForm(true); }, 1500);
       }
     } catch (err) {
       const errorMessage: Message = {
@@ -461,7 +466,7 @@ export function PublicChatPage() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
@@ -520,7 +525,7 @@ export function PublicChatPage() {
         <div className="flex flex-col items-center gap-4 p-6 max-w-md text-center">
           <AlertCircle className="h-12 w-12 text-red-500" />
           <h1 className="text-xl font-semibold text-gray-900">Unable to Load Chatbot</h1>
-          <p className="text-gray-600">{error || 'This chatbot is not available.'}</p>
+          <p className="text-gray-600">{error ?? 'This chatbot is not available.'}</p>
         </div>
       </div>
     );
@@ -528,7 +533,7 @@ export function PublicChatPage() {
 
   // API Key authentication modal for private bots
   if (authRequired) {
-    const primaryColor = chatConfig.color || '#3b82f6';
+    const primaryColor = chatConfig.color ?? '#3b82f6';
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
@@ -563,7 +568,7 @@ export function PublicChatPage() {
                   type="password"
                   value={apiKeyInput}
                   onChange={(e) => { setApiKeyInput(e.target.value); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAuthenticate(); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handleAuthenticate(); }}
                   placeholder="sk_live_..."
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
                   style={{ '--tw-ring-color': primaryColor } as React.CSSProperties}
@@ -579,7 +584,7 @@ export function PublicChatPage() {
             </div>
 
             <button
-              onClick={handleAuthenticate}
+              onClick={() => { void handleAuthenticate(); }}
               disabled={!apiKeyInput.trim() || authenticating}
               className="w-full py-3 px-4 rounded-xl text-white font-medium disabled:opacity-50 transition-colors"
               style={{ backgroundColor: primaryColor }}
@@ -605,16 +610,16 @@ export function PublicChatPage() {
 
   // Lead capture form (before chat starts)
   if (showLeadForm && leadConfig) {
-    const primaryColor = chatConfig.color || '#3b82f6';
-    const hostedPage = chatConfig.hosted_page || {};
-    const backgroundColor = hostedPage.background_color || '#f9fafb';
+    const primaryColor = chatConfig.color ?? '#3b82f6';
+    const hostedPage = chatConfig.hosted_page ?? {};
+    const backgroundColor = hostedPage.background_color ?? '#f9fafb';
 
     return (
       <div
         className="min-h-screen flex items-center justify-center p-4"
         style={{
           backgroundColor,
-          fontFamily: chatConfig.font_family || 'system-ui, sans-serif',
+          fontFamily: chatConfig.font_family ?? 'system-ui, sans-serif',
         }}
       >
         <LeadCaptureForm
@@ -629,54 +634,105 @@ export function PublicChatPage() {
   }
 
   // Extract styling
-  const primaryColor = chatConfig.color || '#3b82f6';
-  const hostedPage = chatConfig.hosted_page || {};
-  const backgroundColor = hostedPage.background_color || '#f9fafb';
+  const primaryColor = chatConfig.color ?? '#3b82f6';
+  const hostedPage = chatConfig.hosted_page ?? {};
+  const backgroundColor = hostedPage.background_color ?? '#e8eef4';
   const backgroundImage = hostedPage.background_image;
-  const logoUrl = hostedPage.logo_url || chatConfig.avatar_url;
-  const headerText = hostedPage.header_text || chatConfig.bot_name || chatConfig.name;
+  const logoUrl = hostedPage.logo_url ?? chatConfig.avatar_url;
+  const headerText = hostedPage.header_text ?? chatConfig.bot_name ?? chatConfig.name;
   const footerText = hostedPage.footer_text;
+  const greeting = chatConfig.greeting;
 
   return (
     <div
-      className="min-h-screen flex flex-col"
-      style={{
-        backgroundColor,
-        backgroundImage: backgroundImage ? `url(${backgroundImage})` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        fontFamily: chatConfig.font_family || 'system-ui, sans-serif',
-      }}
+      className="h-screen flex"
+      style={{ fontFamily: chatConfig.font_family ?? 'system-ui, sans-serif' }}
     >
-      {/* Header */}
-      <header
-        className="flex-shrink-0 px-4 py-3 shadow-sm"
-        style={{ backgroundColor: primaryColor }}
+      {/* Left Panel - Branding (hidden on mobile) */}
+      <aside
+        className="hidden md:flex md:w-80 lg:w-96 flex-col flex-shrink-0"
+        style={{
+          background: backgroundImage
+            ? `url(${backgroundImage}) center/cover`
+            : `linear-gradient(160deg, ${primaryColor} 0%, ${primaryColor}cc 100%)`,
+        }}
       >
-        <div className="max-w-3xl mx-auto flex items-center gap-3">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          {/* Logo */}
           {logoUrl ? (
             <img
               src={logoUrl}
               alt={headerText}
-              className="h-10 w-10 rounded-full object-cover bg-white/20"
+              className="h-20 w-20 rounded-2xl object-cover shadow-lg mb-6"
             />
           ) : (
             <div
-              className="h-10 w-10 rounded-full flex items-center justify-center bg-white/20"
+              className="h-20 w-20 rounded-2xl flex items-center justify-center bg-white/20 shadow-lg mb-6"
             >
-              <Bot className="h-6 w-6 text-white" />
+              <Bot className="h-10 w-10 text-white" />
             </div>
           )}
-          <div>
-            <h1 className="text-lg font-semibold text-white">{headerText}</h1>
-            <p className="text-sm text-white/80">Online</p>
-          </div>
-        </div>
-      </header>
 
-      {/* Messages Area */}
-      <main className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-3xl mx-auto space-y-4">
+          {/* Bot name */}
+          <h1 className="text-2xl font-semibold text-white mb-2">{headerText}</h1>
+
+          {/* Online status */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className="h-2 w-2 rounded-full bg-green-400" />
+            <span className="text-sm text-white/80">Online</span>
+          </div>
+
+          {/* Greeting/tagline */}
+          {greeting && (
+            <p className="text-white/70 text-sm max-w-[250px] leading-relaxed">
+              {greeting.length > 100 ? greeting.substring(0, 100) + '...' : greeting}
+            </p>
+          )}
+        </div>
+
+        {/* Footer branding on left panel */}
+        {footerText && (
+          <div className="p-4 border-t border-white/10">
+            <p className="text-xs text-white/50 text-center">{footerText}</p>
+          </div>
+        )}
+      </aside>
+
+      {/* Right Panel - Chat Interface */}
+      <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
+        {/* Mobile header (visible only on mobile) */}
+        <header
+          className="md:hidden flex-shrink-0 px-4 py-3"
+          style={{ backgroundColor: primaryColor }}
+        >
+          <div className="flex items-center gap-3">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={headerText}
+                className="h-9 w-9 rounded-full object-cover ring-2 ring-white/20"
+              />
+            ) : (
+              <div className="h-9 w-9 rounded-full flex items-center justify-center bg-white/20">
+                <Bot className="h-5 w-5 text-white" />
+              </div>
+            )}
+            <div>
+              <h1 className="text-base font-medium text-white">{headerText}</h1>
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                <span className="text-xs text-white/70">Online</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Messages Area */}
+        <main
+          className="flex-1 overflow-y-auto scroll-smooth"
+          style={{ backgroundColor }}
+        >
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-4">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -687,7 +743,7 @@ export function PublicChatPage() {
             >
               {message.role === 'bot' && (
                 <div
-                  className="flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center"
+                  className="flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center shadow-sm"
                   style={{ backgroundColor: primaryColor }}
                 >
                   {logoUrl ? (
@@ -704,10 +760,10 @@ export function PublicChatPage() {
 
               <div
                 className={cn(
-                  'max-w-[80%] rounded-2xl px-4 py-3',
+                  'max-w-[80%] rounded-2xl px-4 py-3 shadow-sm',
                   message.role === 'user'
                     ? 'text-white'
-                    : 'bg-white shadow-sm border border-gray-200 text-gray-900'
+                    : 'bg-white text-gray-900'
                 )}
                 style={
                   message.role === 'user'
@@ -730,7 +786,7 @@ export function PublicChatPage() {
                       {/* Deduplicate sources by URL (or title if no URL) */}
                       {Array.from(
                         new Map(
-                          message.sources.map((s) => [s.url || s.title, s])
+                          message.sources.map((s) => [s.url ?? s.title, s])
                         ).values()
                       ).map((source, idx) => (
                         <div key={idx} className="text-xs">
@@ -753,42 +809,42 @@ export function PublicChatPage() {
                 )}
 
                 {/* Feedback buttons for bot messages */}
-                {message.role === 'bot' && message.messageId && (
+                {message.role === 'bot' && message.messageId && (() => {
+                  const msgId = message.messageId;
+                  const feedback = msgId in feedbackState ? feedbackState[msgId] : undefined;
+                  return (
                   <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
                     <button
-                      onClick={() => handleFeedback(message.messageId!, 'positive')}
-                      disabled={!!feedbackState[message.messageId]}
+                      onClick={() => { void handleFeedback(msgId, 'positive'); }}
+                      disabled={feedback !== undefined}
                       className={cn(
                         'p-1.5 rounded-md transition-colors text-gray-400',
-                        feedbackState[message.messageId] === 'positive'
+                        feedback === 'positive'
                           ? 'bg-green-100 text-green-600'
                           : 'hover:bg-gray-100 hover:text-gray-600',
-                        feedbackState[message.messageId] && feedbackState[message.messageId] !== 'positive'
-                          ? 'opacity-30'
-                          : ''
+                        feedback === 'negative' ? 'opacity-30' : ''
                       )}
                       title="Helpful"
                     >
                       <ThumbsUp className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => handleFeedback(message.messageId!, 'negative')}
-                      disabled={!!feedbackState[message.messageId]}
+                      onClick={() => { void handleFeedback(msgId, 'negative'); }}
+                      disabled={feedback !== undefined}
                       className={cn(
                         'p-1.5 rounded-md transition-colors text-gray-400',
-                        feedbackState[message.messageId] === 'negative'
+                        feedback === 'negative'
                           ? 'bg-red-100 text-red-600'
                           : 'hover:bg-gray-100 hover:text-gray-600',
-                        feedbackState[message.messageId] && feedbackState[message.messageId] !== 'negative'
-                          ? 'opacity-30'
-                          : ''
+                        feedback === 'positive' ? 'opacity-30' : ''
                       )}
                       title="Not helpful"
                     >
                       <ThumbsDown className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                )}
+                  );
+                })()}
               </div>
 
               {message.role === 'user' && (
@@ -803,12 +859,12 @@ export function PublicChatPage() {
           {sending && (
             <div className="flex gap-3 justify-start">
               <div
-                className="flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center"
+                className="flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center shadow-sm"
                 style={{ backgroundColor: primaryColor }}
               >
                 <Bot className="h-5 w-5 text-white" />
               </div>
-              <div className="bg-white shadow-sm border border-gray-200 rounded-2xl px-4 py-3">
+              <div className="bg-white rounded-2xl px-4 py-3 shadow-sm">
                 <div className="flex gap-1">
                   <span className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -822,43 +878,41 @@ export function PublicChatPage() {
         </div>
       </main>
 
-      {/* Input Area */}
-      <footer className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-4">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex gap-3 items-end">
-            <textarea
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => { setInputValue(e.target.value); }}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your message..."
-              disabled={sending}
-              rows={1}
-              className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50"
-              style={{ minHeight: '48px', maxHeight: '120px' }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!inputValue.trim() || sending}
-              className="flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center text-white disabled:opacity-50 transition-colors"
-              style={{ backgroundColor: primaryColor }}
-            >
-              {sending ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Send className="h-5 w-5" />
-              )}
-            </button>
+        {/* Input Area */}
+        <footer className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3">
+          <div className="max-w-3xl mx-auto">
+            <div className="flex gap-3 items-end">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => { setInputValue(e.target.value); }}
+                onKeyDown={handleKeyDown}
+                placeholder="Type your message..."
+                disabled={sending}
+                rows={1}
+                className="flex-1 resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:border-transparent disabled:opacity-50 shadow-sm"
+                style={{ minHeight: '48px', maxHeight: '120px', '--tw-ring-color': primaryColor } as React.CSSProperties}
+              />
+              <button
+                onClick={() => { void handleSend(); }}
+                disabled={!inputValue.trim() || sending}
+                className="flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center text-white disabled:opacity-50 transition-all hover:scale-105 shadow-md"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {sending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
+              </button>
+            </div>
+            {/* Footer branding (mobile only, desktop shows in left panel) */}
+            {footerText && (
+              <p className="md:hidden text-xs text-gray-500 text-center mt-2">{footerText}</p>
+            )}
           </div>
-        </div>
-      </footer>
-
-      {/* Footer branding */}
-      {footerText && (
-        <div className="flex-shrink-0 bg-white border-t border-gray-100 px-4 py-2 text-center">
-          <p className="text-xs text-gray-500">{footerText}</p>
-        </div>
-      )}
+        </footer>
+      </div>
     </div>
   );
 }
