@@ -1640,10 +1640,13 @@ https://docs.example.com
                           </div>
                         </div>
                         <div className="p-4 max-h-96 overflow-y-auto">
-                          <div className="prose prose-sm max-w-none dark:prose-invert">
-                            <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words leading-relaxed">
-                              {previewData.content || 'No content could be extracted from the first page.'}
-                            </pre>
+                          <div
+                            className="text-sm leading-relaxed whitespace-pre-wrap break-words font-manrope
+                                       text-gray-900 dark:text-gray-100
+                                       bg-gray-50 dark:bg-gray-900/50
+                                       p-4 rounded-lg border border-gray-200 dark:border-gray-600"
+                          >
+                            {previewData.content || 'No content could be extracted from the first page.'}
                           </div>
                         </div>
                       </div>
@@ -1702,9 +1705,9 @@ https://docs.example.com
                                 <CollapsibleContent>
                                   <div className="p-4 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-600">
                                     <div className="max-h-40 overflow-y-auto">
-                                      <pre className="text-sm text-gray-700 dark:text-gray-300 font-manrope whitespace-pre-wrap break-words leading-relaxed">
+                                      <div className="text-sm text-gray-900 dark:text-gray-100 font-manrope whitespace-pre-wrap break-words leading-relaxed">
                                         {(page.content || 'No content extracted from this page.').substring(0, 500)}...
-                                      </pre>
+                                      </div>
                                     </div>
                                   </div>
                                 </CollapsibleContent>
