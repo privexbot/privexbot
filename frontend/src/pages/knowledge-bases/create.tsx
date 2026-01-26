@@ -401,6 +401,24 @@ export default function CreateKnowledgeBasePage() {
     navigate("/knowledge-bases");
   };
 
+  // Check if sources have pre-approved pages from immediate preview
+  const hasPreApprovedSources = draftSources.some((source) => {
+    const metadata = source.metadata as Record<string, unknown> | undefined;
+    return metadata?.approvedSources === true;
+  });
+  const allPagesPreApproved = draftSources.length > 0 && draftSources.every((source) => {
+    const metadata = source.metadata as Record<string, unknown> | undefined;
+    const pages = (metadata?.previewPages ?? []) as Array<{ is_approved?: boolean }>;
+    return pages.length > 0 && pages.every((page) => page.is_approved);
+  });
+
+  // Count total pre-approved pages
+  const preApprovedPageCount = draftSources.reduce((count: number, source) => {
+    const metadata = source.metadata as Record<string, unknown> | undefined;
+    const pages = (metadata?.previewPages ?? []) as Array<{ is_approved?: boolean }>;
+    return count + pages.filter((p) => p.is_approved).length;
+  }, 0);
+
   // Step navigation functions
   const canNavigateToStep = (stepId: number): boolean => {
     if (stepId <= stepperState.currentStep) return true;
@@ -412,7 +430,8 @@ export default function CreateKnowledgeBasePage() {
       case KBCreationStep.CONTENT_REVIEW:
         return stepId <= KBCreationStep.CONTENT_APPROVAL && (draftSources.length > 0 || (!!previewData && previewData.pages.length > 0));
       case KBCreationStep.CONTENT_APPROVAL:
-        return stepId <= KBCreationStep.CHUNKING_CONFIG && stepperState.approvedSources.length > 0;
+        // Allow proceeding if there are approved sources OR if all pages are pre-approved
+        return stepId <= KBCreationStep.CHUNKING_CONFIG && (stepperState.approvedSources.length > 0 || hasPreApprovedSources || allPagesPreApproved);
       case KBCreationStep.CHUNKING_CONFIG:
         return stepId <= KBCreationStep.MODEL_CONFIG && stepperState.chunkingConfig !== null;
       case KBCreationStep.MODEL_CONFIG:
@@ -819,6 +838,23 @@ export default function CreateKnowledgeBasePage() {
                     }));
                   }}
                 />
+                {/* Pre-approved notice */}
+                {hasPreApprovedSources && preApprovedPageCount > 0 && (
+                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl p-4 mt-4">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                      <div>
+                        <span className="text-sm font-semibold text-green-800 dark:text-green-200 font-manrope">
+                          {preApprovedPageCount} page{preApprovedPageCount > 1 ? 's' : ''} pre-approved
+                        </span>
+                        <p className="text-xs text-green-600 dark:text-green-400 font-manrope mt-0.5">
+                          These pages were approved during source addition. You can proceed directly or review them here.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-between pt-6">
                   <Button
                     variant="outline"
@@ -829,10 +865,10 @@ export default function CreateKnowledgeBasePage() {
                   </Button>
                   <Button
                     onClick={proceedToNextStep}
-                    disabled={stepperState.approvedSources.length === 0 && (!previewData || previewData.pages.length === 0)}
+                    disabled={stepperState.approvedSources.length === 0 && !hasPreApprovedSources && !allPagesPreApproved && (!previewData || previewData.pages.length === 0)}
                     className="font-manrope bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-lg shadow-sm hover:shadow-md transition-all"
                   >
-                    Continue to Chunking
+                    {hasPreApprovedSources ? 'Continue to Chunking' : 'Continue to Chunking'}
                   </Button>
                 </div>
               </>
@@ -1061,7 +1097,9 @@ export default function CreateKnowledgeBasePage() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600 dark:text-gray-400 font-manrope">Approved:</span>
-                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">{stepperState.approvedSources.length} items</span>
+                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                              {preApprovedPageCount > 0 ? preApprovedPageCount : stepperState.approvedSources.length} items
+                            </span>
                           </div>
                         </div>
                       </div>

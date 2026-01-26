@@ -136,6 +136,15 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
   }, [draftSources]);
 
 
+  // Check for pre-approved pages from immediate preview
+  const preApprovedCount = React.useMemo(() => {
+    return allPages.filter(p => p.is_approved && !p.needs_reapproval).length;
+  }, [allPages]);
+
+  const hasPreApprovedSources = React.useMemo(() => {
+    return draftSources.some(source => source.metadata?.approvedSources === true);
+  }, [draftSources]);
+
   // Initialize with all NON-APPROVED pages OR pages needing re-approval selected
   useEffect(() => {
     if (allPages.length > 0 && selectedPages.size === 0) {
@@ -156,6 +165,18 @@ export const KBContentApproval: React.FC<KBContentApprovalProps> = ({
       setSelectedPages(new Set(selectableIndices));
     }
   }, [allPages]);
+
+  // Auto-approve pre-approved sources from immediate preview
+  useEffect(() => {
+    if (hasPreApprovedSources && preApprovedCount === allPages.length && allPages.length > 0) {
+      console.log(`✅ ALL PAGES PRE-APPROVED: Auto-notifying parent that ${preApprovedCount} pages are already approved`);
+      // All pages were pre-approved during source addition, notify parent
+      toast({
+        title: "Content Pre-Approved",
+        description: `All ${preApprovedCount} pages were approved during source addition. You can proceed to the next step.`,
+      });
+    }
+  }, [hasPreApprovedSources, preApprovedCount, allPages.length]);
 
   const togglePageSelection = (pageIndex: number) => {
     const page = allPages[pageIndex];

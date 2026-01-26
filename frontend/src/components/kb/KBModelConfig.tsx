@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { Database, Cpu, Zap, Info, Settings, Layers, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Database, Cpu, Zap, Info, Settings, Layers, AlertCircle, CheckCircle2, Globe, Lock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,7 @@ import {
 
 export function KBModelConfig() {
   const { modelConfig, updateModelConfig, draftSources, chunkingConfig } = useKBStore();
-  const [activePreset, setActivePreset] = useState('production');
+  const [activePreset, setActivePreset] = useState('balanced');
 
   // Default Qdrant configuration
   const defaultQdrantConfig: QdrantConfig = {
@@ -66,10 +66,9 @@ export function KBModelConfig() {
 
   const presets = [
     {
-      id: 'development',
-      name: 'Development',
-      description: 'Fast indexing, basic performance',
-      icon: '🚀',
+      id: 'quick_start',
+      name: 'Quick Start',
+      description: 'Fast indexing for testing and prototyping',
       config: {
         ...defaultModelConfig,
         vector_store: {
@@ -86,23 +85,21 @@ export function KBModelConfig() {
         },
         indexing_method: IndexingMethod.FAST
       },
-      benefits: ['Fast setup', 'Quick testing'],
+      benefits: ['Quick setup', 'Basic performance', 'Ideal for development'],
       tradeoffs: ['Lower search quality']
     },
     {
-      id: 'production',
-      name: 'Production',
-      description: 'Balanced performance and quality',
-      icon: '⚖️',
+      id: 'balanced',
+      name: 'Balanced',
+      description: 'Optimal balance of quality and performance',
       config: defaultModelConfig,
-      benefits: ['Optimal balance', 'Proven settings'],
-      tradeoffs: ['Standard performance']
+      benefits: ['Proven settings', 'Standard performance', 'Recommended for most use cases'],
+      tradeoffs: []
     },
     {
-      id: 'high_performance',
-      name: 'High Performance',
-      description: 'Maximum search quality and speed',
-      icon: '🏆',
+      id: 'maximum_quality',
+      name: 'Maximum Quality',
+      description: 'Best search quality and accuracy',
       config: {
         ...defaultModelConfig,
         vector_store: {
@@ -119,7 +116,7 @@ export function KBModelConfig() {
         },
         indexing_method: IndexingMethod.HIGH_QUALITY
       },
-      benefits: ['Highest quality', 'Fastest search'],
+      benefits: ['Highest accuracy', 'Premium embedding model', 'Best for production'],
       tradeoffs: ['Higher memory usage', 'Slower indexing']
     }
   ];
@@ -129,7 +126,7 @@ export function KBModelConfig() {
       id: VectorStoreProvider.QDRANT,
       name: 'Qdrant',
       description: 'Self-hosted, high-performance vector database',
-      icon: '🔵',
+      icon: 'database' as const,
       status: 'active',
       features: [
         'HNSW indexing for fast similarity search',
@@ -145,20 +142,17 @@ export function KBModelConfig() {
     {
       value: DistanceMetric.COSINE,
       name: 'Cosine',
-      description: 'Best for text embeddings (default)',
-      icon: '📐'
+      description: 'Best for text embeddings (default)'
     },
     {
       value: DistanceMetric.EUCLIDEAN,
       name: 'Euclidean',
-      description: 'Good for normalized vectors',
-      icon: '📏'
+      description: 'Good for normalized vectors'
     },
     {
       value: DistanceMetric.DOT_PRODUCT,
       name: 'Dot Product',
-      description: 'Fast computation, normalized vectors',
-      icon: '⚡'
+      description: 'Fast computation, normalized vectors'
     }
   ];
 
@@ -172,7 +166,7 @@ export function KBModelConfig() {
       speed: 'fast',
       quality: 'good',
       size: '90 MB',
-      icon: '🚀'
+      isMultilingual: false
     },
     {
       id: 'all-MiniLM-L12-v2',
@@ -182,7 +176,7 @@ export function KBModelConfig() {
       speed: 'medium',
       quality: 'better',
       size: '120 MB',
-      icon: '⚡'
+      isMultilingual: false
     },
     {
       id: 'all-mpnet-base-v2',
@@ -192,7 +186,7 @@ export function KBModelConfig() {
       speed: 'slow',
       quality: 'best',
       size: '420 MB',
-      icon: '🏆'
+      isMultilingual: false
     },
     {
       id: 'paraphrase-multilingual-MiniLM-L12-v2',
@@ -202,7 +196,7 @@ export function KBModelConfig() {
       speed: 'medium',
       quality: 'good',
       size: '470 MB',
-      icon: '🌍'
+      isMultilingual: true
     }
   ];
 
@@ -394,7 +388,6 @@ export function KBModelConfig() {
                 >
                   <CardContent className="p-4 sm:p-6">
                     <div className="text-center space-y-3">
-                      <span className="text-2xl sm:text-3xl">{preset.icon}</span>
                       <div className="space-y-2">
                         <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{preset.name}</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">{preset.description}</p>
@@ -486,7 +479,7 @@ export function KBModelConfig() {
                         >
                           <CardContent className="p-4 sm:p-6">
                             <div className="flex items-center gap-3 mb-4">
-                              <span className="text-xl flex-shrink-0">{provider.icon}</span>
+                              <Database className="h-6 w-6 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <h3 className="font-bold text-lg text-gray-900 dark:text-white font-manrope">{provider.name}</h3>
@@ -545,7 +538,6 @@ export function KBModelConfig() {
                                 <div key={metric.value} className="flex items-center space-x-3 p-3 bg-white dark:bg-gray-800/50 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
                                   <RadioGroupItem value={metric.value} id={metric.value} />
                                   <Label htmlFor={metric.value} className="text-sm font-manrope cursor-pointer flex-1">
-                                    <span className="text-lg mr-2">{metric.icon}</span>
                                     <span className="font-semibold text-blue-900 dark:text-blue-100">{metric.name}</span>
                                     <span className="text-blue-700 dark:text-blue-300"> - {metric.description}</span>
                                   </Label>
@@ -640,7 +632,10 @@ export function KBModelConfig() {
                         <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-100 dark:border-green-800">
                           <div className="text-sm font-manrope">
                             <span className="text-green-700 dark:text-green-300 font-medium">Privacy:</span>
-                            <div className="font-semibold text-green-800 dark:text-green-200 mt-1">🔒 Local</div>
+                            <div className="font-semibold text-green-800 dark:text-green-200 mt-1 flex items-center gap-1">
+                              <Lock className="h-3.5 w-3.5" />
+                              Local
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -671,7 +666,9 @@ export function KBModelConfig() {
                         >
                           <CardContent className="p-4">
                             <div className="flex items-start gap-3">
-                              <span className="text-2xl flex-shrink-0">{model.icon}</span>
+                              {model.isMultilingual && (
+                                <Globe className="h-6 w-6 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                              )}
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                   <h3 className="font-bold text-gray-900 dark:text-white font-manrope">{model.name}</h3>
@@ -763,12 +760,9 @@ export function KBModelConfig() {
                         <div className="flex items-center space-x-4">
                           <RadioGroupItem value={IndexingMethod.FAST} />
                           <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg flex-shrink-0">🚀</span>
-                              <Label htmlFor={IndexingMethod.FAST} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
-                                Fast Processing
-                              </Label>
-                            </div>
+                            <Label htmlFor={IndexingMethod.FAST} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
+                              Fast Processing
+                            </Label>
                             <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
                               Quick processing, lower quality. Good for testing and development.
                             </p>
@@ -797,16 +791,13 @@ export function KBModelConfig() {
                         <div className="flex items-center space-x-4">
                           <RadioGroupItem value={IndexingMethod.BALANCED} />
                           <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg flex-shrink-0">⚖️</span>
-                              <div className="flex items-center gap-2">
-                                <Label htmlFor={IndexingMethod.BALANCED} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
-                                  Balanced Processing
-                                </Label>
-                                <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope font-medium">
-                                  Recommended
-                                </Badge>
-                              </div>
+                            <div className="flex items-center gap-2">
+                              <Label htmlFor={IndexingMethod.BALANCED} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
+                                Balanced Processing
+                              </Label>
+                              <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 font-manrope font-medium">
+                                Recommended
+                              </Badge>
                             </div>
                             <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
                               Good balance between speed and quality. Ideal for most use cases.
@@ -836,12 +827,9 @@ export function KBModelConfig() {
                         <div className="flex items-center space-x-4">
                           <RadioGroupItem value={IndexingMethod.HIGH_QUALITY} />
                           <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg flex-shrink-0">🏆</span>
-                              <Label htmlFor={IndexingMethod.HIGH_QUALITY} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
-                                High Quality Processing
-                              </Label>
-                            </div>
+                            <Label htmlFor={IndexingMethod.HIGH_QUALITY} className="text-lg font-bold cursor-pointer text-gray-900 dark:text-white font-manrope">
+                              High Quality Processing
+                            </Label>
                             <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope leading-relaxed">
                               Slower processing, highest quality. Best for production and accuracy.
                             </p>
@@ -915,7 +903,10 @@ export function KBModelConfig() {
 
               <div className="bg-white dark:bg-gray-800/50 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4">
                 <div className="text-sm text-indigo-700 dark:text-indigo-300 font-manrope leading-relaxed">
-                  <p className="font-semibold mb-2">💡 Storage Notes:</p>
+                  <p className="font-semibold mb-2 flex items-center gap-2">
+                    <Info className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+                    Storage Notes:
+                  </p>
                   <ul className="space-y-1 list-none">
                     <li className="flex items-start gap-2">
                       <span className="text-indigo-500 dark:text-indigo-400">•</span>
@@ -938,15 +929,15 @@ export function KBModelConfig() {
           {/* Reset Button */}
           <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
             <div className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
-              Need to start over? Reset all settings to production defaults
+              Need to start over? Reset all settings to balanced defaults
             </div>
             <Button
               variant="outline"
-              onClick={() => handlePresetSelect('production')}
+              onClick={() => handlePresetSelect('balanced')}
               className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 font-manrope font-medium shadow-sm transition-all duration-200"
             >
               <Settings className="h-4 w-4 mr-2" />
-              Reset to Production Defaults
+              Reset to Balanced Defaults
             </Button>
           </div>
         </CardContent>

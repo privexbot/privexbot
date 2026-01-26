@@ -33,6 +33,7 @@ import {
   DraftValidationResponse,
   ApprovedSource,
   FinalizeRequest,
+  PagePreview,
 } from "@/types/knowledge-base";
 import kbClient from "@/lib/kb-client";
 
@@ -570,6 +571,17 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 const newSources: DraftSource[] = [];
                 const urls = Array.isArray(urlOrUrls) ? urlOrUrls : [urlOrUrls];
 
+                // Check if pages were pre-approved during enhanced immediate preview
+                interface PreviewPageWithApproval {
+                  is_approved?: boolean;
+                  [key: string]: unknown;
+                }
+                const typedPreviewPages = previewPages as PreviewPageWithApproval[];
+                const hasPreApprovedPages = typedPreviewPages.some((page) => page.is_approved === true);
+                const approvedPageIndices = typedPreviewPages
+                  .map((page, index: number) => page.is_approved ? index : -1)
+                  .filter((i: number) => i >= 0);
+
                 if (backendResult.source_ids && Array.isArray(backendResult.source_ids)) {
                   // Bulk response
                   backendResult.source_ids.forEach((sourceId, index) => {
@@ -585,12 +597,14 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                         metadata: {
                           ...metadata,
                           hasPreviewData: true,
-                          // CLEAN PREVIEW PAGES: Remove any preview approval states
-                          previewPages: previewPages.map((page: any) => ({
+                          // PRESERVE approval state from enhanced immediate preview
+                          approvedSources: hasPreApprovedPages,
+                          approvedPageIndices: approvedPageIndices,
+                          previewPages: typedPreviewPages.map((page) => ({
                             ...page,
-                            is_approved: false,
-                            approved_at: undefined,
-                            approved_by: undefined
+                            // Keep approval state if page was pre-approved
+                            is_approved: page.is_approved ?? false,
+                            approved_at: page.is_approved ? new Date().toISOString() : undefined,
                           }))
                         }
                       });
@@ -608,12 +622,14 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                     metadata: {
                       ...metadata,
                       hasPreviewData: true,
-                      // CLEAN PREVIEW PAGES: Remove any preview approval states
-                      previewPages: previewPages.map((page: any) => ({
+                      // PRESERVE approval state from enhanced immediate preview
+                      approvedSources: hasPreApprovedPages,
+                      approvedPageIndices: approvedPageIndices,
+                      previewPages: typedPreviewPages.map((page) => ({
                         ...page,
-                        is_approved: false,
-                        approved_at: undefined,
-                        approved_by: undefined
+                        // Keep approval state if page was pre-approved
+                        is_approved: page.is_approved ?? false,
+                        approved_at: page.is_approved ? new Date().toISOString() : undefined,
                       }))
                     }
                   });
@@ -622,15 +638,15 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 set((state) => {
                   state.previewData = {
                     draft_id: currentDraft.draft_id,
-                    pages_previewed: previewPages.length,
+                    pages_previewed: typedPreviewPages.length,
                     total_chunks: 0,
                     strategy: ChunkingStrategy.BY_HEADING,
-                    pages: previewPages.map((page: any) => ({
+                    pages: typedPreviewPages.map((page) => ({
                       ...page,
-                      is_approved: false,
-                      approved_at: undefined,
-                      approved_by: undefined
-                    })),
+                      // Preserve approval state from enhanced immediate preview
+                      is_approved: page.is_approved ?? false,
+                      approved_at: page.is_approved ? new Date().toISOString() : undefined,
+                    })) as unknown as PagePreview[],
                     estimated_total_chunks: 0
                   };
 

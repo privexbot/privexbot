@@ -63,6 +63,30 @@ class CreateChatbotDraftRequest(BaseModel):
     )
 
 
+class KBAttachmentSchema(BaseModel):
+    """Schema for a knowledge base attachment."""
+    kb_id: str = Field(..., description="Knowledge Base ID")
+    name: str = Field(..., description="KB name for display")
+    enabled: bool = Field(default=True, description="Whether KB is active")
+    priority: int = Field(default=1, ge=1, le=10, description="Search priority")
+    retrieval_override: Optional[dict] = Field(
+        default=None,
+        description="Override retrieval settings for this KB"
+    )
+
+
+class KBConfigUpdate(BaseModel):
+    """Schema for updating KB configuration on a deployed chatbot."""
+    knowledge_bases: Optional[List[KBAttachmentSchema]] = Field(
+        None,
+        description="List of attached knowledge bases"
+    )
+    grounding_mode: Optional[str] = Field(
+        None,
+        description="Grounding mode: 'strict', 'guided', 'flexible'"
+    )
+
+
 class UpdateChatbotDraftRequest(BaseModel):
     """Request model for updating chatbot draft data."""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -86,6 +110,10 @@ class UpdateChatbotDraftRequest(BaseModel):
     is_public: Optional[bool] = Field(
         None,
         description="Whether chatbot is publicly accessible without API key"
+    )
+    kb_config: Optional[KBConfigUpdate] = Field(
+        None,
+        description="Knowledge base configuration update"
     )
 
 
@@ -806,6 +834,44 @@ async def update_chatbot(
         kb_config = chatbot.kb_config.copy() if chatbot.kb_config else {}
         kb_config["grounding_mode"] = updates["grounding_mode"]
         chatbot.kb_config = kb_config
+
+    # Update KB configuration (full knowledge_bases list)
+    if "kb_config" in updates and updates["kb_config"]:
+        kb_config_update = updates["kb_config"]
+        current_kb_config = chatbot.kb_config.copy() if chatbot.kb_config else {}
+
+        # Handle knowledge_bases list update
+        # Note: kb_config_update is a dict (from model_dump), so use dict access not attribute access
+        if isinstance(kb_config_update, dict) and kb_config_update.get('knowledge_bases') is not None:
+            # Validate each KB exists and belongs to the same workspace
+            validated_kbs = []
+            for kb_attachment in kb_config_update.get('knowledge_bases', []):
+                kb = db.query(KnowledgeBase).filter(
+                    KnowledgeBase.id == UUID(kb_attachment['kb_id']),
+                    KnowledgeBase.workspace_id == chatbot.workspace_id
+                ).first()
+
+                if not kb:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Knowledge base {kb_attachment['kb_id']} not found in workspace"
+                    )
+
+                validated_kbs.append({
+                    "kb_id": kb_attachment['kb_id'],
+                    "name": kb_attachment.get('name') or kb.name,
+                    "enabled": kb_attachment.get('enabled', True),
+                    "priority": kb_attachment.get('priority', 1),
+                    "retrieval_override": kb_attachment.get('retrieval_override')
+                })
+
+            current_kb_config["knowledge_bases"] = validated_kbs
+
+        # Handle grounding_mode update within kb_config
+        if isinstance(kb_config_update, dict) and kb_config_update.get('grounding_mode'):
+            current_kb_config["grounding_mode"] = kb_config_update.get('grounding_mode')
+
+        chatbot.kb_config = current_kb_config
 
     # Update visibility
     if "is_public" in updates:

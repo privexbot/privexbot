@@ -28,10 +28,15 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  BookOpen,
+  Database,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { useApp } from '@/contexts/AppContext';
-import type { Chatbot, UpdateChatbotDraftRequest, LeadCaptureCustomField } from '@/types/chatbot';
+import { useKBStore } from '@/store/kb-store';
+import { Switch } from '@/components/ui/switch';
+import type { Chatbot, UpdateChatbotDraftRequest, LeadCaptureCustomField, KBAttachment } from '@/types/chatbot';
+import type { KBSummary } from '@/types/knowledge-base';
 import { AIModel, getModelLabel, LeadCaptureTiming, FieldVisibility, CustomFieldType, DEFAULT_LEAD_CAPTURE_CONFIG } from '@/types/chatbot';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -106,6 +111,13 @@ export default function ChatbotEditPage() {
     whatsapp: false,
   });
 
+  // State for Knowledge Base management
+  const [attachedKBs, setAttachedKBs] = useState<KBAttachment[]>([]);
+  const [kbSaving, setKbSaving] = useState(false);
+
+  // Use KB store for loading KBs (handles response format correctly)
+  const { kbs: storeKBs, fetchKBs, isLoadingList: kbLoading } = useKBStore();
+
   // State for custom field modal
   const [showCustomFieldModal, setShowCustomFieldModal] = useState(false);
   const [editingCustomField, setEditingCustomField] = useState<LeadCaptureCustomField | null>(null);
@@ -138,78 +150,120 @@ export default function ChatbotEditPage() {
   };
 
   useEffect(() => {
+    const loadData = async () => {
+      if (!chatbotId) return;
+
+      setIsLoading(true);
+      try {
+        const data = await chatbotApi.get(chatbotId);
+        setChatbot(data);
+
+        // Deep merge lead capture config with defaults (API may return partial data)
+        const apiConfig = data.lead_capture_config;
+        const leadConfig = {
+          ...DEFAULT_LEAD_CAPTURE_CONFIG,
+          ...apiConfig,
+          fields: {
+            ...DEFAULT_LEAD_CAPTURE_CONFIG.fields,
+            ...apiConfig?.fields,
+          },
+          privacy: {
+            ...DEFAULT_LEAD_CAPTURE_CONFIG.privacy,
+            ...apiConfig?.privacy,
+          },
+          /* eslint-disable @typescript-eslint/no-unnecessary-condition -- API may return partial platform configs */
+          platforms: {
+            web: { ...DEFAULT_LEAD_CAPTURE_CONFIG.platforms.web, ...apiConfig?.platforms?.web },
+            telegram: { ...DEFAULT_LEAD_CAPTURE_CONFIG.platforms.telegram, ...apiConfig?.platforms?.telegram },
+            discord: { ...DEFAULT_LEAD_CAPTURE_CONFIG.platforms.discord, ...apiConfig?.platforms?.discord },
+            whatsapp: { ...DEFAULT_LEAD_CAPTURE_CONFIG.platforms.whatsapp, ...apiConfig?.platforms?.whatsapp },
+          },
+          /* eslint-enable @typescript-eslint/no-unnecessary-condition */
+        };
+
+        // Populate form with existing data
+        /* eslint-disable @typescript-eslint/no-unnecessary-condition -- API response may have partial/undefined nested properties */
+        setFormData({
+          name: data.name ?? '',
+          description: data.description ?? '',
+          system_prompt: data.prompt_config?.system_prompt ?? '',
+          model: (data.ai_config?.model as typeof AIModel[keyof typeof AIModel]) ?? AIModel.SECRET_AI,
+          temperature: data.ai_config?.temperature ?? 0.7,
+          max_tokens: data.ai_config?.max_tokens ?? 2000,
+          greeting: data.prompt_config?.messages?.greeting ?? '',
+          primary_color: data.branding_config?.primary_color ?? '#6366f1',
+          secondary_color: data.branding_config?.secondary_color ?? '#8b5cf6',
+          position: data.branding_config?.position ?? 'bottom-right',
+          chat_title: data.branding_config?.chat_title ?? '',
+          avatar_url: data.branding_config?.avatar_url ?? '',
+          font_family: data.branding_config?.font_family ?? 'Inter',
+          bubble_style: (data.branding_config?.bubble_style as 'rounded' | 'square') ?? 'rounded',
+          memory_enabled: data.behavior_config?.memory?.enabled ?? true,
+          memory_max_messages: data.behavior_config?.memory?.max_messages ?? 20,
+          is_public: data.is_public ?? true,
+          // Lead capture configuration (merged with defaults)
+          lead_capture_enabled: leadConfig.enabled,
+          lead_capture_timing: leadConfig.timing,
+          lead_capture_messages_before_prompt: leadConfig.messages_before_prompt ?? 3,
+          lead_capture_allow_skip: leadConfig.allow_skip,
+          // Standard fields visibility
+          lead_capture_email_visibility: leadConfig.fields.email,
+          lead_capture_name_visibility: leadConfig.fields.name,
+          lead_capture_phone_visibility: leadConfig.fields.phone,
+          // Custom fields
+          lead_capture_custom_fields: leadConfig.custom_fields ?? [],
+          // Privacy
+          lead_capture_require_consent: leadConfig.privacy.require_consent,
+          lead_capture_consent_message: leadConfig.privacy.consent_message,
+          lead_capture_auto_capture_notice: leadConfig.privacy.auto_capture_notice,
+          // Platform settings
+          lead_capture_web_enabled: leadConfig.platforms.web.enabled,
+          lead_capture_telegram_enabled: leadConfig.platforms.telegram.enabled,
+          lead_capture_telegram_prompt_email: leadConfig.platforms.telegram.prompt_for_email ?? false,
+          lead_capture_telegram_prompt_phone: leadConfig.platforms.telegram.prompt_for_phone ?? false,
+          lead_capture_discord_enabled: leadConfig.platforms.discord.enabled,
+          lead_capture_discord_prompt_email: leadConfig.platforms.discord.prompt_for_email ?? false,
+          lead_capture_whatsapp_enabled: leadConfig.platforms.whatsapp.enabled,
+          lead_capture_whatsapp_prompt_email: leadConfig.platforms.whatsapp.prompt_for_email ?? false,
+        });
+        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
+      } catch (error) {
+        console.error('Failed to load chatbot:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load chatbot details',
+          variant: 'destructive'
+        });
+        navigate('/chatbots');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     if (chatbotId && currentWorkspace) {
-      loadChatbotData();
+      void loadData();
     }
-  }, [chatbotId, currentWorkspace]);
+  }, [chatbotId, currentWorkspace, navigate]);
 
-  const loadChatbotData = async () => {
-    if (!chatbotId) return;
-
-    setIsLoading(true);
-    try {
-      const data = await chatbotApi.get(chatbotId);
-      setChatbot(data);
-
-      // Get lead capture config with defaults
-      const leadConfig = data.lead_capture_config || DEFAULT_LEAD_CAPTURE_CONFIG;
-
-      // Populate form with existing data
-      setFormData({
-        name: data.name || '',
-        description: data.description || '',
-        system_prompt: data.prompt_config?.system_prompt || '',
-        model: (data.ai_config?.model as typeof AIModel[keyof typeof AIModel]) || AIModel.SECRET_AI,
-        temperature: data.ai_config?.temperature ?? 0.7,
-        max_tokens: data.ai_config?.max_tokens || 2000,
-        greeting: data.prompt_config?.messages?.greeting || '',
-        primary_color: data.branding_config?.primary_color || '#6366f1',
-        secondary_color: data.branding_config?.secondary_color || '#8b5cf6',
-        position: data.branding_config?.position || 'bottom-right',
-        chat_title: data.branding_config?.chat_title || '',
-        avatar_url: data.branding_config?.avatar_url || '',
-        font_family: data.branding_config?.font_family || 'Inter',
-        bubble_style: (data.branding_config?.bubble_style as 'rounded' | 'square') || 'rounded',
-        memory_enabled: data.behavior_config?.memory?.enabled ?? true,
-        memory_max_messages: data.behavior_config?.memory?.max_messages || 20,
-        is_public: data.is_public ?? true,
-        // Lead capture configuration (new multi-platform structure)
-        lead_capture_enabled: leadConfig.enabled ?? false,
-        lead_capture_timing: leadConfig.timing || LeadCaptureTiming.BEFORE_CHAT,
-        lead_capture_messages_before_prompt: leadConfig.messages_before_prompt ?? 3,
-        lead_capture_allow_skip: leadConfig.allow_skip ?? true,
-        // Standard fields visibility
-        lead_capture_email_visibility: leadConfig.fields?.email || FieldVisibility.REQUIRED,
-        lead_capture_name_visibility: leadConfig.fields?.name || FieldVisibility.OPTIONAL,
-        lead_capture_phone_visibility: leadConfig.fields?.phone || FieldVisibility.HIDDEN,
-        // Custom fields
-        lead_capture_custom_fields: leadConfig.custom_fields || [],
-        // Privacy
-        lead_capture_require_consent: leadConfig.privacy?.require_consent ?? false,
-        lead_capture_consent_message: leadConfig.privacy?.consent_message || 'I agree to the collection and processing of my data.',
-        lead_capture_auto_capture_notice: leadConfig.privacy?.auto_capture_notice || 'We collect IP address and browser info for analytics.',
-        // Platform settings
-        lead_capture_web_enabled: leadConfig.platforms?.web?.enabled ?? true,
-        lead_capture_telegram_enabled: leadConfig.platforms?.telegram?.enabled ?? false,
-        lead_capture_telegram_prompt_email: leadConfig.platforms?.telegram?.prompt_for_email ?? false,
-        lead_capture_telegram_prompt_phone: leadConfig.platforms?.telegram?.prompt_for_phone ?? false,
-        lead_capture_discord_enabled: leadConfig.platforms?.discord?.enabled ?? false,
-        lead_capture_discord_prompt_email: leadConfig.platforms?.discord?.prompt_for_email ?? false,
-        lead_capture_whatsapp_enabled: leadConfig.platforms?.whatsapp?.enabled ?? false,
-        lead_capture_whatsapp_prompt_email: leadConfig.platforms?.whatsapp?.prompt_for_email ?? false,
-      });
-    } catch (error) {
-      console.error('Failed to load chatbot:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load chatbot details',
-        variant: 'destructive'
-      });
-      navigate('/chatbots');
-    } finally {
-      setIsLoading(false);
+  // Load attached KBs when chatbot data is loaded
+  useEffect(() => {
+    const kbs = chatbot?.kb_config.knowledge_bases;
+    if (kbs) {
+      setAttachedKBs(kbs);
     }
-  };
+  }, [chatbot]);
+
+  // Load available KBs when KB tab is selected (using store for correct response handling)
+  useEffect(() => {
+    if (activeTab === 'knowledge-bases' && currentWorkspace?.id) {
+      void fetchKBs({ workspace_id: currentWorkspace.id, status: 'ready' });
+    }
+  }, [activeTab, currentWorkspace?.id, fetchKBs]);
+
+  // Derive available KBs from store (filter out already attached)
+  const availableKBs = storeKBs.filter(
+    (kb) => !attachedKBs.some((attached) => attached.kb_id === kb.id)
+  );
 
   const handleSave = async () => {
     if (!chatbotId || !chatbot) return;
@@ -295,6 +349,100 @@ export default function ChatbotEditPage() {
     }
   };
 
+  // KB Management Functions
+  const handleAttachKB = async (kb: KBSummary) => {
+    if (!chatbotId) return;
+
+    const newAttachment: KBAttachment = {
+      kb_id: kb.id,
+      name: kb.name,
+      enabled: true,
+      priority: attachedKBs.length + 1,
+    };
+    const updatedKBs = [...attachedKBs, newAttachment];
+
+    setKbSaving(true);
+    try {
+      await chatbotApi.updateKBConfig(chatbotId, { knowledge_bases: updatedKBs });
+
+      // Reload chatbot data to confirm save persisted
+      const refreshedChatbot = await chatbotApi.get(chatbotId);
+      setChatbot(refreshedChatbot);
+      setAttachedKBs(refreshedChatbot.kb_config.knowledge_bases || []);
+
+      toast({
+        title: 'Knowledge Base Attached',
+        description: `${kb.name} has been added to this chatbot`,
+      });
+    } catch (error) {
+      console.error('Failed to attach KB:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to attach knowledge base',
+        variant: 'destructive',
+      });
+    } finally {
+      setKbSaving(false);
+    }
+  };
+
+  const handleDetachKB = async (kbId: string) => {
+    if (!chatbotId) return;
+
+    const updatedKBs = attachedKBs.filter(kb => kb.kb_id !== kbId);
+
+    setKbSaving(true);
+    try {
+      await chatbotApi.updateKBConfig(chatbotId, { knowledge_bases: updatedKBs });
+
+      // Reload chatbot data to confirm save persisted
+      const refreshedChatbot = await chatbotApi.get(chatbotId);
+      setChatbot(refreshedChatbot);
+      setAttachedKBs(refreshedChatbot.kb_config.knowledge_bases || []);
+
+      toast({
+        title: 'Knowledge Base Removed',
+        description: 'The knowledge base has been detached from this chatbot',
+      });
+    } catch (error) {
+      console.error('Failed to detach KB:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to remove knowledge base',
+        variant: 'destructive',
+      });
+    } finally {
+      setKbSaving(false);
+    }
+  };
+
+  const handleToggleKB = async (kbId: string, enabled: boolean) => {
+    if (!chatbotId) return;
+
+    const updatedKBs = attachedKBs.map(kb =>
+      kb.kb_id === kbId ? { ...kb, enabled } : kb
+    );
+
+    setKbSaving(true);
+    try {
+      await chatbotApi.updateKBConfig(chatbotId, { knowledge_bases: updatedKBs });
+
+      // Reload chatbot data to confirm save persisted
+      const refreshedChatbot = await chatbotApi.get(chatbotId);
+      setChatbot(refreshedChatbot);
+      setAttachedKBs(refreshedChatbot.kb_config.knowledge_bases || []);
+    } catch (error) {
+      console.error('Failed to toggle KB:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update knowledge base',
+        variant: 'destructive',
+      });
+    } finally {
+      setKbSaving(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -319,7 +467,7 @@ export default function ChatbotEditPage() {
               Chatbot not found or you don't have access to it.
             </AlertDescription>
           </Alert>
-          <Button className="mt-4" onClick={() => navigate('/chatbots')}>
+          <Button className="mt-4" onClick={() => { navigate('/chatbots'); }}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Chatbots
           </Button>
@@ -336,7 +484,7 @@ export default function ChatbotEditPage() {
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => navigate(`/chatbots/${chatbotId}`)}
+              onClick={() => { navigate(`/chatbots/${chatbotId ?? ''}`); }}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 font-manrope"
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -351,7 +499,7 @@ export default function ChatbotEditPage() {
               </p>
             </div>
           </div>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button onClick={() => { void handleSave(); }} disabled={isSaving}>
             {isSaving ? (
               <>
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -382,6 +530,13 @@ export default function ChatbotEditPage() {
             >
               <Sparkles className="h-4 w-4 mr-2" />
               AI Config
+            </TabsTrigger>
+            <TabsTrigger
+              value="knowledge-bases"
+              className="data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/50 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-100 font-medium font-manrope"
+            >
+              <BookOpen className="h-4 w-4 mr-2" />
+              Knowledge Bases
             </TabsTrigger>
             <TabsTrigger
               value="messages"
@@ -424,7 +579,7 @@ export default function ChatbotEditPage() {
                   <Input
                     id="name"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, name: e.target.value }); }}
                     placeholder="My Chatbot"
                     className="font-manrope"
                   />
@@ -435,7 +590,7 @@ export default function ChatbotEditPage() {
                   <Textarea
                     id="description"
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, description: e.target.value }); }}
                     placeholder="A helpful assistant for customer support..."
                     rows={3}
                     className="font-manrope"
@@ -447,7 +602,7 @@ export default function ChatbotEditPage() {
                   <Textarea
                     id="system_prompt"
                     value={formData.system_prompt}
-                    onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, system_prompt: e.target.value }); }}
                     placeholder="You are a helpful assistant..."
                     rows={6}
                     className="font-manrope font-mono text-sm"
@@ -464,7 +619,7 @@ export default function ChatbotEditPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setFormData({ ...formData, is_public: true })}
+                      onClick={() => { setFormData({ ...formData, is_public: true }); }}
                       className={`flex-1 font-manrope justify-start gap-3 h-auto py-3 ${
                         formData.is_public
                           ? 'ring-2 ring-green-500 border-green-500 bg-green-50 dark:bg-green-950/30'
@@ -480,7 +635,7 @@ export default function ChatbotEditPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setFormData({ ...formData, is_public: false })}
+                      onClick={() => { setFormData({ ...formData, is_public: false }); }}
                       className={`flex-1 font-manrope justify-start gap-3 h-auto py-3 ${
                         !formData.is_public
                           ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-50 dark:bg-amber-950/30'
@@ -519,13 +674,13 @@ export default function ChatbotEditPage() {
                   <Label htmlFor="model" className="font-manrope">AI Model</Label>
                   <Select
                     value={formData.model}
-                    onValueChange={(value) => setFormData({ ...formData, model: value as typeof AIModel[keyof typeof AIModel] })}
+                    onValueChange={(value) => { setFormData({ ...formData, model: value as typeof AIModel[keyof typeof AIModel] }); }}
                   >
                     <SelectTrigger className="font-manrope">
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.entries(AIModel).map(([key, value]) => (
+                      {Object.entries(AIModel).map(([_key, value]) => (
                         <SelectItem key={value} value={value} className="font-manrope">
                           {getModelLabel(value)}
                         </SelectItem>
@@ -540,7 +695,7 @@ export default function ChatbotEditPage() {
                   </div>
                   <Slider
                     value={[formData.temperature]}
-                    onValueChange={(value) => setFormData({ ...formData, temperature: value[0] })}
+                    onValueChange={(value) => { setFormData({ ...formData, temperature: value[0] }); }}
                     min={0}
                     max={2}
                     step={0.1}
@@ -557,7 +712,7 @@ export default function ChatbotEditPage() {
                     id="max_tokens"
                     type="number"
                     value={formData.max_tokens}
-                    onChange={(e) => setFormData({ ...formData, max_tokens: parseInt(e.target.value) || 2000 })}
+                    onChange={(e) => { setFormData({ ...formData, max_tokens: parseInt(e.target.value) || 2000 }); }}
                     min={100}
                     max={8000}
                     className="font-manrope"
@@ -573,7 +728,7 @@ export default function ChatbotEditPage() {
                       <input
                         type="checkbox"
                         checked={formData.memory_enabled}
-                        onChange={(e) => setFormData({ ...formData, memory_enabled: e.target.checked })}
+                        onChange={(e) => { setFormData({ ...formData, memory_enabled: e.target.checked }); }}
                         className="rounded"
                       />
                       Enable Conversation Memory
@@ -585,12 +740,162 @@ export default function ChatbotEditPage() {
                       id="memory_max"
                       type="number"
                       value={formData.memory_max_messages}
-                      onChange={(e) => setFormData({ ...formData, memory_max_messages: parseInt(e.target.value) || 20 })}
+                      onChange={(e) => { setFormData({ ...formData, memory_max_messages: parseInt(e.target.value) || 20 }); }}
                       min={5}
                       max={100}
                       disabled={!formData.memory_enabled}
                       className="font-manrope"
                     />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Knowledge Bases Tab */}
+          <TabsContent value="knowledge-bases">
+            <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 border-b border-teal-200 dark:border-teal-700 rounded-t-xl p-6">
+                <div className="flex items-center gap-3">
+                  <BookOpen className="h-6 w-6 text-teal-600 dark:text-teal-400" />
+                  <div>
+                    <CardTitle className="text-lg font-bold text-teal-900 dark:text-teal-100 font-manrope">Knowledge Bases</CardTitle>
+                    <CardDescription className="text-teal-700 dark:text-teal-300 font-manrope">Attach knowledge bases to enhance your chatbot with relevant information</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                {/* Attached Knowledge Bases Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">
+                      Attached Knowledge Bases ({attachedKBs.length})
+                    </h3>
+                    {kbSaving && (
+                      <RefreshCw className="h-4 w-4 animate-spin text-teal-500" />
+                    )}
+                  </div>
+
+                  {attachedKBs.length === 0 ? (
+                    <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-xl text-center">
+                      <Database className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">
+                        No knowledge bases attached yet.
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 font-manrope mt-1">
+                        Add a knowledge base below to enhance your chatbot's responses with relevant information.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {attachedKBs.map((kb) => (
+                        <div
+                          key={kb.kb_id}
+                          className={`flex items-center justify-between p-4 border rounded-xl transition-all ${
+                            kb.enabled
+                              ? 'bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800'
+                              : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <Switch
+                              checked={kb.enabled}
+                              onCheckedChange={(enabled) => { void handleToggleKB(kb.kb_id, enabled); }}
+                              disabled={kbSaving}
+                            />
+                            <div>
+                              <span className={`font-medium font-manrope ${kb.enabled ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                                {kb.name}
+                              </span>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                                Priority: {kb.priority} {!kb.enabled && '• Disabled'}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => { void handleDetachKB(kb.kb_id); }}
+                            disabled={kbSaving}
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Available Knowledge Bases Section */}
+                <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">
+                    Available Knowledge Bases
+                  </h3>
+
+                  {kbLoading ? (
+                    <div className="flex items-center justify-center p-8">
+                      <RefreshCw className="h-6 w-6 animate-spin text-teal-500" />
+                      <span className="ml-2 text-sm text-gray-500 font-manrope">Loading knowledge bases...</span>
+                    </div>
+                  ) : availableKBs.length === 0 ? (
+                    <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-xl text-center">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">
+                        {attachedKBs.length > 0
+                          ? 'All available knowledge bases are already attached.'
+                          : 'No knowledge bases available in this workspace.'}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 font-manrope"
+                        onClick={() => { navigate('/knowledge-bases/create'); }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Create Knowledge Base
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {availableKBs.map((kb) => (
+                        <div
+                          key={kb.id}
+                          className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-teal-300 dark:hover:border-teal-700 transition-all"
+                        >
+                          <div>
+                            <span className="font-medium text-gray-900 dark:text-gray-100 font-manrope">{kb.name}</span>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                              {kb.total_documents ?? 0} documents • {kb.total_chunks ?? 0} chunks
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { void handleAttachKB(kb); }}
+                            disabled={kbSaving}
+                            className="font-manrope text-teal-600 border-teal-300 hover:bg-teal-50 dark:text-teal-400 dark:border-teal-700 dark:hover:bg-teal-950/30"
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Attach
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Info Alert */}
+                <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <div className="flex gap-3">
+                    <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-blue-900 dark:text-blue-100 font-manrope">How Knowledge Bases Work</p>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1 font-manrope">
+                        When a user asks a question, the chatbot searches attached knowledge bases for relevant information
+                        and uses it to generate accurate, grounded responses. You can enable/disable individual KBs or
+                        set their priority to control search order.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -615,7 +920,7 @@ export default function ChatbotEditPage() {
                   <Textarea
                     id="greeting"
                     value={formData.greeting}
-                    onChange={(e) => setFormData({ ...formData, greeting: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, greeting: e.target.value }); }}
                     placeholder="Hello! How can I help you today?"
                     rows={2}
                     className="font-manrope"
@@ -647,7 +952,7 @@ export default function ChatbotEditPage() {
                   <Input
                     id="chat_title"
                     value={formData.chat_title}
-                    onChange={(e) => setFormData({ ...formData, chat_title: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, chat_title: e.target.value }); }}
                     placeholder="Chat with us"
                     className="font-manrope"
                   />
@@ -685,8 +990,8 @@ export default function ChatbotEditPage() {
                           src={formData.avatar_url}
                           alt="Avatar preview"
                           className="w-full h-full object-cover"
-                          onError={() => setAvatarError('Failed to load image')}
-                          onLoad={() => setAvatarError('')}
+                          onError={() => { setAvatarError('Failed to load image'); }}
+                          onLoad={() => { setAvatarError(''); }}
                         />
                       ) : (
                         <Bot className="h-6 w-6 text-gray-400" />
@@ -796,7 +1101,7 @@ export default function ChatbotEditPage() {
                     <Label className="font-manrope">Font Family</Label>
                     <Select
                       value={formData.font_family}
-                      onValueChange={(value) => setFormData({ ...formData, font_family: value })}
+                      onValueChange={(value) => { setFormData({ ...formData, font_family: value }); }}
                     >
                       <SelectTrigger className="font-manrope">
                         <SelectValue placeholder="Select font" />
@@ -814,7 +1119,7 @@ export default function ChatbotEditPage() {
                     <Label className="font-manrope">Widget Position</Label>
                     <Select
                       value={formData.position}
-                      onValueChange={(value) => setFormData({ ...formData, position: value })}
+                      onValueChange={(value) => { setFormData({ ...formData, position: value }); }}
                     >
                       <SelectTrigger className="font-manrope">
                         <SelectValue placeholder="Select position" />
@@ -834,7 +1139,7 @@ export default function ChatbotEditPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setFormData({ ...formData, bubble_style: 'rounded' })}
+                      onClick={() => { setFormData({ ...formData, bubble_style: 'rounded' }); }}
                       className={`flex-1 ${formData.bubble_style === 'rounded' ? 'ring-2 ring-blue-500' : ''}`}
                     >
                       Rounded
@@ -842,7 +1147,7 @@ export default function ChatbotEditPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setFormData({ ...formData, bubble_style: 'square' })}
+                      onClick={() => { setFormData({ ...formData, bubble_style: 'square' }); }}
                       className={`flex-1 ${formData.bubble_style === 'square' ? 'ring-2 ring-blue-500' : ''}`}
                     >
                       Square
@@ -904,7 +1209,7 @@ export default function ChatbotEditPage() {
                     <input
                       type="checkbox"
                       checked={formData.lead_capture_enabled}
-                      onChange={(e) => setFormData({ ...formData, lead_capture_enabled: e.target.checked })}
+                      onChange={(e) => { setFormData({ ...formData, lead_capture_enabled: e.target.checked }); }}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cyan-300 dark:peer-focus:ring-cyan-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
@@ -917,7 +1222,7 @@ export default function ChatbotEditPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, lead_capture_timing: LeadCaptureTiming.BEFORE_CHAT })}
+                      onClick={() => { setFormData({ ...formData, lead_capture_timing: LeadCaptureTiming.BEFORE_CHAT }); }}
                       className={`p-4 rounded-xl border-2 text-left transition-all ${
                         formData.lead_capture_timing === LeadCaptureTiming.BEFORE_CHAT
                           ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30'
@@ -929,7 +1234,7 @@ export default function ChatbotEditPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, lead_capture_timing: LeadCaptureTiming.AFTER_N_MESSAGES })}
+                      onClick={() => { setFormData({ ...formData, lead_capture_timing: LeadCaptureTiming.AFTER_N_MESSAGES }); }}
                       className={`p-4 rounded-xl border-2 text-left transition-all ${
                         formData.lead_capture_timing === LeadCaptureTiming.AFTER_N_MESSAGES
                           ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30'
@@ -949,7 +1254,7 @@ export default function ChatbotEditPage() {
                       </div>
                       <Slider
                         value={[formData.lead_capture_messages_before_prompt]}
-                        onValueChange={(value) => setFormData({ ...formData, lead_capture_messages_before_prompt: value[0] })}
+                        onValueChange={(value) => { setFormData({ ...formData, lead_capture_messages_before_prompt: value[0] }); }}
                         min={1}
                         max={10}
                         step={1}
@@ -979,7 +1284,7 @@ export default function ChatbotEditPage() {
                       </Label>
                       <Select
                         value={formData.lead_capture_email_visibility}
-                        onValueChange={(value) => setFormData({ ...formData, lead_capture_email_visibility: value })}
+                        onValueChange={(value) => { setFormData({ ...formData, lead_capture_email_visibility: value }); }}
                       >
                         <SelectTrigger className="font-manrope">
                           <SelectValue />
@@ -1000,7 +1305,7 @@ export default function ChatbotEditPage() {
                       </Label>
                       <Select
                         value={formData.lead_capture_name_visibility}
-                        onValueChange={(value) => setFormData({ ...formData, lead_capture_name_visibility: value })}
+                        onValueChange={(value) => { setFormData({ ...formData, lead_capture_name_visibility: value }); }}
                       >
                         <SelectTrigger className="font-manrope">
                           <SelectValue />
@@ -1021,7 +1326,7 @@ export default function ChatbotEditPage() {
                       </Label>
                       <Select
                         value={formData.lead_capture_phone_visibility}
-                        onValueChange={(value) => setFormData({ ...formData, lead_capture_phone_visibility: value })}
+                        onValueChange={(value) => { setFormData({ ...formData, lead_capture_phone_visibility: value }); }}
                       >
                         <SelectTrigger className="font-manrope">
                           <SelectValue />
@@ -1122,7 +1427,7 @@ export default function ChatbotEditPage() {
                         <input
                           type="checkbox"
                           checked={formData.lead_capture_web_enabled}
-                          onChange={(e) => setFormData({ ...formData, lead_capture_web_enabled: e.target.checked })}
+                          onChange={(e) => { setFormData({ ...formData, lead_capture_web_enabled: e.target.checked }); }}
                           className="sr-only peer"
                         />
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
@@ -1146,7 +1451,7 @@ export default function ChatbotEditPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setExpandedPlatforms({ ...expandedPlatforms, telegram: !expandedPlatforms.telegram })}
+                          onClick={() => { setExpandedPlatforms({ ...expandedPlatforms, telegram: !expandedPlatforms.telegram }); }}
                           className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                         >
                           {expandedPlatforms.telegram ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -1155,7 +1460,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_telegram_enabled}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_telegram_enabled: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_telegram_enabled: e.target.checked }); }}
                             className="sr-only peer"
                           />
                           <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600"></div>
@@ -1168,7 +1473,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_telegram_prompt_email}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_telegram_prompt_email: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_telegram_prompt_email: e.target.checked }); }}
                             className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
                           />
                           <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for email in conversation</span>
@@ -1177,7 +1482,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_telegram_prompt_phone}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_telegram_prompt_phone: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_telegram_prompt_phone: e.target.checked }); }}
                             className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
                           />
                           <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for phone in conversation</span>
@@ -1199,7 +1504,7 @@ export default function ChatbotEditPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setExpandedPlatforms({ ...expandedPlatforms, discord: !expandedPlatforms.discord })}
+                          onClick={() => { setExpandedPlatforms({ ...expandedPlatforms, discord: !expandedPlatforms.discord }); }}
                           className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                         >
                           {expandedPlatforms.discord ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -1208,7 +1513,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_discord_enabled}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_discord_enabled: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_discord_enabled: e.target.checked }); }}
                             className="sr-only peer"
                           />
                           <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
@@ -1221,7 +1526,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_discord_prompt_email}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_discord_prompt_email: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_discord_prompt_email: e.target.checked }); }}
                             className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                           />
                           <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for email in conversation</span>
@@ -1243,7 +1548,7 @@ export default function ChatbotEditPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setExpandedPlatforms({ ...expandedPlatforms, whatsapp: !expandedPlatforms.whatsapp })}
+                          onClick={() => { setExpandedPlatforms({ ...expandedPlatforms, whatsapp: !expandedPlatforms.whatsapp }); }}
                           className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                         >
                           {expandedPlatforms.whatsapp ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -1252,7 +1557,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_whatsapp_enabled}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_whatsapp_enabled: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_whatsapp_enabled: e.target.checked }); }}
                             className="sr-only peer"
                           />
                           <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
@@ -1265,7 +1570,7 @@ export default function ChatbotEditPage() {
                           <input
                             type="checkbox"
                             checked={formData.lead_capture_whatsapp_prompt_email}
-                            onChange={(e) => setFormData({ ...formData, lead_capture_whatsapp_prompt_email: e.target.checked })}
+                            onChange={(e) => { setFormData({ ...formData, lead_capture_whatsapp_prompt_email: e.target.checked }); }}
                             className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
                           />
                           <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Prompt for email in conversation</span>
@@ -1287,7 +1592,7 @@ export default function ChatbotEditPage() {
                     <input
                       type="checkbox"
                       checked={formData.lead_capture_allow_skip}
-                      onChange={(e) => setFormData({ ...formData, lead_capture_allow_skip: e.target.checked })}
+                      onChange={(e) => { setFormData({ ...formData, lead_capture_allow_skip: e.target.checked }); }}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cyan-300 dark:peer-focus:ring-cyan-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
@@ -1309,7 +1614,7 @@ export default function ChatbotEditPage() {
                       <input
                         type="checkbox"
                         checked={formData.lead_capture_require_consent}
-                        onChange={(e) => setFormData({ ...formData, lead_capture_require_consent: e.target.checked })}
+                        onChange={(e) => { setFormData({ ...formData, lead_capture_require_consent: e.target.checked }); }}
                         className="sr-only peer"
                       />
                       <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cyan-300 dark:peer-focus:ring-cyan-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
@@ -1322,7 +1627,7 @@ export default function ChatbotEditPage() {
                       <Textarea
                         id="consent_message"
                         value={formData.lead_capture_consent_message}
-                        onChange={(e) => setFormData({ ...formData, lead_capture_consent_message: e.target.value })}
+                        onChange={(e) => { setFormData({ ...formData, lead_capture_consent_message: e.target.value }); }}
                         placeholder="I agree to the collection and processing of my data."
                         rows={2}
                         className="font-manrope"
@@ -1359,7 +1664,7 @@ export default function ChatbotEditPage() {
                       <Label className="font-manrope">Field Name (internal)</Label>
                       <Input
                         value={customFieldForm.name}
-                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                        onChange={(e) => { setCustomFieldForm({ ...customFieldForm, name: e.target.value.toLowerCase().replace(/\s+/g, '_') }); }}
                         placeholder="company_name"
                         className="font-manrope"
                       />
@@ -1368,7 +1673,7 @@ export default function ChatbotEditPage() {
                       <Label className="font-manrope">Label (displayed)</Label>
                       <Input
                         value={customFieldForm.label}
-                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, label: e.target.value })}
+                        onChange={(e) => { setCustomFieldForm({ ...customFieldForm, label: e.target.value }); }}
                         placeholder="Company Name"
                         className="font-manrope"
                       />
@@ -1377,7 +1682,7 @@ export default function ChatbotEditPage() {
                       <Label className="font-manrope">Field Type</Label>
                       <Select
                         value={customFieldForm.type}
-                        onValueChange={(value) => setCustomFieldForm({ ...customFieldForm, type: value })}
+                        onValueChange={(value) => { setCustomFieldForm({ ...customFieldForm, type: value }); }}
                       >
                         <SelectTrigger className="font-manrope">
                           <SelectValue />
@@ -1395,7 +1700,7 @@ export default function ChatbotEditPage() {
                         <Label className="font-manrope">Options (comma-separated)</Label>
                         <Input
                           value={customFieldForm.options}
-                          onChange={(e) => setCustomFieldForm({ ...customFieldForm, options: e.target.value })}
+                          onChange={(e) => { setCustomFieldForm({ ...customFieldForm, options: e.target.value }); }}
                           placeholder="Option 1, Option 2, Option 3"
                           className="font-manrope"
                         />
@@ -1405,7 +1710,7 @@ export default function ChatbotEditPage() {
                       <Label className="font-manrope">Placeholder</Label>
                       <Input
                         value={customFieldForm.placeholder}
-                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, placeholder: e.target.value })}
+                        onChange={(e) => { setCustomFieldForm({ ...customFieldForm, placeholder: e.target.value }); }}
                         placeholder="Enter your company name"
                         className="font-manrope"
                       />
@@ -1414,7 +1719,7 @@ export default function ChatbotEditPage() {
                       <input
                         type="checkbox"
                         checked={customFieldForm.required}
-                        onChange={(e) => setCustomFieldForm({ ...customFieldForm, required: e.target.checked })}
+                        onChange={(e) => { setCustomFieldForm({ ...customFieldForm, required: e.target.checked }); }}
                         className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                       />
                       <span className="text-sm font-manrope text-gray-700 dark:text-gray-300">Required field</span>
@@ -1424,7 +1729,7 @@ export default function ChatbotEditPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setShowCustomFieldModal(false)}
+                      onClick={() => { setShowCustomFieldModal(false); }}
                       className="font-manrope"
                     >
                       Cancel
@@ -1434,7 +1739,7 @@ export default function ChatbotEditPage() {
                       onClick={() => {
                         if (customFieldForm.name && customFieldForm.label) {
                           const newField: LeadCaptureCustomField = {
-                            id: editingCustomField?.id || `cf_${Date.now()}`,
+                            id: editingCustomField?.id ?? `cf_${String(Date.now())}`,
                             name: customFieldForm.name,
                             label: customFieldForm.label,
                             type: customFieldForm.type as typeof CustomFieldType[keyof typeof CustomFieldType],
@@ -1468,26 +1773,6 @@ export default function ChatbotEditPage() {
             )}
           </TabsContent>
         </Tabs>
-
-        {/* Save Button (Bottom) */}
-        <div className="flex justify-end gap-4">
-          <Button variant="outline" onClick={() => navigate(`/chatbots/${chatbotId}`)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Save Changes
-              </>
-            )}
-          </Button>
-        </div>
       </div>
     </DashboardLayout>
   );

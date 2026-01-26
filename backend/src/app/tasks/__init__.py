@@ -31,3 +31,6 @@ from app.tasks.kb_maintenance_tasks import (  # noqa: F401
 from app.tasks.chatbot_metrics_tasks import (  # noqa: F401
     refresh_chatbot_metrics_scheduled
 )
+from app.tasks.session_tasks import (  # noqa: F401
+    cleanup_expired_sessions_task
+)

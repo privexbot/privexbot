@@ -1136,7 +1136,7 @@ You may answer using general knowledge without disclosure. However:
         Called after each message is processed.
         """
         from datetime import datetime
-        from sqlalchemy import func, Integer
+        from sqlalchemy import func, Integer, select
         from app.models.chat_message import ChatMessage, MessageRole
         from app.models.chat_session import ChatSession
 
@@ -1150,16 +1150,18 @@ You may answer using general knowledge without disclosure. However:
             )
 
             # Calculate average response time from messages
-            session_ids = db.query(ChatSession.id).filter(
-                ChatSession.chatbot_id == chatbot.id
-            ).subquery()
+            # Note: ChatSession uses polymorphic design (bot_type + bot_id), not chatbot_id
+            session_ids_subquery = select(ChatSession.id).where(
+                ChatSession.bot_type == "chatbot",
+                ChatSession.bot_id == chatbot.id
+            )
 
             avg_response_time = db.query(
                 func.avg(
                     ChatMessage.response_metadata['latency_ms'].astext.cast(Integer)
                 )
             ).filter(
-                ChatMessage.session_id.in_(session_ids),
+                ChatMessage.session_id.in_(session_ids_subquery),
                 ChatMessage.role == MessageRole.ASSISTANT,
                 ChatMessage.response_metadata.isnot(None),
                 ChatMessage.response_metadata['latency_ms'].isnot(None)

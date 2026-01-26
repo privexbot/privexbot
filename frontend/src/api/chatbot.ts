@@ -543,6 +543,39 @@ export const chatbotApi = {
   },
 
   /**
+   * Update KB configuration for a deployed chatbot
+   * PATCH /api/v1/chatbots/{chatbot_id}
+   *
+   * Updates the knowledge bases attached to a chatbot.
+   * Each KB is validated to exist in the same workspace.
+   */
+  async updateKBConfig(
+    chatbotId: string,
+    kbConfig: {
+      knowledge_bases: Array<{
+        kb_id: string;
+        name: string;
+        enabled: boolean;
+        priority: number;
+        retrieval_override?: Record<string, unknown>;
+      }>;
+      grounding_mode?: string;
+    }
+  ): Promise<{ status: string; chatbot_id: string }> {
+    try {
+      const response = await apiClient.patch<{
+        status: string;
+        chatbot_id: string;
+      }>(`/chatbots/${chatbotId}`, {
+        kb_config: kbConfig,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
    * Add Telegram channel to a deployed chatbot
    * POST /api/v1/chatbots/{chatbot_id}/channels/telegram
    *

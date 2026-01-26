@@ -4,8 +4,8 @@
  * Form for adding web URLs with crawl configuration
  */
 
-import { useState } from 'react';
-import { Globe, Settings, Plus, Eye, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Globe, Settings, Plus, Eye, Loader2, CheckCircle, XCircle, AlertCircle, Copy, Download, Pencil, FileText, CheckSquare, Square } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { CrawlMethod, WebSourceConfig, KBContext } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
@@ -17,10 +17,23 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ContentEditor } from '@/components/ui/content-editor';
 import kbClient from '@/lib/kb-client';
 
+// Type for preview pages used in the enhanced immediate preview
+interface PreviewPage {
+  url?: string;
+  title?: string;
+  content?: string;
+  edited_content?: string | null;
+  is_approved?: boolean;
+  page_index?: number;
+  hasEdits?: boolean;
+}
+
 interface KBWebSourceFormProps {
-  onAdd: (sourceData: any) => void;
+  onAdd: (sourceData: Record<string, unknown>) => void;
   onCancel: () => void;
   context?: KBContext; // Add context prop
 }
@@ -63,6 +76,11 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
   // Store preview draft ID for cancellation cleanup
   const [currentPreviewDraftId, setCurrentPreviewDraftId] = useState<string | null>(null);
 
+  // Enhanced preview states for page selection and editing
+  const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
+  const [editingPageIndex, setEditingPageIndex] = useState<number | null>(null);
+  const [editedPages, setEditedPages] = useState<Record<number, string>>({});
+
   // Cleanup function to delete temporary preview draft
   const cleanupPreviewDraft = async (draftId: string) => {
     try {
@@ -73,21 +91,50 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
     }
   };
 
-  // Handle approve preview - add to main draft
+  // Handle approve preview - add to main draft with only selected pages
   const handleApprovePreview = async () => {
     if (!previewData) return;
 
     try {
-      // Call the original onAdd function with the configuration, URL, and full pages data
+      // Filter to only selected pages, preserving edits
+      const allPages = (previewData.fullPages ?? []) as PreviewPage[];
+      const pagesToApprove = selectedPages.size > 0
+        ? allPages.filter((_: unknown, index: number) => selectedPages.has(index))
+        : allPages; // If no selection, approve all
+
+      // Apply edits to selected pages
+      const pagesWithEdits = pagesToApprove.map((page: PreviewPage, newIndex: number) => {
+        const originalIndex = allPages.indexOf(page);
+        const editedContent = editedPages[originalIndex];
+        return {
+          ...page,
+          page_index: newIndex, // Reindex for continuity
+          is_approved: true,
+          edited_content: editedContent ?? page.edited_content ?? null,
+          hasEdits: Boolean(editedContent) || Boolean(page.edited_content),
+        };
+      });
+
+      // Calculate word count for selected pages only
+      const totalWordCount = pagesWithEdits.reduce((acc: number, page: PreviewPage) => {
+        const content = page.edited_content ?? page.content ?? '';
+        return acc + (content.split(/\s+/).filter(Boolean).length);
+      }, 0);
+
+      // Call the original onAdd function with filtered and edited pages
       onAdd({
         url: previewData.url,
         config: previewData.configuration,
-        previewPages: previewData.fullPages, // Pass full pages for later preview
+        previewPages: pagesWithEdits,
         metadata: {
           title: previewData.title,
-          wordCount: previewData.wordCount,
-          pageCount: previewData.fullPages?.length || 0,
-          crawledAt: new Date().toISOString()
+          wordCount: totalWordCount,
+          pageCount: pagesWithEdits.length,
+          totalPagesScraped: allPages.length,
+          selectedPageIndices: Array.from(selectedPages),
+          crawledAt: new Date().toISOString(),
+          hasEdits: Object.keys(editedPages).length > 0,
+          approvedSources: true, // Mark as pre-approved
         }
       });
 
@@ -98,13 +145,18 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
       // Clear tracked draft ID
       setCurrentPreviewDraftId(null);
 
+      // Reset selection and edit states
+      setSelectedPages(new Set());
+      setEditedPages({});
+      setEditingPageIndex(null);
+
       // Close preview
       setShowPreview(false);
       setPreviewData(null);
 
       toast({
         title: 'Source Added',
-        description: `Added ${previewData.url} to your knowledge base`,
+        description: `Added ${String(pagesWithEdits.length)} page${pagesWithEdits.length > 1 ? 's' : ''} from ${previewData.url} to your knowledge base`,
       });
     } catch (error) {
       console.error('Failed to approve preview:', error);
@@ -127,6 +179,11 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
     // Clear tracked draft ID
     setCurrentPreviewDraftId(null);
 
+    // Reset selection and edit states
+    setSelectedPages(new Set());
+    setEditedPages({});
+    setEditingPageIndex(null);
+
     // Close preview
     setShowPreview(false);
     setPreviewData(null);
@@ -136,6 +193,199 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
       description: 'The content preview has been discarded',
     });
   };
+
+  // Initialize page selection when preview data loads
+  useEffect(() => {
+    if (previewData?.fullPages && showPreview) {
+      // Select all pages by default when preview opens
+      const allIndices = new Set(previewData.fullPages.map((_: unknown, i: number) => i));
+      setSelectedPages(allIndices);
+      setEditedPages({});
+      setEditingPageIndex(null);
+    }
+  }, [previewData?.fullPages, showPreview]);
+
+  // Toggle page selection
+  const togglePageSelection = useCallback((pageIndex: number) => {
+    setSelectedPages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(pageIndex)) {
+        newSet.delete(pageIndex);
+      } else {
+        newSet.add(pageIndex);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Toggle all pages selection
+  const toggleAllPages = useCallback(() => {
+    if (!previewData?.fullPages) return;
+    const allIndices = previewData.fullPages.map((_: unknown, i: number) => i);
+    if (selectedPages.size === allIndices.length) {
+      // Deselect all
+      setSelectedPages(new Set());
+    } else {
+      // Select all
+      setSelectedPages(new Set(allIndices));
+    }
+  }, [previewData?.fullPages, selectedPages.size]);
+
+  // Handle page edit save
+  const handlePageEditSave = useCallback((pageIndex: number, newContent: string) => {
+    setEditedPages(prev => ({
+      ...prev,
+      [pageIndex]: newContent
+    }));
+    setEditingPageIndex(null);
+    toast({
+      title: 'Content Saved',
+      description: `Page ${String(pageIndex + 1)} content has been updated`,
+    });
+  }, []);
+
+  // Handle page edit cancel
+  const handlePageEditCancel = useCallback(() => {
+    setEditingPageIndex(null);
+  }, []);
+
+  // Revert page to original content
+  const handlePageRevert = useCallback((pageIndex: number) => {
+    setEditedPages(prev => {
+      // Create new object without the specified key
+      const { [pageIndex]: _removed, ...rest } = prev;
+      return rest;
+    });
+    toast({
+      title: 'Content Reverted',
+      description: `Page ${String(pageIndex + 1)} has been reverted to original`,
+    });
+  }, []);
+
+  // Copy page content to clipboard
+  const handleCopyPage = useCallback(async (pageIndex: number) => {
+    const page = previewData?.fullPages?.[pageIndex] as PreviewPage | undefined;
+    if (!page) return;
+
+    const content = editedPages[pageIndex] ?? page.edited_content ?? page.content ?? '';
+    try {
+      await navigator.clipboard.writeText(content);
+      toast({
+        title: 'Content Copied',
+        description: `Page ${String(pageIndex + 1)} content copied to clipboard`,
+      });
+    } catch {
+      toast({
+        title: 'Copy Failed',
+        description: 'Failed to copy content to clipboard',
+        variant: 'destructive'
+      });
+    }
+  }, [previewData?.fullPages, editedPages]);
+
+  // Copy all selected pages to clipboard
+  const handleCopyAllSelected = useCallback(async () => {
+    const fullPages = previewData?.fullPages;
+    if (!fullPages) return;
+
+    const selectedContent = fullPages
+      .filter((_: unknown, i: number) => selectedPages.has(i))
+      .map((page: PreviewPage) => {
+        const originalIndex = fullPages.indexOf(page);
+        const content = editedPages[originalIndex] ?? page.edited_content ?? page.content ?? '';
+        return `## ${page.title ?? page.url ?? 'Untitled'}\n\n${content}`;
+      })
+      .join('\n\n---\n\n');
+
+    try {
+      await navigator.clipboard.writeText(selectedContent);
+      toast({
+        title: 'Content Copied',
+        description: `${String(selectedPages.size)} page(s) copied to clipboard`,
+      });
+    } catch {
+      toast({
+        title: 'Copy Failed',
+        description: 'Failed to copy content to clipboard',
+        variant: 'destructive'
+      });
+    }
+  }, [previewData?.fullPages, selectedPages, editedPages]);
+
+  // Export selected pages in different formats
+  const handleExport = useCallback((format: 'markdown' | 'txt' | 'html') => {
+    const fullPages = previewData?.fullPages;
+    if (!fullPages) return;
+
+    const selectedPagesData = fullPages
+      .filter((_: unknown, i: number) => selectedPages.has(i)) as PreviewPage[];
+
+    let content = '';
+    let filename = `export-${previewData?.title ?? 'content'}-${new Date().toISOString().slice(0, 10)}`;
+    let mimeType = 'text/plain';
+
+    switch (format) {
+      case 'markdown':
+        content = selectedPagesData.map((page: PreviewPage) => {
+          const originalIndex = fullPages.indexOf(page);
+          const pageContent = editedPages[originalIndex] ?? page.edited_content ?? page.content ?? '';
+          return `# ${page.title ?? page.url ?? 'Untitled'}\n\n${pageContent}`;
+        }).join('\n\n---\n\n');
+        filename += '.md';
+        mimeType = 'text/markdown';
+        break;
+      case 'txt':
+        content = selectedPagesData.map((page: PreviewPage) => {
+          const originalIndex = fullPages.indexOf(page);
+          const pageContent = editedPages[originalIndex] ?? page.edited_content ?? page.content ?? '';
+          return `${page.title ?? page.url ?? 'Untitled'}\n\n${pageContent}`;
+        }).join('\n\n================\n\n');
+        filename += '.txt';
+        break;
+      case 'html':
+        content = `<!DOCTYPE html>
+<html>
+<head>
+  <title>${previewData?.title ?? 'Exported Content'}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    article { margin-bottom: 40px; padding-bottom: 40px; border-bottom: 1px solid #eee; }
+    h1 { font-size: 24px; color: #333; }
+    .content { white-space: pre-wrap; line-height: 1.6; }
+  </style>
+</head>
+<body>
+${selectedPagesData.map((page: PreviewPage) => {
+  const originalIndex = fullPages.indexOf(page);
+  const pageContent = editedPages[originalIndex] ?? page.edited_content ?? page.content ?? '';
+  return `<article>
+    <h1>${page.title ?? page.url ?? 'Untitled'}</h1>
+    <div class="content">${pageContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+  </article>`;
+}).join('\n')}
+</body>
+</html>`;
+        filename += '.html';
+        mimeType = 'text/html';
+        break;
+    }
+
+    // Create and download file
+    const blob = new Blob([content], { type: mimeType });
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
+
+    toast({
+      title: 'Export Complete',
+      description: `${String(selectedPagesData.length)} page(s) exported as ${format.toUpperCase()}`,
+    });
+  }, [previewData, selectedPages, editedPages]);
 
   const crawlMethodOptions = [
     {
@@ -457,7 +707,7 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
 
       // In bulk mode, aggregate data from all URLs
       let aggregatedTitle = fullPages[0]?.title || new URL(urlsToPreview[0]).hostname;
-      let aggregatedConfigs: Record<string, Partial<WebSourceConfig>> = {};
+      const aggregatedConfigs: Record<string, Partial<WebSourceConfig>> = {};
 
       if (bulkMode && urlsToPreview.length > 1) {
         aggregatedTitle = `${urlsToPreview.length} URLs from ${urlsToPreview.map(u => new URL(u).hostname).filter((v, i, a) => a.indexOf(v) === i).join(', ')}`;
@@ -659,7 +909,7 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
             <Checkbox
               id="bulk-mode"
               checked={bulkMode}
-              onCheckedChange={(checked) => setBulkMode(!!checked)}
+              onCheckedChange={(checked) => { setBulkMode(!!checked); }}
               className="mt-0.5"
             />
             <div className="flex-1">
@@ -723,7 +973,7 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => setUrl(suggestion)}
+                            onClick={() => { setUrl(suggestion); }}
                             className="h-8 px-2 text-xs text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-manrope"
                           >
                             {suggestion}
@@ -735,7 +985,7 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
                 </div>
               )}
 
-              {validationResult && validationResult.valid && (
+              {validationResult?.valid && (
                 <div className="p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                   <p className="text-sm text-green-600 dark:text-green-400 font-manrope flex items-center gap-2">
                     <CheckCircle className="h-4 w-4" />
@@ -1183,7 +1433,7 @@ https://docs.example.com
                                       </Button>
                                     </div>
 
-                                    {bulkConfigs[result.url]?.include_patterns && bulkConfigs[result.url]!.include_patterns!.length > 0 && (
+                                    {bulkConfigs[result.url]?.include_patterns && bulkConfigs[result.url].include_patterns!.length > 0 && (
                                       <div className="flex flex-wrap gap-1.5 mt-2">
                                         {bulkConfigs[result.url]?.include_patterns?.map((pattern: string, index: number) => (
                                           <Badge
@@ -1275,7 +1525,7 @@ https://docs.example.com
                                       </Button>
                                     </div>
 
-                                    {bulkConfigs[result.url]?.exclude_patterns && bulkConfigs[result.url]!.exclude_patterns!.length > 0 && (
+                                    {bulkConfigs[result.url]?.exclude_patterns && bulkConfigs[result.url].exclude_patterns!.length > 0 && (
                                       <div className="flex flex-wrap gap-1.5 mt-2">
                                         {bulkConfigs[result.url]?.exclude_patterns?.map((pattern: string, index: number) => (
                                           <Badge
@@ -1321,7 +1571,7 @@ https://docs.example.com
               <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">Crawl Method</Label>
               <Select
                 value={config.method}
-                onValueChange={(value) => setConfig({ ...config, method: value as CrawlMethod })}
+                onValueChange={(value) => { setConfig({ ...config, method: value as CrawlMethod }); }}
               >
                 <SelectTrigger className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                   <SelectValue />
@@ -1369,7 +1619,7 @@ https://docs.example.com
                     max="1000"
                     value={config.max_pages}
                     onChange={(e) =>
-                      setConfig({ ...config, max_pages: parseInt(e.target.value) || 50 })
+                      { setConfig({ ...config, max_pages: parseInt(e.target.value) || 50 }); }
                     }
                     className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
@@ -1384,7 +1634,7 @@ https://docs.example.com
                     max="10"
                     value={config.max_depth}
                     onChange={(e) =>
-                      setConfig({ ...config, max_depth: parseInt(e.target.value) || 3 })
+                      { setConfig({ ...config, max_depth: parseInt(e.target.value) || 3 }); }
                     }
                     className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
@@ -1399,7 +1649,7 @@ https://docs.example.com
                   <Input
                     placeholder="/docs/**, /api/**"
                     value={includePattern}
-                    onChange={(e) => setIncludePattern(e.target.value)}
+                    onChange={(e) => { setIncludePattern(e.target.value); }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -1411,7 +1661,7 @@ https://docs.example.com
                   <Button
                     type="button"
                     className="h-11 px-4 bg-blue-600 hover:bg-blue-700 text-white font-manrope rounded-lg whitespace-nowrap"
-                    onClick={() => handleAddPattern('include')}
+                    onClick={() => { handleAddPattern('include'); }}
                     disabled={!includePattern.trim()}
                   >
                     <Plus className="h-4 w-4 mr-2" />
@@ -1424,7 +1674,7 @@ https://docs.example.com
                       key={index}
                       variant="secondary"
                       className="cursor-pointer bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/50 font-manrope px-3 py-1"
-                      onClick={() => handleRemovePattern('include', index)}
+                      onClick={() => { handleRemovePattern('include', index); }}
                     >
                       {pattern} ×
                     </Badge>
@@ -1442,7 +1692,7 @@ https://docs.example.com
                   <Input
                     placeholder="/admin/**, /auth/**"
                     value={excludePattern}
-                    onChange={(e) => setExcludePattern(e.target.value)}
+                    onChange={(e) => { setExcludePattern(e.target.value); }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -1454,7 +1704,7 @@ https://docs.example.com
                   <Button
                     type="button"
                     className="h-11 px-4 bg-red-600 hover:bg-red-700 text-white font-manrope rounded-lg whitespace-nowrap"
-                    onClick={() => handleAddPattern('exclude')}
+                    onClick={() => { handleAddPattern('exclude'); }}
                     disabled={!excludePattern.trim()}
                   >
                     <Plus className="h-4 w-4 mr-2" />
@@ -1467,7 +1717,7 @@ https://docs.example.com
                       key={index}
                       variant="outline"
                       className="cursor-pointer bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 font-manrope px-3 py-1"
-                      onClick={() => handleRemovePattern('exclude', index)}
+                      onClick={() => { handleRemovePattern('exclude', index); }}
                     >
                       {pattern} ×
                     </Badge>
@@ -1606,114 +1856,206 @@ https://docs.example.com
                       </CollapsibleContent>
                     </Collapsible>
 
-                    {/* Content Preview Tabs */}
-                    <div className="space-y-4">
-                      <div className="border-b border-gray-200 dark:border-gray-700">
-                        <nav className="flex space-x-8" aria-label="Content tabs">
-                          <button
-                            type="button"
-                            className="border-b-2 border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 whitespace-nowrap py-3 px-1 text-sm font-medium font-manrope"
-                          >
-                            First Page Preview
-                          </button>
-                          {previewData.fullPages && previewData.fullPages.length > 1 && (
-                            <button
+                    {/* All Pages - Enhanced with Selection, Edit, Copy */}
+                    {previewData.fullPages && previewData.fullPages.length > 0 && (
+                      <div className="space-y-4">
+                        {/* Header with Select All and Actions */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800/50 dark:to-blue-900/20 border border-gray-200 dark:border-gray-700 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <Button
                               type="button"
-                              className="border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 whitespace-nowrap py-3 px-1 text-sm font-medium font-manrope"
+                              variant="outline"
+                              size="sm"
+                              onClick={toggleAllPages}
+                              className="h-9 px-3 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 font-manrope"
                             >
-                              All Pages ({previewData.fullPages.length})
-                            </button>
-                          )}
-                        </nav>
-                      </div>
-
-                      {/* First Page Content */}
-                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                        <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold text-gray-900 dark:text-white font-manrope text-sm">Content Preview</h4>
-                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 font-manrope">
-                              <span>{previewData.content ? previewData.content.split(' ').length : 0} words</span>
-                              <span>•</span>
-                              <span>{previewData.content ? Math.ceil(previewData.content.length / 500) : 0} min read</span>
+                              {selectedPages.size === previewData.fullPages.length ? (
+                                <>
+                                  <CheckSquare className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+                                  Deselect All
+                                </>
+                              ) : (
+                                <>
+                                  <Square className="h-4 w-4 mr-2" />
+                                  Select All
+                                </>
+                              )}
+                            </Button>
+                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">{selectedPages.size}</span> of {previewData.fullPages.length} pages selected
                             </div>
                           </div>
-                        </div>
-                        <div className="p-4 max-h-96 overflow-y-auto">
-                          <div
-                            className="text-sm leading-relaxed whitespace-pre-wrap break-words font-manrope
-                                       text-gray-900 dark:text-gray-100
-                                       bg-gray-50 dark:bg-gray-900/50
-                                       p-4 rounded-lg border border-gray-200 dark:border-gray-600"
-                          >
-                            {previewData.content || 'No content could be extracted from the first page.'}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleCopyAllSelected}
+                              disabled={selectedPages.size === 0}
+                              className="h-9 px-3 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 font-manrope"
+                            >
+                              <Copy className="h-4 w-4 mr-2" />
+                              Copy Selected
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={selectedPages.size === 0}
+                                  className="h-9 px-3 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 font-manrope"
+                                >
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Export
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem onClick={() => { handleExport('markdown'); }} className="font-manrope">
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  Export as Markdown
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { handleExport('txt'); }} className="font-manrope">
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  Export as Text
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { handleExport('html'); }} className="font-manrope">
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  Export as HTML
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
-                      </div>
-                    </div>
 
-                    {/* All Pages Overview */}
-                    {previewData.fullPages && previewData.fullPages.length > 1 && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-semibold text-gray-900 dark:text-white font-manrope">All Extracted Pages</h4>
-                          <span className="text-xs bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-1 rounded-full font-manrope">
-                            {previewData.fullPages.length} pages total
-                          </span>
-                        </div>
-                        <div className="grid gap-3 max-h-80 overflow-y-auto pr-2">
-                          {previewData.fullPages.map((page, index) => (
-                            <div key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-                              <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-800/50 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-blue-600 dark:text-blue-400 text-xs font-bold">
-                                      {index + 1}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                      <h5 className="text-sm font-medium text-gray-900 dark:text-white font-manrope truncate" title={page.title || page.url}>
-                                        {page.title || new URL(page.url || '').pathname}
-                                      </h5>
-                                      <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope truncate">
-                                        {page.url}
-                                      </p>
+                        {/* Page List with Selection */}
+                        <div className="grid gap-3 max-h-[400px] overflow-y-auto pr-2">
+                          {(previewData.fullPages as PreviewPage[]).map((page: PreviewPage, index: number) => {
+                            const isSelected = selectedPages.has(index);
+                            const hasEdit = Boolean(editedPages[index]) || Boolean(page.edited_content);
+                            const displayContent = editedPages[index] ?? page.edited_content ?? page.content ?? '';
+
+                            return (
+                              <div
+                                key={index}
+                                className={`bg-white dark:bg-gray-800 border rounded-lg overflow-hidden transition-all ${
+                                  isSelected
+                                    ? 'border-blue-400 dark:border-blue-600 ring-1 ring-blue-200 dark:ring-blue-800 shadow-md'
+                                    : 'border-gray-200 dark:border-gray-700 hover:shadow-md'
+                                }`}
+                              >
+                                {/* Page Header */}
+                                <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-800/50 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div className="flex items-center gap-3">
+                                      {/* Selection Checkbox */}
+                                      <button
+                                        type="button"
+                                        onClick={() => { togglePageSelection(index); }}
+                                        className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
+                                          isSelected
+                                            ? 'bg-blue-600 border-blue-600 text-white'
+                                            : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500'
+                                        }`}
+                                      >
+                                        {isSelected && <CheckCircle className="h-4 w-4" />}
+                                      </button>
+
+                                      <span className="text-blue-600 dark:text-blue-400 text-xs font-bold">
+                                        {index + 1}
+                                      </span>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <h5 className="text-sm font-medium text-gray-900 dark:text-white font-manrope truncate" title={page.title ?? page.url}>
+                                            {page.title ?? (() => { try { return new URL(page.url ?? '').pathname; } catch { return page.url ?? 'Untitled'; } })()}
+                                          </h5>
+                                          {hasEdit && (
+                                            <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-manrope">
+                                              Edited
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope truncate">
+                                          {page.url}
+                                        </p>
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 font-manrope whitespace-nowrap">
-                                    <span className="flex items-center gap-1">
-                                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                      {page.content?.split(/\s+/).length || 0} words
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                      {Math.ceil((page.content?.length || 0) / 500)} min read
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                              <Collapsible>
-                                <CollapsibleTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    className="w-full h-10 px-4 justify-between text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-none font-manrope text-sm"
-                                  >
-                                    <span>Preview content</span>
-                                    <span className="text-xs">▼</span>
-                                  </Button>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                  <div className="p-4 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-600">
-                                    <div className="max-h-40 overflow-y-auto">
-                                      <div className="text-sm text-gray-900 dark:text-gray-100 font-manrope whitespace-pre-wrap break-words leading-relaxed">
-                                        {(page.content || 'No content extracted from this page.').substring(0, 500)}...
+                                    <div className="flex items-center gap-2">
+                                      {/* Page Actions */}
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => { setEditingPageIndex(index); }}
+                                          className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                          title="Edit content"
+                                        >
+                                          <Pencil className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleCopyPage(index)}
+                                          className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                          title="Copy content"
+                                        >
+                                          <Copy className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                      {/* Word count */}
+                                      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 font-manrope whitespace-nowrap ml-2">
+                                        <span className="flex items-center gap-1">
+                                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                          {displayContent.split(/\s+/).filter(Boolean).length} words
+                                        </span>
                                       </div>
                                     </div>
                                   </div>
-                                </CollapsibleContent>
-                              </Collapsible>
-                            </div>
-                          ))}
+                                </div>
+
+                                {/* Content Preview/Edit Area */}
+                                {editingPageIndex === index ? (
+                                  <div className="p-4 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-600">
+                                    <ContentEditor
+                                      pageIndex={index}
+                                      originalContent={page.content ?? ''}
+                                      editedContent={editedPages[index] ?? page.edited_content}
+                                      title={page.title ?? `Page ${String(index + 1)}`}
+                                      onSave={(content) => Promise.resolve(handlePageEditSave(index, content))}
+                                      onCancel={handlePageEditCancel}
+                                      onRevert={() => Promise.resolve(handlePageRevert(index))}
+                                    />
+                                  </div>
+                                ) : (
+                                  <Collapsible>
+                                    <CollapsibleTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="w-full h-10 px-4 justify-between text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-none font-manrope text-sm"
+                                      >
+                                        <span>Preview content</span>
+                                        <span className="text-xs">▼</span>
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                      <div className="p-4 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-600">
+                                        <div className="max-h-40 overflow-y-auto">
+                                          <div className="text-sm text-gray-900 dark:text-gray-100 font-manrope whitespace-pre-wrap break-words leading-relaxed">
+                                            {displayContent.length > 500
+                                              ? `${displayContent.substring(0, 500)}...`
+                                              : (displayContent || 'No content extracted from this page.')}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </CollapsibleContent>
+                                  </Collapsible>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -1758,12 +2100,22 @@ https://docs.example.com
 
                     <div className="order-3 sm:order-2 hidden sm:flex flex-col items-center text-center px-4">
                       <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
-                        Preview based on your crawl configuration
+                        {selectedPages.size > 0
+                          ? `${selectedPages.size} of ${previewData.fullPages?.length || 0} pages selected`
+                          : 'All pages will be approved'}
                       </span>
                       <div className="flex items-center gap-1 mt-1">
+                        {Object.keys(editedPages).length > 0 && (
+                          <>
+                            <div className="w-1 h-1 bg-amber-500 rounded-full"></div>
+                            <span className="text-xs text-amber-600 dark:text-amber-400 font-manrope mr-2">
+                              {Object.keys(editedPages).length} edited
+                            </span>
+                          </>
+                        )}
                         <div className="w-1 h-1 bg-green-500 rounded-full"></div>
                         <span className="text-xs text-green-600 dark:text-green-400 font-manrope">
-                          Content ready for import
+                          Ready for import
                         </span>
                       </div>
                     </div>
@@ -1771,10 +2123,13 @@ https://docs.example.com
                     <Button
                       type="button"
                       onClick={handleApprovePreview}
-                      className="order-1 sm:order-3 h-12 px-6 bg-green-600 hover:bg-green-700 text-white rounded-lg font-manrope transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl"
+                      disabled={selectedPages.size === 0 && previewData.fullPages && previewData.fullPages.length > 0 && selectedPages.size !== previewData.fullPages.length}
+                      className="order-1 sm:order-3 h-12 px-6 bg-green-600 hover:bg-green-700 text-white rounded-lg font-manrope transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <CheckCircle className="h-4 w-4 mr-2 flex-shrink-0" />
-                      Approve & Add Source
+                      {selectedPages.size > 0 && previewData.fullPages && previewData.fullPages.length > 0
+                        ? `Approve ${selectedPages.size} of ${previewData.fullPages.length} pages`
+                        : 'Approve & Add Source'}
                     </Button>
                   </div>
                 </div>
