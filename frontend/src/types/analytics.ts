@@ -8,7 +8,7 @@
 /**
  * Analytics scope (workspace or organization level)
  */
-export type AnalyticsScope = "workspace" | "organization";
+export type AnalyticsScope = "workspace" | "organization" | "platform";
 
 /**
  * Time range options for analytics

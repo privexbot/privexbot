@@ -45,6 +45,7 @@ interface AuthContextType {
 
   // Utility
   clearError: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -259,6 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     walletLogin,
     logout,
     clearError,
+    refreshUser: fetchUserProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

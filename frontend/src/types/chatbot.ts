@@ -520,6 +520,9 @@ export interface UpdateChatbotDraftRequest {
   lead_capture?: LeadCaptureConfig;
   variables_config?: VariablesConfig;
   is_public?: boolean;
+  grounding_mode?: string;
+  enable_citations?: boolean;
+  enable_follow_up_questions?: boolean;
 }
 
 /**
@@ -613,6 +616,9 @@ export interface Chatbot {
   prompt_config: PromptConfig;
   kb_config: {
     knowledge_bases?: KBAttachment[];
+    citation_style?: string;     // "inline" | "footnote" | "none"
+    grounding_mode?: string;     // "strict" | "guided" | "flexible"
+    max_context_tokens?: number;
   };
   branding_config: AppearanceConfig;
   deployment_config: {
@@ -626,6 +632,7 @@ export interface Chatbot {
   };
   behavior_config: {
     memory: MemoryConfig;
+    follow_up_questions?: boolean;
   };
   lead_capture_config?: LeadCaptureConfig;
   analytics_config?: Record<string, unknown>;

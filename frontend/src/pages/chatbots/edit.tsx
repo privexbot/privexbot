@@ -30,6 +30,7 @@ import {
   ChevronUp,
   BookOpen,
   Database,
+  Shield,
 } from 'lucide-react';
 import { chatbotApi } from '@/api/chatbot';
 import { useApp } from '@/contexts/AppContext';
@@ -48,6 +49,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { GroundingMode } from '@/types/chatbot';
 
 export default function ChatbotEditPage() {
   const { chatbotId } = useParams<{ chatbotId: string }>();
@@ -78,6 +81,10 @@ export default function ChatbotEditPage() {
     memory_enabled: true,
     memory_max_messages: 20,
     is_public: true,
+    // KB behavior settings (loaded from chatbot config)
+    enable_citations: false,
+    enable_follow_up_questions: false,
+    grounding_mode: GroundingMode.STRICT as string,
     // Lead capture configuration (new multi-platform structure)
     lead_capture_enabled: false,
     lead_capture_timing: LeadCaptureTiming.BEFORE_CHAT as string,
@@ -201,6 +208,10 @@ export default function ChatbotEditPage() {
           memory_enabled: data.behavior_config?.memory?.enabled ?? true,
           memory_max_messages: data.behavior_config?.memory?.max_messages ?? 20,
           is_public: data.is_public ?? true,
+          // KB behavior settings - loaded from stored chatbot config
+          enable_citations: data.kb_config?.citation_style ? data.kb_config.citation_style !== 'none' : false,
+          enable_follow_up_questions: data.behavior_config?.follow_up_questions ?? false,
+          grounding_mode: data.kb_config?.grounding_mode ?? GroundingMode.STRICT,
           // Lead capture configuration (merged with defaults)
           lead_capture_enabled: leadConfig.enabled,
           lead_capture_timing: leadConfig.timing,
@@ -294,6 +305,9 @@ export default function ChatbotEditPage() {
           max_messages: formData.memory_max_messages,
         },
         is_public: formData.is_public,
+        grounding_mode: formData.grounding_mode,
+        enable_citations: formData.enable_citations,
+        enable_follow_up_questions: formData.enable_follow_up_questions,
         lead_capture: {
           enabled: formData.lead_capture_enabled,
           timing: formData.lead_capture_timing as typeof LeadCaptureTiming[keyof typeof LeadCaptureTiming],
@@ -896,6 +910,117 @@ export default function ChatbotEditPage() {
                         set their priority to control search order.
                       </p>
                     </div>
+                  </div>
+                </div>
+
+                {/* Knowledge Base Behavior Settings */}
+                <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-3">
+                    <Shield className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">
+                        Knowledge Base Behavior
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                        Control how the AI uses your knowledge base
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Citations Toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Database className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                          Citations & Attributions
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                          Show knowledge base sources in responses
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={formData.enable_citations}
+                      onCheckedChange={(checked) =>
+                        setFormData((prev) => ({ ...prev, enable_citations: checked }))
+                      }
+                    />
+                  </div>
+
+                  {/* Follow-up Questions Toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <MessageSquare className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                          Follow-up Questions
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                          Suggest related questions after responses
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={formData.enable_follow_up_questions}
+                      onCheckedChange={(checked) =>
+                        setFormData((prev) => ({ ...prev, enable_follow_up_questions: checked }))
+                      }
+                    />
+                  </div>
+
+                  {/* Grounding Mode */}
+                  <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                        Knowledge Base Usage
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                        Control how strictly the AI uses your knowledge base
+                      </p>
+                    </div>
+
+                    <RadioGroup
+                      value={formData.grounding_mode}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, grounding_mode: value }))
+                      }
+                      className="space-y-2"
+                    >
+                      <div className="flex items-start space-x-3">
+                        <RadioGroupItem value={GroundingMode.STRICT} id="edit-grounding-strict" className="mt-1" />
+                        <div className="flex-1">
+                          <Label htmlFor="edit-grounding-strict" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                            Strict (Recommended)
+                          </Label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                            Only answer from knowledge base. Refuses if information not found.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start space-x-3">
+                        <RadioGroupItem value={GroundingMode.GUIDED} id="edit-grounding-guided" className="mt-1" />
+                        <div className="flex-1">
+                          <Label htmlFor="edit-grounding-guided" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                            Guided
+                          </Label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                            Prefers knowledge base but can use general knowledge (with disclosure).
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start space-x-3">
+                        <RadioGroupItem value={GroundingMode.FLEXIBLE} id="edit-grounding-flexible" className="mt-1" />
+                        <div className="flex-1">
+                          <Label htmlFor="edit-grounding-flexible" className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope cursor-pointer">
+                            Flexible
+                          </Label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                            Uses knowledge base to enhance responses, freely uses general knowledge.
+                          </p>
+                        </div>
+                      </div>
+                    </RadioGroup>
                   </div>
                 </div>
               </CardContent>

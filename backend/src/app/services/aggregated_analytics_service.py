@@ -44,6 +44,12 @@ class AggregatedAnalyticsService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _apply_workspace_filter(self, query, model_class, workspace_ids):
+        """Apply workspace filter only if workspace_ids is provided."""
+        if workspace_ids is not None:
+            return query.filter(model_class.workspace_id.in_(workspace_ids))
+        return query
+
     async def get_workspace_analytics(
         self,
         workspace_id: UUID,
@@ -191,70 +197,77 @@ class AggregatedAnalyticsService:
 
     async def _calculate_performance_metrics(
         self,
-        workspace_ids: List[UUID],
+        workspace_ids: Optional[List[UUID]],
         start_date: datetime
     ) -> PerformanceMetrics:
         """
         Calculate performance metrics from ChatSession and ChatMessage.
         """
         # Total conversations
-        total_conversations = self.db.query(func.count(ChatSession.id)).filter(
-            ChatSession.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatSession.id)).filter(
             ChatSession.created_at >= start_date
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatSession, workspace_ids)
+        total_conversations = q.scalar() or 0
 
         # Total messages
-        total_messages = self.db.query(func.count(ChatMessage.id)).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatMessage.id)).filter(
             ChatMessage.created_at >= start_date
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        total_messages = q.scalar() or 0
 
         # Unique visitors (by session metadata IP or session count)
         # Using distinct session IDs as proxy for unique visitors
-        unique_visitors = self.db.query(
+        q = self.db.query(
             func.count(func.distinct(ChatSession.id))
         ).filter(
-            ChatSession.workspace_id.in_(workspace_ids),
             ChatSession.created_at >= start_date
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatSession, workspace_ids)
+        unique_visitors = q.scalar() or 0
 
         # Average messages per session
-        avg_messages = self.db.query(
+        q = self.db.query(
             func.avg(ChatSession.message_count)
         ).filter(
-            ChatSession.workspace_id.in_(workspace_ids),
             ChatSession.created_at >= start_date,
             ChatSession.message_count > 0
-        ).scalar() or 0.0
+        )
+        q = self._apply_workspace_filter(q, ChatSession, workspace_ids)
+        avg_messages = q.scalar() or 0.0
 
         # Average response time (from response_metadata.latency_ms)
         # Query assistant messages with latency_ms in response_metadata
-        avg_response_time = self.db.query(
+        q = self.db.query(
             func.avg(
                 ChatMessage.response_metadata['latency_ms'].astext.cast(Integer)
             )
         ).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT,
             ChatMessage.response_metadata.isnot(None),
             ChatMessage.response_metadata['latency_ms'].isnot(None)
-        ).scalar() or 0.0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        avg_response_time = q.scalar() or 0.0
 
         # Feedback metrics
-        positive_feedback = self.db.query(func.count(ChatMessage.id)).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatMessage.id)).filter(
             ChatMessage.created_at >= start_date,
             ChatMessage.feedback.isnot(None),
             ChatMessage.feedback['rating'].astext == 'positive'
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        positive_feedback = q.scalar() or 0
 
-        negative_feedback = self.db.query(func.count(ChatMessage.id)).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatMessage.id)).filter(
             ChatMessage.created_at >= start_date,
             ChatMessage.feedback.isnot(None),
             ChatMessage.feedback['rating'].astext == 'negative'
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        negative_feedback = q.scalar() or 0
 
         total_feedback = positive_feedback + negative_feedback
         satisfaction_rate = (
@@ -262,18 +275,20 @@ class AggregatedAnalyticsService:
         )
 
         # Error rate
-        error_messages = self.db.query(func.count(ChatMessage.id)).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatMessage.id)).filter(
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT,
             ChatMessage.error.isnot(None)
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        error_messages = q.scalar() or 0
 
-        assistant_messages = self.db.query(func.count(ChatMessage.id)).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatMessage.id)).filter(
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        assistant_messages = q.scalar() or 0
 
         error_rate = (
             error_messages / assistant_messages if assistant_messages > 0 else 0.0
@@ -293,29 +308,31 @@ class AggregatedAnalyticsService:
 
     async def _calculate_cost_metrics(
         self,
-        workspace_ids: List[UUID],
+        workspace_ids: Optional[List[UUID]],
         start_date: datetime
     ) -> CostUsageMetrics:
         """
         Calculate cost and usage metrics from ChatMessage token fields.
         """
         # Sum of prompt tokens
-        total_prompt_tokens = self.db.query(
+        q = self.db.query(
             func.coalesce(func.sum(ChatMessage.prompt_tokens), 0)
         ).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        total_prompt_tokens = q.scalar() or 0
 
         # Sum of completion tokens
-        total_completion_tokens = self.db.query(
+        q = self.db.query(
             func.coalesce(func.sum(ChatMessage.completion_tokens), 0)
         ).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        total_completion_tokens = q.scalar() or 0
 
         # Total tokens
         total_tokens = total_prompt_tokens + total_completion_tokens
@@ -324,11 +341,12 @@ class AggregatedAnalyticsService:
         estimated_cost_usd = (total_tokens / 1000) * COST_PER_1K_TOKENS
 
         # API calls (count of assistant messages)
-        api_calls = self.db.query(func.count(ChatMessage.id)).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
+        q = self.db.query(func.count(ChatMessage.id)).filter(
             ChatMessage.created_at >= start_date,
             ChatMessage.role == MessageRole.ASSISTANT
-        ).scalar() or 0
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        api_calls = q.scalar() or 0
 
         # Average tokens per message
         avg_tokens_per_message = (
@@ -346,32 +364,34 @@ class AggregatedAnalyticsService:
 
     async def _get_daily_trends(
         self,
-        workspace_ids: List[UUID],
+        workspace_ids: Optional[List[UUID]],
         start_date: datetime
     ) -> List[DailyTrend]:
         """
         Get daily trend data for charts.
         """
         # Group sessions by date
-        daily_conversations = self.db.query(
+        q = self.db.query(
             cast(ChatSession.created_at, Date).label('date'),
             func.count(ChatSession.id).label('conversations')
         ).filter(
-            ChatSession.workspace_id.in_(workspace_ids),
             ChatSession.created_at >= start_date
-        ).group_by(
+        )
+        q = self._apply_workspace_filter(q, ChatSession, workspace_ids)
+        daily_conversations = q.group_by(
             cast(ChatSession.created_at, Date)
         ).all()
 
         # Group messages and tokens by date
-        daily_messages = self.db.query(
+        q = self.db.query(
             cast(ChatMessage.created_at, Date).label('date'),
             func.count(ChatMessage.id).label('messages'),
             func.coalesce(func.sum(ChatMessage.total_tokens), 0).label('tokens')
         ).filter(
-            ChatMessage.workspace_id.in_(workspace_ids),
             ChatMessage.created_at >= start_date
-        ).group_by(
+        )
+        q = self._apply_workspace_filter(q, ChatMessage, workspace_ids)
+        daily_messages = q.group_by(
             cast(ChatMessage.created_at, Date)
         ).all()
 
@@ -421,21 +441,22 @@ class AggregatedAnalyticsService:
 
     async def _get_chatbot_breakdown(
         self,
-        workspace_ids: List[UUID],
+        workspace_ids: Optional[List[UUID]],
         start_date: datetime
     ) -> List[ChatbotBreakdown]:
         """
         Get per-chatbot performance breakdown.
         """
         # Group sessions by bot_id and bot_type
-        bot_sessions = self.db.query(
+        q = self.db.query(
             ChatSession.bot_id,
             ChatSession.bot_type,
             func.count(ChatSession.id).label('conversations')
         ).filter(
-            ChatSession.workspace_id.in_(workspace_ids),
             ChatSession.created_at >= start_date
-        ).group_by(
+        )
+        q = self._apply_workspace_filter(q, ChatSession, workspace_ids)
+        bot_sessions = q.group_by(
             ChatSession.bot_id,
             ChatSession.bot_type
         ).all()
@@ -463,14 +484,13 @@ class AggregatedAnalyticsService:
             bot_id = UUID(bot_id_str)
 
             # Get session IDs for this bot
-            session_ids = [
-                s.id for s in self.db.query(ChatSession.id).filter(
-                    ChatSession.bot_id == bot_id,
-                    ChatSession.bot_type == bot_type,
-                    ChatSession.workspace_id.in_(workspace_ids),
-                    ChatSession.created_at >= start_date
-                ).all()
-            ]
+            sq = self.db.query(ChatSession.id).filter(
+                ChatSession.bot_id == bot_id,
+                ChatSession.bot_type == bot_type,
+                ChatSession.created_at >= start_date
+            )
+            sq = self._apply_workspace_filter(sq, ChatSession, workspace_ids)
+            session_ids = [s.id for s in sq.all()]
 
             if session_ids:
                 # Messages and tokens
@@ -541,3 +561,34 @@ class AggregatedAnalyticsService:
         breakdowns.sort(key=lambda x: x.conversations, reverse=True)
 
         return breakdowns[:10]  # Top 10 bots
+
+    async def get_platform_analytics(
+        self,
+        days: int = 7
+    ) -> AggregatedAnalyticsResponse:
+        """
+        Platform-wide analytics. No workspace filtering.
+
+        Args:
+            days: Number of days to analyze
+
+        Returns:
+            AggregatedAnalyticsResponse with all metrics across all tenants
+        """
+        start_date = datetime.utcnow() - timedelta(days=days)
+
+        performance = await self._calculate_performance_metrics(None, start_date)
+        cost_usage = await self._calculate_cost_metrics(None, start_date)
+        daily_trends = await self._get_daily_trends(None, start_date)
+        chatbot_breakdown = await self._get_chatbot_breakdown(None, start_date)
+
+        return AggregatedAnalyticsResponse(
+            scope=AnalyticsScope.PLATFORM,
+            scope_id="platform",
+            scope_name="Platform",
+            period_days=days,
+            performance=performance,
+            cost_usage=cost_usage,
+            daily_trends=daily_trends,
+            chatbot_breakdown=chatbot_breakdown,
+        )

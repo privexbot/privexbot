@@ -6,6 +6,7 @@
  */
 
 import apiClient from "@/lib/api-client";
+import type { AggregatedAnalytics } from "@/types/analytics";
 
 // ============== Types ==============
 
@@ -276,6 +277,18 @@ export const adminApi = {
    */
   revokeInviteCode: async (code: string): Promise<void> => {
     await apiClient.delete(`/admin/invite-codes/${code}`);
+  },
+
+  // ============== Analytics Methods ==============
+
+  /**
+   * Get platform-wide analytics (staff-only)
+   */
+  getPlatformAnalytics: async (days: number = 7): Promise<AggregatedAnalytics> => {
+    const response = await apiClient.get<AggregatedAnalytics>("/admin/analytics", {
+      params: { days },
+    });
+    return response.data;
   },
 };
 

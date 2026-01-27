@@ -155,16 +155,67 @@ class SecretAISDKProvider:
 
         logger.debug(f"[SecretAISDKProvider] Response length: {len(response_text)} chars")
 
+        # Extract token usage from LangChain AIMessage metadata
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        # Try 1: usage_metadata (LangChain's standard token tracking)
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            um = response.usage_metadata
+            if isinstance(um, dict):
+                prompt_tokens = um.get('input_tokens', 0) or um.get('prompt_tokens', 0) or 0
+                completion_tokens = um.get('output_tokens', 0) or um.get('completion_tokens', 0) or 0
+            else:
+                prompt_tokens = getattr(um, 'input_tokens', 0) or getattr(um, 'prompt_tokens', 0) or 0
+                completion_tokens = getattr(um, 'output_tokens', 0) or getattr(um, 'completion_tokens', 0) or 0
+
+        # Try 2: response_metadata.token_usage or response_metadata.usage
+        if not (prompt_tokens or completion_tokens):
+            if hasattr(response, 'response_metadata') and response.response_metadata:
+                rm = response.response_metadata
+                usage = rm.get('token_usage', rm.get('usage', {}))
+                if isinstance(usage, dict):
+                    prompt_tokens = usage.get('prompt_tokens', 0) or usage.get('input_tokens', 0) or 0
+                    completion_tokens = usage.get('completion_tokens', 0) or usage.get('output_tokens', 0) or 0
+
+        # Try 3: Estimate with tiktoken if metadata unavailable
+        if not (prompt_tokens or completion_tokens):
+            prompt_tokens, completion_tokens = self._estimate_tokens(sdk_messages, response_text)
+            logger.info("[SecretAISDKProvider] Token counts estimated via tiktoken (no metadata from provider)")
+
+        total_tokens = prompt_tokens + completion_tokens
+
+        logger.debug(f"[SecretAISDKProvider] Tokens - prompt: {prompt_tokens}, completion: {completion_tokens}, total: {total_tokens}")
+
         return {
             "text": response_text,
             "usage": {
-                "prompt_tokens": 0,  # SDK doesn't provide token counts
-                "completion_tokens": 0,
-                "total_tokens": 0
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
             },
             "model": self._model,
             "provider": "secret_ai_sdk"
         }
+
+    def _estimate_tokens(self, messages: list, response_text: str) -> tuple:
+        """Estimate token counts using tiktoken when provider doesn't return usage data."""
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+
+            # Estimate prompt tokens from all input messages
+            prompt_text = " ".join(content for _, content in messages)
+            prompt_tokens = len(enc.encode(prompt_text))
+
+            # Estimate completion tokens from response
+            completion_tokens = len(enc.encode(response_text))
+
+            return prompt_tokens, completion_tokens
+        except Exception:
+            # Last resort: rough char/4 heuristic
+            prompt_text = " ".join(content for _, content in messages)
+            return len(prompt_text) // 4, len(response_text) // 4
 
 
 # Singleton instance

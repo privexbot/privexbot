@@ -10,13 +10,12 @@ WHY:
 
 HOW:
 - Abstract provider interface with concrete implementations
-- OpenAI-compatible provider (both Secret AI and Akash ML use this)
+- OpenAI-compatible provider (Secret AI uses this)
 - Automatic provider detection based on model prefix or config
 - Structured message format internally, converted per-provider
 
 SUPPORTED PROVIDERS:
 - Secret AI (OpenAI-compatible) - PRIMARY, privacy-preserving via TEE
-- Akash ML (OpenAI-compatible) - FALLBACK, decentralized AI inference
 
 MESSAGE FORMAT:
 All methods accept structured messages:
@@ -32,9 +31,7 @@ and converts it to a user message internally.
 
 NETWORK NOTES:
 - Secret AI is the PRIMARY provider for PrivexBot (runs on SecretVM)
-- If Secret AI is blocked by your local network, Akash ML is used as fallback
 - In production (SecretVM), Secret AI should work without network issues
-- Configure INFERENCE_FALLBACK_ENABLED=true to enable automatic fallback
 """
 
 import os
@@ -50,7 +47,6 @@ from app.core.config import settings
 class InferenceProvider(str, Enum):
     """Supported inference providers - focused on decentralized AI."""
     SECRET_AI = "secret_ai"  # Primary - privacy-preserving via TEE
-    AKASH_ML = "akash_ml"    # Fallback - decentralized AI inference
     CUSTOM = "custom"        # For custom OpenAI-compatible endpoints
 
 
@@ -114,7 +110,7 @@ class InferenceResponse:
 
 
 # Provider configurations - Decentralized AI only
-# SECRET_AI is the primary provider, AKASH_ML is the fallback
+# SECRET_AI is the primary (and only) provider
 PROVIDER_CONFIGS = {
     InferenceProvider.SECRET_AI: {
         "base_url": os.getenv("SECRET_AI_BASE_URL", "https://secretai-api-url.scrtlabs.com:443/v1"),
@@ -124,20 +120,11 @@ PROVIDER_CONFIGS = {
         "timeout": 120.0,  # Longer timeout for TEE processing
         "description": "Secret AI - Privacy-preserving inference via Trusted Execution Environment",
     },
-    InferenceProvider.AKASH_ML: {
-        "base_url": "https://api.akashml.com/v1",
-        "api_key_env": "AKASHML_API_KEY",
-        "default_model": "deepseek-ai/DeepSeek-V3.1",
-        "model_prefixes": ["akash-", "akashml-"],
-        "timeout": 90.0,
-        "description": "Akash ML - Decentralized AI inference",
-    },
 }
 
 # Fallback order when primary provider (Secret AI) fails
-FALLBACK_ORDER = [
-    InferenceProvider.AKASH_ML,  # Only fallback - decentralized AI
-]
+# Currently empty - Secret AI is the only provider
+FALLBACK_ORDER = []
 
 
 class BaseProvider(ABC):
@@ -409,12 +396,10 @@ class InferenceService:
     """
     Unified inference service for decentralized AI providers.
 
-    SECRET AI IS THE DEFAULT PROVIDER for PrivexBot.
-    AKASH ML IS THE FALLBACK when Secret AI is unavailable.
+    SECRET AI IS THE DEFAULT (AND ONLY) PROVIDER for PrivexBot.
 
     This design ensures:
     - Privacy-preserving inference via Secret AI TEE when deployed
-    - Fallback to Akash ML (decentralized AI) when Secret AI is unavailable
     - Automatic provider detection based on model name prefix
     - Explicit provider selection when needed
 
@@ -424,11 +409,10 @@ class InferenceService:
             messages=[{"role": "user", "content": "Hello"}]
         )
 
-        # With explicit provider
+        # With explicit model
         response = await inference_service.generate_chat(
             messages=[...],
-            model="deepseek-ai/DeepSeek-V3.1",
-            provider=InferenceProvider.AKASH_ML
+            model="DeepSeek-R1-Distill-Llama-70B"
         )
     """
 
@@ -505,7 +489,7 @@ class InferenceService:
         if provider in self._providers:
             return self._providers[provider]
 
-        # Create OpenAI-compatible provider (both Secret AI and Akash ML use this)
+        # Create OpenAI-compatible provider
         config = PROVIDER_CONFIGS.get(provider, {})
         api_key_env = config.get("api_key_env")
         api_key = os.getenv(api_key_env, "") if api_key_env else "placeholder"
@@ -847,14 +831,6 @@ class InferenceService:
             available = False
             if api_key_env:
                 available = bool(os.getenv(api_key_env))
-            elif provider == InferenceProvider.OLLAMA:
-                # Ollama doesn't need a key, check if accessible
-                try:
-                    instance = self._get_provider(provider)
-                    health = instance.health_check()
-                    available = health.get("healthy", False)
-                except:
-                    available = False
 
             results.append({
                 "provider": provider.value,
@@ -882,7 +858,7 @@ def create_inference_service(
         service = create_inference_service()
 
         # Specific provider
-        service = create_inference_service(provider=InferenceProvider.GEMINI)
+        service = create_inference_service(provider=InferenceProvider.SECRET_AI)
 
         # With fallback disabled
         service = create_inference_service(enable_fallback=False)

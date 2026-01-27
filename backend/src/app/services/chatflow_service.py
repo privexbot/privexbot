@@ -124,6 +124,8 @@ class ChatflowService:
 
             response_text = execution_result["output"]
             nodes_executed = execution_result["nodes_executed"]
+            prompt_tokens = execution_result.get("prompt_tokens", 0)
+            completion_tokens = execution_result.get("completion_tokens", 0)
 
             # 5. Calculate execution time
             end_time = datetime.utcnow()
@@ -139,8 +141,15 @@ class ChatflowService:
                     "type": "chatflow",
                     "chatflow_id": str(chatflow.id),
                     "nodes_executed": nodes_executed,
-                    "execution_time_ms": execution_time_ms
-                }
+                    "execution_time_ms": execution_time_ms,
+                    "tokens_used": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": prompt_tokens + completion_tokens
+                    }
+                },
+                prompt_tokens=prompt_tokens if prompt_tokens else None,
+                completion_tokens=completion_tokens if completion_tokens else None
             )
 
             return {
@@ -201,6 +210,8 @@ class ChatflowService:
         current_node = start_node
         nodes_executed = []
         output = ""
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
 
         while current_node:
             # Execute current node
@@ -211,6 +222,12 @@ class ChatflowService:
             )
 
             nodes_executed.append(current_node["id"])
+
+            # Accumulate token usage from LLM nodes
+            tokens_used = node_result.get("metadata", {}).get("tokens_used")
+            if tokens_used and isinstance(tokens_used, dict):
+                total_prompt_tokens += tokens_used.get("prompt_tokens", 0) or 0
+                total_completion_tokens += tokens_used.get("completion_tokens", 0) or 0
 
             # Update context with node output
             if node_result.get("output"):
@@ -232,7 +249,9 @@ class ChatflowService:
 
         return {
             "output": output,
-            "nodes_executed": nodes_executed
+            "nodes_executed": nodes_executed,
+            "prompt_tokens": total_prompt_tokens,
+            "completion_tokens": total_completion_tokens,
         }
 
 

@@ -166,12 +166,6 @@ class Settings(BaseSettings):
         description="Set to 'true' when running on SecretVM"
     )
 
-    # Akash ML (decentralized AI fallback)
-    AKASHML_API_KEY: str = Field(
-        default="",
-        description="Akash ML API key for decentralized AI inference (fallback provider)"
-    )
-
     # Ollama (local inference for development)
     OLLAMA_BASE_URL: str = Field(
         default="http://localhost:11434/v1",

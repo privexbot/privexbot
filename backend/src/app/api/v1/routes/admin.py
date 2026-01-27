@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_db, get_staff_user
 from app.models.user import User
 from app.services.admin_service import AdminService
+from app.services.aggregated_analytics_service import AggregatedAnalyticsService
+from app.schemas.analytics import AggregatedAnalyticsResponse
 from app.schemas.admin import (
     SystemStats,
     OrganizationListResponse,
@@ -338,3 +340,30 @@ async def revoke_invite_code(
         raise HTTPException(status_code=404, detail="Invite code not found")
 
     return {"message": f"Invite code {code} has been revoked"}
+
+
+# ============================================================================
+# Analytics Endpoints
+# ============================================================================
+
+
+@router.get("/analytics", response_model=AggregatedAnalyticsResponse)
+async def get_platform_analytics(
+    days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+    staff: User = Depends(get_staff_user),
+    db: Session = Depends(get_db),
+) -> AggregatedAnalyticsResponse:
+    """
+    Platform-wide analytics. Requires staff access.
+
+    Returns aggregated performance, cost, trend, and per-bot metrics
+    across all tenants.
+
+    Args:
+        days: Number of days to analyze (1-90)
+
+    Returns:
+        AggregatedAnalyticsResponse: Platform-wide analytics data
+    """
+    service = AggregatedAnalyticsService(db)
+    return await service.get_platform_analytics(days)

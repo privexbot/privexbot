@@ -107,6 +107,14 @@ class UpdateChatbotDraftRequest(BaseModel):
         None,
         description="Grounding mode: 'strict' (KB-only), 'guided' (prefer KB), 'flexible' (enhance with KB)"
     )
+    enable_citations: Optional[bool] = Field(
+        None,
+        description="Enable citations & attributions in responses"
+    )
+    enable_follow_up_questions: Optional[bool] = Field(
+        None,
+        description="Enable follow-up question suggestions after responses"
+    )
     is_public: Optional[bool] = Field(
         None,
         description="Whether chatbot is publicly accessible without API key"
@@ -834,6 +842,18 @@ async def update_chatbot(
         kb_config = chatbot.kb_config.copy() if chatbot.kb_config else {}
         kb_config["grounding_mode"] = updates["grounding_mode"]
         chatbot.kb_config = kb_config
+
+    # Update citations (stored in kb_config.citation_style)
+    if "enable_citations" in updates:
+        kb_config = chatbot.kb_config.copy() if chatbot.kb_config else {}
+        kb_config["citation_style"] = "inline" if updates["enable_citations"] else "none"
+        chatbot.kb_config = kb_config
+
+    # Update follow-up questions (stored in behavior_config.follow_up_questions)
+    if "enable_follow_up_questions" in updates:
+        behavior_config = chatbot.behavior_config.copy() if chatbot.behavior_config else {}
+        behavior_config["follow_up_questions"] = updates["enable_follow_up_questions"]
+        chatbot.behavior_config = behavior_config
 
     # Update KB configuration (full knowledge_bases list)
     if "kb_config" in updates and updates["kb_config"]:

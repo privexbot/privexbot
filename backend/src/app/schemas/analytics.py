@@ -23,6 +23,7 @@ class AnalyticsScope(str, Enum):
     """Analytics scope enum."""
     WORKSPACE = "workspace"
     ORGANIZATION = "organization"
+    PLATFORM = "platform"  # Cross-tenant, staff-only
 
 
 class AnalyticsFilters(BaseModel):

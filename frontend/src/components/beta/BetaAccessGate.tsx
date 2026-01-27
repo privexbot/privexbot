@@ -25,7 +25,7 @@ interface BetaAccessGateProps {
 }
 
 export function BetaAccessGate({ children }: BetaAccessGateProps) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { actualTheme } = useTheme();
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +33,7 @@ export function BetaAccessGate({ children }: BetaAccessGateProps) {
   const [success, setSuccess] = useState(false);
 
   // Check if user has beta access
-  const hasBetaAccess = user?.is_staff ?? user?.has_beta_access;
+  const hasBetaAccess = user?.is_staff || user?.has_beta_access;
 
   // If user has access, render children
   if (hasBetaAccess || success) {
@@ -53,8 +53,8 @@ export function BetaAccessGate({ children }: BetaAccessGateProps) {
       const response = await betaApi.redeemCode(code.trim().toUpperCase());
 
       if (response.success) {
+        await refreshUser();
         setSuccess(true);
-        // Page will re-render and show children
       } else {
         setError(response.message);
       }
