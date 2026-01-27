@@ -591,9 +591,13 @@ try:
     from app.main import app
     print("✅ Successfully imported app.main:app")
 except ImportError as e:
-    print("❌ Import failed:", str(e))
+    print("❌ Import failed (ImportError):", str(e))
     print("💡 Check that all dependencies are installed and PYTHONPATH is correct")
-    print("💡 Current working directory and Python path shown above")
+    sys.exit(1)
+except Exception as e:
+    print("❌ Import failed (" + type(e).__name__ + "):", str(e))
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 ' || exit 1
 
@@ -602,7 +606,7 @@ export UVICORN_LOOP=asyncio
 
 echo "🚀 Starting gunicorn with optimized Secret VM settings..."
 exec gunicorn app.main:app \
-    --workers 2 \
+    --workers 1 \
     --worker-class uvicorn.workers.UvicornWorker \
     --bind 0.0.0.0:8000 \
     --access-logfile - \

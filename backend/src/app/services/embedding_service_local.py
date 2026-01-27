@@ -170,6 +170,12 @@ class LocalEmbeddingService:
         self.config = config or EmbeddingConfig()
         self.model: Optional[SentenceTransformer] = None
         self._validate_model_name()
+        # Model loads on first use, not at import time (prevents OOM during startup)
+
+    def _ensure_model_loaded(self):
+        """Load model on first use (lazy initialization)."""
+        if self.model is not None:
+            return
         self._initialize_model()
 
     def _validate_model_name(self):
@@ -217,8 +223,7 @@ class LocalEmbeddingService:
         Returns:
             int: Embedding dimension (e.g., 384 for all-MiniLM-L6-v2)
         """
-        if not self.model:
-            raise RuntimeError("Model not initialized")
+        self._ensure_model_loaded()
 
         return self.model.get_sentence_embedding_dimension()
 
@@ -229,8 +234,7 @@ class LocalEmbeddingService:
         Returns:
             int: Maximum sequence length
         """
-        if not self.model:
-            raise RuntimeError("Model not initialized")
+        self._ensure_model_loaded()
 
         return self.model.max_seq_length
 
@@ -260,8 +264,7 @@ class LocalEmbeddingService:
         if not texts:
             return []
 
-        if not self.model:
-            raise RuntimeError("Model not initialized")
+        self._ensure_model_loaded()
 
         # Use provided params or config defaults
         show_progress_bar = show_progress if show_progress is not None else self.config.show_progress
@@ -347,8 +350,7 @@ class LocalEmbeddingService:
             Dict with model information (suitable for storing in KB config)
         """
 
-        if not self.model:
-            raise RuntimeError("Model not initialized")
+        self._ensure_model_loaded()
 
         info = {
             "model_name": self.config.model_name,
@@ -495,9 +497,8 @@ class MultiModelEmbeddingService:
         """Initialize multi-model service with empty cache."""
         self._model_cache: Dict[str, SentenceTransformer] = {}
         self._model_dimensions: Dict[str, int] = {}
-        # Load default model immediately for backward compatibility
         self._default_model = DEFAULT_MODEL
-        self._ensure_model_loaded(self._default_model)
+        # Model loads on first use (every public method already calls _ensure_model_loaded)
 
     def _ensure_model_loaded(self, model_name: str) -> SentenceTransformer:
         """
