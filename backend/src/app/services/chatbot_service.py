@@ -280,8 +280,13 @@ class ChatbotService:
                 "from technical documentation",  # AI lie when hallucinating
             ]
             if any(indicator in response_lower for indicator in no_info_indicators):
-                print(f"[ChatbotService] AI indicated no info found, clearing {len(sources)} sources")
-                sources = []
+                # Only clear sources if the response is a genuine refusal (short)
+                # A substantive answer that includes a partial disclaimer should keep sources
+                if len(response_text.strip()) < 200:
+                    print(f"[ChatbotService] AI indicated no info found (short response), clearing {len(sources)} sources")
+                    sources = []
+                else:
+                    print(f"[ChatbotService] Response has refusal phrase but is substantive ({len(response_text)} chars), keeping {len(sources)} sources")
 
             # 6c. Validate sources are actually relevant to response
             # WHY: Don't cite sources if AI didn't use retrieved content

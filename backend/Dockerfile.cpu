@@ -59,7 +59,7 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install production web server
-RUN pip install --no-cache-dir gunicorn uvicorn[standard]
+RUN pip install --no-cache-dir gunicorn uvicorn httptools websockets
 
 # Create app directories and user FIRST (before Playwright)
 RUN mkdir -p /app/cache /app/data && \
