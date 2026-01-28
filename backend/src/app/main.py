@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds
@@ -99,6 +100,11 @@ app = FastAPI(
     redoc_url="/api/redoc",
     lifespan=lifespan,
 )
+
+# Proxy headers middleware - ensures request.scope['scheme'] reflects
+# X-Forwarded-Proto from Traefik. Without this, FastAPI's 307 trailing-slash
+# redirects use http:// instead of https://, causing mixed content errors.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # CORS Configuration - Two-tier strategy:
 # 1. Public/Widget API (/api/v1/public/*, /api/v1/chat/*): Allow ALL origins
