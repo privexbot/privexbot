@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Database, ExternalLink, Loader2, CheckCircle, RefreshCw } from 'lucide-react';
+import { config } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -100,7 +101,7 @@ export default function NotionIntegration({ draftId, onPagesSelected }: NotionIn
   });
 
   const initiateOAuth = () => {
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=notion&workspace_id=${currentWorkspace?.id}`;
+    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=notion&workspace_id=${currentWorkspace?.id}`;
     window.location.href = oauthUrl;
   };
 

@@ -17,6 +17,7 @@
  * - @tanstack/react-query
  * - react-router-dom
  * - lucide-react
+ * - @/config/env
  */
 
 import { useState } from 'react';
@@ -36,6 +37,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { config } from '@/config/env';
 
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -386,7 +388,7 @@ export default function Credentials() {
       });
       return;
     }
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=${credentialType}&workspace_id=${currentWorkspace.id}`;
+    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=${credentialType}&workspace_id=${currentWorkspace.id}`;
     window.location.href = oauthUrl;
   };
 

@@ -13,6 +13,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { config } from '@/config/env';
 import {
   Key,
   Plus,
@@ -137,7 +138,7 @@ export default function CredentialSelector({
       });
       return;
     }
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=${selectedProvider}&workspace_id=${workspaceId}`;
+    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=${selectedProvider}&workspace_id=${workspaceId}`;
     window.location.href = oauthUrl;
   };
 

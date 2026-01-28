@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import { Globe, Copy, Check, Plus, X } from 'lucide-react';
+import { config as envConfig } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,7 +75,7 @@ export default function WebsiteConfig({ chatbotId, config, onChange }: WebsiteCo
     w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
     js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
     js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${import.meta.env.VITE_API_BASE_URL}/widget.js'));
+  }(window, document, 'script', 'pb', '${envConfig.API_BASE_URL}/widget.js'));
   pb('init', '${chatbotId}', {
     position: '${config.widget_position}',
     color: '${config.widget_color}',

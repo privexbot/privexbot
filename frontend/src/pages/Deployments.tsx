@@ -18,6 +18,7 @@
  * - react-hook-form
  * - zod
  * - lucide-react
+ * - @/config/env
  */
 
 import { useState } from 'react';
@@ -48,6 +49,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import apiClient, { handleApiError } from '@/lib/api-client';
+import { config } from '@/config/env';
 
 const deploymentSchema = z.object({
   website_enabled: z.boolean().default(false),
@@ -138,14 +140,14 @@ export default function Deployments() {
     w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
     js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
     js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${import.meta.env.VITE_API_BASE_URL}/widget.js'));
+  }(window, document, 'script', 'pb', '${config.API_BASE_URL}/widget.js'));
   pb('init', '${chatbotId}', {
     position: '${formData.widget_position}',
     color: '${formData.widget_color}'
   });
 </script>`;
 
-  const webhookUrl = `${import.meta.env.VITE_API_BASE_URL}/webhooks/zapier/${chatbotId}`;
+  const webhookUrl = `${config.API_BASE_URL}/webhooks/zapier/${chatbotId}`;
 
   const copyToClipboard = (text: string, type: 'embed' | 'webhook') => {
     navigator.clipboard.writeText(text);

@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Cloud, ExternalLink, Loader2, CheckCircle, RefreshCw, Folder, FileText } from 'lucide-react';
+import { config } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -117,7 +118,7 @@ export default function GoogleDocsIntegration({
   });
 
   const initiateOAuth = () => {
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=google_drive&workspace_id=${currentWorkspace?.id}`;
+    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=google_drive&workspace_id=${currentWorkspace?.id}`;
     window.location.href = oauthUrl;
   };
 

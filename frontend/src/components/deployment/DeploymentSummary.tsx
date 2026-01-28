@@ -13,6 +13,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { config } from '@/config/env';
 import {
   Globe,
   MessageSquare,
@@ -173,7 +174,7 @@ export default function DeploymentSummary({ chatbotId }: DeploymentSummaryProps)
           ? `https://discord.com/api/oauth2/authorize?client_id=${deployment.config.client_id}&permissions=2147483648&scope=bot%20applications.commands`
           : null;
       case 'zapier':
-        return `${import.meta.env.VITE_API_BASE_URL}/webhooks/zapier/${chatbotId}`;
+        return `${config.API_BASE_URL}/webhooks/zapier/${chatbotId}`;
       default:
         return null;
     }

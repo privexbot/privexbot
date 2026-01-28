@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import { Copy, Check, Download, Code } from 'lucide-react';
+import { config } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -59,7 +60,7 @@ export default function EmbedCode({
   };
 
   const generateEmbedCode = () => {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL;
+    const baseUrl = config.API_BASE_URL;
     const widgetType = type === 'chatbot' ? 'chatbot' : 'chatflow';
 
     // Generate options object for the script

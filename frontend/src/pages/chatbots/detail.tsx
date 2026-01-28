@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { config } from '@/config/env';
 import ReactMarkdown from 'react-markdown';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
@@ -321,8 +322,8 @@ export default function ChatbotDetailPage() {
   const getEmbedCode = () => {
     if (!chatbot) return '';
 
-    const apiUrl = String(import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1');
-    const widgetUrl = String(import.meta.env.VITE_WIDGET_URL ?? 'http://localhost:9000/widget.js');
+    const apiUrl = config.API_BASE_URL;
+    const widgetUrl = config.WIDGET_CDN_URL;
     const color = chatbot.branding_config.primary_color ?? '#6366f1';
     const position = chatbot.branding_config.position ?? 'bottom-right';
     const greeting = chatbot.prompt_config.messages?.greeting ?? 'Hello! How can I help you?';
@@ -1536,7 +1537,7 @@ export default function ChatbotDetailPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <Button variant="outline" onClick={() => window.open(`${String(import.meta.env.VITE_WIDGET_URL ?? 'http://localhost:9000/widget.js').replace('/widget.js', '')}/test.html`, '_blank')}>
+                    <Button variant="outline" onClick={() => window.open(`${config.WIDGET_CDN_URL.replace('/widget.js', '')}/test.html`, '_blank')}>
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Open Test Page
                     </Button>
