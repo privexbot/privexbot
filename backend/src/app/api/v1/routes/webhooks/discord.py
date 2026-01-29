@@ -97,272 +97,10 @@ def _is_guild_allowed(deployment_config: dict, guild_id: str) -> bool:
     return True
 
 
-@router.post("/{bot_id}")
-async def discord_webhook(
-    bot_id: UUID,
-    request: Request,
-    x_signature_ed25519: Optional[str] = Header(None),
-    x_signature_timestamp: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
-):
-    """
-    Discord webhook handler.
-
-    WHY: Receive and process Discord interactions
-    HOW: Verify signature, parse interaction, execute bot
-
-    FLOW:
-    1. Verify Discord signature
-    2. Parse interaction
-    3. Handle interaction type (PING, MESSAGE_CREATE, etc.)
-    4. Execute bot
-    5. Send response to Discord
-
-    URL:
-        POST /webhooks/discord/{bot_id}
-
-    BODY:
-        {
-            "type": 2,  // MESSAGE_CREATE
-            "data": {
-                "content": "Hello"
-            },
-            "member": {
-                "user": {
-                    "id": "12345",
-                    "username": "johndoe"
-                }
-            },
-            "channel_id": "67890"
-        }
-
-    RETURNS:
-        {
-            "type": 4,  // CHANNEL_MESSAGE_WITH_SOURCE
-            "data": {
-                "content": "Response message"
-            }
-        }
-    """
-
-    # Get bot from database
-    from app.models.chatbot import Chatbot
-
-    # Try chatbot first (primary use case)
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # Chatflow not yet implemented - return 404
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
-
-    # Check if Discord is enabled
-    deployment_config = bot.deployment_config or {}
-    discord_config = deployment_config.get("discord", {})
-
-    if not discord_config or discord_config.get("status") != "success":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Discord not enabled for this bot"
-        )
-
-    # Get public key for verification
-    public_key = discord_config.get("public_key")
-
-    # Parse body
-    body = await request.body()
-    interaction = await request.json()
-
-    # Verify signature
-    if public_key and x_signature_ed25519 and x_signature_timestamp:
-        is_valid = discord_integration.verify_signature(
-            body=body,
-            signature=x_signature_ed25519,
-            timestamp=x_signature_timestamp,
-            public_key=public_key
-        )
-
-        if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid signature"
-            )
-
-    # Handle interaction type
-    interaction_type = interaction.get("type")
-
-    # Type 1: PING (Discord verification)
-    if interaction_type == 1:
-        return {"type": 1}
-
-    # Type 2: APPLICATION_COMMAND or Type 3: MESSAGE_COMPONENT
-    if interaction_type in [2, 3]:
-        # Extract guild_id for filtering
-        guild_id = interaction.get("guild_id")
-
-        # Check if this guild is allowed (allowlist/blocklist filtering)
-        if not _is_guild_allowed(deployment_config, guild_id):
-            # Return empty response for blocked guilds
-            return {"type": 4, "data": {"content": "", "flags": 64}}  # Ephemeral empty
-
-        # Extract message
-        data = interaction.get("data", {})
-        message_content = data.get("content") or data.get("custom_id", "")
-
-        # Extract user info
-        member = interaction.get("member", {})
-        user = member.get("user", {}) or interaction.get("user", {})
-        user_id = user.get("id")
-        username = user.get("username")
-        channel_id = interaction.get("channel_id")
-
-        # Generate session ID
-        session_id = f"discord_{guild_id}_{channel_id}_{user_id}"
-
-        # Execute chatbot
-        # TODO: Add chatflow support when Chatflow model is available
-        response = await chatbot_service.process_message(
-            db=db,
-            chatbot=bot,
-            user_message=message_content,
-            session_id=session_id,
-            channel_context={
-                "platform": "discord",
-                "guild_id": guild_id,
-                "channel_id": channel_id,
-                "user_id": user_id,
-                "username": username
-            }
-        )
-
-        # Return Discord interaction response
-        return {
-            "type": 4,  # CHANNEL_MESSAGE_WITH_SOURCE
-            "data": {
-                "content": response["response"]
-            }
-        }
-
-    # Unknown interaction type
-    return {"type": 4, "data": {"content": "Unknown interaction type"}}
-
-
-@router.post("/{bot_id}/register-commands")
-async def register_discord_commands(
-    bot_id: UUID,
-    commands: list,
-    db: Session = Depends(get_db)
-):
-    """
-    Register Discord slash commands.
-
-    WHY: Configure bot commands
-    HOW: Call Discord API
-
-    BODY:
-        {
-            "commands": [
-                {
-                    "name": "help",
-                    "description": "Get help",
-                    "type": 1
-                }
-            ]
-        }
-
-    RETURNS:
-        {"status": "registered", "commands_count": 1}
-    """
-
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
-
-    # Get Discord config via credential service
-    deployment_config = bot.deployment_config or {}
-    discord_config = deployment_config.get("discord", {})
-    bot_token = _get_discord_bot_token(db, deployment_config)
-    application_id = discord_config.get("application_id")
-
-    if not bot_token or not application_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Discord not properly configured or token credential not found"
-        )
-
-    # Register commands
-    result = await discord_integration.register_global_commands(
-        bot_token=bot_token,
-        application_id=application_id,
-        commands=commands
-    )
-
-    return {
-        "status": "registered",
-        "commands_count": len(commands)
-    }
-
-
-@router.get("/{bot_id}/commands")
-async def get_discord_commands(
-    bot_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """
-    Get registered Discord commands.
-
-    WHY: View current commands
-    HOW: Query Discord API
-
-    RETURNS:
-        {
-            "commands": [...]
-        }
-    """
-
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
-
-    # Get Discord config via credential service
-    deployment_config = bot.deployment_config or {}
-    discord_config = deployment_config.get("discord", {})
-    bot_token = _get_discord_bot_token(db, deployment_config)
-    application_id = discord_config.get("application_id")
-
-    if not bot_token or not application_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Discord not properly configured or token credential not found"
-        )
-
-    # Get commands
-    commands = await discord_integration.get_global_commands(
-        bot_token=bot_token,
-        application_id=application_id
-    )
-
-    return {"commands": commands}
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHARED BOT ARCHITECTURE - Routes messages to correct chatbot based on guild_id
+# IMPORTANT: Literal /shared* routes MUST be defined before /{bot_id} routes,
+# otherwise FastAPI matches "shared" as a bot_id UUID and returns 422.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/shared")
@@ -668,6 +406,274 @@ async def get_shared_bot_commands():
             detail="Shared Discord bot not configured. Set DISCORD_SHARED_BOT_TOKEN and DISCORD_SHARED_APPLICATION_ID in environment."
         )
 
+    commands = await discord_integration.get_global_commands(
+        bot_token=bot_token,
+        application_id=application_id
+    )
+
+    return {"commands": commands}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PER-BOT ROUTES - Parameterized /{bot_id} routes (must come after /shared*)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/{bot_id}")
+async def discord_webhook(
+    bot_id: UUID,
+    request: Request,
+    x_signature_ed25519: Optional[str] = Header(None),
+    x_signature_timestamp: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Discord webhook handler.
+
+    WHY: Receive and process Discord interactions
+    HOW: Verify signature, parse interaction, execute bot
+
+    FLOW:
+    1. Verify Discord signature
+    2. Parse interaction
+    3. Handle interaction type (PING, MESSAGE_CREATE, etc.)
+    4. Execute bot
+    5. Send response to Discord
+
+    URL:
+        POST /webhooks/discord/{bot_id}
+
+    BODY:
+        {
+            "type": 2,  // MESSAGE_CREATE
+            "data": {
+                "content": "Hello"
+            },
+            "member": {
+                "user": {
+                    "id": "12345",
+                    "username": "johndoe"
+                }
+            },
+            "channel_id": "67890"
+        }
+
+    RETURNS:
+        {
+            "type": 4,  // CHANNEL_MESSAGE_WITH_SOURCE
+            "data": {
+                "content": "Response message"
+            }
+        }
+    """
+
+    # Get bot from database
+    from app.models.chatbot import Chatbot
+
+    # Try chatbot first (primary use case)
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if not bot:
+        # Chatflow not yet implemented - return 404
+        # TODO: Add chatflow support when Chatflow model is available
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found"
+        )
+
+    # Check if Discord is enabled
+    deployment_config = bot.deployment_config or {}
+    discord_config = deployment_config.get("discord", {})
+
+    if not discord_config or discord_config.get("status") != "success":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discord not enabled for this bot"
+        )
+
+    # Get public key for verification
+    public_key = discord_config.get("public_key")
+
+    # Parse body
+    body = await request.body()
+    interaction = await request.json()
+
+    # Verify signature
+    if public_key and x_signature_ed25519 and x_signature_timestamp:
+        is_valid = discord_integration.verify_signature(
+            body=body,
+            signature=x_signature_ed25519,
+            timestamp=x_signature_timestamp,
+            public_key=public_key
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid signature"
+            )
+
+    # Handle interaction type
+    interaction_type = interaction.get("type")
+
+    # Type 1: PING (Discord verification)
+    if interaction_type == 1:
+        return {"type": 1}
+
+    # Type 2: APPLICATION_COMMAND or Type 3: MESSAGE_COMPONENT
+    if interaction_type in [2, 3]:
+        # Extract guild_id for filtering
+        guild_id = interaction.get("guild_id")
+
+        # Check if this guild is allowed (allowlist/blocklist filtering)
+        if not _is_guild_allowed(deployment_config, guild_id):
+            # Return empty response for blocked guilds
+            return {"type": 4, "data": {"content": "", "flags": 64}}  # Ephemeral empty
+
+        # Extract message
+        data = interaction.get("data", {})
+        message_content = data.get("content") or data.get("custom_id", "")
+
+        # Extract user info
+        member = interaction.get("member", {})
+        user = member.get("user", {}) or interaction.get("user", {})
+        user_id = user.get("id")
+        username = user.get("username")
+        channel_id = interaction.get("channel_id")
+
+        # Generate session ID
+        session_id = f"discord_{guild_id}_{channel_id}_{user_id}"
+
+        # Execute chatbot
+        # TODO: Add chatflow support when Chatflow model is available
+        response = await chatbot_service.process_message(
+            db=db,
+            chatbot=bot,
+            user_message=message_content,
+            session_id=session_id,
+            channel_context={
+                "platform": "discord",
+                "guild_id": guild_id,
+                "channel_id": channel_id,
+                "user_id": user_id,
+                "username": username
+            }
+        )
+
+        # Return Discord interaction response
+        return {
+            "type": 4,  # CHANNEL_MESSAGE_WITH_SOURCE
+            "data": {
+                "content": response["response"]
+            }
+        }
+
+    # Unknown interaction type
+    return {"type": 4, "data": {"content": "Unknown interaction type"}}
+
+
+@router.post("/{bot_id}/register-commands")
+async def register_discord_commands(
+    bot_id: UUID,
+    commands: list,
+    db: Session = Depends(get_db)
+):
+    """
+    Register Discord slash commands.
+
+    WHY: Configure bot commands
+    HOW: Call Discord API
+
+    BODY:
+        {
+            "commands": [
+                {
+                    "name": "help",
+                    "description": "Get help",
+                    "type": 1
+                }
+            ]
+        }
+
+    RETURNS:
+        {"status": "registered", "commands_count": 1}
+    """
+
+    # Get bot
+    from app.models.chatbot import Chatbot
+
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if not bot:
+        # TODO: Add chatflow support when Chatflow model is available
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found"
+        )
+
+    # Get Discord config via credential service
+    deployment_config = bot.deployment_config or {}
+    discord_config = deployment_config.get("discord", {})
+    bot_token = _get_discord_bot_token(db, deployment_config)
+    application_id = discord_config.get("application_id")
+
+    if not bot_token or not application_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discord not properly configured or token credential not found"
+        )
+
+    # Register commands
+    result = await discord_integration.register_global_commands(
+        bot_token=bot_token,
+        application_id=application_id,
+        commands=commands
+    )
+
+    return {
+        "status": "registered",
+        "commands_count": len(commands)
+    }
+
+
+@router.get("/{bot_id}/commands")
+async def get_discord_commands(
+    bot_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Get registered Discord commands.
+
+    WHY: View current commands
+    HOW: Query Discord API
+
+    RETURNS:
+        {
+            "commands": [...]
+        }
+    """
+
+    # Get bot
+    from app.models.chatbot import Chatbot
+
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if not bot:
+        # TODO: Add chatflow support when Chatflow model is available
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found"
+        )
+
+    # Get Discord config via credential service
+    deployment_config = bot.deployment_config or {}
+    discord_config = deployment_config.get("discord", {})
+    bot_token = _get_discord_bot_token(db, deployment_config)
+    application_id = discord_config.get("application_id")
+
+    if not bot_token or not application_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Discord not properly configured or token credential not found"
+        )
+
+    # Get commands
     commands = await discord_integration.get_global_commands(
         bot_token=bot_token,
         application_id=application_id
