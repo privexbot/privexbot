@@ -43,4 +43,6 @@ dependencies = [
     "openai>=1.0.0",  # OpenAI-compatible APIs (OpenAI, Ollama, DeepSeek, Secret AI)
     "google-genai>=0.1.0",  # Google Gemini API
     "secret-ai-sdk>=0.1.0",  # Native Secret AI SDK (optional, enabled via USE_SECRET_AI_SDK=true)
+    # Object storage
+    "minio>=7.2.0",  # S3-compatible object storage client
 ]

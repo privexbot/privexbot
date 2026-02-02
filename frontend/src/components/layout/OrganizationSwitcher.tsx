@@ -178,6 +178,9 @@ export function OrganizationSwitcher() {
         <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1">
           {/* User Avatar with gradient (blue→purple) */}
           <Avatar className="h-7 sm:h-8 w-7 sm:w-8 flex-shrink-0">
+            {user?.avatar_url && (
+              <AvatarImage src={user.avatar_url} alt={user.username} className="object-cover" />
+            )}
             <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-[10px] sm:text-xs font-semibold">
               {user ? getInitials(user.username) : "U"}
             </AvatarFallback>

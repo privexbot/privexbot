@@ -51,6 +51,7 @@ import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { GroundingMode } from '@/types/chatbot';
+import { AvatarUpload } from '@/components/shared/AvatarUpload';
 
 export default function ChatbotEditPage() {
   const { chatbotId } = useParams<{ chatbotId: string }>();
@@ -1086,42 +1087,48 @@ export default function ChatbotEditPage() {
                   </p>
                 </div>
 
-                {/* Avatar URL */}
+                {/* Avatar Upload */}
                 <div className="space-y-2">
-                  <Label htmlFor="avatar_url" className="font-manrope">Avatar URL</Label>
+                  <Label className="font-manrope">Chatbot Avatar</Label>
                   <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <Input
-                        id="avatar_url"
-                        value={formData.avatar_url}
-                        onChange={(e) => {
-                          setFormData({ ...formData, avatar_url: e.target.value });
+                    {chatbotId && (
+                      <AvatarUpload
+                        entityType="chatbots"
+                        entityId={chatbotId}
+                        currentAvatarUrl={formData.avatar_url || undefined}
+                        name={formData.name || "Bot"}
+                        size="md"
+                        onAvatarChange={(url) => {
+                          setFormData({ ...formData, avatar_url: url || '' });
                           setAvatarError('');
                         }}
-                        placeholder="https://example.com/avatar.png"
-                        className={`font-manrope ${avatarError ? 'border-red-500' : ''}`}
                       />
-                      {avatarError && (
-                        <p className="text-sm text-red-500 font-manrope mt-1">{avatarError}</p>
-                      )}
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
-                        Image URL for your chatbot avatar (recommended: 64x64px)
+                    )}
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                        Click the avatar to upload an image, or enter a URL below.
                       </p>
                     </div>
-                    {/* Avatar Preview */}
-                    <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
-                      {formData.avatar_url ? (
-                        <img
-                          src={formData.avatar_url}
-                          alt="Avatar preview"
-                          className="w-full h-full object-cover"
-                          onError={() => { setAvatarError('Failed to load image'); }}
-                          onLoad={() => { setAvatarError(''); }}
-                        />
-                      ) : (
-                        <Bot className="h-6 w-6 text-gray-400" />
-                      )}
-                    </div>
+                  </div>
+
+                  {/* Secondary: URL text input for external images */}
+                  <div className="pt-2">
+                    <Label htmlFor="avatar_url" className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                      Or enter URL directly
+                    </Label>
+                    <Input
+                      id="avatar_url"
+                      value={formData.avatar_url}
+                      onChange={(e) => {
+                        setFormData({ ...formData, avatar_url: e.target.value });
+                        setAvatarError('');
+                      }}
+                      placeholder="https://example.com/avatar.png"
+                      className={`font-manrope mt-1 ${avatarError ? 'border-red-500' : ''}`}
+                    />
+                    {avatarError && (
+                      <p className="text-sm text-red-500 font-manrope mt-1">{avatarError}</p>
+                    )}
                   </div>
                 </div>
 

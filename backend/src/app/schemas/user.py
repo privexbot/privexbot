@@ -163,6 +163,7 @@ class UserResponse(UserBase):
         }
     """
     id: UUID = Field(..., description="User's unique identifier")
+    avatar_url: Optional[str] = Field(None, description="User avatar/profile image URL")
     is_active: bool = Field(..., description="Whether user account is active")
     created_at: datetime = Field(..., description="Account creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")

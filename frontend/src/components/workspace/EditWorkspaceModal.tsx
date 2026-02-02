@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
+import { AvatarUpload } from "@/components/shared/AvatarUpload";
 import { workspaceApi } from "@/api/workspace";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -135,6 +136,20 @@ export const EditWorkspaceModal = ({
               <p className="text-sm text-red-800 dark:text-red-300 font-medium">{errors.root.message}</p>
             </div>
           )}
+
+          {/* Workspace Avatar */}
+          <div className="flex justify-center">
+            <AvatarUpload
+              entityType="workspaces"
+              entityId={workspace.id}
+              currentAvatarUrl={workspace.avatar_url}
+              name={workspace.name}
+              size="md"
+              onAvatarChange={() => {
+                /* Parent will refetch on modal close via onSuccess */
+              }}
+            />
+          </div>
 
           {/* Workspace Name */}
           <div>

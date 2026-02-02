@@ -689,7 +689,7 @@ class UnifiedDraftService:
         """
 
         from app.models.chatflow import Chatflow
-        from app.models.api_key import APIKey
+        from app.models.api_key import create_api_key
 
         data = draft["data"]
 
@@ -700,18 +700,22 @@ class UnifiedDraftService:
             config=data,  # Store entire config as JSONB (includes deployment config)
             version=1,
             is_active=True,
-            created_by=UUID(draft["created_by"])
+            is_public=data.get("is_public", True),
+            created_by=UUID(draft["created_by"]),
+            deployed_at=datetime.utcnow()
         )
 
         db.add(chatflow)
-        db.flush()
+        db.flush()  # Get chatflow.id without committing
 
-        # Generate API key
-        api_key = APIKey(
+        # Generate primary API key using helper function
+        api_key, plain_key = create_api_key(
             workspace_id=chatflow.workspace_id,
+            name=f"API Key for {chatflow.name}",
             entity_type="chatflow",
             entity_id=chatflow.id,
-            created_by=chatflow.created_by
+            created_by=chatflow.created_by,
+            permissions=["read", "execute"]
         )
 
         db.add(api_key)
@@ -722,7 +726,7 @@ class UnifiedDraftService:
             entity_id=chatflow.id,
             entity_type="chatflow",
             deployment_config=data.get("deployment", {}),
-            api_key=api_key.key,
+            api_key=plain_key,
             db=db
         )
 
@@ -730,6 +734,10 @@ class UnifiedDraftService:
         # This stores bot_token_credential_id for webhook handlers to use
         chatflow.config["deployment"] = deployment_results["channels"]
         db.commit()
+
+        # Add API key to response (only shown once)
+        deployment_results["api_key"] = plain_key
+        deployment_results["api_key_prefix"] = api_key.key_prefix
 
         return deployment_results
 

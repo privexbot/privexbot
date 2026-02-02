@@ -111,7 +111,8 @@ class KBDraftService:
         file_stream: Any,
         filename: str,
         file_size: int,
-        mime_type: str
+        mime_type: str,
+        raw_bytes: Optional[bytes] = None,
     ) -> Dict[str, Any]:
         """
         Add file upload to KB draft with Tika parsing.
@@ -236,6 +237,24 @@ class KBDraftService:
 
         print(f"[KB Draft] Created {len(preview_pages)} preview pages for {filename}")
 
+        # Store original file in MinIO for re-processing and downloads
+        minio_object_key = None
+        if raw_bytes:
+            try:
+                from app.services.storage_service import BUCKET_KB_FILES, storage_service
+                # Use draft_id as workspace placeholder until finalization
+                minio_object_key = f"drafts/{draft_id}/{source_id}/{filename}"
+                storage_service.upload_file(
+                    bucket=BUCKET_KB_FILES,
+                    object_key=minio_object_key,
+                    data=raw_bytes,
+                    content_type=mime_type,
+                )
+                print(f"[KB Draft] Stored original file in MinIO: {minio_object_key}")
+            except Exception as e:
+                print(f"[KB Draft] Warning: Could not store file in MinIO: {e}")
+                minio_object_key = None
+
         # Create source entry with preview_pages included
         source = {
             "id": source_id,
@@ -252,7 +271,9 @@ class KBDraftService:
             "added_at": datetime.utcnow().isoformat(),
             "parsed_at": datetime.utcnow().isoformat(),
             # CRITICAL: Store preview_pages in Redis for Content Approval step
-            "preview_pages": preview_pages
+            "preview_pages": preview_pages,
+            # MinIO object key for original file (if stored)
+            "minio_object_key": minio_object_key,
         }
 
         # Add to sources
@@ -1213,6 +1234,26 @@ class KBDraftService:
         # Commit to PostgreSQL
         db.commit()
         db.refresh(kb)
+
+        # ========================================
+        # CONDITIONAL FILE PERSISTENCE (OPT-IN)
+        # ========================================
+        # When persist_files is false (default), clean up MinIO files uploaded during draft phase
+        # and clear minio_object_key from sources so pipeline doesn't set file_path on Documents.
+        # When persist_files is true, files remain in MinIO and file_path gets set.
+        persist_files = chunking_config.get("persist_files", False)
+
+        if not persist_files:
+            for source in sources:
+                minio_key = source.get("minio_object_key")
+                if minio_key:
+                    try:
+                        from app.services.storage_service import BUCKET_KB_FILES, storage_service
+                        storage_service.delete_file(BUCKET_KB_FILES, minio_key)
+                        print(f"[KB Finalize] Deleted MinIO file (persist_files=false): {minio_key}")
+                    except Exception as e:
+                        print(f"[KB Finalize] Warning: Could not delete MinIO file {minio_key}: {e}")
+                    source["minio_object_key"] = None  # Clear so pipeline doesn't set file_path
 
         # ========================================
         # PHASE 3: QUEUE BACKGROUND PROCESSING

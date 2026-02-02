@@ -71,6 +71,7 @@ class User(Base):
 
     # User info
     username = Column(String(255), unique=True, nullable=False, index=True)
+    avatar_url = Column(String(512), nullable=True)  # Optional user avatar/profile image URL
     is_active = Column(Boolean, default=True, nullable=False)
     is_staff = Column(Boolean, default=False, server_default="false", nullable=False)  # Staff access for backoffice
     has_beta_access = Column(Boolean, default=False, server_default="false", nullable=False)  # Beta tester access

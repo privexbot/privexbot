@@ -560,6 +560,7 @@ export interface ChunkingConfig {
   preserve_code_blocks?: boolean; // Keep code blocks intact during chunking
   custom_separators?: string[]; // For custom strategy - user-defined separators
   enable_enhanced_metadata?: boolean; // Add context_before/after, parent_heading to chunks
+  persist_files?: boolean; // Store original uploaded files for re-processing and downloads
   semantic_threshold?: number; // For semantic strategy (0-1)
 
   // Frontend-only parameters (not sent to backend)

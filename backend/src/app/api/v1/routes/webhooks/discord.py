@@ -97,6 +97,31 @@ def _is_guild_allowed(deployment_config: dict, guild_id: str) -> bool:
     return True
 
 
+def _resolve_bot(db: Session, bot_id: UUID):
+    """
+    Resolve bot_id to Chatbot or Chatflow.
+
+    Returns (bot_type, bot, deployment_config).
+    Chatbot uses bot.deployment_config (dedicated column).
+    Chatflow uses chatflow.config["deployment"] (nested in config JSONB).
+    """
+    from app.models.chatbot import Chatbot
+    from app.models.chatflow import Chatflow
+
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if bot:
+        return "chatbot", bot, bot.deployment_config or {}
+
+    chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
+    if chatflow:
+        return "chatflow", chatflow, (chatflow.config or {}).get("deployment", {})
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Bot not found"
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHARED BOT ARCHITECTURE - Routes messages to correct chatbot based on guild_id
 # IMPORTANT: Literal /shared* routes MUST be defined before /{bot_id} routes,
@@ -466,21 +491,10 @@ async def discord_webhook(
         }
     """
 
-    # Get bot from database
-    from app.models.chatbot import Chatbot
-
-    # Try chatbot first (primary use case)
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # Chatflow not yet implemented - return 404
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot from database (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Check if Discord is enabled
-    deployment_config = bot.deployment_config or {}
     discord_config = deployment_config.get("discord", {})
 
     if not discord_config or discord_config.get("status") != "success":
@@ -542,21 +556,31 @@ async def discord_webhook(
         # Generate session ID
         session_id = f"discord_{guild_id}_{channel_id}_{user_id}"
 
-        # Execute chatbot
-        # TODO: Add chatflow support when Chatflow model is available
-        response = await chatbot_service.process_message(
-            db=db,
-            chatbot=bot,
-            user_message=message_content,
-            session_id=session_id,
-            channel_context={
-                "platform": "discord",
-                "guild_id": guild_id,
-                "channel_id": channel_id,
-                "user_id": user_id,
-                "username": username
-            }
-        )
+        # Execute bot (chatbot or chatflow)
+        channel_context = {
+            "platform": "discord",
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "user_id": user_id,
+            "username": username
+        }
+
+        if bot_type == "chatbot":
+            response = await chatbot_service.process_message(
+                db=db,
+                chatbot=bot,
+                user_message=message_content,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+        else:  # chatflow
+            response = await chatflow_service.execute(
+                db=db,
+                chatflow=bot,
+                user_message=message_content,
+                session_id=session_id,
+                channel_context=channel_context
+            )
 
         # Return Discord interaction response
         return {
@@ -597,19 +621,10 @@ async def register_discord_commands(
         {"status": "registered", "commands_count": 1}
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get Discord config via credential service
-    deployment_config = bot.deployment_config or {}
     discord_config = deployment_config.get("discord", {})
     bot_token = _get_discord_bot_token(db, deployment_config)
     application_id = discord_config.get("application_id")
@@ -650,19 +665,10 @@ async def get_discord_commands(
         }
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get Discord config via credential service
-    deployment_config = bot.deployment_config or {}
     discord_config = deployment_config.get("discord", {})
     bot_token = _get_discord_bot_token(db, deployment_config)
     application_id = discord_config.get("application_id")

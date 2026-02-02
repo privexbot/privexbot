@@ -17,7 +17,8 @@ import {
   Heading,
   Brain,
   Layers,
-  Sparkles
+  Sparkles,
+  HardDrive
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -32,6 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ChunkingConfig } from '@/types/knowledge-base';
+import { useKBStore } from '@/store/kb-store';
 
 interface KBChunkingSettingsProps {
   config: ChunkingConfig | null;
@@ -131,6 +133,11 @@ export function KBChunkingSettings({
 }: KBChunkingSettingsProps) {
   // Note: _sourceType is available for future use (e.g., different recommendations for web vs file sources)
   void _sourceType;
+
+  // Check if draft has file uploads to conditionally show persist toggle
+  const { draftSources } = useKBStore();
+  const hasFileUploads = draftSources.some(s => s.type === 'file');
+
   // Default config matching backend ChunkingConfig defaults
   const [localConfig, setLocalConfig] = useState<ChunkingConfig>({
     strategy: 'recursive' as any,
@@ -154,6 +161,7 @@ export function KBChunkingSettings({
         chunk_overlap: config.chunk_overlap || 200,
         preserve_code_blocks: config.preserve_code_blocks ?? true,
         enable_enhanced_metadata: config.enable_enhanced_metadata ?? true,
+        persist_files: config.persist_files ?? false,
         semantic_threshold: config.semantic_threshold,
         custom_separators: config.custom_separators,
       };
@@ -388,6 +396,27 @@ export function KBChunkingSettings({
                 onCheckedChange={(checked) => handleChange('enable_enhanced_metadata', checked)}
               />
             </div>
+
+            {/* Persist Original Files - only shown when KB has file uploads */}
+            {hasFileUploads && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <HardDrive className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                  <div>
+                    <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-manrope">
+                      Persist Original Files
+                    </Label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                      Store uploaded files for re-processing and downloads. Enables re-chunking with different settings later.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={localConfig.persist_files ?? false}
+                  onCheckedChange={(checked) => handleChange('persist_files', checked)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Current Config Summary */}

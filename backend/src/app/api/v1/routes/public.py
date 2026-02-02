@@ -14,7 +14,7 @@ HOW:
 - Return response
 """
 
-from fastapi import APIRouter, HTTPException, Header, Depends, Request
+from fastapi import APIRouter, File, HTTPException, Header, Depends, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from uuid import UUID, uuid4
@@ -229,11 +229,20 @@ async def chat(
             )
 
         else:  # chatflow
-            # Placeholder - chatflow_service not yet implemented
+            from app.services.chatflow_service import chatflow_service
+
+            result = await chatflow_service.execute(
+                db=db,
+                chatflow=bot,
+                user_message=request.message,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+
             response = {
-                "response": "Chatflow support coming soon",
-                "session_id": session_id,
-                "message_id": str(uuid4())
+                "response": result["response"],
+                "session_id": result["session_id"],
+                "message_id": result["message_id"]
             }
 
     except Exception as e:
@@ -944,8 +953,17 @@ async def _get_public_bot(
             raise HTTPException(400, "Chatbot is not active")
         return "chatbot", bot, bot.workspace_id
 
-    # Chatflow support - would check chatflows table here
-    # For now, return 404 if not found as chatbot
+    # Try chatflow
+    from app.models.chatflow import Chatflow
+
+    chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
+    if chatflow:
+        if not chatflow.is_public:
+            raise HTTPException(401, "API key required for private bots")
+        if not chatflow.is_active:
+            raise HTTPException(400, "Chatflow is not active")
+        return "chatflow", chatflow, chatflow.workspace_id
+
     raise HTTPException(404, "Bot not found")
 
 
@@ -1002,5 +1020,138 @@ async def _validate_api_key_and_get_bot(
         return "chatbot", bot, bot.workspace_id
 
     else:  # chatflow
-        # Chatflow support coming soon
-        raise HTTPException(501, "Chatflow support not yet implemented")
+        from app.models.chatflow import Chatflow
+
+        chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
+        if not chatflow:
+            raise HTTPException(404, "Chatflow not found")
+        if not chatflow.is_active:
+            raise HTTPException(400, "Chatflow is not active")
+        return "chatflow", chatflow, chatflow.workspace_id
+
+
+# Allowed MIME types for chat file uploads
+CHAT_UPLOAD_ALLOWED_TYPES = {
+    # Images
+    "image/jpeg", "image/png", "image/webp", "image/gif",
+    # Documents
+    "application/pdf",
+    "text/plain", "text/csv", "text/markdown",
+    # Office
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+CHAT_UPLOAD_MAX_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@router.post("/bots/{bot_id}/upload")
+async def upload_chat_file(
+    bot_id: UUID,
+    file: UploadFile = File(...),
+    session_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload a file from the widget during a chat session.
+
+    WHY: Enable users to share images, PDFs, and documents via the chat widget
+    HOW: Validate file, store in MinIO, return presigned download URL
+
+    AUTH: Same as chat endpoint - API key via Bearer token, or public bot access
+
+    RETURNS:
+        {
+            "file_url": "presigned_download_url",
+            "file_id": "unique_id",
+            "filename": "original_name.pdf",
+            "content_type": "application/pdf",
+            "file_size": 12345
+        }
+    """
+    import magic
+    from app.services.storage_service import BUCKET_CHAT_FILES, storage_service
+
+    # Auth: same pattern as chat endpoint
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization.replace("Bearer ", "")
+        bot_type, bot, workspace_id = await _validate_api_key_and_get_bot(db, bot_id, api_key)
+    else:
+        bot_type, bot, workspace_id = await _get_public_bot(db, bot_id)
+
+    # Read file content
+    content = await file.read()
+    file_size = len(content)
+
+    # Validate size
+    if file_size > CHAT_UPLOAD_MAX_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {CHAT_UPLOAD_MAX_SIZE // (1024 * 1024)}MB",
+        )
+
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    # Validate MIME type using python-magic
+    detected_type = magic.from_buffer(content, mime=True)
+    if detected_type not in CHAT_UPLOAD_ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not allowed: {detected_type}",
+        )
+
+    # Build object key with multi-tenant isolation
+    effective_session = session_id or f"anon_{uuid4().hex[:12]}"
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    file_id = uuid4().hex[:12]
+    safe_filename = "".join(
+        c for c in (file.filename or "upload") if c.isalnum() or c in "._-"
+    ).strip() or "upload"
+    object_key = f"{workspace_id}/{effective_session}/{timestamp}_{file_id}_{safe_filename}"
+
+    # Upload to MinIO
+    storage_service.upload_file(
+        bucket=BUCKET_CHAT_FILES,
+        object_key=object_key,
+        data=content,
+        content_type=detected_type,
+    )
+
+    # Generate presigned download URL (1 hour expiry)
+    file_url = storage_service.get_presigned_download_url(
+        bucket=BUCKET_CHAT_FILES,
+        object_key=object_key,
+    )
+
+    # Store file metadata in Redis for chat context linking
+    try:
+        import json
+        import redis as redis_lib
+        from app.core.config import settings
+
+        r = redis_lib.from_url(settings.REDIS_URL)
+        file_meta = {
+            "file_id": file_id,
+            "object_key": object_key,
+            "filename": file.filename or safe_filename,
+            "content_type": detected_type,
+            "file_size": file_size,
+            "uploaded_at": datetime.utcnow().isoformat(),
+            "bot_id": str(bot_id),
+        }
+        # Store with 24hr TTL (matches session lifetime)
+        redis_key = f"chat_file:{effective_session}:{file_id}"
+        r.setex(redis_key, 86400, json.dumps(file_meta))
+    except Exception as e:
+        # Non-fatal: file is stored, metadata is convenience
+        print(f"[Chat Upload] Warning: Could not store file metadata in Redis: {e}")
+
+    return {
+        "file_url": file_url,
+        "file_id": file_id,
+        "filename": file.filename or safe_filename,
+        "content_type": detected_type,
+        "file_size": file_size,
+    }

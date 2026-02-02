@@ -516,11 +516,13 @@ def process_web_kb_task(
                                 "is_edited": False,
                                 "source": "file_upload",
                                 "source_name": filename,
+                                "minio_object_key": source.get("minio_object_key"),
                                 "metadata": {
                                     "filename": filename,
                                     "file_size": source.get("file_size"),
                                     "mime_type": source.get("mime_type"),
                                     "page_count": source.get("page_count"),
+                                    "minio_object_key": source.get("minio_object_key"),
                                     **file_metadata
                                 }
                             }
@@ -938,6 +940,7 @@ def process_web_kb_task(
                             "markdown": parsed_content,
                             "is_edited": False,
                             "source": "file_upload",
+                            "minio_object_key": source.get("minio_object_key"),
                             "metadata": {
                                 "filename": filename,
                                 "file_size": source.get("file_size"),
@@ -946,6 +949,7 @@ def process_web_kb_task(
                                 "char_count": source.get("char_count"),
                                 "word_count": source.get("word_count"),
                                 "parsed_at": source.get("parsed_at"),
+                                "minio_object_key": source.get("minio_object_key"),
                                 **file_metadata  # Include Tika metadata
                             }
                         }]
@@ -1499,6 +1503,10 @@ def process_web_kb_task(
                                         document.content_full = None
                                         document.content_preview = None  # Skip preview storage for file uploads
                                         document.source_type = "file_upload"
+                                        # Set file_path from MinIO object key (if stored)
+                                        minio_key = scraped_page.get("minio_object_key") if isinstance(scraped_page, dict) else None
+                                        if minio_key:
+                                            document.file_path = minio_key
                                     else:
                                         document.content_full = page_content  # Store the final content (should be approved if available)
                                         document.content_preview = page_content[:500] if page_content else None
@@ -1523,6 +1531,11 @@ def process_web_kb_task(
                                     doc_content_full = None if is_file_upload_page else page_content
                                     doc_content_preview = None if is_file_upload_page else (page_content[:500] if page_content else None)
 
+                                    # Get MinIO object key for file uploads
+                                    doc_file_path = None
+                                    if is_file_upload_page:
+                                        doc_file_path = scraped_page.get("minio_object_key") if isinstance(scraped_page, dict) else None
+
                                     document = Document(
                                         kb_id=UUID(kb_id),
                                         workspace_id=kb.workspace_id,
@@ -1531,6 +1544,7 @@ def process_web_kb_task(
                                         source_url=page_url,
                                         content_full=doc_content_full,  # OPTION A: Skip for file uploads
                                         content_preview=doc_content_preview,  # OPTION A: Skip preview for file uploads too
+                                        file_path=doc_file_path,  # MinIO object key for file uploads
                                         word_count=len(page_content.split()) if page_content else 0,
                                         character_count=len(page_content) if page_content else 0,
                                         source_metadata={

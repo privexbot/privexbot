@@ -11,7 +11,7 @@ from starlette.responses import Response
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
 
 
@@ -84,6 +84,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️  Database initialization warning: {e}")
         print("   (This is normal if database is not yet accessible)")
+
+    # Initialize MinIO buckets
+    try:
+        from app.services.storage_service import storage_service
+        print("📦 Initializing MinIO storage buckets...")
+        storage_service.ensure_buckets()
+        print("📦 MinIO storage ready")
+    except Exception as e:
+        print(f"⚠️  MinIO initialization warning: {e}")
+        print("   (File storage features will be unavailable)")
 
     yield
 
@@ -254,6 +264,13 @@ app.include_router(
     discord_guilds.router,
     prefix=settings.API_V1_PREFIX,
     tags=["discord"]
+)
+
+# File management routes (avatars, file uploads)
+app.include_router(
+    files.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["files"]
 )
 
 # Webhook routes (Telegram, Discord, etc.)

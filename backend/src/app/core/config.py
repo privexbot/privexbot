@@ -206,6 +206,28 @@ class Settings(BaseSettings):
         description="CDN URL for widget JavaScript"
     )
 
+    # MinIO Object Storage
+    MINIO_ENDPOINT: str = Field(
+        default="minio:9000",
+        description="MinIO server endpoint (internal Docker network)"
+    )
+    MINIO_ROOT_USER: str = Field(
+        default="privexbot",
+        description="MinIO root user (access key)"
+    )
+    MINIO_ROOT_PASSWORD: str = Field(
+        default="privexbot_dev_storage",
+        description="MinIO root password (secret key)"
+    )
+    MINIO_PUBLIC_URL: str = Field(
+        default="http://localhost:9000",
+        description="Public URL for presigned URLs (external access via Traefik in production)"
+    )
+    MINIO_SECURE: bool = Field(
+        default=False,
+        description="Use TLS for internal MinIO connection (TLS handled by Traefik externally)"
+    )
+
     # Discord Shared Bot (Platform-wide)
     # ONE bot token serves ALL customers via guild_id → chatbot_id routing
     DISCORD_SHARED_BOT_TOKEN: str = Field(

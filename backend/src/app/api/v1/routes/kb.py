@@ -386,15 +386,17 @@ async def get_kb(
     source_types = list(set(doc.source_type for doc in documents if doc.source_type))
 
     # Determine reindexing capability based on source types
-    # File uploads cannot be reindexed because content_full is None (Qdrant-only storage)
-    file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
-    total_docs = len(documents)
+    # File uploads CAN be reindexed if originals are stored in MinIO (file_path set)
+    file_upload_docs = [doc for doc in documents if doc.source_type == "file_upload"]
+    file_uploads_without_original = [doc for doc in file_upload_docs if not doc.file_path]
 
-    # Reindexing is only allowed when ALL documents are web/text sources (no file uploads)
-    # File uploads cannot be rechunked because content_full is None (Qdrant-only storage)
-    # Mixed sources are also not allowed to maintain consistency across all chunks
-    can_reindex = file_upload_count == 0
+    can_reindex = len(file_uploads_without_original) == 0
     reindex_warning = None
+    if file_uploads_without_original:
+        reindex_warning = (
+            f"{len(file_uploads_without_original)} file upload(s) do not have original files "
+            "stored. Reindexing is not available for these documents."
+        )
 
     return KBDetailResponse(
         id=str(kb.id),
@@ -573,12 +575,16 @@ async def update_kb(
         documents = db.query(Document).filter(Document.kb_id == kb_id).all()
         source_types = list(set(doc.source_type for doc in documents if doc.source_type))
 
-        file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
-        total_docs = len(documents)
+        file_upload_docs = [doc for doc in documents if doc.source_type == "file_upload"]
+        file_uploads_without_original = [doc for doc in file_upload_docs if not doc.file_path]
 
-        # Reindexing only allowed when ALL documents are web/text sources (no file uploads)
-        can_reindex = file_upload_count == 0
+        can_reindex = len(file_uploads_without_original) == 0
         reindex_warning = None
+        if file_uploads_without_original:
+            reindex_warning = (
+                f"{len(file_uploads_without_original)} file upload(s) do not have original files "
+                "stored. Reindexing is not available for these documents."
+            )
 
         return KBDetailResponse(
             id=str(kb.id),
@@ -676,14 +682,19 @@ async def reindex_kb(
             detail=f"Cannot re-index KB with status '{kb.status}'. Wait for current processing to complete."
         )
 
-    # Check if KB has any file uploads - reindexing not allowed
-    # File uploads don't store content_full in PostgreSQL, so they cannot be rechunked
+    # Check if KB has file uploads without originals stored in MinIO
+    # File uploads with file_path (MinIO) CAN be reindexed; those without cannot
     documents = db.query(Document).filter(Document.kb_id == kb_id).all()
-    file_upload_count = sum(1 for doc in documents if doc.source_type == "file_upload")
-    if file_upload_count > 0:
+    file_upload_docs = [doc for doc in documents if doc.source_type == "file_upload"]
+    file_uploads_without_original = [doc for doc in file_upload_docs if not doc.file_path]
+    if file_uploads_without_original:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot reindex KB containing file uploads. File content is stored in vectors only and cannot be rechunked."
+            detail=(
+                f"Cannot reindex KB: {len(file_uploads_without_original)} file upload(s) "
+                "do not have original files stored. Only file uploads with originals in "
+                "object storage can be rechunked."
+            )
         )
 
     # Update configuration if provided
@@ -2499,6 +2510,16 @@ async def download_kb_document(
     storage_location = (document.processing_metadata or {}).get("chunk_storage_location", "")
 
     if is_file_upload or storage_location == "qdrant_only":
+        # If original file is stored in MinIO, redirect to presigned download URL
+        if document.file_path:
+            from app.services.storage_service import BUCKET_KB_FILES, storage_service
+            from starlette.responses import RedirectResponse
+            presigned_url = storage_service.get_presigned_download_url(
+                bucket=BUCKET_KB_FILES,
+                object_key=document.file_path,
+            )
+            return RedirectResponse(url=presigned_url)
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Download not available for file uploads. File content is stored in vector database only and cannot be exported."

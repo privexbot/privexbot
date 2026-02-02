@@ -89,6 +89,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/use-toast";
+import { AvatarUpload } from "@/components/shared/AvatarUpload";
 
 // Error handling interfaces
 interface ApiErrorResponse {
@@ -789,6 +790,24 @@ export function ProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Avatar Upload */}
+            {userProfile && (
+              <div className="flex justify-center mb-6">
+                <AvatarUpload
+                  entityType="users"
+                  entityId={userProfile.id}
+                  currentAvatarUrl={userProfile.avatar_url}
+                  name={userProfile.username}
+                  size="lg"
+                  onAvatarChange={(url) => {
+                    setUserProfile((prev) =>
+                      prev ? { ...prev, avatar_url: url ?? undefined } : prev
+                    );
+                  }}
+                />
+              </div>
+            )}
+
             <form
               onSubmit={(data) => { void handleSubmit(handleProfileUpdate)(data); }}
               className="space-y-4"

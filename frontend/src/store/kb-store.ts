@@ -257,6 +257,7 @@ const initialChunkingConfig: ChunkingConfig = {
   preserve_code_blocks: true, // Keep code blocks intact during chunking
   custom_separators: undefined, // User-defined separators for custom strategy
   enable_enhanced_metadata: false, // Add context_before/after, parent_heading to chunks
+  persist_files: false, // Don't persist files by default (matches pre-MinIO behavior)
   semantic_threshold: 0.7, // For semantic strategy (0-1)
 
   // Frontend-only parameters (for UI display)
@@ -1069,6 +1070,7 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
               preserve_code_blocks: chunkingConfig.preserve_code_blocks ?? true,
               custom_separators: chunkingConfig.custom_separators,
               enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata ?? false,
+              persist_files: chunkingConfig.persist_files ?? false,
               semantic_threshold: chunkingConfig.semantic_threshold
             };
             await kbClient.draft.updateChunking(currentDraft.draft_id, {
@@ -1106,7 +1108,8 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
                 chunk_overlap: chunkingConfig.chunk_overlap,
                 preserve_code_blocks: chunkingConfig.preserve_code_blocks ?? true,
                 custom_separators: chunkingConfig.custom_separators,
-                enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata ?? false
+                enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata ?? false,
+                persist_files: chunkingConfig.persist_files ?? false,
               },
               embedding_config: {
                 model: modelConfig.embedding.model,

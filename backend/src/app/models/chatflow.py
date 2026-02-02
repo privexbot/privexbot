@@ -11,7 +11,7 @@ HOW:
 - Lives within a workspace (required workspace_id for multi-tenancy)
 - Uses same draft-first architecture as chatbots
 """
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
@@ -60,6 +60,7 @@ class Chatflow(Base):
 
     # Lifecycle
     is_active = Column(Boolean, nullable=False, default=True)
+    is_public = Column(Boolean, nullable=False, default=False, server_default=text('false'))
     is_deleted = Column(Boolean, nullable=False, default=False)
     deployed_at = Column(DateTime, nullable=True)
 

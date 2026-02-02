@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
+import { AvatarUpload } from "@/components/shared/AvatarUpload";
 import { organizationApi } from "@/api/organization";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -133,6 +134,20 @@ export const EditOrganizationModal = ({
               <p className="text-sm text-red-800 dark:text-red-300 font-medium">{errors.root.message}</p>
             </div>
           )}
+
+          {/* Organization Avatar */}
+          <div className="flex justify-center">
+            <AvatarUpload
+              entityType="orgs"
+              entityId={organization.id}
+              currentAvatarUrl={organization.avatar_url}
+              name={organization.name}
+              size="md"
+              onAvatarChange={() => {
+                /* Parent will refetch on modal close via onSuccess */
+              }}
+            />
+          </div>
 
           {/* Organization Name */}
           <div>

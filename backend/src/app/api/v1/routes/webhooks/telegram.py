@@ -93,6 +93,31 @@ def _is_chat_allowed(deployment_config: dict, chat_id: int) -> bool:
     return True
 
 
+def _resolve_bot(db: Session, bot_id: UUID):
+    """
+    Resolve bot_id to Chatbot or Chatflow.
+
+    Returns (bot_type, bot, deployment_config).
+    Chatbot uses bot.deployment_config (dedicated column).
+    Chatflow uses chatflow.config["deployment"] (nested in config JSONB).
+    """
+    from app.models.chatbot import Chatbot
+    from app.models.chatflow import Chatflow
+
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if bot:
+        return "chatbot", bot, bot.deployment_config or {}
+
+    chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
+    if chatflow:
+        return "chatflow", chatflow, (chatflow.config or {}).get("deployment", {})
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Bot not found"
+    )
+
+
 @router.post("/{bot_id}")
 async def telegram_webhook(
     bot_id: UUID,
@@ -156,27 +181,10 @@ async def telegram_webhook(
     chat_id = message.get("chat", {}).get("id")
     user_id = from_user.get("id")
 
-    # Get bot from database
-    from app.models.chatbot import Chatbot
-
-    # Try chatbot first (primary use case)
-    chatbot = db.query(Chatbot).filter(
-        Chatbot.id == bot_id
-    ).first()
-
-    if chatbot:
-        bot_type = "chatbot"
-        bot = chatbot
-    else:
-        # Chatflow not yet implemented - return 404
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot from database (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Check if Telegram is enabled
-    deployment_config = bot.deployment_config or {}
     telegram_config = deployment_config.get("telegram", {})
 
     if not telegram_config or telegram_config.get("status") != "success":
@@ -203,21 +211,31 @@ async def telegram_webhook(
     # Generate session ID (includes user_id for per-user isolation in group chats)
     session_id = f"telegram_{chat_id}_{user_id}"
 
-    # Execute chatbot
-    # TODO: Add chatflow support when Chatflow model is available
-    response = await chatbot_service.process_message(
-        db=db,
-        chatbot=bot,
-        user_message=text,
-        session_id=session_id,
-        channel_context={
-            "platform": "telegram",
-            "chat_id": chat_id,
-            "user_id": user_id,
-            "username": from_user.get("username"),
-            "first_name": from_user.get("first_name")
-        }
-    )
+    # Execute bot (chatbot or chatflow)
+    channel_context = {
+        "platform": "telegram",
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "username": from_user.get("username"),
+        "first_name": from_user.get("first_name")
+    }
+
+    if bot_type == "chatbot":
+        response = await chatbot_service.process_message(
+            db=db,
+            chatbot=bot,
+            user_message=text,
+            session_id=session_id,
+            channel_context=channel_context
+        )
+    else:  # chatflow
+        response = await chatflow_service.execute(
+            db=db,
+            chatflow=bot,
+            user_message=text,
+            session_id=session_id,
+            channel_context=channel_context
+        )
 
     # Send response to Telegram
     telegram_bot_token = _get_telegram_bot_token(db, deployment_config)
@@ -251,18 +269,10 @@ async def get_webhook_info(
         }
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get bot token via credential service
-    deployment_config = bot.deployment_config or {}
     telegram_bot_token = _get_telegram_bot_token(db, deployment_config)
 
     if not telegram_bot_token:
@@ -300,19 +310,10 @@ async def set_telegram_webhook(
         {"status": "success"}
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get bot token via credential service
-    deployment_config = bot.deployment_config or {}
     telegram_bot_token = _get_telegram_bot_token(db, deployment_config)
 
     if not telegram_bot_token:
@@ -351,19 +352,10 @@ async def delete_telegram_webhook(
         {"status": "deleted"}
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        # TODO: Add chatflow support when Chatflow model is available
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bot not found"
-        )
+    # Get bot (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get bot token via credential service
-    deployment_config = bot.deployment_config or {}
     telegram_bot_token = _get_telegram_bot_token(db, deployment_config)
 
     if not telegram_bot_token:

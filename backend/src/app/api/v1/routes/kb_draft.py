@@ -584,7 +584,8 @@ async def add_file_source_to_draft(
             file_stream=file_stream,
             filename=file.filename,
             file_size=file_size,
-            mime_type=file.content_type or "application/octet-stream"
+            mime_type=file.content_type or "application/octet-stream",
+            raw_bytes=file_content,
         )
 
         return {
