@@ -175,6 +175,19 @@ async def finalize_chatflow(
     # Deploy
     try:
         result = draft_service.deploy_draft(DraftType.CHATFLOW, draft_id, db=db)
+
+        # Emit notification (non-critical)
+        try:
+            from app.services import notification_service
+            notification_service.notify_chatflow_deployed(
+                db=db,
+                user_id=current_user.id,
+                chatflow_id=UUID(result.get("chatflow_id")),
+                chatflow_name=draft.get("data", {}).get("name", "Chatflow"),
+            )
+        except Exception:
+            pass
+
         return {"status": "deployed", "chatflow_id": result.get("chatflow_id")}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

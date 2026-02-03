@@ -11,7 +11,7 @@ from starlette.responses import Response
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files, notifications
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
 
 
@@ -271,6 +271,13 @@ app.include_router(
     files.router,
     prefix=settings.API_V1_PREFIX,
     tags=["files"]
+)
+
+# In-app notifications
+app.include_router(
+    notifications.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["notifications"]
 )
 
 # Webhook routes (Telegram, Discord, etc.)

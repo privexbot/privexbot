@@ -374,6 +374,18 @@ async def accept_invitation(
         user_id=current_user.id
     )
 
+    # Notify the inviter (non-critical)
+    try:
+        from app.services import notification_service
+        notification_service.notify_invitation_accepted(
+            db=db,
+            inviter_user_id=invitation.invited_by,
+            invitee_name=current_user.username or current_user.email or "A user",
+            org_name=invitation.resource_type,
+        )
+    except Exception:
+        pass
+
     return InvitationResponse.model_validate(invitation)
 
 

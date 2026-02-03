@@ -626,6 +626,18 @@ async def deploy_chatbot(
             db=db
         )
 
+        # Emit notification (non-critical)
+        try:
+            from app.services import notification_service
+            notification_service.notify_chatbot_deployed(
+                db=db,
+                user_id=current_user.id,
+                chatbot_id=UUID(result.get("chatbot_id")),
+                chatbot_name=draft.get("data", {}).get("name", "Chatbot"),
+            )
+        except Exception:
+            pass
+
         return {
             "status": "deployed",
             "chatbot_id": result.get("chatbot_id"),

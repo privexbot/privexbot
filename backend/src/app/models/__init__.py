@@ -55,6 +55,9 @@ from app.models.discord_guild_deployment import DiscordGuildDeployment
 # Slug history (for redirect support when slugs change)
 from app.models.slug_history import SlugHistory
 
+# General-purpose notifications
+from app.models.notification import Notification
+
 __all__ = [
     # Core
     "User",
@@ -103,4 +106,6 @@ __all__ = [
     "DiscordGuildDeployment",
     # Slug history
     "SlugHistory",
+    # General-purpose notifications
+    "Notification",
 ]

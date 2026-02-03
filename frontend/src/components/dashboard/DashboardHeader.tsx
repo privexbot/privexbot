@@ -10,9 +10,12 @@
  * - Modern, clean aesthetic with proper spacing and dynamic updates
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Bell, Calendar, Plus, Network, Book, ChevronDown, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Bell, Calendar, Plus, Network, Book, ChevronDown, X, ChevronLeft, ChevronRight, CheckCheck } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { useNotificationStore } from "@/store/notification-store";
+import type { Notification as AppNotification } from "@/types/notification";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +56,39 @@ export function DashboardHeader({
   onSearchChange,
 }: DashboardHeaderProps) {
   const navigate = useNavigate();
-  const [hasUnreadNotifications] = useState(true); // TODO: Get from API
+  const notifContainerRef = useRef<HTMLDivElement>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const {
+    notifications: notifItems,
+    unreadCount,
+    isLoading: notifLoading,
+    fetchNotifications,
+    markAsRead: markNotifRead,
+    markAllAsRead: markAllNotifRead,
+    startPolling,
+    stopPolling,
+  } = useNotificationStore();
+
+  useEffect(() => {
+    startPolling();
+    return () => stopPolling();
+  }, [startPolling, stopPolling]);
+
+  useEffect(() => {
+    if (notifOpen) fetchNotifications();
+  }, [notifOpen, fetchNotifications]);
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (notifContainerRef.current && !notifContainerRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [notifOpen]);
+
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTimeRange, setSelectedTimeRange] = useState(propSelectedTimeRange || "Last 7 days");
@@ -94,9 +129,19 @@ export function DashboardHeader({
     setSearchQuery("");
   };
 
-  const handleNotifications = () => {
-    // TODO: Open notifications panel
-    console.log("Open notifications");
+  const EVENT_ICONS: Record<string, string> = {
+    "kb.processing.completed": "📚",
+    "kb.processing.failed": "❌",
+    "chatbot.deployed": "🤖",
+    "chatflow.deployed": "⚡",
+    "invitation.accepted": "🤝",
+    "lead.captured": "📩",
+  };
+
+  const handleNotificationClick = (notif: AppNotification) => {
+    markNotifRead(notif.id);
+    setNotifOpen(false);
+    if (notif.link) navigate(notif.link);
   };
 
   const handleProfile = () => {
@@ -259,19 +304,71 @@ export function DashboardHeader({
             </Button>
           )}
 
-          {/* Notifications Icon Button */}
+          {/* Notifications Icon Button + Dropdown */}
           {!searchExpanded && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleNotifications}
-              className="relative h-9 w-9 sm:h-10 sm:w-10 min-h-[36px] min-w-[36px] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
-            >
-              <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
-              {hasUnreadNotifications && (
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-gray-900" />
+            <div ref={notifContainerRef} className="relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setNotifOpen((prev) => !prev)}
+                className="relative h-9 w-9 sm:h-10 sm:w-10 min-h-[36px] min-w-[36px] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+              >
+                <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </Button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 max-h-96 bg-white dark:bg-[#2B2D31] border border-gray-200 dark:border-[#3a3a3a] rounded-lg shadow-xl z-50 flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-200 dark:border-[#3a3a3a]">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-200 font-manrope">
+                      Notifications
+                    </span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={() => markAllNotifRead()}
+                        className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 transition-colors font-manrope"
+                      >
+                        <CheckCheck className="h-3.5 w-3.5" />
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {notifLoading && notifItems.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-gray-500">Loading...</div>
+                    ) : notifItems.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-gray-500 font-manrope">No notifications yet</div>
+                    ) : (
+                      notifItems.map((n) => (
+                        <button
+                          key={n.id}
+                          onClick={() => handleNotificationClick(n)}
+                          className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-100 dark:hover:bg-[#36373D] transition-colors border-b border-gray-200 dark:border-[#3a3a3a] last:border-b-0 ${!n.is_read ? "bg-blue-500/5" : ""}`}
+                        >
+                          <span className="text-base mt-0.5 flex-shrink-0">{EVENT_ICONS[n.event] || "🔔"}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm leading-snug truncate font-manrope ${n.is_read ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-200 font-medium"}`}>
+                              {n.title}
+                            </p>
+                            {n.body && (
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate font-manrope">{n.body}</p>
+                            )}
+                            <p className="text-[11px] text-gray-400 dark:text-gray-600 mt-1 font-manrope">
+                              {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                            </p>
+                          </div>
+                          {!n.is_read && <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
               )}
-            </Button>
+            </div>
           )}
 
           {/* Unified Time Range + Calendar Picker (Pill-shaped) - Hidden on mobile or when search expanded */}

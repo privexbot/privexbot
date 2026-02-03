@@ -2016,6 +2016,22 @@ def process_web_kb_task(
         db.commit()
         print(f"✅ [FINAL COMMIT] KB status and stats committed successfully")
 
+        # Emit notification based on final KB status (non-critical)
+        try:
+            from app.services import notification_service
+            if kb.status in ("ready", "ready_with_warnings"):
+                notification_service.notify_kb_completed(
+                    db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
+                    kb_name=kb.name, stats=kb.stats or {},
+                )
+            elif kb.status == "failed":
+                notification_service.notify_kb_failed(
+                    db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
+                    kb_name=kb.name, error=kb.error_message or "Processing failed",
+                )
+        except Exception as notif_err:
+            print(f"[WARN] Notification failed: {notif_err}")
+
         # VERIFICATION: Final verification of KB state (using kb_id string)
         final_kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == UUID(kb_id)).first()
         final_chunks_count = db.query(Chunk).filter(Chunk.kb_id == UUID(kb_id)).count()
@@ -2055,6 +2071,16 @@ def process_web_kb_task(
             kb.status = "failed"
             kb.error_message = error_message
             db.commit()
+
+            # Emit failure notification (non-critical)
+            try:
+                from app.services import notification_service
+                notification_service.notify_kb_failed(
+                    db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
+                    kb_name=kb.name, error=error_message,
+                )
+            except Exception as notif_err:
+                print(f"[WARN] Notification failed: {notif_err}")
 
         # Re-raise for Celery
         raise
@@ -2339,6 +2365,16 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
 
         db.commit()
 
+        # Emit notification (non-critical)
+        try:
+            from app.services import notification_service
+            notification_service.notify_kb_completed(
+                db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
+                kb_name=kb.name, stats=kb.stats or {},
+            )
+        except Exception as notif_err:
+            print(f"[WARN] Notification failed: {notif_err}")
+
         # Log file upload warning if any were skipped
         if file_upload_skipped > 0:
             print(f"⚠️ [REINDEX] {file_upload_skipped} file upload document(s) skipped - their content is stored in Qdrant only")
@@ -2373,6 +2409,16 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             kb.status = "failed"
             kb.error_message = f"Re-indexing failed: {str(e)}"
             db.commit()
+
+            # Emit failure notification (non-critical)
+            try:
+                from app.services import notification_service
+                notification_service.notify_kb_failed(
+                    db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
+                    kb_name=kb.name, error=f"Re-indexing failed: {str(e)}",
+                )
+            except Exception as notif_err:
+                print(f"[WARN] Notification failed: {notif_err}")
 
         raise
 
