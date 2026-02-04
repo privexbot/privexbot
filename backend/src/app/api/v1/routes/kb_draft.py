@@ -913,6 +913,15 @@ async def preview_chunks_live(
     max_chunks = request.get("max_chunks", None)  # Allow frontend to control chunk limit
     enable_enhanced_metadata = request.get("enable_enhanced_metadata", False)
 
+    # CONTENT SIZE VALIDATION: Prevent timeout on large content
+    # 500KB limit prevents Traefik timeouts on CPU-intensive chunking operations
+    MAX_PREVIEW_CONTENT_SIZE = 500_000  # 500KB limit
+    if len(content) > MAX_PREVIEW_CONTENT_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Content too large for preview ({len(content):,} chars). Maximum: {MAX_PREVIEW_CONTENT_SIZE:,} chars. Consider using fewer sources or smaller pages."
+        )
+
     # CRITICAL: Normalize content to match pipeline processing
     # This ensures preview chunk count matches what gets stored in database
     import re

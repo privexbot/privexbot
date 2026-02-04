@@ -62,7 +62,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 RUN pip install --no-cache-dir gunicorn uvicorn httptools websockets
 
 # Create app directories and user FIRST (before Playwright)
-RUN mkdir -p /app/cache /app/data && \
+# CRITICAL: Create volume mount points with placeholder files so Docker preserves ownership
+# when initializing named volumes. Without content, empty dirs may get root ownership.
+RUN mkdir -p /app/cache/huggingface /app/cache/ms-playwright /app/data && \
+    touch /app/cache/huggingface/.keep && \
     useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app && \
     chown -R appuser:appuser /home/appuser

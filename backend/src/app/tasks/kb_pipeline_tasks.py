@@ -717,22 +717,34 @@ def process_web_kb_task(
 
                             # Save postgres chunks (only for web scraping, skipped for file uploads)
                             if postgres_chunks:
-                                for postgres_chunk_data in postgres_chunks:
-                                    chunk = Chunk(
-                                        id=UUID(postgres_chunk_data["id"]),
-                                        document_id=postgres_chunk_data["document_id"],
-                                        kb_id=postgres_chunk_data["kb_id"],
-                                        content=postgres_chunk_data["content"],
-                                        chunk_index=postgres_chunk_data["chunk_index"],
-                                        position=postgres_chunk_data["position"],
-                                        page_number=postgres_chunk_data.get("page_number"),
-                                        word_count=postgres_chunk_data.get("word_count", 0),
-                                        character_count=postgres_chunk_data.get("character_count", 0),
-                                        chunk_metadata=postgres_chunk_data["chunk_metadata"]
-                                    )
-                                    db.add(chunk)
-                                db.flush()
-                                print(f"✅ [ALL_SOURCES] Added {len(postgres_chunks)} chunks to database session")
+                                try:
+                                    for postgres_chunk_data in postgres_chunks:
+                                        chunk = Chunk(
+                                            id=UUID(postgres_chunk_data["id"]),
+                                            document_id=postgres_chunk_data["document_id"],
+                                            kb_id=postgres_chunk_data["kb_id"],
+                                            content=postgres_chunk_data["content"],
+                                            chunk_index=postgres_chunk_data["chunk_index"],
+                                            position=postgres_chunk_data["position"],
+                                            page_number=postgres_chunk_data.get("page_number"),
+                                            word_count=postgres_chunk_data.get("word_count", 0),
+                                            character_count=postgres_chunk_data.get("character_count", 0),
+                                            chunk_metadata=postgres_chunk_data["chunk_metadata"]
+                                        )
+                                        db.add(chunk)
+                                    # CRITICAL: Commit chunks IMMEDIATELY to ensure they persist
+                                    db.commit()
+                                    print(f"✅ [ALL_SOURCES] Committed {len(postgres_chunks)} chunks to database")
+
+                                    # VERIFICATION: Confirm chunks were actually saved
+                                    committed_count = db.query(Chunk).filter(
+                                        Chunk.kb_id == UUID(kb_id)
+                                    ).count()
+                                    print(f"🔍 [ALL_SOURCES] Verification: {committed_count} chunks now in database")
+                                except Exception as chunk_error:
+                                    db.rollback()
+                                    print(f"❌ [ALL_SOURCES] CHUNK CREATION FAILED: {chunk_error}")
+                                    raise  # Re-raise to trigger proper failure handling
                             else:
                                 print(f"📁 [FILE_UPLOAD] Skipped PostgreSQL chunks (metadata-only storage)")
 
@@ -795,21 +807,9 @@ def process_web_kb_task(
                             # CRITICAL FIX: Save document ID before any session operations
                             combined_doc_id = combined_doc.id
 
-                            # Commit everything
+                            # Commit document metadata update (chunks already committed above)
                             db.commit()
-                            print(f"✅ [ALL_SOURCES] Database commit successful for combined document")
-
-                            # VERIFICATION: Verify chunks were committed (skip for file uploads)
-                            if postgres_chunks:
-                                verification_chunks = db.query(Chunk).filter(
-                                    Chunk.document_id == combined_doc_id
-                                ).count()
-                                print(f"🔍 [VERIFICATION] {verification_chunks} chunks confirmed in PostgreSQL after commit")
-
-                                if verification_chunks != len(postgres_chunks):
-                                    print(f"❌ [VERIFICATION] CRITICAL: Expected {len(postgres_chunks)} chunks, found {verification_chunks}")
-                            else:
-                                print(f"📁 [FILE_UPLOAD] PostgreSQL chunk verification skipped (Qdrant-only storage)")
+                            print(f"✅ [ALL_SOURCES] Document metadata committed for combined document")
 
                             # Index in Qdrant
                             try:
