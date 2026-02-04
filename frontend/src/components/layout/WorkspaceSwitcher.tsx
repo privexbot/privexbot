@@ -18,7 +18,7 @@
  * - Background: Always dark (light: #2B2D31, dark: #1E1F22)
  */
 
-import React, { useState } from "react";
+import React from "react";
 import { Plus } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -34,11 +34,9 @@ export function WorkspaceSwitcher({
   const {
     workspaces,
     currentWorkspace,
-    currentOrganization,
     switchWorkspace,
     hasPermission,
     isLoading,
-    error,
   } = useApp();
 
   const canCreateWorkspace = hasPermission("workspace:create");
@@ -139,10 +137,10 @@ export function WorkspaceSwitcher({
                         : "border-white group-hover:border-[#6B7280]" // Design Guide: White border, grey on hover
                     )}
                   >
-                    {/* Priority: workspace avatar → organization avatar → initials */}
-                    {(workspace.avatar_url || currentOrganization?.avatar_url) && (
+                    {/* Show workspace avatar only - no fallback to organization avatar */}
+                    {workspace.avatar_url && (
                       <AvatarImage
-                        src={workspace.avatar_url || currentOrganization?.avatar_url}
+                        src={workspace.avatar_url}
                         alt={workspace.name}
                         className="object-cover transition-all duration-200 rounded-[14px]"
                       />

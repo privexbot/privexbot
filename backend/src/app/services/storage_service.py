@@ -45,6 +45,7 @@ AVATARS_PUBLIC_POLICY = json.dumps({
 })
 
 
+
 class StorageService:
     """Wraps MinIO Python SDK for file storage operations."""
 

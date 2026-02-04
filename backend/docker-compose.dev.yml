@@ -145,6 +145,8 @@ services:
     environment:
       - MINIO_ROOT_USER=privexbot
       - MINIO_ROOT_PASSWORD=privexbot_dev_storage
+      # CORS configuration to allow frontend to fetch images directly
+      - MINIO_API_CORS_ALLOW_ORIGIN=*
     volumes:
       - minio_data_dev:/data
     healthcheck:

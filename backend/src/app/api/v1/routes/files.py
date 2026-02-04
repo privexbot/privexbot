@@ -6,6 +6,7 @@ Endpoints:
   DELETE /files/avatars/{entity_type}/{entity_id}  - Delete avatar
 """
 
+import time
 import uuid
 from typing import Literal
 
@@ -98,8 +99,10 @@ async def upload_avatar(
         content_type=detected_type,
     )
 
-    # Get public URL and update entity
-    avatar_url = storage_service.get_public_url(BUCKET_AVATARS, object_key)
+    # Get public URL with cache-busting timestamp
+    base_url = storage_service.get_public_url(BUCKET_AVATARS, object_key)
+    # Add timestamp to force browser to fetch new image (cache busting)
+    avatar_url = f"{base_url}?t={int(time.time())}"
 
     if entity_type == "chatbots":
         # Chatbot stores avatar in branding_config JSONB
@@ -179,7 +182,12 @@ def _get_entity_with_permission(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only modify your own avatar",
             )
-        return current_user
+        # Query user fresh from db session to ensure proper session attachment
+        # This ensures db.commit() will persist the avatar_url change
+        user = db.query(User).filter(User.id == entity_uuid).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
 
     if entity_type == "orgs":
         org = db.query(Organization).filter(
@@ -188,7 +196,7 @@ def _get_entity_with_permission(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
         # Verify user is a member of this organization
-        from app.models.organization import OrganizationMember
+        from app.models.organization_member import OrganizationMember
         membership = db.query(OrganizationMember).filter(
             OrganizationMember.organization_id == entity_uuid,
             OrganizationMember.user_id == current_user.id,
@@ -204,7 +212,7 @@ def _get_entity_with_permission(
         if not ws:
             raise HTTPException(status_code=404, detail="Workspace not found")
         # Verify user is a member of the parent organization
-        from app.models.organization import OrganizationMember
+        from app.models.organization_member import OrganizationMember
         membership = db.query(OrganizationMember).filter(
             OrganizationMember.organization_id == ws.organization_id,
             OrganizationMember.user_id == current_user.id,
@@ -224,7 +232,7 @@ def _get_entity_with_permission(
             Workspace.id == chatbot.workspace_id
         ).first()
         if ws:
-            from app.models.organization import OrganizationMember
+            from app.models.organization_member import OrganizationMember
             membership = db.query(OrganizationMember).filter(
                 OrganizationMember.organization_id == ws.organization_id,
                 OrganizationMember.user_id == current_user.id,

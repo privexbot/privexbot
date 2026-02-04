@@ -24,6 +24,12 @@ interface AvatarUploadProps {
   size?: "sm" | "md" | "lg";
   onAvatarChange?: (newUrl: string | null) => void;
   disabled?: boolean;
+  /** When true, don't upload immediately - just provide file and preview URL via onFileSelect */
+  deferUpload?: boolean;
+  /** Called when file is selected in deferred mode */
+  onFileSelect?: (file: File, previewUrl: string) => void;
+  /** External preview URL (for deferred mode) */
+  previewUrl?: string | null;
 }
 
 const sizeClasses = {
@@ -61,12 +67,18 @@ export function AvatarUpload({
   size = "md",
   onAvatarChange,
   disabled = false,
+  deferUpload = false,
+  onFileSelect,
+  previewUrl,
 }: AvatarUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = isUploading || isDeleting || disabled;
+
+  // In deferred mode, use previewUrl prop; otherwise use currentAvatarUrl
+  const displayUrl = deferUpload ? (previewUrl ?? currentAvatarUrl) : currentAvatarUrl;
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -94,6 +106,14 @@ export function AvatarUpload({
       return;
     }
 
+    // Deferred mode: Don't upload, just provide file and preview URL
+    if (deferUpload) {
+      const localPreviewUrl = URL.createObjectURL(file);
+      onFileSelect?.(file, localPreviewUrl);
+      return;
+    }
+
+    // Immediate mode: Upload right away
     try {
       setIsUploading(true);
       const { avatar_url } = await filesApi.uploadAvatar(entityType, entityId, file);
@@ -112,6 +132,14 @@ export function AvatarUpload({
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation(); // Don't trigger the upload click
+
+    // In deferred mode with only a preview (no currentAvatarUrl), just clear locally
+    if (deferUpload && previewUrl && !currentAvatarUrl) {
+      onAvatarChange?.(null);
+      return;
+    }
+
+    // Otherwise, delete from server
     try {
       setIsDeleting(true);
       await filesApi.deleteAvatar(entityType, entityId);
@@ -147,8 +175,8 @@ export function AvatarUpload({
         )}
       >
         <Avatar className={cn(sizeClasses[size])}>
-          {currentAvatarUrl && (
-            <AvatarImage src={currentAvatarUrl} alt={name} className="object-cover" />
+          {displayUrl && (
+            <AvatarImage src={displayUrl} alt={name} className="object-cover" />
           )}
           <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-xs">
             {getInitials(name || "?")}
@@ -171,7 +199,7 @@ export function AvatarUpload({
       </button>
 
       {/* Remove button (only when avatar exists and not busy) */}
-      {currentAvatarUrl && !busy && (
+      {displayUrl && !busy && (
         <button
           type="button"
           onClick={(e) => { void handleDelete(e); }}

@@ -6,7 +6,7 @@
  * Uses react-hook-form + Zod validation for proper form handling
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
@@ -35,6 +35,9 @@ export const EditWorkspaceModal = ({
   onSuccess
 }: EditWorkspaceModalProps) => {
   const { toast } = useToast();
+  const [avatarUrl, setAvatarUrl] = useState<string | null | undefined>(workspace.avatar_url);
+  // Track if user has modified avatar to prevent useEffect from resetting it
+  const [isAvatarModifiedByUser, setIsAvatarModifiedByUser] = useState(false);
 
   const {
     register,
@@ -50,13 +53,22 @@ export const EditWorkspaceModal = ({
     },
   });
 
-  // Update form when workspace changes
+  // Reset all state when workspace.id changes (different workspace selected)
   useEffect(() => {
+    setIsAvatarModifiedByUser(false);
+    setAvatarUrl(workspace.avatar_url);
     reset({
       name: workspace.name,
       description: workspace.description || "",
     });
-  }, [workspace, reset]);
+  }, [workspace.id, reset]);
+
+  // Sync avatar when workspace prop changes, but only if user hasn't modified it
+  useEffect(() => {
+    if (!isAvatarModifiedByUser) {
+      setAvatarUrl(workspace.avatar_url);
+    }
+  }, [workspace.avatar_url, isAvatarModifiedByUser]);
 
   const onSubmit = async (data: EditWorkspaceFormData) => {
     try {
@@ -142,11 +154,12 @@ export const EditWorkspaceModal = ({
             <AvatarUpload
               entityType="workspaces"
               entityId={workspace.id}
-              currentAvatarUrl={workspace.avatar_url}
+              currentAvatarUrl={avatarUrl}
               name={workspace.name}
               size="md"
-              onAvatarChange={() => {
-                /* Parent will refetch on modal close via onSuccess */
+              onAvatarChange={(url) => {
+                setAvatarUrl(url);
+                setIsAvatarModifiedByUser(true);
               }}
             />
           </div>

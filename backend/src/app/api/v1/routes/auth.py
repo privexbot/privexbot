@@ -141,6 +141,7 @@ async def get_current_user_profile(
     return UserProfile(
         id=current_user.id,
         username=current_user.username,
+        avatar_url=current_user.avatar_url,
         is_active=current_user.is_active,
         is_staff=current_user.is_staff,
         has_beta_access=current_user.has_beta_access,
@@ -1611,7 +1612,10 @@ async def update_profile(
     return UserProfile(
         id=current_user.id,
         username=current_user.username,
+        avatar_url=current_user.avatar_url,
         is_active=current_user.is_active,
+        is_staff=current_user.is_staff,
+        has_beta_access=current_user.has_beta_access,
         created_at=current_user.created_at,
         updated_at=current_user.updated_at,
         auth_methods=auth_methods

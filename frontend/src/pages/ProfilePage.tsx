@@ -90,6 +90,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/use-toast";
 import { AvatarUpload } from "@/components/shared/AvatarUpload";
+import { filesApi } from "@/api/files";
 
 // Error handling interfaces
 interface ApiErrorResponse {
@@ -146,7 +147,7 @@ function getErrorMessage(error: unknown, defaultMessage: string): string {
 
 export function ProfilePage() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, refreshUser } = useAuth();
   const { currentOrganization, currentWorkspace } = useApp();
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -155,6 +156,11 @@ export function ProfilePage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Deferred avatar upload state
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [isAvatarChanged, setIsAvatarChanged] = useState(false);
 
   // Linking functionality state
   const [showLinkingOptions, setShowLinkingOptions] = useState(false);
@@ -245,18 +251,48 @@ export function ProfilePage() {
     void loadProfile();
   }, [setValue, reset]);
 
+  // Cleanup preview URL on unmount
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
+
   // Handle profile update
   const handleProfileUpdate = async (data: UpdateProfileFormData) => {
+    if (!userProfile) return;
+
     try {
       setIsUpdating(true);
       setError(null);
 
-      const updatedProfile = await authApi.updateProfile({
+      // Step 1: Upload avatar if changed
+      if (pendingAvatarFile) {
+        await filesApi.uploadAvatar("users", userProfile.id, pendingAvatarFile);
+      }
+
+      // Step 2: Update profile (username)
+      await authApi.updateProfile({
         username: data.username,
       });
 
-      setUserProfile(updatedProfile);
-      reset(data); // Reset form state to mark as not dirty
+      // Step 3: Refresh AuthContext to update global user state (for all components)
+      await refreshUser();
+
+      // Step 4: Also refresh local profile state for this page
+      const refreshedProfile = await authApi.getCurrentUser();
+      setUserProfile(refreshedProfile);
+
+      // Step 5: Reset form and avatar state
+      reset(data);
+      setPendingAvatarFile(null);
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+      setAvatarPreviewUrl(null);
+      setIsAvatarChanged(false);
 
       toast({
         title: "Profile updated",
@@ -792,19 +828,43 @@ export function ProfilePage() {
           <CardContent>
             {/* Avatar Upload */}
             {userProfile && (
-              <div className="flex justify-center mb-6">
+              <div className="flex flex-col items-center mb-6">
                 <AvatarUpload
                   entityType="users"
                   entityId={userProfile.id}
                   currentAvatarUrl={userProfile.avatar_url}
                   name={userProfile.username}
                   size="lg"
+                  deferUpload={true}
+                  previewUrl={avatarPreviewUrl}
+                  onFileSelect={(file, previewUrlFromComponent) => {
+                    // Revoke old preview URL if exists
+                    if (avatarPreviewUrl) {
+                      URL.revokeObjectURL(avatarPreviewUrl);
+                    }
+                    setPendingAvatarFile(file);
+                    setAvatarPreviewUrl(previewUrlFromComponent);
+                    setIsAvatarChanged(true);
+                  }}
                   onAvatarChange={(url) => {
-                    setUserProfile((prev) =>
-                      prev ? { ...prev, avatar_url: url ?? undefined } : prev
-                    );
+                    // Handle deletion (null) - this still happens immediately via the X button
+                    if (url === null) {
+                      if (avatarPreviewUrl) {
+                        URL.revokeObjectURL(avatarPreviewUrl);
+                      }
+                      setAvatarPreviewUrl(null);
+                      setPendingAvatarFile(null);
+                      setIsAvatarChanged(true);
+                      // Also update the user profile to reflect the deletion
+                      setUserProfile((prev) =>
+                        prev ? { ...prev, avatar_url: undefined } : prev
+                      );
+                    }
                   }}
                 />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-manrope">
+                  Click to upload. Save your profile to apply changes.
+                </p>
               </div>
             )}
 
@@ -872,7 +932,7 @@ export function ProfilePage() {
               <div className="pt-4">
                 <Button
                   type="submit"
-                  disabled={!isDirty || isUpdating}
+                  disabled={(!isDirty && !isAvatarChanged) || isUpdating}
                   className="font-manrope bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 rounded-lg"
                 >
                   {isUpdating ? (
