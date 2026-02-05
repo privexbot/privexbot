@@ -34,6 +34,8 @@ services:
       - MINIO_ROOT_USER=privexbot
       - MINIO_ROOT_PASSWORD=privexbot_dev_storage
       - MINIO_PUBLIC_URL=http://localhost:9000
+      # Playwright browser path for web scraping
+      - PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
     depends_on:
       postgres:
         condition: service_healthy
@@ -183,6 +185,8 @@ services:
       - MINIO_ROOT_USER=privexbot
       - MINIO_ROOT_PASSWORD=privexbot_dev_storage
       - MINIO_PUBLIC_URL=http://localhost:9000
+      # Playwright browser path for web scraping (if Celery tasks use it)
+      - PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
       # PyTorch/OpenMP compatibility with Celery
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1

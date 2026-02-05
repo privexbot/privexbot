@@ -30,7 +30,6 @@ import { Menu, X } from "lucide-react";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { MainMenu } from "./MainMenu";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
-import { NotificationBell } from "./NotificationBell";
 import { CreateWorkspaceModal } from "../workspace/CreateWorkspaceModal";
 import { ManageWorkspaceModal } from "../workspace/ManageWorkspaceModal";
 import { useApp } from "@/contexts/AppContext";
@@ -88,10 +87,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </span>
         </button>
 
-        {/* Notification Bell (mobile) */}
-        <div className="ml-auto">
-          <NotificationBell />
-        </div>
       </div>
 
       {/* ========== MOBILE BACKDROP OVERLAY ========== */}
@@ -117,7 +112,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           ${isMobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
         `}
       >
-        {/* ========== TOP SECTION: Logo + Notification Bell (Fixed at Top) ========== */}
+        {/* ========== TOP SECTION: Logo (Fixed at Top) ========== */}
         <div className="flex-shrink-0 px-3 sm:px-4 py-3 sm:py-4 border-b border-[#3a3a3a] dark:border-[#26272B] bg-[#2B2D31] dark:bg-[#1E1F22]">
           <div className="flex items-center justify-between">
             <button
@@ -137,9 +132,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 Privexbot
               </span>
             </button>
-            <div className="hidden md:block">
-              <NotificationBell />
-            </div>
           </div>
         </div>
 

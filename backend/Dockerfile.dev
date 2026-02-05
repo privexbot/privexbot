@@ -5,8 +5,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install core system dependencies
+# Install core system dependencies + Playwright browser dependencies
+# CRITICAL: These dependencies are required for Chromium to run properly
+# Without them, Playwright will silently fail and return empty content
 RUN apt-get update && apt-get install -y \
+    # Core build dependencies
     libpq-dev \
     gcc \
     g++ \
@@ -14,6 +17,30 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     libmagic1 \
+    # Playwright/Chromium dependencies (same as production Dockerfile)
+    libglib2.0-0 \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    libgtk-3-0 \
+    libgdk-pixbuf-2.0-0 \
+    # Additional dependencies for crawl4ai and web scraping
+    fonts-liberation \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency management
@@ -40,9 +67,11 @@ COPY src/ ./src/
 RUN uv sync --system --prerelease allow || \
     uv pip install --system --prerelease=allow -e .
 
-# Install Playwright browsers and system dependencies (official best practice)
+# Install Playwright system dependencies first, then browsers
+# IMPORTANT: install-deps MUST run before install chromium
+# This ensures all system libraries are present before browser download
+RUN python -m playwright install-deps chromium
 RUN python -m playwright install chromium
-RUN python -m playwright install-deps
 
 # Install additional dev tools
 RUN pip install --no-cache-dir \

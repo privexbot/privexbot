@@ -77,8 +77,16 @@ class PreviewService:
             return cached
 
         try:
-            # Step 1: Fetch content from URL (raises exception on failure)
-            scrape_result = await crawl4ai_service.scrape_single_url(url)
+            # Step 1: Fetch content from URL with smart config (raises exception on failure)
+            from app.services.crawl4ai_service import CrawlConfig
+
+            # Use smart defaults - the service will auto-detect JS-heavy sites
+            config = CrawlConfig(
+                method="single",
+                stealth_mode=True,
+                wait_time=0,  # Let service use smart defaults based on URL
+            )
+            scrape_result = await crawl4ai_service.scrape_single_url(url, config)
 
             # ScrapedPage object - access attributes directly
             raw_content = scrape_result.content or ""
@@ -87,7 +95,7 @@ class PreviewService:
             if not raw_content:
                 return {
                     "error": "No content found",
-                    "message": "The URL did not return any content"
+                    "message": "The URL did not return any content. This site may be JavaScript-heavy - try using a draft with wait_time: 5 or higher."
                 }
 
             # Step 2: Enhanced content processing
@@ -516,6 +524,7 @@ class PreviewService:
 
             # Step 3: Collect all web sources to crawl
             # Process ALL sources, not limited by max_preview_pages (that's for crawl depth)
+            # IMPORTANT: Track source_id so we can link pages back to sources
             pages_to_crawl = []
             for source in sources:
                 if source.get("type") == "web_scraping":
@@ -523,7 +532,9 @@ class PreviewService:
                     config = source.get("config", {})
                     pages_to_crawl.append({
                         "url": url,
-                        "config": config
+                        "config": config,
+                        "source_id": source.get("id"),  # Track source ID for data flow
+                        "source_name": source.get("name")
                     })
 
             if not pages_to_crawl:
@@ -556,10 +567,14 @@ class PreviewService:
                             max_depth=crawl_config.get("max_depth", 2),
                             include_patterns=crawl_config.get("include_patterns", []),
                             exclude_patterns=crawl_config.get("exclude_patterns", []),
-                            stealth_mode=True,
+                            stealth_mode=crawl_config.get("stealth_mode", True),
                             delay_between_requests=1.5,
                             extract_links=True,
-                            preserve_code_blocks=True
+                            preserve_code_blocks=True,
+                            # JavaScript/rendering options
+                            wait_time=crawl_config.get("wait_time", 3.0),
+                            wait_for_selector=crawl_config.get("wait_for_selector"),
+                            timeout=crawl_config.get("timeout", 30),
                         )
 
                         # Crawl multiple pages
@@ -582,7 +597,7 @@ class PreviewService:
                                 chunk_overlap=final_chunk_overlap
                             )
 
-                            # Add page to preview
+                            # Add page to preview with source tracking
                             pages_preview.append({
                                 "url": scrape_result.url,
                                 "title": title,
@@ -599,16 +614,48 @@ class PreviewService:
                                     for chunk in chunks[:3]  # Show first 3 chunks per page
                                 ],
                                 "metadata": scrape_result.metadata,
-                                "word_count": scrape_result.metadata.get("word_count", 0)
+                                "word_count": scrape_result.metadata.get("word_count", 0),
+                                "source_id": page_info.get("source_id"),  # Link page to source
+                                "source_name": page_info.get("source_name")
                             })
 
                             total_chunks += len(chunks)
                     else:
-                        # Single page scraping (original logic)
-                        scrape_result = await crawl4ai_service.scrape_single_url(url)
+                        # Single page scraping with config
+                        from app.services.crawl4ai_service import CrawlConfig
+
+                        single_config = CrawlConfig(
+                            method="single",
+                            stealth_mode=crawl_config.get("stealth_mode", True),
+                            extract_links=True,
+                            # JavaScript/rendering options
+                            wait_time=crawl_config.get("wait_time", 3.0),
+                            wait_for_selector=crawl_config.get("wait_for_selector"),
+                            timeout=crawl_config.get("timeout", 30),
+                        )
+
+                        scrape_result = await crawl4ai_service.scrape_single_url(url, single_config)
                         content = scrape_result.content or ""
 
+                        # Log warning for empty content
                         if not content:
+                            print(f"⚠️ EMPTY CONTENT for {url}")
+                            print(f"   - wait_for: {single_config.wait_for_selector or 'body'}")
+                            print(f"   - wait_time: {single_config.wait_time}s")
+                            print(f"   - Possible causes: JS-heavy site, anti-bot, or timeout")
+
+                            # Add error page to preview so user sees the issue
+                            pages_preview.append({
+                                "url": url,
+                                "title": "Content extraction failed",
+                                "content": "",
+                                "error": f"No content extracted. This site may require longer wait time or JavaScript rendering. Try increasing wait_time to 5-10 seconds.",
+                                "chunks": 0,
+                                "preview_chunks": [],
+                                "word_count": 0,
+                                "source_id": page_info.get("source_id"),  # Link page to source even on error
+                                "source_name": page_info.get("source_name")
+                            })
                             continue
 
                         # Generate title with fallback
@@ -622,7 +669,7 @@ class PreviewService:
                             chunk_overlap=final_chunk_overlap
                         )
 
-                        # Add page to preview
+                        # Add page to preview with source tracking
                         pages_preview.append({
                             "url": scrape_result.url,
                             "title": title,
@@ -639,7 +686,9 @@ class PreviewService:
                                 for chunk in chunks[:3]  # Show first 3 chunks per page
                             ],
                             "metadata": scrape_result.metadata or {},
-                            "word_count": scrape_result.metadata.get("word_count", 0) if scrape_result.metadata else 0
+                            "word_count": scrape_result.metadata.get("word_count", 0) if scrape_result.metadata else 0,
+                            "source_id": page_info.get("source_id"),  # Link page to source
+                            "source_name": page_info.get("source_name")
                         })
 
                         total_chunks += len(chunks)
@@ -649,7 +698,9 @@ class PreviewService:
                         "url": url,
                         "error": str(e),
                         "chunks": 0,
-                        "preview_chunks": []
+                        "preview_chunks": [],
+                        "source_id": page_info.get("source_id"),  # Link page to source even on error
+                        "source_name": page_info.get("source_name")
                     })
                     continue
 

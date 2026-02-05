@@ -568,12 +568,17 @@ def process_web_kb_task(
                     # Last resort: scrape if no preview data
                     if not scraped_pages:
                         # Build crawl config and scrape
+                        # Pass all config options including JavaScript/rendering settings
                         crawl_config = CrawlConfig(
                             max_pages=source_config.get("max_pages", 50),
                             max_depth=source_config.get("max_depth", 3),
                             include_patterns=source_config.get("include_patterns", []),
                             exclude_patterns=source_config.get("exclude_patterns", []),
-                            stealth_mode=source_config.get("stealth_mode", True)
+                            stealth_mode=source_config.get("stealth_mode", True),
+                            # JavaScript/rendering options (critical for SPA sites)
+                            wait_time=source_config.get("wait_time", 0),  # 0 = use smart defaults
+                            wait_for_selector=source_config.get("wait_for_selector"),
+                            timeout=source_config.get("timeout", 30),
                         )
                         method = source_config.get("method", "single")
 
@@ -1018,13 +1023,17 @@ def process_web_kb_task(
                         # No preview data available, proceed with normal scraping
                         tracker.add_log("info", f"Scraping {source_url}")
 
-                        # Build crawl config
+                        # Build crawl config with all options including JS/rendering settings
                         crawl_config = CrawlConfig(
                             max_pages=source_config.get("max_pages", 50),
                             max_depth=source_config.get("max_depth", 3),
                             include_patterns=source_config.get("include_patterns", []),
                             exclude_patterns=source_config.get("exclude_patterns", []),
-                            stealth_mode=source_config.get("stealth_mode", True)
+                            stealth_mode=source_config.get("stealth_mode", True),
+                            # JavaScript/rendering options (critical for SPA sites)
+                            wait_time=source_config.get("wait_time", 0),  # 0 = use smart defaults
+                            wait_for_selector=source_config.get("wait_for_selector"),
+                            timeout=source_config.get("timeout", 30),
                         )
 
                         # Scrape (single or crawl)

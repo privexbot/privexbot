@@ -58,10 +58,9 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     libasound2 \
     libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
     # Additional dependencies for crawl4ai and web scraping
     fonts-liberation \
-    libappindicator3-1 \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
