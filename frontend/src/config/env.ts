@@ -99,7 +99,7 @@ export const config = {
     return getConfigValue(
       'WIDGET_CDN_URL',
       getViteEnv('VITE_WIDGET_CDN_URL'),
-      'http://localhost:8080'
+      'http://localhost:9000'
     );
   },
 

@@ -1,13 +1,20 @@
 /**
  * PrivexBot Widget - Main Entry Point
  *
- * Usage (Script Tag):
- * <script src="https://cdn.privexbot.com/widget.js" data-api-url="https://api.privexbot.com/api/v1"></script>
+ * EMBED CODE FORMATS:
+ *
+ * 1. Standard format (with IIFE loader for async loading):
  * <script>
+ *   (function(w,d,s,o,f,js,fjs){
+ *     w['PrivexBot']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
+ *     js=d.createElement(s);fjs=d.getElementsByTagName(s)[0];
+ *     js.id='privexbot-widget';js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
+ *   }(window,document,'script','pb','https://widget.privexbot.com/widget.js'));
  *   pb('init', {
  *     id: 'chatbot-uuid-here',
  *     apiKey: 'your-api-key-here',
  *     options: {
+ *       baseURL: 'https://api.privexbot.com/api/v1',
  *       position: 'bottom-right',
  *       color: '#3b82f6',
  *       greeting: 'Hi! How can I help you?',
@@ -17,15 +24,15 @@
  *   });
  * </script>
  *
- * Alternative embed code (simpler):
+ * 2. Simple format (auto-init from window.privexbotConfig):
  * <script>
- *   (function(w,d,s,o,f,js,fjs){
- *     w['PrivexBot']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
- *     js=d.createElement(s);fjs=d.getElementsByTagName(s)[0];
- *     js.id='privexbot-widget';js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
- *   }(window,document,'script','pb','https://cdn.privexbot.com/widget.js'));
- *   pb('init', { id: 'YOUR_CHATBOT_ID', apiKey: 'YOUR_API_KEY' });
+ *   window.privexbotConfig = {
+ *     botId: 'chatbot-uuid-here',
+ *     apiKey: 'your-api-key-here',
+ *     baseURL: 'https://api.privexbot.com/api/v1'
+ *   };
  * </script>
+ * <script src="https://widget.privexbot.com/widget.js" async></script>
  */
 
 import './styles/widget.css';
@@ -344,6 +351,19 @@ class PrivexBotWidget {
       window.pb.apply(null, args);
     });
     delete window.pb.q;
+  }
+
+  // Auto-init from window.privexbotConfig (for simpler embed code)
+  if (window.privexbotConfig && !widget.isInitialized) {
+    const cfg = window.privexbotConfig;
+    widget.init({
+      id: cfg.botId || cfg.id,
+      apiKey: cfg.apiKey,
+      options: {
+        baseURL: cfg.baseURL,
+        ...cfg.options,
+      },
+    });
   }
 })();
 

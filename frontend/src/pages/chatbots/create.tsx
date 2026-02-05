@@ -2014,7 +2014,8 @@ function Step5Deploy({
     ? `<script>
   window.privexbotConfig = {
     botId: '${deploymentResult.chatbot_id}',
-    apiKey: '${deploymentResult.api_key}'
+    apiKey: '${deploymentResult.api_key}',
+    baseURL: '${config.API_BASE_URL}'
   };
 </script>
 <script src="${config.WIDGET_CDN_URL}/widget.js" async></script>`

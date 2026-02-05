@@ -329,8 +329,13 @@ export default function ChatbotDetailPage() {
     const greeting = chatbot.prompt_config.messages?.greeting ?? 'Hello! How can I help you?';
     const botName = chatbot.branding_config.chat_title ?? chatbot.name;
 
-    return `<script src="${widgetUrl}"></script>
+    return `<!-- PrivexBot Chatbot Widget -->
 <script>
+  (function(w,d,s,o,f,js,fjs){
+    w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
+    js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
+    js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
+  }(window, document, 'script', 'pb', '${widgetUrl}/widget.js'));
   pb('init', {
     id: '${chatbot.id}',
     apiKey: 'YOUR_API_KEY', // Replace with your API key
@@ -1537,7 +1542,7 @@ export default function ChatbotDetailPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <Button variant="outline" onClick={() => window.open(`${config.WIDGET_CDN_URL.replace('/widget.js', '')}/test.html`, '_blank')}>
+                    <Button variant="outline" onClick={() => window.open(`${config.WIDGET_CDN_URL}/test.html`, '_blank')}>
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Open Test Page
                     </Button>

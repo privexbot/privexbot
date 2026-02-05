@@ -901,14 +901,16 @@ class UnifiedDraftService:
         """Generate embed code for website widget."""
 
         widget_cdn_url = settings.WIDGET_CDN_URL
+        api_base_url = settings.API_BASE_URL
 
         return f"""<script>
   window.privexbotConfig = {{
     botId: '{entity_id}',
-    apiKey: '{api_key}'
+    apiKey: '{api_key}',
+    baseURL: '{api_base_url}'
   }};
 </script>
-<script src="{widget_cdn_url}/widget.js"></script>"""
+<script src="{widget_cdn_url}/widget.js" async></script>"""
 
 
 # Global instance

@@ -140,8 +140,9 @@ export default function Deployments() {
     w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
     js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
     js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${config.API_BASE_URL}/widget.js'));
+  }(window, document, 'script', 'pb', '${config.WIDGET_CDN_URL}/widget.js'));
   pb('init', '${chatbotId}', {
+    baseURL: '${config.API_BASE_URL}',
     position: '${formData.widget_position}',
     color: '${formData.widget_color}'
   });

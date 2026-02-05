@@ -80,8 +80,9 @@ export default function DeploymentSuccess({
     w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
     js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
     js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${envConfig.API_BASE_URL}/widget.js'));
+  }(window, document, 'script', 'pb', '${envConfig.WIDGET_CDN_URL}/widget.js'));
   pb('init', '${chatbotId}', {
+    baseURL: '${envConfig.API_BASE_URL}',
     position: '${config.widget_position}',
     color: '${config.widget_color}',
     greeting: ${config.greeting_message ? `'${config.greeting_message}'` : 'undefined'}

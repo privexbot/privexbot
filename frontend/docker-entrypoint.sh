@@ -5,7 +5,7 @@ echo "🔧 PrivexBot Frontend - Configuring runtime environment..."
 
 # Default values for environment variables
 API_BASE_URL=${API_BASE_URL:-https://api.privexbot.com/api/v1}
-WIDGET_CDN_URL=${WIDGET_CDN_URL:-https://privexbot.com/widget}
+WIDGET_CDN_URL=${WIDGET_CDN_URL:-https://widget.privexbot.com}
 ENVIRONMENT=${ENVIRONMENT:-production}
 
 echo "📋 Runtime Configuration:"

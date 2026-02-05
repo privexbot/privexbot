@@ -110,6 +110,28 @@ class Crawl4AIService:
     def __init__(self):
         self.crawler: Optional[AsyncWebCrawler] = None
 
+    def _extract_markdown_content(self, result) -> str:
+        """
+        Extract markdown content from crawl result.
+
+        Handles API changes in crawl4ai:
+        - v0.2.x: result.markdown is a string
+        - v0.8.x: result.markdown is a MarkdownGenerationResult object
+                  with raw_markdown, markdown_with_citations, etc.
+        """
+        if not result.markdown:
+            return ""
+
+        if hasattr(result.markdown, 'raw_markdown'):
+            # crawl4ai 0.8.x: MarkdownGenerationResult object
+            return result.markdown.raw_markdown or ""
+        elif isinstance(result.markdown, str):
+            # Fallback for older API (backward compatibility)
+            return result.markdown
+        else:
+            # Unknown type, try string conversion
+            return str(result.markdown) if result.markdown else ""
+
     async def _initialize_crawler(self, config: CrawlConfig):
         """Initialize crawler with anti-bot configuration"""
 
@@ -253,12 +275,15 @@ class Crawl4AIService:
             if not result.success:
                 raise Exception(f"Failed to scrape {url}: {result.error_message}")
 
+            # Extract markdown content (crawl4ai 0.8.x compatibility)
+            markdown_content = self._extract_markdown_content(result)
+
             # Extract metadata
             metadata = {
                 "status_code": result.status_code,
                 "content_type": "text/html",  # Default for web scraping
-                "word_count": len(result.markdown.split()) if result.markdown else 0,
-                "character_count": len(result.markdown) if result.markdown else 0,
+                "word_count": len(markdown_content.split()) if markdown_content else 0,
+                "character_count": len(markdown_content) if markdown_content else 0,
             }
 
             # Extract links if requested
@@ -278,7 +303,7 @@ class Crawl4AIService:
                 url=url,
                 title=result.metadata.get("title"),
                 description=result.metadata.get("description"),
-                content=result.markdown or "",
+                content=markdown_content,
                 links=links,
                 metadata=metadata,
                 scraped_at=datetime.utcnow()
@@ -360,12 +385,15 @@ class Crawl4AIService:
                         print(f"Failed to scrape {url}: {result.error_message}")
                         continue
 
+                    # Extract markdown content (crawl4ai 0.8.x compatibility)
+                    markdown_content = self._extract_markdown_content(result)
+
                     # Extract metadata
                     metadata = {
                         "status_code": result.status_code,
                         "depth": depth,
-                        "word_count": len(result.markdown.split()) if result.markdown else 0,
-                        "character_count": len(result.markdown) if result.markdown else 0,
+                        "word_count": len(markdown_content.split()) if markdown_content else 0,
+                        "character_count": len(markdown_content) if markdown_content else 0,
                     }
 
                     # Extract links
@@ -392,7 +420,7 @@ class Crawl4AIService:
                         url=url,
                         title=result.metadata.get("title"),
                         description=result.metadata.get("description"),
-                        content=result.markdown or "",
+                        content=markdown_content,
                         links=links,
                         metadata=metadata,
                         scraped_at=datetime.utcnow()

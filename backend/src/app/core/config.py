@@ -202,7 +202,7 @@ class Settings(BaseSettings):
         description="Base URL for API webhooks (e.g., Telegram, Discord)"
     )
     WIDGET_CDN_URL: str = Field(
-        default="http://localhost:8000/widget",
+        default="http://localhost:9000",
         description="CDN URL for widget JavaScript"
     )
 
