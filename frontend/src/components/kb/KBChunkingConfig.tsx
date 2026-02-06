@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { Settings, Zap, HelpCircle, Info } from 'lucide-react';
+import { Settings, Zap, HelpCircle, Info, HardDrive } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,6 +29,20 @@ interface KBChunkingConfigProps {
 export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
   const { chunkingConfig, updateChunkingConfig, draftSources } = useKBStore();
   const [activePreset, setActivePreset] = useState('balanced');
+
+  // Check if any file sources exist in draft
+  const hasFileUploads = draftSources.some(s => s.type === 'file');
+
+  // Helper to estimate total file size for storage display
+  const formatStorageEstimate = (): string => {
+    const totalBytes = draftSources
+      .filter(s => s.type === 'file')
+      .reduce((sum, s) => sum + ((s.metadata as any)?.file_size || 0), 0);
+
+    if (totalBytes < 1024) return `${totalBytes} B`;
+    if (totalBytes < 1024 * 1024) return `${(totalBytes / 1024).toFixed(1)} KB`;
+    return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   const presets = [
     {
@@ -499,6 +514,42 @@ export function KBChunkingConfig({ onConfigChange }: KBChunkingConfigProps) {
                 )}
               </div>
             </div>
+
+            {/* File Persistence Toggle - Only shown when file sources exist */}
+            {hasFileUploads && (
+              <div className="flex items-start space-x-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+                <div className="flex items-center h-5">
+                  <Switch
+                    id="persist-files"
+                    checked={chunkingConfig.persist_files ?? false}
+                    onCheckedChange={(checked) => handleConfigChange('persist_files', checked)}
+                  />
+                </div>
+                <div className="flex-1">
+                  <Label
+                    htmlFor="persist-files"
+                    className="text-sm text-gray-700 dark:text-gray-300 font-manrope cursor-pointer flex items-center gap-2"
+                  >
+                    <HardDrive className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                    Keep Original Files
+                    <Badge className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 text-xs font-manrope">
+                      Storage
+                    </Badge>
+                  </Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1 leading-relaxed">
+                    Store uploaded files in cloud storage for re-processing and downloads.
+                    Enables re-chunking with different settings later. Increases storage usage.
+                  </p>
+                  {chunkingConfig.persist_files && (
+                    <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-700">
+                      <p className="text-xs text-amber-700 dark:text-amber-300 font-manrope">
+                        <strong>Storage impact:</strong> Original files will be retained (~{formatStorageEstimate()} estimated)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

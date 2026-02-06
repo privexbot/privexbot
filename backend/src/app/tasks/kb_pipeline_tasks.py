@@ -12,6 +12,7 @@ Triggered after finalization (Phase 2) from kb_draft_service.
 
 from celery import shared_task
 from uuid import UUID
+import uuid
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -2248,12 +2249,55 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             # File upload content is only in Qdrant, not PostgreSQL
             document_content = document.content_full
 
-            # Skip file uploads - their content is in Qdrant only, not PostgreSQL
-            # Reindexing file uploads would require re-parsing the original files
+            # Handle file uploads - check for persisted file or cached content
             if document.source_type == "file_upload":
-                print(f"⏭️ [REINDEX] Skipping file upload document: {document.name} (content in Qdrant only)")
-                file_upload_skipped += 1
-                continue
+                file_upload_content = None
+
+                # PRIMARY: Re-parse from MinIO if file_path exists (persist_files=true)
+                if document.file_path:
+                    try:
+                        from io import BytesIO
+
+                        from app.services.storage_service import BUCKET_KB_FILES, storage_service
+                        from app.services.tika_service import tika_service
+
+                        print(f"📥 [REINDEX] Downloading file from MinIO: {document.file_path}")
+                        file_bytes = storage_service.get_file(BUCKET_KB_FILES, document.file_path)
+
+                        print(f"📄 [REINDEX] Re-parsing file with Tika: {document.name}")
+                        parsed_file = loop.run_until_complete(
+                            tika_service.parse_file(BytesIO(file_bytes), document.name)
+                        )
+                        file_upload_content = parsed_file.content
+
+                        if file_upload_content and file_upload_content.strip():
+                            print(f"✅ [REINDEX] Successfully re-parsed from MinIO: {document.name} ({len(file_upload_content)} chars)")
+                        else:
+                            print(f"⚠️ [REINDEX] Re-parsed file is empty, trying fallback: {document.name}")
+                            file_upload_content = None
+
+                    except Exception as e:
+                        print(f"⚠️ [REINDEX] Failed to re-parse from MinIO ({e}), trying fallback: {document.name}")
+                        file_upload_content = None
+
+                # FALLBACK: Try approved_sources content (cached during finalization)
+                if not file_upload_content and document.source_metadata:
+                    approved_sources = document.source_metadata.get("approved_sources", [])
+                    if approved_sources and len(approved_sources) > 0:
+                        fallback_content = approved_sources[0].get("content", "")
+                        if fallback_content and fallback_content.strip():
+                            file_upload_content = fallback_content
+                            print(f"✅ [REINDEX] Using cached content from approved_sources: {document.name}")
+
+                # Final decision
+                if file_upload_content and file_upload_content.strip():
+                    document_content = file_upload_content
+                else:
+                    # Truly unrecoverable - no file, no cached content
+                    reason = "no persisted file and no cached content" if not document.file_path else "re-parse failed and no fallback"
+                    print(f"⏭️ [REINDEX] Skipping file upload ({reason}): {document.name}")
+                    file_upload_skipped += 1
+                    continue
 
             if not document_content:
                 print(f"⏭️ [REINDEX] Skipping document with no content: {document.name}")
@@ -2283,41 +2327,51 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             # Create chunks and index in Qdrant
             qdrant_chunks = []
 
+            # Determine if this is a file upload (Qdrant-only storage)
+            # File uploads store content in Qdrant only, not PostgreSQL (original files in MinIO)
+            is_file_upload = document.source_type == "file_upload"
+
             for chunk_idx, (chunk_data, embedding) in enumerate(zip(chunks_data, embeddings)):
                 # Calculate statistics for this chunk
                 chunk_content = chunk_data["content"]
                 chunk_word_count = len(chunk_content.split()) if chunk_content else 0
                 chunk_character_count = len(chunk_content) if chunk_content else 0
 
-                # Create Chunk in PostgreSQL
-                # NOTE: Chunk model does NOT have workspace_id - it's inherited from KB via kb_id
-                chunk = Chunk(
-                    document_id=document.id,
-                    kb_id=UUID(kb_id),
-                    content=chunk_content,
-                    chunk_index=chunk_idx,
-                    position=chunk_idx,  # Position within document
-                    word_count=chunk_word_count,
-                    character_count=chunk_character_count,
-                    embedding=embedding,
-                    chunk_metadata={
-                        "token_count": chunk_data.get("token_count", 0),
-                        "strategy": strategy,
-                        "chunk_size": chunk_size,
-                        "chunk_overlap": chunk_overlap,
-                        "reindexed_at": datetime.utcnow().isoformat(),
-                        "word_count": chunk_word_count,
-                        "character_count": chunk_character_count
-                    },
-                    created_at=datetime.utcnow()
-                )
-                db.add(chunk)
-                db.flush()
+                # Generate chunk ID (needed for Qdrant regardless of PostgreSQL storage)
+                chunk_id = uuid.uuid4()
 
-                # Prepare for Qdrant
+                # Create Chunk in PostgreSQL ONLY for web scraping (skip for file uploads)
+                # File uploads use Qdrant-only storage - original files are in MinIO
+                if not is_file_upload:
+                    # NOTE: Chunk model does NOT have workspace_id - it's inherited from KB via kb_id
+                    chunk = Chunk(
+                        id=chunk_id,
+                        document_id=document.id,
+                        kb_id=UUID(kb_id),
+                        content=chunk_content,
+                        chunk_index=chunk_idx,
+                        position=chunk_idx,  # Position within document
+                        word_count=chunk_word_count,
+                        character_count=chunk_character_count,
+                        embedding=embedding,
+                        chunk_metadata={
+                            "token_count": chunk_data.get("token_count", 0),
+                            "strategy": strategy,
+                            "chunk_size": chunk_size,
+                            "chunk_overlap": chunk_overlap,
+                            "reindexed_at": datetime.utcnow().isoformat(),
+                            "word_count": chunk_word_count,
+                            "character_count": chunk_character_count
+                        },
+                        created_at=datetime.utcnow()
+                    )
+                    db.add(chunk)
+                    db.flush()
+
+                # Prepare for Qdrant (ALWAYS - both file uploads and web scraping)
                 qdrant_chunks.append(
                     QdrantChunk(
-                        id=str(chunk.id),
+                        id=str(chunk_id),  # Use generated UUID for both cases
                         embedding=embedding,
                         content=chunk_data["content"],
                         metadata={
@@ -2332,6 +2386,12 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                 )
 
             db.commit()
+
+            # Log storage strategy for this document
+            if is_file_upload:
+                print(f"📁 [REINDEX FILE_UPLOAD] Qdrant-only: {len(qdrant_chunks)} chunks for {document.name} (0 PostgreSQL)")
+            else:
+                print(f"📊 [REINDEX WEB] Dual storage: {len(qdrant_chunks)} chunks for {document.name}")
 
             # Index in Qdrant
             loop.run_until_complete(

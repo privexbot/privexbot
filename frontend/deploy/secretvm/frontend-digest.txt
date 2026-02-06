@@ -1,1 +1,1 @@
-privexbot/privexbot-frontend@sha256:836f63ea2a3e8784d801edc9d613a8ba9cf61030c53bc59e80aac2ba1227b66f
+privexbot/privexbot-frontend@sha256:fc812fce9fd505a41bbe97a3307b7d09f3975f5ea6fe3176a123dcb214449e8e

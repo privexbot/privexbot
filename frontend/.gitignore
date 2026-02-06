@@ -29,18 +29,21 @@ dist-ssr
 .env.local
 .env.production
 .env.staging
-.env.secretvm
 .env.*.local
 .env.*
 !.env.example
 !.env.*.example
+!.env.secretvm
 
 # Build environment files
 .env.production.local
 .env.development.local
 
 # Deployment configurations (sensitive)
-deploy/
+deploy/secretvm/.env
+deploy/staging/.env
+deploy/production/.env
+deploy/*/.env
 config/production.json
 config/staging.json
 config/secretvm.json
