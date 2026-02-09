@@ -259,13 +259,15 @@ class DiscordIntegration:
         """
         try:
             from nacl.signing import VerifyKey
-            from nacl.exceptions import BadSignature
+            from nacl.exceptions import BadSignatureError
 
             verify_key = VerifyKey(bytes.fromhex(public_key))
             message = timestamp.encode() + body
             verify_key.verify(message, bytes.fromhex(signature))
             return True
-        except (BadSignature, Exception):
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Discord signature verification failed: {type(e).__name__}: {e}")
             return False
 
     async def register_global_commands(

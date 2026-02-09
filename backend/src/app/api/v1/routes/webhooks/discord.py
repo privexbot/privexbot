@@ -21,14 +21,19 @@ from uuid import UUID
 from typing import Optional
 import hmac
 import hashlib
+import json
+import logging
+import traceback
 
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.integrations.discord_integration import discord_integration
 from app.services.chatbot_service import chatbot_service
 from app.services.credential_service import credential_service
 from app.services.discord_guild_service import discord_guild_service
 from app.models.credential import Credential
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Chatflow is optional - may not be implemented yet
 try:
@@ -133,7 +138,6 @@ async def discord_shared_webhook(
     request: Request,
     x_signature_ed25519: Optional[str] = Header(None),
     x_signature_timestamp: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
 ):
     """
     Shared Discord bot webhook - routes messages to correct chatbot based on guild_id.
@@ -141,60 +145,75 @@ async def discord_shared_webhook(
     WHY: ONE Discord bot serves ALL customers
     HOW: guild_id → DiscordGuildDeployment → chatbot_id → process message
 
-    ARCHITECTURE:
-    1. Shared bot receives message with guild_id
-    2. Lookup DiscordGuildDeployment by guild_id
-    3. Route to correct chatbot for AI processing
-    4. Return response to Discord
-
-    URL:
-        POST /webhooks/discord/shared
-
-    FLOW:
-        User types in Discord → Shared bot receives →
-        Lookup guild deployment → Route to chatbot →
-        AI generates response → Return to Discord
-
-    RETURNS:
-        Discord interaction response
+    CRITICAL: No db dependency injection here — PING verification must work
+    without database access. DB session is created manually only for message
+    processing (non-PING interactions).
     """
-    # Get raw body for signature verification
-    body = await request.body()
+    try:
+        # Get raw body for signature verification
+        body = await request.body()
+        logger.info(f"Discord webhook received: {len(body)} bytes, sig={x_signature_ed25519 is not None}")
 
-    # Verify signature using shared bot public key
-    public_key = settings.DISCORD_SHARED_PUBLIC_KEY
+        # Verify signature using shared bot public key
+        public_key = settings.DISCORD_SHARED_PUBLIC_KEY
 
-    if public_key and x_signature_ed25519 and x_signature_timestamp:
-        is_valid = discord_integration.verify_signature(
-            body=body,
-            signature=x_signature_ed25519,
-            timestamp=x_signature_timestamp,
-            public_key=public_key
+        if public_key and x_signature_ed25519 and x_signature_timestamp:
+            is_valid = discord_integration.verify_signature(
+                body=body,
+                signature=x_signature_ed25519,
+                timestamp=x_signature_timestamp,
+                public_key=public_key
+            )
+            logger.info(f"Discord signature verification: {is_valid}")
+
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid signature"
+                )
+        elif not public_key:
+            logger.warning("DISCORD_SHARED_PUBLIC_KEY not set — signature verification skipped")
+
+        # Parse interaction from cached body bytes directly
+        interaction = json.loads(body)
+        interaction_type = interaction.get("type")
+        logger.info(f"Discord interaction type: {interaction_type}")
+
+        # Type 1: PING (Discord verification) — no database needed
+        if interaction_type == 1:
+            logger.info("Discord PING received — returning PONG")
+            return {"type": 1}
+
+        # ═══════════════════════════════════════════════════════════
+        # Non-PING interactions require database access
+        # ═══════════════════════════════════════════════════════════
+        db = SessionLocal()
+        try:
+            return await _handle_shared_interaction(db, interaction, interaction_type)
+        finally:
+            db.close()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Discord shared webhook error: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
         )
 
-        if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid signature"
-            )
 
-    # Parse interaction
-    interaction = await request.json()
-    interaction_type = interaction.get("type")
-
-    # Type 1: PING (Discord verification)
-    if interaction_type == 1:
-        return {"type": 1}
+async def _handle_shared_interaction(db: Session, interaction: dict, interaction_type: int):
+    """Handle non-PING Discord interactions (slash commands, buttons, etc.)."""
 
     # Extract guild_id
     guild_id = interaction.get("guild_id")
     if not guild_id:
-        # DM not supported in shared bot architecture
         return {
             "type": 4,
             "data": {
                 "content": "Direct messages are not supported. Please use me in a server.",
-                "flags": 64  # Ephemeral
+                "flags": 64
             }
         }
 
@@ -206,7 +225,7 @@ async def discord_shared_webhook(
             "type": 4,
             "data": {
                 "content": "This bot is not configured for this server. Please contact your administrator.",
-                "flags": 64  # Ephemeral
+                "flags": 64
             }
         }
 
@@ -215,12 +234,11 @@ async def discord_shared_webhook(
     # Check channel restrictions
     channel_id = interaction.get("channel_id")
     if not deployment.check_channel_access(channel_id):
-        # Silent ignore for restricted channels
         return {
             "type": 4,
             "data": {
                 "content": "",
-                "flags": 64  # Ephemeral empty
+                "flags": 64
             }
         }
 
@@ -236,15 +254,11 @@ async def discord_shared_webhook(
         command_name = data.get("name", "")
         options = data.get("options", [])
 
-        # Handle different command structures
         if command_name == "ask" and options:
-            # /ask command with message option
             message_content = options[0].get("value", "")
         elif command_name == "chat" and options:
-            # /chat command with message option
             message_content = options[0].get("value", "")
         elif options:
-            # Generic: first option value
             message_content = options[0].get("value", "")
         else:
             message_content = f"/{command_name}"
@@ -261,7 +275,7 @@ async def discord_shared_webhook(
             "type": 4,
             "data": {
                 "content": "Please provide a message.",
-                "flags": 64  # Ephemeral
+                "flags": 64
             }
         }
 
@@ -297,9 +311,8 @@ async def discord_shared_webhook(
     # Truncate response to Discord's 2000 char limit
     response_text = response.get("response", "")[:2000]
 
-    # Return Discord interaction response
     return {
-        "type": 4,  # CHANNEL_MESSAGE_WITH_SOURCE
+        "type": 4,
         "data": {
             "content": response_text
         }
