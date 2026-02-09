@@ -97,7 +97,12 @@ export interface UpdateChatflowDraftRequest {
 }
 
 export interface FinalizeChatflowRequest {
-  channels?: string[];
+  channels?: Array<{
+    type: string;
+    enabled: boolean;
+    config?: Record<string, unknown>;
+    credential_id?: string;
+  }>;
 }
 
 // ========================================

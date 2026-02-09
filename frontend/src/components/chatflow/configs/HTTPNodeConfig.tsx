@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import CredentialSelector from "@/components/shared/CredentialSelector";
 
 interface HTTPNodeConfigProps {
   config: Record<string, unknown>;
@@ -42,6 +43,7 @@ export function HTTPNodeConfig({ config, onChange }: HTTPNodeConfigProps) {
   );
   const [body, setBody] = useState(JSON.stringify(config.body || {}, null, 2));
   const [timeout, setTimeout_] = useState((config.timeout as number) || 30);
+  const [credentialId, setCredentialId] = useState((config.credential_id as string) || "");
   const [headersError, setHeadersError] = useState("");
   const [bodyError, setBodyError] = useState("");
 
@@ -69,9 +71,10 @@ export function HTTPNodeConfig({ config, onChange }: HTTPNodeConfigProps) {
         headers: parsedHeaders,
         body: parsedBody,
         timeout,
+        credential_id: credentialId || undefined,
       });
     }
-  }, [method, url, headers, body, timeout, onChange]);
+  }, [method, url, headers, body, timeout, credentialId, onChange]);
 
   useEffect(() => {
     const timeoutId = setTimeout(emitChange, 300);
@@ -156,6 +159,15 @@ export function HTTPNodeConfig({ config, onChange }: HTTPNodeConfigProps) {
           className="mt-1.5 w-24"
         />
       </div>
+
+      {/* Credential */}
+      <CredentialSelector
+        provider="custom"
+        selectedId={credentialId}
+        onSelect={setCredentialId}
+        label="Authentication Credential"
+        required={false}
+      />
     </div>
   );
 }

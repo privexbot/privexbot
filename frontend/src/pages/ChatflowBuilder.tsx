@@ -79,6 +79,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +94,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useApp } from "@/contexts/AppContext";
 import { cn } from "@/lib/utils";
 import { chatflowDraftApi } from "@/api/chatflow";
+import ChannelSelector, { type DeploymentChannel } from "@/components/deployment/ChannelSelector";
 
 // Node configuration panel for type-specific settings
 import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
@@ -447,6 +456,8 @@ export default function ChatflowBuilder() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
+  const [selectedChannels, setSelectedChannels] = useState<DeploymentChannel[]>(["website"]);
 
   // Load draft
   const { data: draft, isLoading: isLoadingDraft } = useQuery({
@@ -652,8 +663,16 @@ export default function ChatflowBuilder() {
 
   // Deploy mutation
   const deployMutation = useMutation({
-    mutationFn: () => chatflowDraftApi.finalize(draftId!, { channels: ["website"] }),
+    mutationFn: (channels: DeploymentChannel[]) =>
+      chatflowDraftApi.finalize(draftId!, {
+        channels: channels.map((ch) => ({
+          type: ch,
+          enabled: true,
+          config: {},
+        })),
+      }),
     onSuccess: () => {
+      setIsDeployDialogOpen(false);
       toast({
         title: "Chatflow Deployed!",
         description: "Your chatflow is now live.",
@@ -847,7 +866,7 @@ export default function ChatflowBuilder() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => deployMutation.mutate()}
+                onClick={() => setIsDeployDialogOpen(true)}
                 disabled={deployMutation.isPending}
                 className="bg-purple-600 hover:bg-purple-700"
               >
@@ -1048,6 +1067,46 @@ export default function ChatflowBuilder() {
           </SheetContent>
         </Sheet>
       </div>
+
+      {/* Deploy Dialog */}
+      <Dialog open={isDeployDialogOpen} onOpenChange={setIsDeployDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="w-5 h-5 text-purple-600" />
+              Deploy Chatflow
+            </DialogTitle>
+            <DialogDescription>
+              Select the channels where you want to deploy your chatflow.
+            </DialogDescription>
+          </DialogHeader>
+          <ChannelSelector
+            selectedChannels={selectedChannels}
+            onChange={setSelectedChannels}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeployDialogOpen(false)}
+              disabled={deployMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => deployMutation.mutate(selectedChannels)}
+              disabled={deployMutation.isPending || selectedChannels.length === 0}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {deployMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Rocket className="w-4 h-4 mr-2" />
+              )}
+              Deploy to {selectedChannels.length} Channel{selectedChannels.length !== 1 ? "s" : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

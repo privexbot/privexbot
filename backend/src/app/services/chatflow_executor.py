@@ -16,8 +16,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
-from typing import Any, Optional
-from uuid import UUID
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -75,36 +74,18 @@ class LLMNodeExecutor(BaseNodeExecutor):
     LLM node - AI text generation.
 
     WHY: Generate AI responses
-    HOW: Call inference_service
+    HOW: Delegate to LLMNode implementation
     """
 
     async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
-        from app.services.inference_service import inference_service
-
         try:
-            # Get prompt template
-            prompt_template = node_config.get("prompt", "{{input}}")
-
-            # Replace variables
-            prompt = self._render_template(prompt_template, context)
-
-            # Call LLM
-            result = await inference_service.generate(
-                prompt=prompt,
-                model=node_config.get("model", "secret-ai-v1"),
-                temperature=node_config.get("temperature", 0.7),
-                max_tokens=node_config.get("max_tokens", 2000)
+            from app.chatflow.nodes.llm_node import LLMNode
+            node = LLMNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
             )
-
-            return {
-                "output": result["text"],
-                "success": True,
-                "error": None,
-                "metadata": {
-                    "tokens_used": result["usage"]
-                }
-            }
-
         except Exception as e:
             return {
                 "output": None,
@@ -112,74 +93,24 @@ class LLMNodeExecutor(BaseNodeExecutor):
                 "error": str(e)
             }
 
-    def _render_template(self, template: str, context: dict) -> str:
-        """Replace {{variable}} placeholders in template."""
-
-        result = template
-
-        # Replace user_message
-        result = result.replace("{{input}}", context.get("user_message", ""))
-        result = result.replace("{{user_message}}", context.get("user_message", ""))
-
-        # Replace context variables
-        for key, value in context.get("variables", {}).items():
-            result = result.replace(f"{{{{{key}}}}}", str(value))
-
-        return result
-
 
 class HTTPRequestNodeExecutor(BaseNodeExecutor):
     """
     HTTP Request node - Make API calls.
 
     WHY: Integrate external APIs
-    HOW: Execute HTTP request with credentials
+    HOW: Delegate to HTTPNode implementation
     """
 
     async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
-        import requests
-
         try:
-            # Get request config
-            method = node_config.get("method", "GET")
-            url = node_config.get("url")
-            headers = node_config.get("headers", {})
-            body = node_config.get("body", {})
-
-            # Get credentials if specified
-            credential_id = node_config.get("credential_id")
-            if credential_id:
-                from app.services.credential_service import credential_service
-                from app.models.credential import Credential
-
-                credential = db.query(Credential).get(UUID(credential_id))
-                if credential:
-                    cred_data = credential_service.get_decrypted_data(db, credential)
-
-                    # Add auth to headers
-                    if "api_key" in cred_data:
-                        headers["Authorization"] = f"Bearer {cred_data['api_key']}"
-
-            # Make request
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=headers,
-                json=body,
-                timeout=30
+            from app.chatflow.nodes.http_node import HTTPNode
+            node = HTTPNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
             )
-
-            response.raise_for_status()
-
-            return {
-                "output": response.json(),
-                "success": True,
-                "error": None,
-                "metadata": {
-                    "status_code": response.status_code
-                }
-            }
-
         except Exception as e:
             return {
                 "output": None,
@@ -193,24 +124,18 @@ class ConditionNodeExecutor(BaseNodeExecutor):
     Condition node - Branching logic.
 
     WHY: Control flow based on conditions
-    HOW: Evaluate expression, return boolean
+    HOW: Delegate to ConditionNode implementation
     """
 
     async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
         try:
-            condition = node_config.get("condition", "true")
-
-            # Simple condition evaluation (placeholder)
-            # Production would use safe expression evaluator
-            result = self._evaluate_condition(condition, context)
-
-            return {
-                "output": result,
-                "success": True,
-                "error": None,
-                "condition_result": result
-            }
-
+            from app.chatflow.nodes.condition_node import ConditionNode
+            node = ConditionNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
         except Exception as e:
             return {
                 "output": False,
@@ -218,47 +143,24 @@ class ConditionNodeExecutor(BaseNodeExecutor):
                 "error": str(e)
             }
 
-    def _evaluate_condition(self, condition: str, context: dict) -> bool:
-        """Evaluate condition (simplified)."""
-
-        # Placeholder - production would use safe evaluator
-        # Examples:
-        # - "{{variable}} > 10"
-        # - "{{input}} contains 'help'"
-
-        return True  # Always true for placeholder
-
 
 class ResponseNodeExecutor(BaseNodeExecutor):
     """
     Response node - Format final output.
 
     WHY: Return result to user
-    HOW: Format response template
+    HOW: Delegate to ResponseNode implementation
     """
 
     async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
         try:
-            # Get response template
-            response_template = node_config.get("message", "{{input}}")
-
-            # Replace variables
-            response = response_template
-
-            # Replace user_message
-            response = response.replace("{{input}}", context.get("user_message", ""))
-            response = response.replace("{{user_message}}", context.get("user_message", ""))
-
-            # Replace context variables
-            for key, value in context.get("variables", {}).items():
-                response = response.replace(f"{{{{{key}}}}}", str(value))
-
-            return {
-                "output": response,
-                "success": True,
-                "error": None
-            }
-
+            from app.chatflow.nodes.response_node import ResponseNode
+            node = ResponseNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
         except Exception as e:
             return {
                 "output": "Error generating response",

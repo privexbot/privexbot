@@ -48,7 +48,10 @@ class UpdateChatflowDraftRequest(BaseModel):
 
 class FinalizeChatflowRequest(BaseModel):
     """Request to deploy chatflow from draft to database."""
-    channels: List[str] = Field(default=["website"])
+    channels: List[Dict[str, Any]] = Field(
+        default=[{"type": "website", "enabled": True, "config": {}}],
+        description="Deployment channels with config"
+    )
 
 
 # =============================================================================

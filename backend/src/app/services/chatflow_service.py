@@ -18,7 +18,7 @@ PSEUDOCODE follows the existing codebase patterns.
 
 from uuid import UUID, uuid4
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -223,6 +223,18 @@ class ChatflowService:
 
             nodes_executed.append(current_node["id"])
 
+            # Check for node failure
+            if not node_result.get("success", True):
+                error_msg = node_result.get("error", "Unknown node error")
+                print(f"[ChatflowService] Node {current_node['id']} ({current_node['type']}) failed: {error_msg}")
+                # Stop execution on failure - return error as response
+                return {
+                    "output": "I encountered an error processing your request. Please try again.",
+                    "nodes_executed": nodes_executed,
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                }
+
             # Accumulate token usage from LLM nodes
             tokens_used = node_result.get("metadata", {}).get("tokens_used")
             if tokens_used and isinstance(tokens_used, dict):
@@ -284,22 +296,6 @@ class ChatflowService:
         )
 
         return result
-
-
-    def _evaluate_condition(self, condition: str, context: dict) -> bool:
-        """
-        Evaluate conditional expression.
-
-        WHY: Branching logic in workflows
-        HOW: Parse and evaluate condition (simplified)
-
-        EXAMPLE CONDITIONS:
-        - "{{user_message}} contains 'help'"
-        - "{{variable1}} > 10"
-        """
-
-        # Simplified condition evaluation (production would use safe expression parser)
-        return True  # Placeholder
 
 
     def _get_next_node(

@@ -36,10 +36,7 @@ const AVAILABLE_VARIABLES = [
 ];
 
 const AVAILABLE_MODELS = [
-  { value: "secret-ai-v1", label: "Secret AI v1 (Default)" },
-  { value: "gpt-4", label: "GPT-4" },
-  { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-  { value: "claude-3", label: "Claude 3" },
+  { value: "secret-ai-v1", label: "Secret AI (Privacy-Preserving)" },
 ];
 
 export function LLMNodeConfig({ config, onChange }: LLMNodeConfigProps) {
