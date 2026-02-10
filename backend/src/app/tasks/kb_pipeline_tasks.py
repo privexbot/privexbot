@@ -292,26 +292,29 @@ def process_web_kb_task(
     # ========================================
     # EARLY SOURCE TYPE DETECTION (before tracker initialization)
     # ========================================
-    # Count file uploads vs web sources to determine appropriate metric labels
+    # Count file uploads vs web/cloud sources to determine appropriate metric labels
     file_sources_count = sum(1 for s in sources if s.get("type") == "file_upload")
     web_sources_count = sum(1 for s in sources if s.get("type") in ("web_scraping", "approved_content"))
+    cloud_sources_count = sum(1 for s in sources if s.get("type") in ("notion", "google_docs", "google_sheets"))
 
     # Determine overall source type for metrics display
-    if file_sources_count > 0 and web_sources_count > 0:
+    # Cloud sources (Notion, Google) behave like web sources for pipeline metrics
+    combined_web = web_sources_count + cloud_sources_count
+    if file_sources_count > 0 and combined_web > 0:
         source_type_for_metrics = "mixed"
     elif file_sources_count > 0:
         source_type_for_metrics = "file_upload"
     else:
         source_type_for_metrics = "web_scraping"
 
-    print(f"📊 [SOURCE TYPES EARLY] {file_sources_count} file uploads, {web_sources_count} web sources → {source_type_for_metrics}")
+    print(f"📊 [SOURCE TYPES EARLY] {file_sources_count} file uploads, {web_sources_count} web sources, {cloud_sources_count} cloud sources → {source_type_for_metrics}")
 
     # Initialize tracker WITH correct source type from the start
     tracker = PipelineProgressTracker(pipeline_id, kb_id, source_type=source_type_for_metrics)
     tracker.update_stats(
         total_sources=len(sources),
         file_sources=file_sources_count,
-        web_sources=web_sources_count
+        web_sources=web_sources_count + cloud_sources_count
     )
 
     # Import smart KB service at function level to avoid scoping issues

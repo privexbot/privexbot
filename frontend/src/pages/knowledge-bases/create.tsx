@@ -50,6 +50,8 @@ import { KBPreviewModal } from "@/components/kb/KBPreviewModal";
 import { IntegrationsModal } from "@/components/kb/IntegrationsModal";
 import { KBModelConfig } from "@/components/kb/KBModelConfig";
 import { KBFileUploadForm } from "@/components/kb/KBFileUploadForm";
+import NotionIntegration from "@/components/kb/NotionIntegration";
+import GoogleIntegration from "@/components/kb/GoogleIntegration";
 import { ComingSoon } from "@/components/ui/coming-soon";
 import { motion } from "framer-motion";
 
@@ -763,14 +765,45 @@ export default function CreateKnowledgeBasePage() {
                       </div>
                     )}
 
+                    {(activeSourceType as string) === "notion" && currentDraft && (
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
+                        <NotionIntegration
+                          draftId={currentDraft.draft_id}
+                          workspaceId={currentWorkspace!.id}
+                          onSourcesAdded={() => {
+                            setActiveSourceType(null);
+                            toast({
+                              title: "Notion pages added",
+                              description: "Your Notion pages have been added to the knowledge base",
+                            });
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {(activeSourceType as string) === "google" && currentDraft && (
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
+                        <GoogleIntegration
+                          draftId={currentDraft.draft_id}
+                          workspaceId={currentWorkspace!.id}
+                          onSourcesAdded={() => {
+                            setActiveSourceType(null);
+                            toast({
+                              title: "Google files added",
+                              description: "Your Google Docs/Sheets have been added to the knowledge base",
+                            });
+                          }}
+                        />
+                      </div>
+                    )}
+
                     {activeSourceType === "integrations" && (
                       <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
                         <ComingSoon
-                          title="Cloud Integrations"
-                          description="Connect and sync with your favorite cloud services"
+                          title="More Integrations Coming Soon"
+                          description="Additional cloud service integrations"
                           icon={<Cloud className="h-8 w-8" />}
                           features={[
-                            "Notion workspace sync",
                             "Google Docs integration",
                             "Google Sheets import",
                             "Slack conversations",
@@ -1146,6 +1179,32 @@ export default function CreateKnowledgeBasePage() {
           <IntegrationsModal
             open={showIntegrationsModal}
             onOpenChange={setShowIntegrationsModal}
+            onSelectIntegration={async (id) => {
+              setShowIntegrationsModal(false);
+              if (id === "notion") {
+                try {
+                  await ensureDraftExists();
+                  setActiveSourceType("notion" as any);
+                } catch {
+                  toast({
+                    title: "Draft Required",
+                    description: "Please enter a name for your knowledge base first",
+                    variant: "destructive",
+                  });
+                }
+              } else if (id === "google-docs" || id === "google-sheets") {
+                try {
+                  await ensureDraftExists();
+                  setActiveSourceType("google" as any);
+                } catch {
+                  toast({
+                    title: "Draft Required",
+                    description: "Please enter a name for your knowledge base first",
+                    variant: "destructive",
+                  });
+                }
+              }
+            }}
           />
         </div>
       </div>

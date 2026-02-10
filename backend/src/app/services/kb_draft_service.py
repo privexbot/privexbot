@@ -704,8 +704,8 @@ class KBDraftService:
             errors.append("At least one source is required")
 
         # Validate sources
-        # Supported source types: web_scraping, file_upload, text_input, approved_content
-        SUPPORTED_SOURCE_TYPES = {"web_scraping", "file_upload", "text_input", "approved_content"}
+        # Supported source types: web_scraping, file_upload, text_input, approved_content, notion, google_docs, google_sheets
+        SUPPORTED_SOURCE_TYPES = {"web_scraping", "file_upload", "text_input", "approved_content", "notion", "google_docs", "google_sheets"}
 
         for i, source in enumerate(sources):
             source_type = source.get("type")
@@ -729,6 +729,16 @@ class KBDraftService:
             elif source_type == "text_input":
                 if not source.get("content"):
                     errors.append(f"Source {i}: Text input missing content")
+
+            # Validate notion sources require parsed_content
+            elif source_type == "notion":
+                if not source.get("parsed_content"):
+                    errors.append(f"Source {i}: Notion page has no content")
+
+            # Validate Google sources require parsed_content
+            elif source_type in ("google_docs", "google_sheets"):
+                if not source.get("parsed_content"):
+                    errors.append(f"Source {i}: Google file has no content")
 
         # Estimate processing duration
         total_pages = 0
@@ -1178,6 +1188,78 @@ class KBDraftService:
                             source_url="text://direct-input",
                             source_metadata=source_metadata,
                             content_full=content,
+                            status="pending",
+                            created_by=UUID(draft["created_by"]),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(document)
+                        documents.append(document)
+
+                    # Handle notion sources
+                    elif source_type == "notion":
+                        parsed_content = source.get("parsed_content", "")
+                        if not parsed_content.strip():
+                            print(f"⚠️ [FINALIZE_NOTION] Skipping empty Notion page: {source.get('name')}")
+                            continue
+
+                        approved_sources = [{
+                            "url": source.get("url", ""),
+                            "title": source.get("name", "Notion Page"),
+                            "content": parsed_content,
+                            "markdown": parsed_content,
+                            "is_edited": False,
+                            "source": "notion",
+                            "metadata": source.get("metadata", {}),
+                            "approved_at": source.get("added_at"),
+                            "approved_by": draft.get("created_by")
+                        }]
+                        source_metadata["approved_sources"] = approved_sources
+                        print(f"✅ [FINALIZE_NOTION] Created document for Notion page: {source.get('name')}")
+
+                        document = Document(
+                            kb_id=kb.id,
+                            workspace_id=kb.workspace_id,
+                            name=source.get("name", "Notion Page"),
+                            source_type="notion",
+                            source_url=source.get("url"),
+                            source_metadata=source_metadata,
+                            content_full=parsed_content,
+                            status="pending",
+                            created_by=UUID(draft["created_by"]),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(document)
+                        documents.append(document)
+
+                    # Handle Google Docs/Sheets sources
+                    elif source_type in ("google_docs", "google_sheets"):
+                        parsed_content = source.get("parsed_content", "")
+                        if not parsed_content.strip():
+                            print(f"⚠️ [FINALIZE_GOOGLE] Skipping empty Google file: {source.get('name')}")
+                            continue
+
+                        approved_sources = [{
+                            "url": source.get("url", ""),
+                            "title": source.get("name", "Google File"),
+                            "content": parsed_content,
+                            "markdown": parsed_content,
+                            "is_edited": False,
+                            "source": source_type,
+                            "metadata": source.get("metadata", {}),
+                            "approved_at": source.get("added_at"),
+                            "approved_by": draft.get("created_by")
+                        }]
+                        source_metadata["approved_sources"] = approved_sources
+                        print(f"✅ [FINALIZE_GOOGLE] Created document for Google file: {source.get('name')}")
+
+                        document = Document(
+                            kb_id=kb.id,
+                            workspace_id=kb.workspace_id,
+                            name=source.get("name", "Google File"),
+                            source_type=source_type,
+                            source_url=source.get("url"),
+                            source_metadata=source_metadata,
+                            content_full=parsed_content,
                             status="pending",
                             created_by=UUID(draft["created_by"]),
                             created_at=datetime.utcnow()

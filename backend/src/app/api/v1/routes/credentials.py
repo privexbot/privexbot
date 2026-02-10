@@ -14,10 +14,16 @@ HOW:
 - Credential validation
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from uuid import UUID
+from datetime import datetime, timedelta
+import base64
+import json
+import secrets
+import httpx
 
 from app.db.session import get_db
 from app.api.v1.dependencies import get_current_user, get_current_workspace
@@ -25,6 +31,7 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.credential import Credential, CredentialType
 from app.services.credential_service import credential_service
+from app.core.config import settings
 from app.schemas.credential import (
     CredentialCreate,
     CredentialUpdate,
@@ -416,3 +423,314 @@ async def get_credential_usage(
         usage_by_day=[],  # Not yet implemented
         usage_by_bot=[]   # Not yet implemented
     )
+
+
+# ========================================
+# OAUTH ENDPOINTS
+# ========================================
+
+SUPPORTED_OAUTH_PROVIDERS = {"notion", "google"}
+
+
+@router.post("/oauth/authorize")
+async def oauth_authorize(
+    provider: str = Query(..., description="OAuth provider (e.g. 'notion')"),
+    workspace_id: UUID = Query(..., description="Workspace ID to associate credential with"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Initiate OAuth authorization flow.
+
+    Redirects to the provider's consent page. After user authorizes,
+    the provider redirects back to /credentials/oauth/callback.
+    """
+    if provider not in SUPPORTED_OAUTH_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported OAuth provider: {provider}. Supported: {', '.join(SUPPORTED_OAUTH_PROVIDERS)}"
+        )
+
+    # Validate workspace exists
+    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    # Build state token with CSRF protection
+    csrf_token = secrets.token_urlsafe(32)
+    state_data = {
+        "workspace_id": str(workspace_id),
+        "user_id": str(current_user.id),
+        "provider": provider,
+        "csrf": csrf_token,
+    }
+    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+    # Store CSRF token in Redis with 5 min TTL
+    try:
+        import redis
+        r = redis.from_url(settings.REDIS_URL)
+        r.setex(f"oauth_csrf:{csrf_token}", 300, str(current_user.id))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to store CSRF token: {str(e)}"
+        )
+
+    if provider == "notion":
+        if not settings.NOTION_CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Notion OAuth not configured. Set NOTION_CLIENT_ID in environment."
+            )
+
+        authorize_url = (
+            f"https://api.notion.com/v1/oauth/authorize"
+            f"?client_id={settings.NOTION_CLIENT_ID}"
+            f"&redirect_uri={settings.notion_redirect_uri}"
+            f"&response_type=code"
+            f"&state={state}"
+            f"&owner=user"
+        )
+        return {"redirect_url": authorize_url}
+
+    elif provider == "google":
+        if not settings.GOOGLE_CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Google OAuth not configured. Set GOOGLE_CLIENT_ID in environment."
+            )
+
+        from urllib.parse import quote
+        scopes = "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/documents.readonly https://www.googleapis.com/auth/spreadsheets.readonly"
+
+        authorize_url = (
+            f"https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={settings.GOOGLE_CLIENT_ID}"
+            f"&redirect_uri={quote(settings.google_redirect_uri, safe='')}"
+            f"&response_type=code"
+            f"&scope={quote(scopes, safe='')}"
+            f"&access_type=offline"
+            f"&prompt=consent"
+            f"&state={state}"
+        )
+        return {"redirect_url": authorize_url}
+
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider not implemented")
+
+
+@router.get("/oauth/callback")
+async def oauth_callback(
+    code: str = Query(..., description="Authorization code from provider"),
+    state: str = Query(..., description="State token for CSRF validation"),
+    db: Session = Depends(get_db),
+):
+    """
+    Handle OAuth callback from provider.
+
+    Exchanges authorization code for access token and stores credential.
+    Redirects back to frontend KB creation page.
+    """
+    # Decode and validate state
+    try:
+        state_data = json.loads(base64.urlsafe_b64decode(state))
+        workspace_id = state_data["workspace_id"]
+        user_id = state_data["user_id"]
+        provider = state_data["provider"]
+        csrf_token = state_data["csrf"]
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state token")
+
+    # Validate CSRF token
+    try:
+        import redis
+        r = redis.from_url(settings.REDIS_URL)
+        stored_user_id = r.get(f"oauth_csrf:{csrf_token}")
+        if not stored_user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSRF token expired or invalid")
+        if stored_user_id.decode() != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token mismatch")
+        r.delete(f"oauth_csrf:{csrf_token}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"CSRF validation failed: {str(e)}"
+        )
+
+    if provider == "notion":
+        # Exchange code for access token
+        if not settings.NOTION_CLIENT_ID or not settings.NOTION_CLIENT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Notion OAuth not configured"
+            )
+
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://api.notion.com/v1/oauth/token",
+                auth=(settings.NOTION_CLIENT_ID, settings.NOTION_CLIENT_SECRET),
+                json={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": settings.notion_redirect_uri,
+                },
+                headers={"Content-Type": "application/json"},
+            )
+
+        if token_response.status_code != 200:
+            error_detail = token_response.text
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/knowledge-bases/create?notion_error=token_exchange_failed",
+                status_code=302,
+            )
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+        notion_workspace_id = token_data.get("workspace_id")
+        notion_workspace_name = token_data.get("workspace_name", "Notion Workspace")
+        bot_id = token_data.get("bot_id")
+
+        if not access_token:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/knowledge-bases/create?notion_error=no_access_token",
+                status_code=302,
+            )
+
+        # Encrypt and store credential
+        credential_data = {
+            "access_token": access_token,
+            "workspace_id": notion_workspace_id,
+            "workspace_name": notion_workspace_name,
+            "bot_id": bot_id,
+        }
+
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(credential_data)
+
+        # Upsert: update existing Notion credential or create new one
+        existing = db.query(Credential).filter(
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.provider == "notion",
+            Credential.is_active == True,
+        ).first()
+
+        if existing:
+            existing.encrypted_data = encrypted_data
+            existing.encryption_key_id = key_id
+            existing.name = f"Notion - {notion_workspace_name}"
+            db.commit()
+        else:
+            credential = Credential(
+                workspace_id=UUID(workspace_id),
+                name=f"Notion - {notion_workspace_name}",
+                credential_type=CredentialType.OAUTH2,
+                provider="notion",
+                encrypted_data=encrypted_data,
+                encryption_key_id=key_id,
+                created_by=UUID(user_id),
+                is_active=True,
+            )
+            db.add(credential)
+            db.commit()
+
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/knowledge-bases/create?notion_connected=true",
+            status_code=302,
+        )
+
+    elif provider == "google":
+        # Exchange code for access token
+        if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Google OAuth not configured"
+            )
+
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": settings.google_redirect_uri,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        if token_response.status_code != 200:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/knowledge-bases/create?google_error=token_exchange_failed",
+                status_code=302,
+            )
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 3600)
+
+        if not access_token:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/knowledge-bases/create?google_error=no_access_token",
+                status_code=302,
+            )
+
+        # Get user info for credential name
+        google_email = "Google Account"
+        try:
+            async with httpx.AsyncClient() as client:
+                userinfo = await client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if userinfo.status_code == 200:
+                    google_email = userinfo.json().get("email", "Google Account")
+        except Exception:
+            pass
+
+        # Encrypt and store credential
+        expires_at = (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
+        credential_data = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_in": expires_in,
+            "expires_at": expires_at,
+            "email": google_email,
+        }
+
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(credential_data)
+
+        # Upsert: update existing Google credential or create new one
+        existing = db.query(Credential).filter(
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.provider == "google",
+            Credential.is_active == True,
+        ).first()
+
+        if existing:
+            existing.encrypted_data = encrypted_data
+            existing.encryption_key_id = key_id
+            existing.name = f"Google - {google_email}"
+            db.commit()
+        else:
+            credential = Credential(
+                workspace_id=UUID(workspace_id),
+                name=f"Google - {google_email}",
+                credential_type=CredentialType.OAUTH2,
+                provider="google",
+                encrypted_data=encrypted_data,
+                encryption_key_id=key_id,
+                created_by=UUID(user_id),
+                is_active=True,
+            )
+            db.add(credential)
+            db.commit()
+
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/knowledge-bases/create?google_connected=true",
+            status_code=302,
+        )
+
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")

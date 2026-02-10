@@ -228,6 +228,25 @@ class Settings(BaseSettings):
         description="Use TLS for internal MinIO connection (TLS handled by Traefik externally)"
     )
 
+    # Notion OAuth Integration
+    NOTION_CLIENT_ID: str = Field(
+        default="",
+        description="Notion OAuth client ID (from Notion integration settings)"
+    )
+    NOTION_CLIENT_SECRET: str = Field(
+        default="",
+        description="Notion OAuth client secret (from Notion integration settings)"
+    )
+    # Google OAuth Integration
+    GOOGLE_CLIENT_ID: str = Field(
+        default="",
+        description="Google OAuth client ID (from Google Cloud Console)"
+    )
+    GOOGLE_CLIENT_SECRET: str = Field(
+        default="",
+        description="Google OAuth client secret (from Google Cloud Console)"
+    )
+
     # Discord Shared Bot (Platform-wide)
     # ONE bot token serves ALL customers via guild_id → chatbot_id routing
     DISCORD_SHARED_BOT_TOKEN: str = Field(
@@ -254,6 +273,16 @@ class Settings(BaseSettings):
     def cors_origins(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS.split(",")]
+
+    @property
+    def notion_redirect_uri(self) -> str:
+        """Auto-derive from API_BASE_URL — always /credentials/oauth/callback."""
+        return f"{self.API_BASE_URL}/credentials/oauth/callback"
+
+    @property
+    def google_redirect_uri(self) -> str:
+        """Auto-derive from API_BASE_URL — same callback as Notion, state distinguishes provider."""
+        return f"{self.API_BASE_URL}/credentials/oauth/callback"
 
 
 # Create single settings instance to be imported

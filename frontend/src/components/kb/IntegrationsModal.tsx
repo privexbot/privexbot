@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 interface IntegrationsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSelectIntegration?: (integrationId: string) => void;
 }
 
 interface IntegrationOption {
@@ -33,6 +34,7 @@ interface IntegrationOption {
 export function IntegrationsModal({
   open,
   onOpenChange,
+  onSelectIntegration,
 }: IntegrationsModalProps) {
   const integrations: IntegrationOption[] = [
     {
@@ -40,7 +42,7 @@ export function IntegrationsModal({
       title: "Notion",
       description: "Import pages and databases from Notion workspace",
       icon: "📝",
-      available: false,
+      available: true,
       features: [
         "OAuth workspace connection",
         "Selective page import",
@@ -53,7 +55,7 @@ export function IntegrationsModal({
       title: "Google Docs",
       description: "Import documents from Google Drive",
       icon: "📄",
-      available: false,
+      available: true,
       features: [
         "Google Drive OAuth",
         "Selective document import",
@@ -66,7 +68,7 @@ export function IntegrationsModal({
       title: "Google Sheets",
       description: "Import structured data from spreadsheets",
       icon: "📊",
-      available: false,
+      available: true,
       features: [
         "CSV and structured data",
         "Multiple sheet support",
@@ -148,6 +150,10 @@ export function IntegrationsModal({
                       <Button
                         className="bg-blue-600 hover:bg-blue-700 text-white font-manrope font-medium shadow-sm transition-all duration-200 hover:shadow-md"
                         size="sm"
+                        onClick={() => {
+                          onSelectIntegration?.(integration.id);
+                          onOpenChange(false);
+                        }}
                       >
                         <ExternalLink className="h-4 w-4 mr-2" />
                         Connect

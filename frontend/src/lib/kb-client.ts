@@ -398,6 +398,55 @@ export const kbDraftApi = {
   },
 
   /**
+   * Add Notion pages as sources to draft
+   * POST /api/v1/kb-drafts/{draft_id}/sources/notion
+   */
+  async addNotionSources(draftId: string, pageIds: string[]): Promise<{
+    sources_added: number;
+    source_ids: string[];
+    failed_pages: Array<{ page_id: string; error: string }>;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        sources_added: number;
+        source_ids: string[];
+        failed_pages: Array<{ page_id: string; error: string }>;
+      }>(`/kb-drafts/${draftId}/sources/notion`, {
+        page_ids: pageIds,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Add Google Docs/Sheets as sources to draft
+   * POST /api/v1/kb-drafts/{draft_id}/sources/google
+   */
+  async addGoogleSources(
+    draftId: string,
+    files: Array<{ id: string; type: string; name?: string }>
+  ): Promise<{
+    sources_added: number;
+    source_ids: string[];
+    failed_files: Array<{ file_id: string; error: string }>;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        sources_added: number;
+        source_ids: string[];
+        failed_files: Array<{ file_id: string; error: string }>;
+      }>(`/kb-drafts/${draftId}/sources/google`, {
+        files,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
    * Remove source from draft
    * DELETE /api/v1/kb-drafts/{draft_id}/sources/{source_id}
    */

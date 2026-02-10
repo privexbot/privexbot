@@ -5,13 +5,11 @@ Main entry point for the API server
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.datastructures import MutableHeaders
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files, notifications
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files, notifications, integrations
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
 
 
@@ -222,6 +220,13 @@ app.include_router(
     credentials.router,
     prefix=settings.API_V1_PREFIX,
     tags=["credentials"]
+)
+
+# Integration routes (Notion, Google Docs, etc.)
+app.include_router(
+    integrations.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["integrations"]
 )
 
 # Leads routes (lead capture, management, analytics)

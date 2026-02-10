@@ -15,7 +15,7 @@ HOW:
 """
 
 from cryptography.fernet import Fernet
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from typing import Dict, Any, Tuple, Optional
 import json
@@ -196,6 +196,94 @@ class CredentialService:
 
         return data
 
+    async def get_google_access_token(self, db: Session, credential) -> str:
+        """
+        Get a valid Google access token, refreshing if expired.
+
+        Checks expires_at and refreshes via Google OAuth API if within
+        5 minutes of expiry.
+
+        ARGS:
+            db: Database session
+            credential: Credential model instance
+
+        RETURNS:
+            Valid access token string
+
+        RAISES:
+            ValueError: If no access token found
+            RuntimeError: If refresh fails (no refresh_token or API error)
+        """
+        data = self.get_decrypted_data(db, credential)
+        access_token = data.get("access_token")
+        if not access_token:
+            raise ValueError("Google credential missing access token")
+
+        # Check if token needs refresh
+        expires_at = data.get("expires_at")
+        needs_refresh = False
+
+        if expires_at:
+            try:
+                expiry = datetime.fromisoformat(expires_at)
+                if expiry < datetime.utcnow() + timedelta(minutes=5):
+                    needs_refresh = True
+            except (ValueError, TypeError):
+                pass  # Can't parse expires_at, use token as-is
+
+        if not needs_refresh:
+            return access_token
+
+        # Refresh the token
+        refresh_token = data.get("refresh_token")
+        if not refresh_token:
+            raise RuntimeError(
+                "Google token expired and no refresh token available. "
+                "Please reconnect your Google account."
+            )
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Failed to refresh Google token (HTTP {resp.status_code}). "
+                "Please reconnect your Google account."
+            )
+
+        token_data = resp.json()
+        new_access_token = token_data.get("access_token")
+        if not new_access_token:
+            raise RuntimeError("Google token refresh returned no access token")
+
+        # Update stored credential with new token info
+        new_expires_in = token_data.get("expires_in", 3600)
+        new_expires_at = (datetime.utcnow() + timedelta(seconds=new_expires_in)).isoformat()
+
+        data["access_token"] = new_access_token
+        data["expires_at"] = new_expires_at
+        data["expires_in"] = new_expires_in
+
+        # Google may issue a new refresh token
+        if token_data.get("refresh_token"):
+            data["refresh_token"] = token_data["refresh_token"]
+
+        # Re-encrypt and persist
+        encrypted, key_id = self.encrypt_with_key_id(data)
+        credential.encrypted_data = encrypted
+        credential.encryption_key_id = key_id
+        db.commit()
+
+        return new_access_token
 
     def update_credential(
         self,

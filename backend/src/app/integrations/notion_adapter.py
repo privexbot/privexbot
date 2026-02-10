@@ -44,10 +44,10 @@ class NotionAdapter:
         access_token: str
     ) -> dict:
         """
-        Get Notion page content.
+        Get Notion page content with pagination for blocks.
 
         WHY: Import Notion page to KB
-        HOW: Fetch blocks and convert to markdown
+        HOW: Fetch all blocks (paginated) and convert to markdown
 
         ARGS:
             page_id: Notion page ID (32-char UUID)
@@ -65,9 +65,6 @@ class NotionAdapter:
                     "url": "https://notion.so/..."
                 }
             }
-
-        EXAMPLE URL:
-            https://www.notion.so/PAGE_TITLE-PAGE_ID
         """
 
         import requests
@@ -88,14 +85,29 @@ class NotionAdapter:
             # Extract title
             title = self._extract_title(page_data)
 
-            # Get page blocks (content)
+            # Get all page blocks with pagination (Notion returns max 100 per request)
+            all_blocks = []
             blocks_url = f"{self.api_url}/blocks/{page_id}/children"
-            blocks_response = requests.get(blocks_url, headers=headers, timeout=30)
-            blocks_response.raise_for_status()
-            blocks_data = blocks_response.json()
+            has_more = True
+            start_cursor = None
+
+            while has_more:
+                params = {}
+                if start_cursor:
+                    params["start_cursor"] = start_cursor
+
+                blocks_response = requests.get(
+                    blocks_url, headers=headers, params=params, timeout=30
+                )
+                blocks_response.raise_for_status()
+                blocks_data = blocks_response.json()
+
+                all_blocks.extend(blocks_data.get("results", []))
+                has_more = blocks_data.get("has_more", False)
+                start_cursor = blocks_data.get("next_cursor")
 
             # Convert blocks to markdown
-            content = self._blocks_to_markdown(blocks_data.get("results", []))
+            content = self._blocks_to_markdown(all_blocks)
 
             return {
                 "page_id": page_id,
@@ -198,6 +210,17 @@ class NotionAdapter:
 
         return "".join([text.get("plain_text", "") for text in rich_text])
 
+    def _extract_icon(self, page_data: dict) -> Optional[str]:
+        """
+        Extract emoji icon from Notion page data.
+
+        WHY: Show page icon in frontend browser
+        HOW: Parse icon field for emoji type
+        """
+        icon = page_data.get("icon")
+        if icon and icon.get("type") == "emoji":
+            return icon.get("emoji")
+        return None
 
     async def list_workspace_pages(
         self,
@@ -205,10 +228,10 @@ class NotionAdapter:
         filter_type: Optional[str] = None
     ) -> List[dict]:
         """
-        List pages in Notion workspace.
+        List pages in Notion workspace with pagination.
 
         WHY: Discover pages to import
-        HOW: Use search endpoint
+        HOW: Use search endpoint, paginate through all results
 
         ARGS:
             access_token: Notion integration token
@@ -219,8 +242,10 @@ class NotionAdapter:
                 {
                     "id": "page_id",
                     "title": "Page Title",
-                    "last_edited": "2025-01-20T14:22:00Z",
-                    "url": "https://notion.so/..."
+                    "type": "page" | "database",
+                    "url": "https://notion.so/...",
+                    "icon": "📝" | None,
+                    "last_edited": "2025-01-20T14:22:00Z"
                 }
             ]
         """
@@ -235,27 +260,37 @@ class NotionAdapter:
             }
 
             url = f"{self.api_url}/search"
-
-            payload = {}
-            if filter_type:
-                payload["filter"] = {"property": "object", "value": filter_type}
-
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            response.raise_for_status()
-
-            data = response.json()
             pages = []
+            has_more = True
+            start_cursor = None
 
-            for result in data.get("results", []):
-                if result.get("object") == "page":
-                    title = self._extract_title(result)
+            while has_more:
+                payload = {}
+                if filter_type:
+                    payload["filter"] = {"property": "object", "value": filter_type}
+                if start_cursor:
+                    payload["start_cursor"] = start_cursor
 
-                    pages.append({
-                        "id": result.get("id"),
-                        "title": title,
-                        "last_edited": result.get("last_edited_time"),
-                        "url": result.get("url")
-                    })
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+
+                data = response.json()
+
+                for result in data.get("results", []):
+                    obj_type = result.get("object", "page")
+                    if obj_type == "page":
+                        title = self._extract_title(result)
+                        pages.append({
+                            "id": result.get("id"),
+                            "title": title,
+                            "type": obj_type,
+                            "url": result.get("url"),
+                            "icon": self._extract_icon(result),
+                            "last_edited": result.get("last_edited_time"),
+                        })
+
+                has_more = data.get("has_more", False)
+                start_cursor = data.get("next_cursor")
 
             return pages
 

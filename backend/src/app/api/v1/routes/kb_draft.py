@@ -742,6 +742,304 @@ async def add_bulk_file_sources_to_draft(
         )
 
 
+class AddNotionSourceRequest(BaseModel):
+    """Request model for adding Notion pages to KB draft."""
+    page_ids: List[str] = Field(..., min_length=1, max_length=50, description="Notion page IDs to import")
+    credential_id: Optional[UUID] = Field(None, description="Specific credential ID (auto-detected if omitted)")
+
+
+@router.post("/{draft_id}/sources/notion")
+async def add_notion_source_to_draft(
+    draft_id: str,
+    request: AddNotionSourceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Add Notion pages to KB draft.
+
+    Fetches content from selected Notion pages and stores as sources
+    in the Redis draft. Content is auto-approved since user explicitly
+    selected the pages.
+
+    PHASE: 1 (Draft Mode - Redis Only)
+    """
+    from app.models.credential import Credential
+    from app.services.credential_service import credential_service
+    from app.integrations.notion_adapter import notion_adapter
+
+    # Verify draft exists and user owns it
+    draft = draft_service.get_draft(DraftType.KB, draft_id)
+    if not draft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="KB draft not found or expired"
+        )
+    if draft["created_by"] != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Find Notion credential
+    workspace_id = draft.get("workspace_id")
+    if request.credential_id:
+        credential = db.query(Credential).filter(
+            Credential.id == request.credential_id,
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.is_active == True,
+        ).first()
+    else:
+        credential = db.query(Credential).filter(
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.provider == "notion",
+            Credential.is_active == True,
+        ).first()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notion not connected. Please connect your Notion workspace first."
+        )
+
+    # Decrypt to get access token
+    try:
+        decrypted = credential_service.get_decrypted_data(db, credential)
+        access_token = decrypted.get("access_token")
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Notion credential missing access token"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to decrypt credential: {str(e)}"
+        )
+
+    # Fetch each page and build source entries
+    from uuid import uuid4
+
+    data = draft.get("data", {})
+    sources = data.get("sources", [])
+    source_ids = []
+    failed_pages = []
+
+    for page_id in request.page_ids:
+        try:
+            page_content = await notion_adapter.get_page_content(page_id, access_token)
+
+            if not page_content.get("content"):
+                error_msg = page_content.get("metadata", {}).get("error", "No content returned")
+                failed_pages.append({"page_id": page_id, "error": error_msg})
+                continue
+
+            content = page_content["content"]
+            title = page_content.get("title", "Untitled")
+            page_url = page_content.get("metadata", {}).get("url", f"https://notion.so/{page_id}")
+            word_count = len(content.split())
+            char_count = len(content)
+
+            source_id = str(uuid4())
+            source = {
+                "id": source_id,
+                "type": "notion",
+                "url": page_url,
+                "name": title,
+                "parsed_content": content,
+                "added_at": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "previewPages": [{
+                        "url": page_url,
+                        "title": title,
+                        "content": content,
+                        "is_approved": True,
+                        "word_count": word_count,
+                        "char_count": char_count,
+                        "source_id": source_id,
+                        "page_index": 0,
+                    }],
+                    "notion_page_id": page_id,
+                    "notion_url": page_url,
+                },
+            }
+
+            sources.append(source)
+            source_ids.append(source_id)
+
+        except Exception as e:
+            failed_pages.append({"page_id": page_id, "error": str(e)})
+
+    # Update draft in Redis
+    data["sources"] = sources
+    draft_service.update_draft(
+        draft_type=DraftType.KB,
+        draft_id=draft_id,
+        updates={"data": data}
+    )
+
+    return {
+        "sources_added": len(source_ids),
+        "source_ids": source_ids,
+        "failed_pages": failed_pages,
+    }
+
+
+class GoogleFileItem(BaseModel):
+    """A single Google file to import."""
+    id: str = Field(..., description="Google file ID")
+    type: str = Field(..., description="File type: 'document' or 'spreadsheet'")
+    name: Optional[str] = Field(None, description="File name (for display)")
+
+
+class AddGoogleSourceRequest(BaseModel):
+    """Request model for adding Google Docs/Sheets to KB draft."""
+    files: List[GoogleFileItem] = Field(..., min_length=1, max_length=50, description="Google files to import")
+    credential_id: Optional[UUID] = Field(None, description="Specific credential ID (auto-detected if omitted)")
+
+
+@router.post("/{draft_id}/sources/google")
+async def add_google_source_to_draft(
+    draft_id: str,
+    request: AddGoogleSourceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Add Google Docs/Sheets to KB draft.
+
+    Fetches content from selected Google files and stores as sources
+    in the Redis draft. Content is auto-approved since user explicitly
+    selected the files.
+
+    PHASE: 1 (Draft Mode - Redis Only)
+    """
+    from app.models.credential import Credential
+    from app.services.credential_service import credential_service
+    from app.integrations.google_adapter import google_adapter
+
+    # Verify draft exists and user owns it
+    draft = draft_service.get_draft(DraftType.KB, draft_id)
+    if not draft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="KB draft not found or expired"
+        )
+    if draft["created_by"] != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Find Google credential
+    workspace_id = draft.get("workspace_id")
+    if request.credential_id:
+        credential = db.query(Credential).filter(
+            Credential.id == request.credential_id,
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.is_active == True,
+        ).first()
+    else:
+        credential = db.query(Credential).filter(
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.provider == "google",
+            Credential.is_active == True,
+        ).first()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Google not connected. Please connect your Google account first."
+        )
+
+    # Get valid access token (auto-refreshes if expired)
+    try:
+        access_token = await credential_service.get_google_access_token(db, credential)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Google authentication failed: {str(e)}. Please reconnect your Google account."
+        )
+
+    # Fetch each file and build source entries
+    from uuid import uuid4
+
+    data = draft.get("data", {})
+    sources = data.get("sources", [])
+    source_ids = []
+    failed_files = []
+
+    for file in request.files:
+        try:
+            if file.type == "document":
+                result = await google_adapter.export_google_doc(file.id, access_token)
+                source_type = "google_docs"
+            elif file.type == "spreadsheet":
+                result = await google_adapter.export_google_sheet(file.id, access_token)
+                source_type = "google_sheets"
+            else:
+                failed_files.append({"file_id": file.id, "error": f"Unsupported file type: {file.type}"})
+                continue
+
+            content = result.get("content")
+            if not content:
+                error_msg = result.get("metadata", {}).get("error", "No content returned")
+                failed_files.append({"file_id": file.id, "error": error_msg})
+                continue
+
+            title = result.get("title") or file.name or "Untitled"
+            file_url = f"https://docs.google.com/{'document' if file.type == 'document' else 'spreadsheets'}/d/{file.id}/edit"
+            word_count = len(content.split())
+            char_count = len(content)
+
+            source_id = str(uuid4())
+            source = {
+                "id": source_id,
+                "type": source_type,
+                "url": file_url,
+                "name": title,
+                "parsed_content": content,
+                "added_at": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "previewPages": [{
+                        "url": file_url,
+                        "title": title,
+                        "content": content,
+                        "is_approved": True,
+                        "word_count": word_count,
+                        "char_count": char_count,
+                        "source_id": source_id,
+                        "page_index": 0,
+                    }],
+                    "google_file_id": file.id,
+                    "google_file_type": file.type,
+                    "google_url": file_url,
+                },
+            }
+
+            sources.append(source)
+            source_ids.append(source_id)
+
+        except Exception as e:
+            failed_files.append({"file_id": file.id, "error": str(e)})
+
+    # Update draft in Redis
+    data["sources"] = sources
+    draft_service.update_draft(
+        draft_type=DraftType.KB,
+        draft_id=draft_id,
+        updates={"data": data}
+    )
+
+    return {
+        "sources_added": len(source_ids),
+        "source_ids": source_ids,
+        "failed_files": failed_files,
+    }
+
+
 @router.delete("/{draft_id}")
 async def delete_draft(
     draft_id: str,

@@ -130,6 +130,48 @@ class GoogleAdapter:
             }
 
 
+    def _rows_to_markdown_table(self, sheet_title: str, rows: List[list]) -> str:
+        """
+        Convert sheet rows to a markdown table with a heading.
+
+        ARGS:
+            sheet_title: Name of the sheet (used as heading)
+            rows: List of row lists from Sheets API
+
+        RETURNS:
+            Markdown string with ## heading and pipe-delimited table
+        """
+        if not rows:
+            return f"## Sheet: {sheet_title}\n\n*Empty sheet*"
+
+        # Find max column count across all rows
+        max_cols = max(len(row) for row in rows)
+        if max_cols == 0:
+            return f"## Sheet: {sheet_title}\n\n*Empty sheet*"
+
+        def escape_cell(val: str) -> str:
+            return str(val).replace("|", "\\|")
+
+        def pad_row(row: list) -> List[str]:
+            padded = [escape_cell(cell) for cell in row]
+            while len(padded) < max_cols:
+                padded.append("")
+            return padded
+
+        # Header row
+        headers = pad_row(rows[0])
+        header_line = "| " + " | ".join(headers) + " |"
+        separator = "| " + " | ".join(["---"] * max_cols) + " |"
+
+        lines = [f"## Sheet: {sheet_title}", "", header_line, separator]
+
+        # Data rows
+        for row in rows[1:]:
+            cells = pad_row(row)
+            lines.append("| " + " | ".join(cells) + " |")
+
+        return "\n".join(lines)
+
     async def export_google_sheet(
         self,
         spreadsheet_id: str,
@@ -137,27 +179,25 @@ class GoogleAdapter:
         sheet_name: Optional[str] = None
     ) -> dict:
         """
-        Export Google Sheet data.
+        Export Google Sheet data as markdown tables.
 
-        WHY: Import structured data from Sheets
-        HOW: Use Sheets API to get values
+        WHY: Import structured data from Sheets in RAG-friendly format
+        HOW: Use Sheets API with FORMATTED_VALUE to get evaluated data,
+             iterate all sheets (or specific sheet), convert to markdown tables
 
         ARGS:
             spreadsheet_id: Google Sheet ID
             access_token: OAuth2 access token
-            sheet_name: Specific sheet name (or None for first sheet)
+            sheet_name: Specific sheet name (or None for all sheets)
 
         RETURNS:
             {
                 "spreadsheet_id": "abc123",
                 "title": "Spreadsheet Title",
-                "content": "CSV formatted data...",
+                "content": "Markdown formatted tables...",
                 "data": [[row1], [row2]],
                 "metadata": {...}
             }
-
-        EXAMPLE URL:
-            https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
         """
 
         import requests
@@ -175,37 +215,59 @@ class GoogleAdapter:
             metadata_response.raise_for_status()
             metadata = metadata_response.json()
 
-            # Determine sheet range
+            sheets = metadata.get("sheets", [])
+            title = metadata.get("properties", {}).get("title", "Untitled")
+
+            # Determine which sheets to export
             if sheet_name:
-                range_name = f"{sheet_name}!A1:ZZ"
+                sheets_to_export = [s for s in sheets if s["properties"]["title"] == sheet_name]
+                if not sheets_to_export:
+                    sheets_to_export = [sheets[0]]
             else:
-                first_sheet = metadata["sheets"][0]["properties"]["title"]
-                range_name = f"{first_sheet}!A1:ZZ"
+                sheets_to_export = sheets
 
-            # Get sheet values
-            values_url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}"
+            all_markdown_parts = []
+            all_rows = []
+            total_row_count = 0
 
-            values_response = requests.get(
-                values_url,
-                headers=headers,
-                timeout=30
-            )
-            values_response.raise_for_status()
-            values_data = values_response.json()
+            for sheet in sheets_to_export:
+                sheet_title = sheet["properties"]["title"]
+                # Escape single quotes for API range notation
+                safe_title = sheet_title.replace("'", "''")
+                range_name = f"'{safe_title}'!A1:ZZ"
 
-            rows = values_data.get("values", [])
+                values_url = (
+                    f"https://sheets.googleapis.com/v4/spreadsheets/"
+                    f"{spreadsheet_id}/values/{range_name}"
+                )
+                params = {"valueRenderOption": "FORMATTED_VALUE"}
 
-            # Convert to CSV format
-            content = "\n".join([",".join(map(str, row)) for row in rows])
+                values_response = requests.get(
+                    values_url,
+                    params=params,
+                    headers=headers,
+                    timeout=30
+                )
+                values_response.raise_for_status()
+                values_data = values_response.json()
+
+                rows = values_data.get("values", [])
+                all_rows.extend(rows)
+                total_row_count += len(rows)
+
+                md = self._rows_to_markdown_table(sheet_title, rows)
+                all_markdown_parts.append(md)
+
+            content = "\n\n".join(all_markdown_parts)
 
             return {
                 "spreadsheet_id": spreadsheet_id,
-                "title": metadata.get("properties", {}).get("title", "Untitled"),
+                "title": title,
                 "content": content,
-                "data": rows,
+                "data": all_rows,
                 "metadata": {
-                    "sheet_count": len(metadata.get("sheets", [])),
-                    "row_count": len(rows),
+                    "sheet_count": len(sheets_to_export),
+                    "row_count": total_row_count,
                     "source": "google_sheets"
                 }
             }
@@ -255,20 +317,24 @@ class GoogleAdapter:
 
             # Build query
             query_parts = []
+            query_parts.append("trashed=false")
             if folder_id:
                 query_parts.append(f"'{folder_id}' in parents")
             if file_type == "document":
                 query_parts.append("mimeType='application/vnd.google-apps.document'")
             elif file_type == "spreadsheet":
                 query_parts.append("mimeType='application/vnd.google-apps.spreadsheet'")
+            elif not file_type:
+                query_parts.append(
+                    "(mimeType='application/vnd.google-apps.document' or "
+                    "mimeType='application/vnd.google-apps.spreadsheet')"
+                )
 
             params = {
                 "fields": "files(id,name,mimeType,modifiedTime)",
-                "pageSize": 100
+                "pageSize": 100,
+                "q": " and ".join(query_parts),
             }
-
-            if query_parts:
-                params["q"] = " and ".join(query_parts)
 
             headers = {"Authorization": f"Bearer {access_token}"}
 

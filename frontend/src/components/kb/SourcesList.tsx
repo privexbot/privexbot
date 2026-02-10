@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
+  FileSpreadsheet,
   Globe,
   Database,
   Cloud,
@@ -42,7 +43,7 @@ import apiClient, { handleApiError } from '@/lib/api-client';
 
 interface Source {
   id: string;
-  type: 'file' | 'url' | 'website_crawl' | 'notion' | 'google_docs' | 'text';
+  type: 'file' | 'url' | 'website_crawl' | 'notion' | 'google_docs' | 'google_sheets' | 'text';
   name: string;
   status: 'pending' | 'processing' | 'completed' | 'error';
   size?: number;
@@ -102,6 +103,7 @@ export default function SourcesList({ draftId }: SourcesListProps) {
       website_crawl: <Globe className="w-5 h-5 text-green-500" />,
       notion: <Database className="w-5 h-5 text-gray-700 dark:text-gray-300" />,
       google_docs: <Cloud className="w-5 h-5 text-yellow-500" />,
+      google_sheets: <FileSpreadsheet className="w-5 h-5 text-green-600" />,
       text: <FileText className="w-5 h-5 text-cyan-500" />,
     };
     return icons[type] || <FileText className="w-5 h-5" />;
@@ -144,6 +146,7 @@ export default function SourcesList({ draftId }: SourcesListProps) {
       website_crawl: 'Website Crawl',
       notion: 'Notion',
       google_docs: 'Google Docs',
+      google_sheets: 'Google Sheets',
       text: 'Pasted Text',
     };
     return labels[type] || type;
