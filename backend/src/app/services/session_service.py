@@ -32,6 +32,41 @@ class SessionService:
     Works for BOTH chatbots and chatflows.
     """
 
+    def _parse_or_generate_session_uuid(
+        self,
+        session_id: str,
+        bot_id: UUID,
+        workspace_id: UUID,
+        platform: str = "web"
+    ) -> UUID:
+        """
+        Generate deterministic session UUID that includes workspace and platform.
+
+        WHY: Ensures same session_id string from different contexts creates different sessions.
+             This prevents session collision across:
+             - Different workspaces (multi-tenant isolation)
+             - Different platforms (widget vs hosted_page vs telegram)
+             - Different bots (bot isolation)
+
+        HOW: Include all isolation factors in the UUID5 seed:
+             seed = "{session_id}_{bot_id}_{workspace_id}_{platform}"
+
+        ARGS:
+            session_id: Client-provided session ID (string like "web_xxx", "hosted_xxx")
+            bot_id: ID of the chatbot
+            workspace_id: ID of the workspace (tenant isolation)
+            platform: Deployment channel ("widget", "hosted_page", "telegram", etc.)
+
+        RETURNS:
+            Deterministic UUID based on all isolation factors
+        """
+        import uuid as uuid_module
+
+        # Build seed with all isolation factors
+        # Order: session_id, bot_id, workspace_id, platform
+        seed = f"{session_id}_{bot_id}_{workspace_id}_{platform}"
+        return uuid_module.uuid5(uuid_module.NAMESPACE_DNS, seed)
+
     def get_or_create_session(
         self,
         db: Session,
@@ -39,7 +74,8 @@ class SessionService:
         bot_id: UUID,
         session_id: str,
         workspace_id: UUID,
-        channel_context: Optional[dict] = None
+        channel_context: Optional[dict] = None,
+        platform: str = "web"
     ) -> ChatSession:
         """
         Get existing session or create new one.
@@ -51,35 +87,75 @@ class SessionService:
             db: Database session
             bot_type: "chatbot" or "chatflow"
             bot_id: ID of chatbot or chatflow
-            session_id: Client-provided session ID
+            session_id: Client-provided session ID (can be UUID or string like "preview_xxx")
             workspace_id: Workspace ID (for isolation)
             channel_context: Channel-specific data
+            platform: Deployment channel ("widget", "hosted_page", "telegram", etc.)
 
         RETURNS:
             ChatSession instance
+
+        ISOLATION: Sessions are isolated by (bot_id, workspace_id, platform).
+                   Same session_id from different platforms = different sessions.
         """
 
-        # Try to get existing session
+        # Generate deterministic UUID with full isolation context
+        # Includes: session_id, bot_id, workspace_id, platform
+        session_uuid = self._parse_or_generate_session_uuid(
+            session_id=session_id,
+            bot_id=bot_id,
+            workspace_id=workspace_id,
+            platform=platform
+        )
+
+        # Try to get existing session with FULL isolation at query time
+        # This ensures conversations don't leak between different contexts
         session = db.query(ChatSession).filter(
-            ChatSession.id == UUID(session_id),
-            ChatSession.workspace_id == workspace_id,
-            ChatSession.status != SessionStatus.EXPIRED
+            ChatSession.id == session_uuid,
+            ChatSession.bot_id == bot_id,
+            ChatSession.bot_type == BotType(bot_type),
+            ChatSession.workspace_id == workspace_id  # Proper isolation at query time
         ).first()
 
         if session:
-            # Update activity
-            session.updated_at = datetime.utcnow()
-            session.last_message_at = datetime.utcnow()
-            db.commit()
-            return session
+            # Session exists and is properly scoped
+            if session.status in (SessionStatus.EXPIRED, SessionStatus.CLOSED):
+                # Reactivate expired/closed session
+                session.status = SessionStatus.ACTIVE
+                session.bot_type = BotType(bot_type)
+                session.bot_id = bot_id
+                session.expires_at = datetime.utcnow() + timedelta(hours=24)
+                session.updated_at = datetime.utcnow()
+                session.last_message_at = datetime.utcnow()
+                session.closed_at = None
+                # Update metadata
+                session.session_metadata = {
+                    **(session.session_metadata or {}),
+                    **(channel_context or {}),
+                    "original_session_id": session_id,
+                    "platform": platform,
+                    "reactivated_at": datetime.utcnow().isoformat()
+                }
+                db.commit()
+                return session
+            else:
+                # Session is active - update activity timestamps
+                session.updated_at = datetime.utcnow()
+                session.last_message_at = datetime.utcnow()
+                db.commit()
+                return session
 
-        # Create new session
+        # Create new session with parsed UUID
         session = ChatSession(
-            id=UUID(session_id),
+            id=session_uuid,
             bot_type=BotType(bot_type),
             bot_id=bot_id,
             workspace_id=workspace_id,
-            session_metadata=channel_context or {},
+            session_metadata={
+                **(channel_context or {}),
+                "original_session_id": session_id,  # Store original for debugging
+                "platform": platform  # Track deployment channel
+            },
             status=SessionStatus.ACTIVE,
             expires_at=datetime.utcnow() + timedelta(hours=24)
         )
@@ -247,7 +323,9 @@ class SessionService:
         """
 
         query = db.query(ChatSession).filter(
-            ChatSession.workspace_id == workspace_id
+            ChatSession.workspace_id == workspace_id,
+            # Exclude test/preview sessions from stats
+            ~ChatSession.session_metadata["platform"].astext.in_(["test", "preview"])
         )
 
         if bot_type:

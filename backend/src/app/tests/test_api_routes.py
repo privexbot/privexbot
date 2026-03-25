@@ -44,7 +44,7 @@ if "DATABASE_URL" in os.environ:
     test_db_url = settings.DATABASE_URL.replace("/privexbot", "/privexbot_test")
 else:
     # Fallback for local testing without database
-    test_db_url = "postgresql://postgres:password@localhost:5432/privexbot_test"
+    test_db_url = "postgresql+psycopg2://postgres:password@localhost:5432/privexbot_test"
 
 # Create engine with test database
 try:

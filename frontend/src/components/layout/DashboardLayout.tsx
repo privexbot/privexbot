@@ -25,6 +25,7 @@
  */
 
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { MainMenu } from "./MainMenu";
@@ -38,6 +39,7 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
+  const navigate = useNavigate();
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showManageWorkspace, setShowManageWorkspace] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -68,8 +70,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           )}
         </button>
 
-        {/* Mobile Logo */}
-        <div className="flex items-center space-x-2 ml-3">
+        {/* Mobile Logo - Clickable to go home */}
+        <button
+          onClick={() => navigate("/")}
+          className="flex items-center space-x-2 ml-3 hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg"
+          aria-label="Go to home page"
+        >
           <img
             src="/privexbot-logo-icon.png"
             alt="Privexbot Logo"
@@ -79,7 +85,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <span className="text-base font-extrabold text-white truncate">
             Privexbot
           </span>
-        </div>
+        </button>
+
       </div>
 
       {/* ========== MOBILE BACKDROP OVERLAY ========== */}
@@ -105,20 +112,26 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           ${isMobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
         `}
       >
-        {/* ========== TOP SECTION: Logo Only (Fixed at Top) ========== */}
+        {/* ========== TOP SECTION: Logo (Fixed at Top) ========== */}
         <div className="flex-shrink-0 px-3 sm:px-4 py-3 sm:py-4 border-b border-[#3a3a3a] dark:border-[#26272B] bg-[#2B2D31] dark:bg-[#1E1F22]">
-          <div className="flex items-center space-x-2">
-            {/* Privexbot Logo Icon */}
-            <img
-              src="/privexbot-logo-icon.png"
-              alt="Privexbot Logo"
-              loading="lazy"
-              className="h-8 sm:h-9 w-8 sm:w-9 object-contain flex-shrink-0"
-            />
-            {/* Brand Name */}
-            <span className="text-base sm:text-lg font-extrabold text-white truncate">
-              Privexbot
-            </span>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => navigate("/")}
+              className="flex items-center space-x-2 hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg"
+              aria-label="Go to home page"
+            >
+              {/* Privexbot Logo Icon */}
+              <img
+                src="/privexbot-logo-icon.png"
+                alt="Privexbot Logo"
+                loading="lazy"
+                className="h-8 sm:h-9 w-8 sm:w-9 object-contain flex-shrink-0"
+              />
+              {/* Brand Name */}
+              <span className="text-base sm:text-lg font-extrabold text-white truncate">
+                Privexbot
+              </span>
+            </button>
           </div>
         </div>
 

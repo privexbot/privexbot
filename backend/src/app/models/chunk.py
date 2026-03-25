@@ -361,3 +361,101 @@ EXAMPLE:
     Body: {"relevant": true, "comment": "Very helpful"}
     → Track chunk relevance for improvement
 """
+
+# ACTUAL IMPLEMENTATION
+from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, ForeignKey, Float
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from pgvector.sqlalchemy import Vector
+from sqlalchemy.orm import relationship
+from app.db.base_class import Base
+import uuid
+from datetime import datetime
+
+
+class Chunk(Base):
+    """
+    Chunk model - Text segments from documents for RAG retrieval
+
+    Multi-tenancy: Organization → Workspace → KB → Document → Chunk
+    Embedding: Stored as pgvector for efficient similarity search
+    """
+    __tablename__ = "chunks"
+
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Parent document
+    document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Parent KB (for direct queries)
+    kb_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Content
+    content = Column(Text, nullable=False)
+    content_hash = Column(String(64), index=True)  # SHA256 hash for deduplication
+
+    # Position and context
+    position = Column(Integer, nullable=False, index=True)  # Order within document (0-indexed)
+    chunk_index = Column(Integer, nullable=False)  # Global chunk number
+    page_number = Column(Integer, nullable=True)
+
+    # Chunk metadata (rich context)
+    chunk_metadata = Column(JSONB, nullable=False, default=dict)
+    # Example:
+    # {
+    #     "heading": "Installation",
+    #     "heading_level": 2,
+    #     "parent_section": "Getting Started",
+    #     "element_type": "text",
+    #     "prefix": "This section covers installation steps"
+    # }
+
+    # Size metrics
+    word_count = Column(Integer, nullable=False, default=0)
+    character_count = Column(Integer, nullable=False, default=0)
+    token_count = Column(Integer, nullable=True)
+
+    # Embedding (pgvector)
+    embedding = Column(Vector(384), nullable=True)  # Default: 384 dims for all-MiniLM-L6-v2
+    # NOTE: Dimension can be different based on model. Will be dynamic in production.
+
+    embedding_id = Column(String(255), nullable=True)  # Reference to external vector store
+    embedding_metadata = Column(JSONB, nullable=True)
+
+    # Search optimization
+    keywords = Column(ARRAY(String), nullable=True)
+
+    # Quality and status
+    is_enabled = Column(Boolean, nullable=False, default=True, index=True)
+    is_edited = Column(Boolean, nullable=False, default=False)
+    quality_score = Column(Float, nullable=True)  # 0.0 to 1.0
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_retrieved_at = Column(DateTime, nullable=True)
+    retrieval_count = Column(Integer, nullable=False, default=0)
+
+    # Relationships
+    document = relationship("Document", back_populates="chunks")
+    knowledge_base = relationship("KnowledgeBase")
+
+    def __repr__(self):
+        return f"<Chunk(id={self.id}, position={self.position}, words={self.word_count})>"
+
+    @property
+    def preview(self) -> str:
+        """Show snippet in UI"""
+        if not self.content:
+            return ""
+        return self.content[:200] + "..." if len(self.content) > 200 else self.content

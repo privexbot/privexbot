@@ -14,7 +14,8 @@ NC='\033[0m'
 
 # Configuration
 # SECRETVM_DOMAIN="sapphire-finch.vm.scrtlabs.com"
-SECRETVM_DOMAIN="harystyles.store"
+# SECRETVM_DOMAIN="harystyles.store"
+SECRETVM_DOMAIN="privexbot.com"
 COMPOSE_FILE="docker-compose.secretvm.yml"
 
 # Function to display usage
@@ -29,7 +30,7 @@ usage() {
     echo "  test        Test all SecretVM endpoints"
     echo ""
     echo "Deployment Workflow:"
-    echo "  1. Build & push image:  ./scripts/docker/build-push.sh 0.1.0"
+    echo "  1. Build & push image:  ./scripts/docker/build-push-secretvm.sh 0.1.0"
     echo "  2. Update digest in docker-compose.secretvm.yml"
     echo "  3. Prepare .env:        ./scripts/docker/secretvm-deploy.sh prepare"
     echo "  4. Show compose file:   ./scripts/docker/secretvm-deploy.sh show"
@@ -60,9 +61,9 @@ case $COMMAND in
     prepare)
         echo -e "${GREEN}📦 Preparing .env file for SecretVM...${NC}"
 
-        # Check if .env.secretvm exists
-        if [ ! -f ".env.secretvm" ]; then
-            echo -e "${RED}❌ Error: .env.secretvm template not found${NC}"
+        # Check if .env.secretvm.example exists (the template)
+        if [ ! -f ".env.secretvm.example" ]; then
+            echo -e "${RED}❌ Error: .env.secretvm.example template not found${NC}"
             exit 1
         fi
 
@@ -70,12 +71,13 @@ case $COMMAND in
         mkdir -p deploy/secretvm
 
         # Copy .env template
+        # Priority: .env.secretvm.local (with real credentials) > .env.secretvm.example (template)
         if [ -f ".env.secretvm.local" ]; then
-            echo -e "${BLUE}Using existing .env.secretvm.local${NC}"
+            echo -e "${BLUE}Using existing .env.secretvm.local (contains real credentials)${NC}"
             cp .env.secretvm.local deploy/secretvm/.env
         else
-            echo -e "${YELLOW}Creating .env from template${NC}"
-            cp .env.secretvm deploy/secretvm/.env
+            echo -e "${YELLOW}Creating .env from .env.secretvm.example template${NC}"
+            cp .env.secretvm.example deploy/secretvm/.env
         fi
 
         echo -e "${GREEN}✅ .env prepared in deploy/secretvm/.env${NC}"
@@ -87,7 +89,7 @@ case $COMMAND in
         echo "     PGADMIN_PASSWORD=\$(openssl rand -base64 24)"
         echo ""
         echo "  2. Update CORS origins with your frontend domain:"
-        echo "     BACKEND_CORS_ORIGINS=https://harystyles.store,https://api.harystyles.store,https://pgadmin.harystyles.store,https://redis-ui.harystyles.store,https://traefik.harystyles.store,https://sapphire-finch.vm.scrtlabs.com,https://api.sapphire-finch.vm.scrtlabs.com,https://silver-hedgehog.vm.scrtlabs.com"
+        echo "     BACKEND_CORS_ORIGINS=https://privexbot.com,https://api.privexbot.com"
         echo ""
         echo -e "${GREEN}Next step: Upload deploy/secretvm/.env to SecretVM Dev Portal${NC}"
         ;;

@@ -479,7 +479,7 @@ User → Dashboard → "Create Chatbot" → Configure Settings → Save
 **API Key Generated:**
 
 ```
-sk_live_abc123def456ghi789...
+secrettt-key_...
 ```
 
 ### Phase 2: Configuration
@@ -524,7 +524,7 @@ sk_live_abc123def456ghi789...
 
 ```bash
 curl -X POST https://api.privexbot.com/v1/chatbots/chatbot_uuid/chat \
-  -H "Authorization: Bearer sk_live_abc123..." \
+  -H "Authorization: Bearer secrettt-key_live_abc123..." \
   -d '{"message": "Hello!"}'
 ```
 
@@ -1264,8 +1264,8 @@ class CredentialService:
 
         EXAMPLE:
         {
-          "api_key": "sk_live_abc123...",
-          "api_secret": "secret_xyz..."
+          "api_key": "....",
+          "api_secret": "....."
         }
         """
 

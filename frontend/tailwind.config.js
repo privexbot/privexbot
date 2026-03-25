@@ -150,8 +150,145 @@ export default {
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["Fira Code", "ui-monospace", "SFMono-Regular", "monospace"],
+        manrope: ["Manrope", "ui-sans-serif", "system-ui", "sans-serif"],
+      },
+      // Brand Design System Utilities
+      backgroundImage: {
+        'grid-pattern': `
+          radial-gradient(circle at 50% 50%, #d1d5db 2px, transparent 2px),
+          linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+          linear-gradient(to bottom, #e5e7eb 1px, transparent 1px)
+        `,
+        'grid-pattern-dark': `
+          radial-gradient(circle at 50% 50%, #374151 2px, transparent 2px),
+          linear-gradient(to right, #4b5563 1px, transparent 1px),
+          linear-gradient(to bottom, #4b5563 1px, transparent 1px)
+        `,
+      },
+      backgroundSize: {
+        'grid': '48px 48px, 48px 48px, 48px 48px',
+      },
+      backgroundPosition: {
+        'grid': '24px 24px, 0 0, 0 0',
+      },
+      animation: {
+        'fade-in-up': 'fadeInUp 0.6s ease-out',
+        'fade-in-up-delay': 'fadeInUp 0.6s ease-out 0.2s both',
+      },
+      keyframes: {
+        fadeInUp: {
+          '0%': {
+            opacity: '0',
+            transform: 'translateY(20px)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'translateY(0)',
+          },
+        },
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [
+    require("tailwindcss-animate"),
+    require("@tailwindcss/typography"),
+    function({ addUtilities, addComponents, theme }) {
+      addUtilities({
+        // Grid Background Utilities
+        '.bg-grid': {
+          backgroundImage: `
+            radial-gradient(circle at 50% 50%, #d1d5db 2px, transparent 2px),
+            linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+            linear-gradient(to bottom, #e5e7eb 1px, transparent 1px)
+          `,
+          backgroundSize: '48px 48px, 48px 48px, 48px 48px',
+          backgroundPosition: '24px 24px, 0 0, 0 0',
+        },
+        '.bg-grid-dark': {
+          '@apply dark:bg-none': {},
+          '@apply dark:bg-grid-pattern-dark': {},
+        },
+        '.bg-grid-opacity': {
+          '@apply opacity-30 dark:opacity-20': {},
+        },
+      });
+
+      addComponents({
+        // Brand Icon Container
+        '.icon-container': {
+          '@apply w-12 h-12 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center': {},
+        },
+        '.icon-container-sm': {
+          '@apply w-8 h-8 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center': {},
+        },
+        '.icon-container-lg': {
+          '@apply w-16 h-16 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center': {},
+        },
+
+        // Brand Icon Styling
+        '.brand-icon': {
+          '@apply h-6 w-6 text-white dark:text-gray-900': {},
+        },
+        '.brand-icon-sm': {
+          '@apply h-4 w-4 text-white dark:text-gray-900': {},
+        },
+        '.brand-icon-lg': {
+          '@apply h-8 w-8 text-white dark:text-gray-900': {},
+        },
+
+        // Brand Card Styling
+        '.brand-card': {
+          '@apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm hover:shadow-md transition-shadow': {},
+        },
+
+        // Brand Text Colors
+        '.text-brand-primary': {
+          '@apply text-gray-900 dark:text-white': {},
+        },
+        '.text-brand-secondary': {
+          '@apply text-gray-600 dark:text-gray-400': {},
+        },
+
+        // Brand Container
+        '.brand-container': {
+          '@apply max-w-4xl mx-auto px-4 sm:px-6 lg:px-8': {},
+        },
+        '.brand-container-wide': {
+          '@apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8': {},
+        },
+
+        // Brand Section with Grid Background
+        '.brand-section': {
+          '@apply pt-24 pb-16 md:pt-32 md:pb-24 relative overflow-hidden': {},
+        },
+        '.brand-grid-bg': {
+          '@apply absolute inset-0 opacity-30 dark:opacity-20': {},
+          backgroundImage: `
+            radial-gradient(circle at 50% 50%, #d1d5db 2px, transparent 2px),
+            linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+            linear-gradient(to bottom, #e5e7eb 1px, transparent 1px)
+          `,
+          backgroundSize: '48px 48px, 48px 48px, 48px 48px',
+          backgroundPosition: '24px 24px, 0 0, 0 0',
+        },
+
+        // Brand Typography
+        '.brand-heading-xl': {
+          '@apply text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white font-manrope': {},
+        },
+        '.brand-heading-lg': {
+          '@apply text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white font-manrope': {},
+        },
+        '.brand-heading-md': {
+          '@apply text-2xl md:text-3xl font-bold text-gray-900 dark:text-white font-manrope': {},
+        },
+        '.brand-text-lg': {
+          '@apply text-lg md:text-xl text-gray-600 dark:text-gray-400 font-manrope': {},
+        },
+        '.brand-text': {
+          '@apply text-gray-600 dark:text-gray-400 font-manrope': {},
+        },
+      });
+    }
+  ],
 };

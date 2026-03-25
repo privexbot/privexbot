@@ -211,7 +211,7 @@ WHY: Improve AI responses over time
 HOW: Users rate messages in widget
 
 def submit_feedback(message_id, rating, comment):
-    """User submits feedback on a message."""
+    '''User submits feedback on a message.'''
 
     message = db.query(ChatMessage).get(message_id)
 
@@ -233,7 +233,7 @@ def submit_feedback(message_id, rating, comment):
 COST TRACKING:
 --------------
 def calculate_session_cost(session):
-    """Calculate total cost for a session."""
+    '''Calculate total cost for a session.'''
 
     total_tokens = sum(
         msg.total_tokens or 0
@@ -276,7 +276,7 @@ WHY: Users can request data deletion
 HOW: Cascade delete from session
 
 def delete_user_data(email):
-    """Delete all messages for a user (GDPR)."""
+    '''Delete all messages for a user (GDPR).'''
 
     # Find sessions by email in metadata
     sessions = db.query(ChatSession).filter(
@@ -361,6 +361,12 @@ class ChatMessage(Base):
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")

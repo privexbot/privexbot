@@ -158,7 +158,7 @@ class WorkspaceMember(Base):
     )
 
     # Relationships
-    user = relationship("User", foreign_keys=[user_id], backref="workspace_memberships")
+    user = relationship("User", foreign_keys=[user_id], back_populates="workspace_memberships")
     workspace = relationship("Workspace", back_populates="members")
     inviter = relationship("User", foreign_keys=[invited_by])
 

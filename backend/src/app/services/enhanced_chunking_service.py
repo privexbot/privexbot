@@ -1,631 +1,528 @@
 """
-Enhanced chunking service with structure-aware strategies.
+Enhanced Chunking Service - Structure-aware chunking with rich metadata.
 
-WHY: Better chunking improves retrieval accuracy and context preservation
-HOW: Multiple chunking strategies that respect document structure
-BUILDS ON: Existing chunking_service.py and smart_parsing_service.py
+WHY:
+- Add structure-aware metadata to chunks
+- Preserve context between chunks
+- Provide document analysis for better strategy selection
+- Maintain backward compatibility with existing chunking_service
 
-PSEUDOCODE:
------------
-from typing import Dict, List, Optional
-from dataclasses import dataclass
+HOW:
+- Wraps existing chunking_service.py (no duplication)
+- Adds DocumentChunk dataclass with rich metadata
+- Adds context preservation (before/after chunk summaries)
+- Adds document structure analysis
+
+USAGE:
+    # Simple usage (delegates to chunking_service)
+    service = EnhancedChunkingService()
+    chunks = service.chunk_document(content, strategy="adaptive", chunk_size=1000)
+
+    # With enhanced features
+    chunks = service.chunk_document_with_context(content, strategy="semantic")
+
+BACKWARD COMPATIBILITY:
+- All methods return standard format compatible with existing pipeline
+- Can be used as drop-in replacement for chunking_service
+"""
+
+from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
 from enum import Enum
-from .smart_parsing_service import DocumentElement, ElementType
+import re
+
+from app.services.chunking_service import (
+    chunking_service,
+    ChunkingService,
+    ChunkingConfig,
+    DEFAULT_CHUNKING_CONFIG
+)
+
+
+# ============================================================================
+# ENUMS AND DATACLASSES
+# ============================================================================
 
 class ChunkingStrategy(Enum):
-    \"\"\"Available chunking strategies\"\"\"
-    RECURSIVE = \"recursive\"              # Existing: Split by separators recursively
-    SEMANTIC = \"semantic\"                # NEW: Split by semantic boundaries
-    BY_HEADING = \"by_heading\"           # NEW: Split at heading boundaries
-    BY_SECTION = \"by_section\"           # NEW: Split by detected sections
-    ADAPTIVE = \"adaptive\"               # NEW: Adapt strategy to document type
-    SENTENCE_BASED = \"sentence_based\"   # NEW: Split by sentences
-    PARAGRAPH_BASED = \"paragraph_based\" # NEW: Split by paragraphs
-    HYBRID = \"hybrid\"                   # NEW: Combine multiple strategies
+    """Available chunking strategies (maps to chunking_service)."""
+    RECURSIVE = "recursive"
+    SEMANTIC = "semantic"
+    BY_HEADING = "by_heading"
+    BY_SECTION = "by_section"
+    ADAPTIVE = "adaptive"
+    SENTENCE_BASED = "sentence_based"
+    PARAGRAPH_BASED = "paragraph_based"
+    HYBRID = "hybrid"
+    NO_CHUNKING = "no_chunking"
+    FULL_CONTENT = "full_content"
+    TOKEN = "token"
+
 
 @dataclass
-class ChunkConfig:
-    \"\"\"Comprehensive chunking configuration\"\"\"
-    strategy: ChunkingStrategy
-    max_chunk_size: int = 1000          # Characters
-    chunk_overlap: int = 200            # Character overlap
-    min_chunk_size: int = 100           # Minimum chunk size
-    preserve_structure: bool = True     # Maintain element boundaries
-    include_metadata: bool = True       # Include structural metadata
-    adaptive_sizing: bool = False       # Adjust size based on content type
-    context_window: int = 2             # Number of surrounding elements for context
+class EnhancedChunkConfig:
+    """
+    Enhanced chunking configuration.
+
+    Extends ChunkingConfig with additional options for context and metadata.
+    """
+    # Core settings (passed to chunking_service)
+    strategy: str = "adaptive"
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+
+    # Enhanced features
+    include_context: bool = True  # Add context_before/context_after
+    context_chars: int = 100  # Characters of context to include
+    include_metadata: bool = True  # Add rich metadata
+    analyze_structure: bool = True  # Analyze document structure
+
+    # Passed through to chunking_service config
+    semantic_threshold: float = 0.65
+    min_chunk_size: int = 50
+
+    def to_chunking_config_dict(self) -> Dict[str, Any]:
+        """Convert to dict for chunking_service."""
+        return {
+            "semantic_threshold": self.semantic_threshold,
+            "min_chunk_size": self.min_chunk_size,
+            "default_chunk_size": self.chunk_size,
+            "default_chunk_overlap": self.chunk_overlap
+        }
+
 
 @dataclass
 class DocumentChunk:
-    \"\"\"Enhanced chunk with structure and context\"\"\"
+    """
+    Enhanced chunk with structure and context information.
+
+    Designed for rich retrieval and context preservation.
+    """
     content: str
-    metadata: Dict
-    position: int
-    element_type: Optional[ElementType] = None
-    parent_heading: Optional[str] = None
+    index: int
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # Context fields (optional)
     context_before: Optional[str] = None
     context_after: Optional[str] = None
-    embedding: Optional[List[float]] = None
+
+    # Structure fields (optional)
+    parent_heading: Optional[str] = None
+    section_title: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to standard chunk dict format for pipeline compatibility."""
+        result = {
+            "content": self.content,
+            "index": self.index,
+            "token_count": len(self.content) // 4,  # Estimate
+            "metadata": self.metadata.copy()
+        }
+
+        # Add optional fields to metadata
+        if self.context_before:
+            result["metadata"]["context_before"] = self.context_before
+        if self.context_after:
+            result["metadata"]["context_after"] = self.context_after
+        if self.parent_heading:
+            result["metadata"]["parent_heading"] = self.parent_heading
+        if self.section_title:
+            result["metadata"]["section_title"] = self.section_title
+
+        return result
+
+    @classmethod
+    def from_chunk_dict(cls, chunk_dict: Dict[str, Any]) -> "DocumentChunk":
+        """Create from standard chunk dict."""
+        return cls(
+            content=chunk_dict.get("content", ""),
+            index=chunk_dict.get("index", 0),
+            metadata=chunk_dict.get("metadata", {})
+        )
+
+
+@dataclass
+class DocumentAnalysis:
+    """Analysis of document structure for strategy selection."""
+    total_chars: int = 0
+    total_lines: int = 0
+    heading_count: int = 0
+    heading_density: float = 0.0
+    paragraph_count: int = 0
+    avg_paragraph_length: float = 0.0
+    code_block_count: int = 0
+    list_item_count: int = 0
+    recommended_strategy: str = "adaptive"
+    reasoning: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "total_chars": self.total_chars,
+            "total_lines": self.total_lines,
+            "heading_count": self.heading_count,
+            "heading_density": self.heading_density,
+            "paragraph_count": self.paragraph_count,
+            "avg_paragraph_length": self.avg_paragraph_length,
+            "code_block_count": self.code_block_count,
+            "list_item_count": self.list_item_count,
+            "recommended_strategy": self.recommended_strategy,
+            "reasoning": self.reasoning
+        }
+
+
+# ============================================================================
+# ENHANCED CHUNKING SERVICE
+# ============================================================================
 
 class EnhancedChunkingService:
-    \"\"\"
-    Structure-aware document chunking that preserves context.
+    """
+    Structure-aware document chunking with rich metadata.
 
-    BUILDS ON: Existing chunking_service.py patterns
-    ENHANCES: Context preservation, adaptive strategies, intelligent splitting
-    \"\"\"
+    WRAPS: chunking_service.py (delegates actual chunking)
+    ADDS: Rich metadata, context preservation, document analysis
 
-    def __init__(self, smart_parser):
-        self.smart_parser = smart_parser
+    BACKWARD COMPATIBLE: Returns same format as chunking_service
+    """
 
-        # Strategy implementations
-        self.strategies = {
-            ChunkingStrategy.RECURSIVE: self._recursive_chunking,
-            ChunkingStrategy.SEMANTIC: self._semantic_chunking,
-            ChunkingStrategy.BY_HEADING: self._heading_based_chunking,
-            ChunkingStrategy.BY_SECTION: self._section_based_chunking,
-            ChunkingStrategy.ADAPTIVE: self._adaptive_chunking,
-            ChunkingStrategy.SENTENCE_BASED: self._sentence_based_chunking,
-            ChunkingStrategy.PARAGRAPH_BASED: self._paragraph_based_chunking,
-            ChunkingStrategy.HYBRID: self._hybrid_chunking
-        }
+    def __init__(self, config: Optional[ChunkingConfig] = None):
+        """
+        Initialize enhanced chunking service.
 
-    async def chunk_document(
+        Args:
+            config: Base chunking configuration (optional)
+        """
+        self._chunking_service = ChunkingService(config)
+
+    def chunk_document(
         self,
-        document_content: str,
-        source_type: str,
-        chunk_config: ChunkConfig,
-        parse_config: Optional[Dict] = None
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Intelligent document chunking with structure preservation.
+        text: str,
+        strategy: str = "adaptive",
+        chunk_size: int = None,
+        chunk_overlap: int = None,
+        config: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Chunk document using specified strategy.
 
-        FLOW:
-        1. Parse document into structured elements
-        2. Apply selected chunking strategy
-        3. Add context and metadata
-        4. Validate and optimize chunks
+        DELEGATES TO: chunking_service.chunk_document()
+        BACKWARD COMPATIBLE: Same signature and return format
 
-        BUILDS ON: Existing chunking patterns while adding structure awareness
-        \"\"\"
+        Args:
+            text: Document text to chunk
+            strategy: Chunking strategy name
+            chunk_size: Target chunk size (None = use default)
+            chunk_overlap: Overlap between chunks (None = use default)
+            config: Additional config options
 
-        # Step 1: Parse document structure
-        if parse_config is None:
-            parse_config = {\"preserve_hierarchy\": True, \"detect_sections\": True}
-
-        elements = await self.smart_parser.parse_document(
-            document_content, source_type, parse_config
+        Returns:
+            List of chunk dicts (standard format)
+        """
+        return self._chunking_service.chunk_document(
+            text=text,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            config=config
         )
 
-        # Step 2: Apply chunking strategy
-        strategy_func = self.strategies.get(chunk_config.strategy, self._recursive_chunking)
-        chunks = await strategy_func(elements, chunk_config)
-
-        # Step 3: Add context and enhance metadata
-        enhanced_chunks = self._add_context_to_chunks(chunks, elements, chunk_config)
-
-        # Step 4: Validate and optimize
-        optimized_chunks = self._optimize_chunks(enhanced_chunks, chunk_config)
-
-        return optimized_chunks
-
-    async def _heading_based_chunking(
+    def chunk_document_enhanced(
         self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
+        text: str,
+        config: Optional[EnhancedChunkConfig] = None
     ) -> List[DocumentChunk]:
-        \"\"\"
-        Chunk document by heading boundaries.
+        """
+        Chunk document with enhanced features (metadata, context).
 
-        STRATEGY: Create chunks that start with headings and include all content
-        until the next heading of same or higher level.
+        Args:
+            text: Document text to chunk
+            config: Enhanced chunking configuration
 
-        BENEFITS:
-        - Preserves logical document structure
-        - Maintains context within sections
-        - Ideal for documentation and articles
+        Returns:
+            List of DocumentChunk objects with rich metadata
+        """
+        config = config or EnhancedChunkConfig()
 
-        PROCESS:
-        1. Iterate through elements
-        2. Start new chunk at each heading
-        3. Include all content until next heading
-        4. Split large chunks if needed
-        \"\"\"
-
-        chunks = []
-        current_chunk_elements = []
-        current_heading = None
-
-        heading_types = {ElementType.HEADING_1, ElementType.HEADING_2,
-                        ElementType.HEADING_3, ElementType.HEADING_4}
-
-        for element in elements:
-            if element.type in heading_types:
-                # Start new chunk if we have content
-                if current_chunk_elements:
-                    chunk = self._create_chunk_from_elements(
-                        current_chunk_elements, current_heading, config
-                    )
-                    if chunk:
-                        chunks.append(chunk)
-
-                # Start new chunk with this heading
-                current_chunk_elements = [element]
-                current_heading = element.content
-
-            else:
-                current_chunk_elements.append(element)
-
-                # Check if chunk is getting too large
-                current_size = sum(len(e.content) for e in current_chunk_elements)
-                if current_size > config.max_chunk_size:
-                    # Split the current chunk
-                    chunk = self._create_chunk_from_elements(
-                        current_chunk_elements[:-1], current_heading, config
-                    )
-                    if chunk:
-                        chunks.append(chunk)
-
-                    # Start new chunk with last element
-                    current_chunk_elements = [current_chunk_elements[-1]]
-
-        # Handle remaining elements
-        if current_chunk_elements:
-            chunk = self._create_chunk_from_elements(
-                current_chunk_elements, current_heading, config
-            )
-            if chunk:
-                chunks.append(chunk)
-
-        return chunks
-
-    async def _semantic_chunking(
-        self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Chunk document by semantic boundaries.
-
-        STRATEGY: Use NLP to detect topic changes and semantic breaks.
-        Groups related content together regardless of structure.
-
-        BENEFITS:
-        - Maintains semantic coherence
-        - Better for Q&A and retrieval
-        - Handles poorly structured documents
-
-        PROCESS:
-        1. Generate embeddings for paragraphs
-        2. Calculate semantic similarity between adjacent paragraphs
-        3. Split when similarity drops below threshold
-        4. Merge small chunks with similar content
-        \"\"\"
-
-        try:
-            chunks = []
-            current_elements = []
-            current_topic_embedding = None
-
-            for element in elements:
-                if element.type == ElementType.PARAGRAPH:
-                    # Get embedding for this paragraph
-                    element_embedding = await self._get_semantic_embedding(element.content)
-
-                    if current_topic_embedding is None:
-                        current_topic_embedding = element_embedding
-                        current_elements = [element]
-                    else:
-                        # Calculate semantic similarity
-                        similarity = self._calculate_similarity(current_topic_embedding, element_embedding)
-
-                        if similarity < 0.7:  # Topic change threshold
-                            # Create chunk from current elements
-                            if current_elements:
-                                chunk = self._create_chunk_from_elements(current_elements, None, config)
-                                if chunk:
-                                    chunks.append(chunk)
-
-                            # Start new topic
-                            current_elements = [element]
-                            current_topic_embedding = element_embedding
-                        else:
-                            current_elements.append(element)
-
-                            # Update topic embedding (moving average)
-                            current_topic_embedding = self._update_topic_embedding(
-                                current_topic_embedding, element_embedding
-                            )
-                else:
-                    # Non-paragraph elements (headings, lists, etc.)
-                    current_elements.append(element)
-
-            # Handle remaining elements
-            if current_elements:
-                chunk = self._create_chunk_from_elements(current_elements, None, config)
-                if chunk:
-                    chunks.append(chunk)
-
-            return chunks
-
-        except Exception as e:
-            # Fallback to heading-based chunking
-            return await self._heading_based_chunking(elements, config)
-
-    async def _adaptive_chunking(
-        self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Adaptive chunking that selects best strategy based on document characteristics.
-
-        STRATEGY: Analyze document structure and content to choose optimal chunking approach.
-
-        DECISION TREE:
-        - High heading density → heading_based
-        - Low structure, high text → semantic
-        - Lists and tables → paragraph_based
-        - Code content → preserve_structure
-
-        PROCESS:
-        1. Analyze document characteristics
-        2. Select optimal strategy based on analysis
-        3. Apply chosen strategy with optimized config
-        4. Add adaptive metadata for tracking
-        \"\"\"
-
-        # Analyze document characteristics
-        doc_stats = self._analyze_document_structure(elements)
-
-        # Decision logic based on document characteristics
-        if doc_stats[\"heading_density\"] > 0.1:  # > 10% headings
-            chosen_strategy = ChunkingStrategy.BY_HEADING
-        elif doc_stats[\"table_density\"] > 0.2:  # > 20% tables/lists
-            chosen_strategy = ChunkingStrategy.PARAGRAPH_BASED
-        elif doc_stats[\"avg_paragraph_length\"] > 500:  # Long paragraphs
-            chosen_strategy = ChunkingStrategy.SEMANTIC
-        elif doc_stats[\"code_density\"] > 0.1:  # > 10% code
-            chosen_strategy = ChunkingStrategy.PARAGRAPH_BASED
-        else:
-            chosen_strategy = ChunkingStrategy.RECURSIVE  # Fallback
-
-        # Apply chosen strategy with adapted config
-        adapted_config = ChunkConfig(
-            strategy=chosen_strategy,
-            max_chunk_size=config.max_chunk_size,
+        # Get basic chunks from underlying service
+        basic_chunks = self._chunking_service.chunk_document(
+            text=text,
+            strategy=config.strategy,
+            chunk_size=config.chunk_size,
             chunk_overlap=config.chunk_overlap,
-            preserve_structure=True,  # Always preserve structure in adaptive mode
-            include_metadata=True,
-            adaptive_sizing=True
+            config=config.to_chunking_config_dict()
         )
 
-        strategy_func = self.strategies[chosen_strategy]
-        chunks = await strategy_func(elements, adapted_config)
+        # Analyze document structure if requested
+        doc_analysis = None
+        if config.analyze_structure:
+            doc_analysis = self.analyze_document(text)
 
-        # Add adaptive metadata
-        for chunk in chunks:
-            chunk.metadata[\"adaptive_strategy_used\"] = chosen_strategy.value
-            chunk.metadata[\"document_characteristics\"] = doc_stats
-
-        return chunks
-
-    async def _hybrid_chunking(
-        self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Hybrid chunking that combines multiple strategies for optimal results.
-
-        STRATEGY:
-        1. Primary chunking by headings/sections
-        2. Secondary semantic splitting for large chunks
-        3. Tertiary size-based splitting as fallback
-
-        PROCESS:
-        1. Apply heading-based chunking first
-        2. For oversized chunks, apply semantic splitting
-        3. Final size validation and force-splitting
-        4. Merge overly small chunks
-        \"\"\"
-
-        # Step 1: Primary chunking by structure
-        primary_chunks = await self._heading_based_chunking(elements, config)
-
-        # Step 2: Secondary semantic splitting for oversized chunks
-        refined_chunks = []
-        for chunk in primary_chunks:
-            if len(chunk.content) > config.max_chunk_size * 1.5:
-                # This chunk is too large, apply semantic splitting
-                chunk_elements = self._chunk_content_to_elements(chunk.content)
-                semantic_config = ChunkConfig(
-                    strategy=ChunkingStrategy.SEMANTIC,
-                    max_chunk_size=config.max_chunk_size,
-                    chunk_overlap=config.chunk_overlap
-                )
-                sub_chunks = await self._semantic_chunking(chunk_elements, semantic_config)
-                refined_chunks.extend(sub_chunks)
-            else:
-                refined_chunks.append(chunk)
-
-        # Step 3: Final size validation and splitting
-        final_chunks = []
-        for chunk in refined_chunks:
-            if len(chunk.content) > config.max_chunk_size:
-                # Force split by size
-                sub_chunks = self._force_split_by_size(chunk, config)
-                final_chunks.extend(sub_chunks)
-            else:
-                final_chunks.append(chunk)
-
-        return final_chunks
-
-    async def _paragraph_based_chunking(
-        self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Chunk by paragraph boundaries.
-
-        STRATEGY: Each paragraph or logical unit becomes a chunk
-        Good for content with clear paragraph structure
-        \"\"\"
-
-        chunks = []
-        current_elements = []
-        current_size = 0
-
-        for element in elements:
-            element_size = len(element.content)
-
-            # If adding this element would exceed max size, create chunk
-            if current_size + element_size > config.max_chunk_size and current_elements:
-                chunk = self._create_chunk_from_elements(current_elements, None, config)
-                if chunk:
-                    chunks.append(chunk)
-                current_elements = []
-                current_size = 0
-
-            current_elements.append(element)
-            current_size += element_size
-
-        # Handle remaining elements
-        if current_elements:
-            chunk = self._create_chunk_from_elements(current_elements, None, config)
-            if chunk:
-                chunks.append(chunk)
-
-        return chunks
-
-    async def _sentence_based_chunking(
-        self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"Split content by sentence boundaries\"\"\"
-        # Implementation would split text into sentences and group them
-        # Use NLTK or spaCy for sentence segmentation
-        pass
-
-    async def _recursive_chunking(
-        self,
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Fallback to existing recursive chunking strategy.
-
-        BUILDS ON: Existing chunking_service.py implementation
-        \"\"\"
-
-        # Convert elements back to text and use existing chunking logic
-        full_text = \"\\n\\n\".join([e.content for e in elements])
-
-        # Use existing chunking service for recursive splitting
-        # This would call the existing chunking_service.chunk_document method
-        pass
-
-    def _create_chunk_from_elements(
-        self,
-        elements: List[DocumentElement],
-        parent_heading: Optional[str],
-        config: ChunkConfig
-    ) -> Optional[DocumentChunk]:
-        \"\"\"
-        Create chunk from document elements with metadata.
-
-        PROCESS:
-        1. Combine element content preserving structure
-        2. Build comprehensive metadata
-        3. Return DocumentChunk object
-        \"\"\"
-
-        if not elements:
-            return None
-
-        # Combine element content with structure preservation
-        content_parts = []
-        for element in elements:
-            if element.type in {ElementType.HEADING_1, ElementType.HEADING_2,
-                              ElementType.HEADING_3, ElementType.HEADING_4}:
-                content_parts.append(f\"\\n## {element.content}\\n\")
-            elif element.type == ElementType.LIST_ITEM:
-                content_parts.append(f\"• {element.content}\")
-            elif element.type == ElementType.CODE_BLOCK:
-                content_parts.append(f\"```\\n{element.content}\\n```\")
-            else:
-                content_parts.append(element.content)
-
-        content = \"\\n\".join(content_parts).strip()
-
-        if len(content) < config.min_chunk_size:
-            return None
-
-        # Build comprehensive metadata
-        metadata = {
-            \"element_count\": len(elements),
-            \"element_types\": [e.type.value for e in elements],
-            \"primary_element_type\": elements[0].type.value if elements else None,
-            \"parent_heading\": parent_heading,
-            \"chunk_length\": len(content),
-            \"word_count\": len(content.split()),
-            \"contains_headings\": any(e.type.value.startswith('h') for e in elements),
-            \"contains_tables\": any(e.type == ElementType.TABLE for e in elements),
-            \"contains_lists\": any(e.type == ElementType.LIST_ITEM for e in elements),
-            \"contains_code\": any(e.type == ElementType.CODE_BLOCK for e in elements)
-        }
-
-        # Add page numbers if available
-        page_numbers = [e.metadata.get(\"page_number\") for e in elements
-                       if e.metadata.get(\"page_number\")]
-        if page_numbers:
-            metadata[\"page_numbers\"] = sorted(set(page_numbers))
-
-        # Add section information
-        section_titles = [e.metadata.get(\"section_title\") for e in elements
-                         if e.metadata.get(\"section_title\")]
-        if section_titles:
-            metadata[\"section_titles\"] = list(set(section_titles))
-
-        return DocumentChunk(
-            content=content,
-            metadata=metadata,
-            position=elements[0].position if elements else 0,
-            element_type=elements[0].type if len(elements) == 1 else None,
-            parent_heading=parent_heading
-        )
-
-    def _add_context_to_chunks(
-        self,
-        chunks: List[DocumentChunk],
-        elements: List[DocumentElement],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Add contextual information to chunks.
-
-        CONTEXT TYPES:
-        - Surrounding chunks (before/after)
-        - Parent sections/headings
-        - Document position information
-        \"\"\"
-
-        if not config.include_metadata:
-            return chunks
-
+        # Convert to enhanced chunks with metadata
         enhanced_chunks = []
+        for i, chunk_dict in enumerate(basic_chunks):
+            enhanced_chunk = DocumentChunk.from_chunk_dict(chunk_dict)
+            enhanced_chunk.index = i
 
-        for i, chunk in enumerate(chunks):
-            enhanced_chunk = chunk
+            # Add rich metadata
+            if config.include_metadata:
+                enhanced_chunk.metadata.update({
+                    "chunk_index": i,
+                    "total_chunks": len(basic_chunks),
+                    "chunk_length": len(enhanced_chunk.content),
+                    "word_count": len(enhanced_chunk.content.split()),
+                    "strategy_used": config.strategy
+                })
+
+                if doc_analysis:
+                    enhanced_chunk.metadata["document_analysis"] = doc_analysis.to_dict()
 
             # Add context from surrounding chunks
-            if config.context_window > 0:
-                context_before = []
-                context_after = []
+            if config.include_context:
+                enhanced_chunk.context_before = self._get_context_before(
+                    basic_chunks, i, config.context_chars
+                )
+                enhanced_chunk.context_after = self._get_context_after(
+                    basic_chunks, i, config.context_chars
+                )
 
-                # Get context before
-                for j in range(max(0, i - config.context_window), i):
-                    if j < len(chunks):
-                        context_before.append(chunks[j].content[:100] + \"...\")
-
-                # Get context after
-                for j in range(i + 1, min(len(chunks), i + config.context_window + 1)):
-                    context_after.append(chunks[j].content[:100] + \"...\")
-
-                enhanced_chunk.context_before = \" \".join(context_before) if context_before else None
-                enhanced_chunk.context_after = \" \".join(context_after) if context_after else None
-
-            # Add position metadata
-            enhanced_chunk.metadata[\"chunk_index\"] = i
-            enhanced_chunk.metadata[\"total_chunks\"] = len(chunks)
-            enhanced_chunk.metadata[\"relative_position\"] = i / len(chunks) if len(chunks) > 1 else 0
+            # Extract parent heading from content
+            enhanced_chunk.parent_heading = self._extract_parent_heading(
+                enhanced_chunk.content
+            )
 
             enhanced_chunks.append(enhanced_chunk)
 
         return enhanced_chunks
 
-    def _optimize_chunks(
+    def chunk_document_with_context(
         self,
-        chunks: List[DocumentChunk],
-        config: ChunkConfig
-    ) -> List[DocumentChunk]:
-        \"\"\"
-        Final optimization of chunks.
+        text: str,
+        strategy: str = "adaptive",
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+        context_chars: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Chunk document and add context to each chunk.
 
-        OPTIMIZATIONS:
-        - Remove chunks that are too small (unless important)
-        - Truncate chunks that are too large
-        - Merge adjacent small chunks
-        - Validate content quality
-        \"\"\"
+        Convenience method that returns standard dict format with context added.
 
-        optimized = []
+        Args:
+            text: Document text
+            strategy: Chunking strategy
+            chunk_size: Target chunk size
+            chunk_overlap: Overlap between chunks
+            context_chars: Characters of context to include
 
-        for chunk in chunks:
-            # Skip chunks that are too small unless they contain important elements
-            if len(chunk.content) < config.min_chunk_size:
-                if chunk.element_type not in {ElementType.HEADING_1, ElementType.HEADING_2,
-                                            ElementType.TABLE, ElementType.CODE_BLOCK}:
-                    continue  # Skip small, unimportant chunks
+        Returns:
+            List of chunk dicts with context_before/context_after in metadata
+        """
+        config = EnhancedChunkConfig(
+            strategy=strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            include_context=True,
+            context_chars=context_chars
+        )
 
-            # Truncate chunks that are too large (final safety)
-            if len(chunk.content) > config.max_chunk_size * 2:
-                chunk.content = chunk.content[:config.max_chunk_size * 2]
-                chunk.metadata[\"truncated\"] = True
+        enhanced_chunks = self.chunk_document_enhanced(text, config)
+        return [chunk.to_dict() for chunk in enhanced_chunks]
 
-            optimized.append(chunk)
+    def analyze_document(self, text: str) -> DocumentAnalysis:
+        """
+        Analyze document structure for strategy selection.
 
-        return optimized
+        Args:
+            text: Document text to analyze
 
-    # Helper methods for analysis and processing
-    def _analyze_document_structure(self, elements: List[DocumentElement]) -> Dict:
-        \"\"\"
-        Analyze document structure characteristics.
+        Returns:
+            DocumentAnalysis with structure metrics and recommended strategy
+        """
+        if not text:
+            return DocumentAnalysis()
 
-        METRICS:
-        - Heading density
-        - Table/list density
-        - Code density
-        - Average paragraph length
-        - Structure score
-        \"\"\"
+        lines = text.split("\n")
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 
-        total_elements = len(elements)
-        if total_elements == 0:
-            return {}
+        # Count structural elements
+        heading_count = len([line for line in lines if line.strip().startswith("#")])
+        code_blocks = len(re.findall(r'```[\s\S]*?```', text))
+        list_items = len([line for line in lines if re.match(r'^\s*[-*•]\s', line)])
 
-        heading_count = sum(1 for e in elements if e.type.value.startswith('h'))
-        table_count = sum(1 for e in elements if e.type == ElementType.TABLE)
-        list_count = sum(1 for e in elements if e.type == ElementType.LIST_ITEM)
-        code_count = sum(1 for e in elements if e.type == ElementType.CODE_BLOCK)
-        paragraph_lengths = [len(e.content) for e in elements if e.type == ElementType.PARAGRAPH]
+        total_lines = len(lines)
+        heading_density = heading_count / total_lines if total_lines > 0 else 0
 
-        return {
-            \"total_elements\": total_elements,
-            \"heading_density\": heading_count / total_elements,
-            \"table_density\": (table_count + list_count) / total_elements,
-            \"code_density\": code_count / total_elements,
-            \"avg_paragraph_length\": sum(paragraph_lengths) / len(paragraph_lengths) if paragraph_lengths else 0,
-            \"heading_count\": heading_count,
-            \"table_count\": table_count,
-            \"list_count\": list_count,
-            \"code_count\": code_count
+        paragraph_lengths = [len(p) for p in paragraphs]
+        avg_para_length = sum(paragraph_lengths) / len(paragraph_lengths) if paragraph_lengths else 0
+
+        # Determine recommended strategy with reasoning
+        strategy, reasoning = self._recommend_strategy(
+            heading_density=heading_density,
+            paragraph_count=len(paragraphs),
+            avg_paragraph_length=avg_para_length,
+            code_block_count=code_blocks,
+            total_chars=len(text)
+        )
+
+        return DocumentAnalysis(
+            total_chars=len(text),
+            total_lines=total_lines,
+            heading_count=heading_count,
+            heading_density=heading_density,
+            paragraph_count=len(paragraphs),
+            avg_paragraph_length=avg_para_length,
+            code_block_count=code_blocks,
+            list_item_count=list_items,
+            recommended_strategy=strategy,
+            reasoning=reasoning
+        )
+
+    def _recommend_strategy(
+        self,
+        heading_density: float,
+        paragraph_count: int,
+        avg_paragraph_length: float,
+        code_block_count: int,
+        total_chars: int
+    ) -> tuple:
+        """
+        Recommend chunking strategy based on document characteristics.
+
+        Returns:
+            Tuple of (strategy_name, reasoning)
+        """
+        # Use adaptive thresholds from config
+        config = self._chunking_service.config
+
+        if heading_density > config.adaptive_heading_density_threshold:
+            return ("by_heading", f"High heading density ({heading_density:.2%})")
+
+        if paragraph_count > config.adaptive_paragraph_count_threshold:
+            return ("paragraph_based", f"Many paragraphs ({paragraph_count})")
+
+        if code_block_count > 3:
+            return ("paragraph_based", f"Contains code blocks ({code_block_count})")
+
+        if avg_paragraph_length > 500:
+            return ("semantic", f"Long paragraphs (avg {avg_paragraph_length:.0f} chars)")
+
+        if total_chars < 2000:
+            return ("no_chunking", f"Short document ({total_chars} chars)")
+
+        return ("recursive", "Default strategy for general content")
+
+    def _get_context_before(
+        self,
+        chunks: List[Dict],
+        index: int,
+        max_chars: int
+    ) -> Optional[str]:
+        """Get context from previous chunk."""
+        if index <= 0 or not chunks:
+            return None
+
+        prev_content = chunks[index - 1].get("content", "")
+        if len(prev_content) <= max_chars:
+            return prev_content
+
+        # Get last max_chars characters
+        return "..." + prev_content[-max_chars:]
+
+    def _get_context_after(
+        self,
+        chunks: List[Dict],
+        index: int,
+        max_chars: int
+    ) -> Optional[str]:
+        """Get context from next chunk."""
+        if index >= len(chunks) - 1:
+            return None
+
+        next_content = chunks[index + 1].get("content", "")
+        if len(next_content) <= max_chars:
+            return next_content
+
+        # Get first max_chars characters
+        return next_content[:max_chars] + "..."
+
+    def _extract_parent_heading(self, content: str) -> Optional[str]:
+        """Extract first heading from chunk content."""
+        lines = content.split("\n")
+        for line in lines:
+            if line.strip().startswith("#"):
+                # Remove markdown heading markers
+                heading = re.sub(r'^#+\s*', '', line.strip())
+                return heading[:100] if heading else None
+        return None
+
+
+# ============================================================================
+# GLOBAL INSTANCE
+# ============================================================================
+
+# Global instance for convenience (backward compatible)
+enhanced_chunking_service = EnhancedChunkingService()
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def get_chunking_strategies() -> List[Dict[str, Any]]:
+    """
+    Get list of available chunking strategies with descriptions.
+
+    Returns:
+        List of strategy info dicts
+    """
+    return [
+        {
+            "name": "recursive",
+            "description": "Split by separators recursively (paragraphs → lines → words)",
+            "best_for": "General content, fallback strategy"
+        },
+        {
+            "name": "semantic",
+            "description": "Split by semantic/topic boundaries using embeddings",
+            "best_for": "Q&A, retrieval, unstructured content"
+        },
+        {
+            "name": "by_heading",
+            "description": "Split at heading boundaries (markdown #)",
+            "best_for": "Documentation, articles with clear structure"
+        },
+        {
+            "name": "by_section",
+            "description": "Group content into logical sections",
+            "best_for": "Technical guides, long documentation"
+        },
+        {
+            "name": "adaptive",
+            "description": "Auto-select strategy based on document analysis",
+            "best_for": "Unknown/mixed content types"
+        },
+        {
+            "name": "sentence_based",
+            "description": "Split at sentence boundaries",
+            "best_for": "Conversational content, chat logs"
+        },
+        {
+            "name": "paragraph_based",
+            "description": "Split at paragraph boundaries",
+            "best_for": "Blogs, articles, content with clear paragraphs"
+        },
+        {
+            "name": "hybrid",
+            "description": "Combine heading + paragraph + recursive strategies",
+            "best_for": "Complex documents with mixed structure"
+        },
+        {
+            "name": "no_chunking",
+            "description": "Keep document as single chunk",
+            "best_for": "Short documents, FAQs"
+        },
+        {
+            "name": "token",
+            "description": "Split by token count (LLM context aware)",
+            "best_for": "LLM prompt fitting, context windows"
         }
-
-    async def _get_semantic_embedding(self, text: str) -> List[float]:
-        \"\"\"Get semantic embedding for text (would use embedding service)\"\"\"
-        # This would integrate with existing embedding_service.py
-        pass
-
-    def _calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
-        \"\"\"Calculate cosine similarity between embeddings\"\"\"
-        # Vector math for cosine similarity
-        pass
-
-    def _update_topic_embedding(self, current: List[float], new: List[float]) -> List[float]:
-        \"\"\"Update topic embedding with moving average\"\"\"
-        # Weighted average of embeddings
-        pass
-"""
+    ]

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PrivexBot Widget Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #6b7280;
+            line-height: 1.6;
+        }
+
+        .config-form {
+            display: grid;
+            gap: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-weight: 500;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        input, select {
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            border-color: #6366f1;
+        }
+
+        .btn {
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #4f46e5;
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .instructions {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: #1f2937;
+        }
+
+        .instructions code {
+            background: #e5e7eb;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .status.success {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status.info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>PrivexBot Widget Test</h1>
+            <p>Use this page to test your deployed chatbot widget. Enter your chatbot ID and API key below.</p>
+
+            <div class="config-form">
+                <div class="form-group">
+                    <label for="chatbotId">Chatbot ID</label>
+                    <input type="text" id="chatbotId" placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000">
+                </div>
+
+                <div class="form-group">
+                    <label for="apiKey">API Key</label>
+                    <input type="text" id="apiKey" placeholder="e.g., pb_live_xxxxx...">
+                </div>
+
+                <div class="form-group">
+                    <label for="apiUrl">API URL</label>
+                    <input type="text" id="apiUrl" value="http://localhost:8000/api/v1" placeholder="http://localhost:8000/api/v1">
+                </div>
+
+                <div class="form-group">
+                    <label for="greeting">Greeting Message</label>
+                    <input type="text" id="greeting" value="Hello! How can I help you today?" placeholder="Hello! How can I help you?">
+                </div>
+
+                <div class="form-group">
+                    <label for="botName">Bot Name</label>
+                    <input type="text" id="botName" value="Assistant" placeholder="Assistant">
+                </div>
+
+                <div class="form-group">
+                    <label for="color">Primary Color</label>
+                    <input type="color" id="color" value="#6366f1">
+                </div>
+
+                <div class="form-group">
+                    <label for="position">Position</label>
+                    <select id="position">
+                        <option value="bottom-right">Bottom Right</option>
+                        <option value="bottom-left">Bottom Left</option>
+                    </select>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn" onclick="initWidget()">Initialize Widget</button>
+                    <button class="btn btn-secondary" onclick="openWidget()">Open Widget</button>
+                    <button class="btn btn-secondary" onclick="closeWidget()">Close Widget</button>
+                    <button class="btn btn-secondary" onclick="destroyWidget()">Destroy</button>
+                </div>
+            </div>
+
+            <div id="status"></div>
+        </div>
+
+        <div class="card instructions">
+            <h3>How to Use</h3>
+            <ol>
+                <li>Deploy a chatbot from the PrivexBot dashboard</li>
+                <li>Copy the <code>chatbot_id</code> and <code>api_key</code> from the deployment response</li>
+                <li>Paste them in the form above</li>
+                <li>Click "Initialize Widget" to load the chat bubble</li>
+                <li>Click on the chat bubble or "Open Widget" to start chatting</li>
+            </ol>
+
+            <h3>Embed Code for Your Website</h3>
+            <p>Copy this code and paste it before the closing <code>&lt;/body&gt;</code> tag:</p>
+            <pre id="embedCode">&lt;script src="YOUR_WIDGET_URL/widget.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  pb('init', {
+    id: 'YOUR_CHATBOT_ID',
+    apiKey: 'YOUR_API_KEY',
+    options: {
+      baseURL: 'YOUR_API_URL',
+      position: 'bottom-right',
+      color: '#6366f1',
+      greeting: 'Hello! How can I help you?',
+      botName: 'Assistant'
+    }
+  });
+&lt;/script&gt;</pre>
+        </div>
+    </div>
+
+    <!-- Load the widget -->
+    <script src="build/widget.js"></script>
+
+    <script>
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'status ' + type;
+            statusEl.textContent = message;
+        }
+
+        function initWidget() {
+            const chatbotId = document.getElementById('chatbotId').value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            const greeting = document.getElementById('greeting').value.trim();
+            const botName = document.getElementById('botName').value.trim();
+            const color = document.getElementById('color').value;
+            const position = document.getElementById('position').value;
+
+            if (!chatbotId) {
+                showStatus('Please enter a Chatbot ID', 'error');
+                return;
+            }
+
+            if (!apiKey) {
+                showStatus('Please enter an API Key', 'error');
+                return;
+            }
+
+            // Destroy existing widget first
+            try {
+                pb('destroy');
+            } catch (e) {}
+
+            // Initialize widget
+            pb('init', {
+                id: chatbotId,
+                apiKey: apiKey,
+                options: {
+                    baseURL: apiUrl,
+                    position: position,
+                    color: color,
+                    greeting: greeting,
+                    botName: botName,
+                    showBranding: true
+                }
+            });
+
+            showStatus('Widget initialized! Click the chat bubble in the corner to start chatting.', 'success');
+
+            // Update embed code
+            updateEmbedCode(chatbotId, apiKey, apiUrl, position, color, greeting, botName);
+        }
+
+        function openWidget() {
+            pb('open');
+            showStatus('Widget opened', 'info');
+        }
+
+        function closeWidget() {
+            pb('close');
+            showStatus('Widget closed', 'info');
+        }
+
+        function destroyWidget() {
+            pb('destroy');
+            showStatus('Widget destroyed', 'info');
+        }
+
+        function updateEmbedCode(chatbotId, apiKey, apiUrl, position, color, greeting, botName) {
+            const embedCode = `<script src="https://cdn.privexbot.com/widget.js"><\/script>
+<script>
+  pb('init', {
+    id: '${chatbotId}',
+    apiKey: '${apiKey}',
+    options: {
+      baseURL: '${apiUrl}',
+      position: '${position}',
+      color: '${color}',
+      greeting: '${greeting}',
+      botName: '${botName}'
+    }
+  });
+<\/script>`;
+
+            document.getElementById('embedCode').textContent = embedCode;
+        }
+
+        // Load saved values from localStorage
+        document.addEventListener('DOMContentLoaded', function() {
+            const saved = localStorage.getItem('privexbot_test_config');
+            if (saved) {
+                try {
+                    const config = JSON.parse(saved);
+                    if (config.chatbotId) document.getElementById('chatbotId').value = config.chatbotId;
+                    if (config.apiKey) document.getElementById('apiKey').value = config.apiKey;
+                    if (config.apiUrl) document.getElementById('apiUrl').value = config.apiUrl;
+                } catch (e) {}
+            }
+
+            // Save on change
+            ['chatbotId', 'apiKey', 'apiUrl'].forEach(id => {
+                document.getElementById(id).addEventListener('change', function() {
+                    localStorage.setItem('privexbot_test_config', JSON.stringify({
+                        chatbotId: document.getElementById('chatbotId').value,
+                        apiKey: document.getElementById('apiKey').value,
+                        apiUrl: document.getElementById('apiUrl').value
+                    }));
+                });
+            });
+        });
+    </script>
+</body>
+</html>

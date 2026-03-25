@@ -4,12 +4,19 @@
  */
 
 /* Reset for widget */
-.privexbot-widget,
+.privexbot-widget {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  /* Default font - can be overridden by JS when font_family is configured */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 .privexbot-widget * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: inherit; /* Inherit from container (set by JS based on config) */
 }
 
 /* Widget Container */
@@ -106,6 +113,15 @@
   }
 }
 
+/* Content Container */
+#privexbot-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;  /* Critical for flex scroll */
+  overflow: hidden;
+}
+
 /* Header */
 .privexbot-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -178,13 +194,15 @@
   overflow-y: auto;
   padding: 16px;
   background: #f9fafb;
+  min-height: 0;  /* Critical for flex scroll in nested flex containers */
 }
 
 .privexbot-message {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 16px;
   animation: fadeIn 0.3s ease;
+  align-items: flex-start;  /* Prevent vertical stretching */
 }
 
 @keyframes fadeIn {
@@ -217,7 +235,7 @@
 }
 
 .privexbot-message.user .privexbot-message-avatar {
-  background: #6366f1;
+  background: #3b82f6;
 }
 
 .privexbot-message-avatar svg {
@@ -227,10 +245,13 @@
 }
 
 .privexbot-message-bubble {
-  max-width: 75%;
-  padding: 10px 14px;
-  border-radius: 12px;
+  padding: 12px 16px;
+  border-radius: 16px;
   word-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  line-height: 1.5;
 }
 
 .privexbot-message.bot .privexbot-message-bubble {
@@ -240,7 +261,7 @@
 }
 
 .privexbot-message.user .privexbot-message-bubble {
-  background: #6366f1;
+  background: #3b82f6;
   color: white;
   border-bottom-right-radius: 4px;
 }
@@ -249,6 +270,84 @@
   font-size: 11px;
   color: #9ca3af;
   margin-top: 4px;
+}
+
+/* Message Content Wrapper */
+.privexbot-message-content {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+}
+
+/* Feedback Buttons */
+.privexbot-feedback {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.privexbot-message:hover .privexbot-feedback,
+.privexbot-feedback:focus-within {
+  opacity: 1;
+}
+
+/* Always show feedback if user has interacted (selected state) */
+.privexbot-feedback:has(.selected) {
+  opacity: 1;
+}
+
+.privexbot-feedback-btn {
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  transition: all 0.15s ease;
+}
+
+.privexbot-feedback-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #6b7280;
+}
+
+.privexbot-feedback-btn.positive:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #16a34a;
+}
+
+.privexbot-feedback-btn.negative:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.privexbot-feedback-btn.selected.positive {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #16a34a;
+}
+
+.privexbot-feedback-btn.selected.negative {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #dc2626;
+}
+
+.privexbot-feedback-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.privexbot-feedback-btn:disabled:not(.selected) {
+  opacity: 0.3;
 }
 
 /* Typing Indicator */
@@ -309,11 +408,11 @@
 }
 
 .privexbot-input:focus {
-  border-color: #6366f1;
+  border-color: #3b82f6;
 }
 
 .privexbot-send-btn {
-  background: #6366f1;
+  background: #3b82f6;
   color: white;
   border: none;
   border-radius: 8px;
@@ -384,7 +483,7 @@
 }
 
 .privexbot-form-input:focus {
-  border-color: #6366f1;
+  border-color: #3b82f6;
 }
 
 .privexbot-form-error {
@@ -395,7 +494,7 @@
 
 .privexbot-form-submit {
   width: 100%;
-  background: #6366f1;
+  background: #3b82f6;
   color: white;
   border: none;
   border-radius: 8px;
@@ -438,7 +537,7 @@
 }
 
 .privexbot-branding a {
-  color: #6366f1;
+  color: #3b82f6;
   text-decoration: none;
 }
 

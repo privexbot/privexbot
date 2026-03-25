@@ -49,12 +49,13 @@ export const ManageOrganizationModal = ({
     }
   }, [isOpen, organization.id]);
 
-  const loadWorkspaces = async () => {
+  const loadWorkspaces = async (): Promise<Workspace[] | undefined> => {
     try {
       setIsLoading(true);
       setError(null);
       const workspacesData = await organizationApi.getWorkspaces(organization.id);
       setWorkspaces(workspacesData);
+      return workspacesData;
     } catch (err: any) {
       console.error("[ManageOrganizationModal] Error loading workspaces:", err);
       const errorMessage = err.response?.data?.detail || "Failed to load workspaces";
@@ -64,6 +65,7 @@ export const ManageOrganizationModal = ({
         title: "Failed to load workspaces",
         description: errorMessage,
       });
+      return undefined;
     } finally {
       setIsLoading(false);
     }
@@ -321,8 +323,19 @@ export const ManageOrganizationModal = ({
           workspace={editingWorkspace}
           organizationId={organization.id}
           onSuccess={async () => {
-            await loadWorkspaces();
-            setEditingWorkspace(null);
+            await refreshData();  // Update AppContext.workspaces so WorkspaceSwitcher shows new avatar
+            const freshWorkspaces = await loadWorkspaces();
+            // Update editingWorkspace reference with fresh data to prevent stale avatar
+            if (editingWorkspace && freshWorkspaces) {
+              const updated = freshWorkspaces.find(w => w.id === editingWorkspace.id);
+              if (updated) {
+                setEditingWorkspace(updated);
+              } else {
+                setEditingWorkspace(null);
+              }
+            } else {
+              setEditingWorkspace(null);
+            }
             if (onSuccess) {
               onSuccess();
             }

@@ -15,9 +15,10 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import httpx
 import requests
 from uuid import UUID
-from typing import Any, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -125,17 +126,35 @@ class WhatsAppIntegration:
         from_number = message.get("from")
         message_id = message.get("id")
 
+        # Extract profile info if available
+        contacts = value.get("contacts", [])
+        profile_name = None
+        if contacts:
+            profile = contacts[0].get("profile", {})
+            profile_name = profile.get("name")
+
         # Determine bot type
         bot_type, bot = self._get_bot(db, entity_id)
 
         # Session ID (unique per WhatsApp user)
         session_id = f"whatsapp_{from_number}"
 
+        # Auto-capture phone on first message (WhatsApp's strength!)
+        await self._auto_capture_lead(
+            db=db,
+            bot=bot,
+            bot_type=bot_type,
+            session_id=session_id,
+            phone=from_number,
+            profile_name=profile_name
+        )
+
         # Channel context
         channel_context = {
             "platform": "whatsapp",
             "from_number": from_number,
-            "message_id": message_id
+            "message_id": message_id,
+            "profile_name": profile_name
         }
 
         # Route to appropriate service
@@ -148,8 +167,16 @@ class WhatsAppIntegration:
                 channel_context=channel_context
             )
         else:  # chatflow
-            # Placeholder - chatflow_service not yet implemented
-            response = {"response": "Chatflow support coming soon"}
+            from app.services.chatflow_service import chatflow_service
+
+            result = await chatflow_service.execute(
+                db=db,
+                chatflow=bot,
+                user_message=user_message,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+            response = {"response": result["response"], "session_id": result["session_id"]}
 
         # Send response back to WhatsApp
         await self._send_message(
@@ -162,6 +189,95 @@ class WhatsAppIntegration:
         return {"status": "ok"}
 
 
+    async def send_message(
+        self,
+        access_token: str,
+        phone_number_id: str,
+        to: str,
+        message: str
+    ) -> dict:
+        """
+        Send a text message to a WhatsApp user via Cloud API.
+
+        Called by the webhook handler with pre-resolved credentials.
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://graph.facebook.com/v18.0/{phone_number_id}/messages",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "messaging_product": "whatsapp",
+                    "to": to,
+                    "type": "text",
+                    "text": {"body": message}
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def send_template_message(
+        self,
+        access_token: str,
+        phone_number_id: str,
+        to: str,
+        template_name: str,
+        language: str = "en",
+        components: Optional[List[dict]] = None
+    ) -> dict:
+        """
+        Send a pre-approved template message via WhatsApp Cloud API.
+        """
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": language}
+            }
+        }
+        if components:
+            payload["template"]["components"] = components
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://graph.facebook.com/v18.0/{phone_number_id}/messages",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                },
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return {
+            "message_id": data.get("messages", [{}])[0].get("id"),
+            "status": "sent"
+        }
+
+    async def get_message_templates(
+        self,
+        access_token: str,
+        business_account_id: str
+    ) -> List[dict]:
+        """
+        Fetch approved message templates from WhatsApp Business API.
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://graph.facebook.com/v18.0/{business_account_id}/message_templates",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={"limit": 100}
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return data.get("data", [])
+
     async def _send_message(
         self,
         db: Session,
@@ -169,7 +285,7 @@ class WhatsAppIntegration:
         to_number: str,
         text: str
     ):
-        """Send message to WhatsApp user."""
+        """Send message to WhatsApp user (internal — resolves credentials from bot config)."""
 
         from app.services.credential_service import credential_service
 
@@ -194,21 +310,95 @@ class WhatsAppIntegration:
 
         phone_number_id = whatsapp_config["phone_number_id"]
 
-        # Send message via WhatsApp Cloud API
-        requests.post(
-            f"https://graph.facebook.com/v18.0/{phone_number_id}/messages",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "messaging_product": "whatsapp",
-                "to": to_number,
-                "type": "text",
-                "text": {"body": text}
-            }
+        # Delegate to the public method
+        await self.send_message(
+            access_token=access_token,
+            phone_number_id=phone_number_id,
+            to=to_number,
+            message=text
         )
 
+
+    async def _auto_capture_lead(
+        self,
+        db: Session,
+        bot: Any,
+        bot_type: str,
+        session_id: str,
+        phone: str,
+        profile_name: str = None
+    ):
+        """
+        Auto-capture lead from WhatsApp on first message.
+
+        WHY: WhatsApp provides VERIFIED phone - highest value lead
+        HOW: Check lead_capture_config, capture if enabled
+
+        CRITICAL: Phone is verified by WhatsApp. This is the most
+                  valuable lead capture opportunity.
+        """
+
+        # Check if lead capture is enabled
+        lead_config = getattr(bot, "lead_capture_config", None) or {}
+        if not lead_config.get("enabled"):
+            return  # Lead capture not enabled
+
+        # Check platform-specific settings
+        platforms = lead_config.get("platforms", {})
+        whatsapp_config = platforms.get("whatsapp", {})
+
+        # Default: auto_capture_phone is True for WhatsApp
+        if not whatsapp_config.get("enabled", True):
+            return  # WhatsApp lead capture disabled
+
+        if not whatsapp_config.get("auto_capture_phone", True):
+            return  # Auto-capture disabled
+
+        # Check if lead already exists for this session
+        from app.services.lead_capture_service import lead_capture_service
+
+        existing_lead = await lead_capture_service.check_lead_exists(
+            db=db,
+            workspace_id=bot.workspace_id,
+            session_id=session_id
+        )
+
+        if existing_lead:
+            return  # Lead already captured
+
+        # Check privacy settings - require consent
+        privacy = lead_config.get("privacy", {})
+        require_consent = privacy.get("require_consent", False)
+
+        # If strict consent required, check session for consent status
+        if require_consent:
+            from app.models.chat_session import ChatSession
+
+            session = db.query(ChatSession).filter(
+                ChatSession.session_id == session_id
+            ).first()
+
+            if session:
+                metadata = session.session_metadata or {}
+                # Only capture if user explicitly gave consent
+                if not metadata.get("consent_given"):
+                    return  # Consent not given yet - don't capture
+
+        # For WhatsApp, we capture with implicit consent since user initiated contact
+        # If strict consent required, we'll set consent_given=False and prompt later
+        consent_given = not require_consent
+
+        # Auto-capture the lead
+        await lead_capture_service.auto_capture_whatsapp_phone(
+            db=db,
+            workspace_id=bot.workspace_id,
+            bot_id=bot.id,
+            bot_type=bot_type,
+            session_id=session_id,
+            phone=phone,
+            profile_name=profile_name,
+            consent_given=consent_given
+        )
 
     def _get_bot(self, db: Session, entity_id: UUID) -> Tuple[str, Any]:
         """Get bot by ID (chatbot or chatflow)."""

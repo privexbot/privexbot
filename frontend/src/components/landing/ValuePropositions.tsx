@@ -1,148 +1,162 @@
-import { Shield, Zap, Globe, Network } from "lucide-react";
-import { Container } from "@/components/shared/Container";
-import { SectionHeading } from "@/components/shared/SectionHeading";
+import { Check, Shield, Users, Zap, Globe } from "lucide-react";
 import { motion } from "framer-motion";
 
 const valueProps = [
   {
-    icon: Shield,
-    title: "Secret VM Powered Privacy",
+    icon: Check,
+    title: "No-Code Builder",
     description:
-      "Run AI workloads in Trusted Execution Environments for unparalleled privacy and security. Your data never leaves the secure enclave.",
-    gradient: "from-primary/20 via-primary/10 to-transparent",
-    iconBg: "bg-primary/10",
-    iconColor: "text-primary",
+      "Create sophisticated chatbots with our visual flow designer. No programming required.",
+  },
+  {
+    icon: Shield,
+    title: "Complete Privacy",
+    description:
+      "Data processing happens in Secret Network's TEE, ensuring your conversations stay private.",
+  },
+  {
+    icon: Users,
+    title: "Team Collaboration",
+    description:
+      "Work together with your team to build, test, and deploy chatbots collaboratively.",
   },
   {
     icon: Zap,
-    title: "No Code Required",
+    title: "Lightning Fast",
     description:
-      "Build sophisticated chatbots with our intuitive drag-and-drop interface - no programming knowledge needed.",
-    gradient: "from-yellow-500/20 via-yellow-500/10 to-transparent",
-    iconBg: "bg-yellow-500/10",
-    iconColor: "text-yellow-600 dark:text-yellow-400",
+      "Deploy and scale your chatbots instantly. Built for performance and reliability.",
   },
   {
     icon: Globe,
-    title: "Multi-Channel Deploy",
+    title: "Multi-Platform Deploy",
     description:
-      "Deploy your chatbot across web, WhatsApp, Telegram, and custom platforms with a single click.",
-    gradient: "from-green-500/20 via-green-500/10 to-transparent",
-    iconBg: "bg-green-500/10",
-    iconColor: "text-green-600 dark:text-green-400",
-  },
-  {
-    icon: Network,
-    title: "Advanced AI Workflows",
-    description:
-      "Create complex conversation flows with our visual builder or use simple form-based chatbots.",
-    gradient: "from-purple-500/20 via-purple-500/10 to-transparent",
-    iconBg: "bg-purple-500/10",
-    iconColor: "text-purple-600 dark:text-purple-400",
+      "Create KB from Notion, Google Docs, PDFs & more. Deploy chatbots on discord, web & custom platforms.",
   },
 ];
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      delay: i * 0.1,
-      duration: 0.5,
-      ease: [0.0, 0.0, 0.2, 1] as const,
-    },
-  }),
-};
-
 export function ValuePropositions() {
   return (
-    <section className="py-16 md:py-24 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-20 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-secondary/10 rounded-full blur-3xl"></div>
-      </div>
+    <section className="py-16 md:py-24 bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Desktop Layout */}
+        <div className="hidden lg:flex lg:gap-16 items-center">
+          {/* Left side - Main feature with frame */}
+          <div className="flex-1">
+            <div className="relative bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-gray-700">
+              {/* Header */}
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 font-manrope">
+                  No-Code Builder
+                </h2>
+                <p className="text-lg text-gray-600 dark:text-gray-400 font-manrope">
+                  Create sophisticated chatbots with our visual flow designer.
+                  No programming required.
+                </p>
+              </div>
 
-      <Container>
-        <SectionHeading
-          title="Why Choose PrivexBot?"
-          subtitle="Privacy-first AI chatbot platform with enterprise-grade security and ease of use"
-        />
+              {/* Frame with interface image */}
+              <div className="relative">
+                <img
+                  src="/why-us-frame-image.png"
+                  alt="PrivexBot No-Code Builder Interface"
+                  className="w-full h-auto rounded-xl"
+                />
+              </div>
+            </div>
+          </div>
 
-        {/* Modern Grid Layout - Equal Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {valueProps.map((prop, index) => {
-            const Icon = prop.icon;
-
-            return (
-              <motion.div
-                key={index}
-                custom={index}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={cardVariants}
-                className="group relative"
-              >
-                <div
-                  className="relative h-full overflow-hidden rounded-2xl border bg-card p-8 transition-all duration-300 hover:shadow-xl hover:shadow-primary/10 hover:border-primary/50 min-h-[320px] flex flex-col"
-                >
-                  {/* Gradient background */}
-                  <div
-                    className={`absolute inset-0 bg-gradient-to-br ${prop.gradient} opacity-50 transition-opacity group-hover:opacity-100`}
-                  ></div>
-
-                  {/* Content */}
-                  <div className="relative z-10 flex flex-col h-full">
+          {/* Right side - Value proposition grid */}
+          <div className="flex-1">
+            <div className="grid grid-cols-2 gap-6">
+              {valueProps.slice(1).map((prop, index) => {
+                const Icon = prop.icon;
+                return (
+                  <motion.div
+                    key={index + 1}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: index * 0.1, duration: 0.6 }}
+                    className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow"
+                  >
                     {/* Icon */}
-                    <div
-                      className={`inline-flex w-fit rounded-xl p-3.5 mb-5 ${prop.iconBg} transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3`}
-                    >
-                      <Icon
-                        className={`h-8 w-8 ${prop.iconColor}`}
-                      />
+                    <div className="w-12 h-12 bg-black dark:bg-white rounded-full flex items-center justify-center mb-4">
+                      <Icon className="h-6 w-6 text-white dark:text-black" />
                     </div>
 
                     {/* Title */}
-                    <h3 className="text-xl font-bold mb-3">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3 font-manrope">
                       {prop.title}
                     </h3>
 
                     {/* Description */}
-                    <p className="text-sm text-muted-foreground dark:text-foreground/70 leading-relaxed flex-grow">
+                    <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed font-manrope">
                       {prop.description}
                     </p>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-                    {/* Hover indicator for all cards */}
-                    <div className="mt-5 flex items-center gap-2 text-primary font-medium text-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span>Learn more</span>
-                      <svg
-                        className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 5l7 7-7 7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
+        {/* Mobile Layout */}
+        <div className="lg:hidden space-y-8">
+          {/* Main feature card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+          >
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3 font-manrope">
+              No-Code Builder
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 font-manrope">
+              Create sophisticated chatbots with our visual flow designer. No
+              programming required.
+            </p>
+            <div className="relative">
+              <img
+                src="/why-us-frame-image.png"
+                alt="PrivexBot No-Code Builder Interface"
+                className="w-full h-auto rounded-xl"
+              />
+            </div>
+          </motion.div>
 
-                  {/* Shine effect on hover */}
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                  </div>
+          {/* Value proposition cards */}
+          {valueProps.slice(1).map((prop, index) => {
+            const Icon = prop.icon;
+            return (
+              <motion.div
+                key={index + 1}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: index * 0.1, duration: 0.6 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+              >
+                {/* Icon */}
+                <div className="w-12 h-12 bg-black dark:bg-white rounded-full flex items-center justify-center mb-4">
+                  <Icon className="h-6 w-6 text-white dark:text-black" />
                 </div>
+
+                {/* Title */}
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3 font-manrope">
+                  {prop.title}
+                </h3>
+
+                {/* Description */}
+                <p className="text-gray-600 dark:text-gray-400 leading-relaxed font-manrope">
+                  {prop.description}
+                </p>
               </motion.div>
             );
           })}
         </div>
-      </Container>
+      </div>
     </section>
   );
 }

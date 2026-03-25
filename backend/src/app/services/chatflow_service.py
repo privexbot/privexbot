@@ -18,7 +18,7 @@ PSEUDOCODE follows the existing codebase patterns.
 
 from uuid import UUID, uuid4
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -124,6 +124,8 @@ class ChatflowService:
 
             response_text = execution_result["output"]
             nodes_executed = execution_result["nodes_executed"]
+            prompt_tokens = execution_result.get("prompt_tokens", 0)
+            completion_tokens = execution_result.get("completion_tokens", 0)
 
             # 5. Calculate execution time
             end_time = datetime.utcnow()
@@ -139,8 +141,15 @@ class ChatflowService:
                     "type": "chatflow",
                     "chatflow_id": str(chatflow.id),
                     "nodes_executed": nodes_executed,
-                    "execution_time_ms": execution_time_ms
-                }
+                    "execution_time_ms": execution_time_ms,
+                    "tokens_used": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": prompt_tokens + completion_tokens
+                    }
+                },
+                prompt_tokens=prompt_tokens if prompt_tokens else None,
+                completion_tokens=completion_tokens if completion_tokens else None
             )
 
             return {
@@ -201,6 +210,8 @@ class ChatflowService:
         current_node = start_node
         nodes_executed = []
         output = ""
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
 
         while current_node:
             # Execute current node
@@ -212,6 +223,24 @@ class ChatflowService:
 
             nodes_executed.append(current_node["id"])
 
+            # Check for node failure
+            if not node_result.get("success", True):
+                error_msg = node_result.get("error", "Unknown node error")
+                print(f"[ChatflowService] Node {current_node['id']} ({current_node['type']}) failed: {error_msg}")
+                # Stop execution on failure - return error as response
+                return {
+                    "output": "I encountered an error processing your request. Please try again.",
+                    "nodes_executed": nodes_executed,
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                }
+
+            # Accumulate token usage from LLM nodes
+            tokens_used = node_result.get("metadata", {}).get("tokens_used")
+            if tokens_used and isinstance(tokens_used, dict):
+                total_prompt_tokens += tokens_used.get("prompt_tokens", 0) or 0
+                total_completion_tokens += tokens_used.get("completion_tokens", 0) or 0
+
             # Update context with node output
             if node_result.get("output"):
                 context["variables"][current_node["id"]] = node_result["output"]
@@ -221,9 +250,10 @@ class ChatflowService:
                 output = node_result.get("output", "")
                 break
 
-            # Find next node
+            # Find next node (pass current node type for branching logic)
             current_node = self._get_next_node(
                 current_node_id=current_node["id"],
+                current_node_type=current_node["type"],
                 edges=edges,
                 nodes=nodes,
                 context=context
@@ -231,7 +261,9 @@ class ChatflowService:
 
         return {
             "output": output,
-            "nodes_executed": nodes_executed
+            "nodes_executed": nodes_executed,
+            "prompt_tokens": total_prompt_tokens,
+            "completion_tokens": total_completion_tokens,
         }
 
 
@@ -242,111 +274,75 @@ class ChatflowService:
         context: dict
     ) -> dict:
         """
-        Execute single node.
+        Execute single node via ChatflowExecutor.
 
-        WHY: Node-specific logic
-        HOW: Delegate to node executor (placeholder for now)
+        WHY: Unified node execution
+        HOW: Delegate to registered node executors
 
-        NODE TYPES:
-        - trigger: Entry point
-        - llm: AI generation
-        - http_request: API call
+        All 11 node types are supported:
+        - trigger, response: Flow control
         - condition: Branching logic
-        - response: Output node
+        - llm, kb, memory: AI & Knowledge
+        - http, database: Integrations
+        - variable, code, loop: Data manipulation
         """
+        from app.services.chatflow_executor import chatflow_executor
 
-        node_type = node["type"]
+        # Execute via unified executor registry
+        result = await chatflow_executor.execute_node(
+            db=db,
+            node=node,
+            context=context
+        )
 
-        # Placeholder implementation - full node executor would be separate service
-        if node_type == "trigger":
-            return {"output": context["user_message"]}
-
-        elif node_type == "llm":
-            # Placeholder - would call inference_service
-            from app.services.inference_service import inference_service
-
-            prompt = node["config"].get("prompt", "").replace(
-                "{{input}}",
-                context["user_message"]
-            )
-
-            result = await inference_service.generate(
-                prompt=prompt,
-                model=node["config"].get("model", "secret-ai-v1"),
-                temperature=node["config"].get("temperature", 0.7)
-            )
-
-            return {"output": result["text"]}
-
-        elif node_type == "response":
-            # Format response template
-            response_template = node["config"].get("message", "{{input}}")
-            response = response_template.replace("{{input}}", context["user_message"])
-
-            # Replace variables
-            for var_name, var_value in context["variables"].items():
-                response = response.replace(f"{{{{{var_name}}}}}", str(var_value))
-
-            return {"output": response}
-
-        elif node_type == "condition":
-            # Evaluate condition (simplified)
-            condition = node["config"].get("condition", "")
-            result = self._evaluate_condition(condition, context)
-
-            return {"output": result, "condition_result": result}
-
-        elif node_type == "http_request":
-            # Make HTTP request (placeholder)
-            return {"output": "HTTP request result"}
-
-        else:
-            # Unknown node type
-            return {"output": None}
-
-
-    def _evaluate_condition(self, condition: str, context: dict) -> bool:
-        """
-        Evaluate conditional expression.
-
-        WHY: Branching logic in workflows
-        HOW: Parse and evaluate condition (simplified)
-
-        EXAMPLE CONDITIONS:
-        - "{{user_message}} contains 'help'"
-        - "{{variable1}} > 10"
-        """
-
-        # Simplified condition evaluation (production would use safe expression parser)
-        return True  # Placeholder
+        return result
 
 
     def _get_next_node(
         self,
         current_node_id: str,
+        current_node_type: str,
         edges: list,
         nodes: list,
         context: dict
     ) -> Optional[dict]:
         """
-        Find next node to execute.
+        Find next node to execute with branching support.
 
-        WHY: Graph traversal
-        HOW: Follow edges from current node
+        WHY: Graph traversal with condition routing
+        HOW: Follow edges based on node type and condition results
 
         HANDLES:
         - Linear flow (single edge)
-        - Branching (conditional edges)
+        - Condition branching (true/false edges via sourceHandle)
         """
 
-        # Find outgoing edges
+        # Find outgoing edges from current node
         outgoing_edges = [e for e in edges if e["source"] == current_node_id]
 
         if not outgoing_edges:
             return None
 
-        # If multiple edges (branching), choose based on conditions
-        # For now, just take first edge
+        # For condition nodes, route based on condition result
+        if current_node_type == "condition":
+            condition_result = context["variables"].get(current_node_id, False)
+
+            # Find edge matching the condition result
+            # Frontend uses sourceHandle: "true" or "false"
+            target_handle = "true" if condition_result else "false"
+
+            for edge in outgoing_edges:
+                edge_handle = edge.get("sourceHandle", "")
+                if edge_handle == target_handle:
+                    next_node_id = edge["target"]
+                    for node in nodes:
+                        if node["id"] == next_node_id:
+                            return node
+
+            # Fallback: if no labeled edges found, log warning and take first edge
+            # (backward compatibility for flows without sourceHandle)
+
+        # For non-condition nodes or fallback: take first edge
         next_edge = outgoing_edges[0]
         next_node_id = next_edge["target"]
 

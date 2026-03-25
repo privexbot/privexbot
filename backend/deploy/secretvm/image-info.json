@@ -1,0 +1,23 @@
+{
+  "deployment_target": "Secret VM (privexbot.com)",
+  "docker_username": "privexbot",
+  "image": "privexbot/privexbot-backend",
+  "version": "0.0.1",
+  "digest": "sha256:1a8b8a9a95b966f86dd970c1809cb6137e0fb23cb7f798e8d32183d747a5aaea",
+  "full_image": "privexbot/privexbot-backend@sha256:1a8b8a9a95b966f86dd970c1809cb6137e0fb23cb7f798e8d32183d747a5aaea",
+  "secretvm_tag": "0.0.1-secretvm",
+  "build_date": "2026-02-06T11:13:39Z",
+  "git_sha": "1490a313fd3f3662f1642a4657fae1b7ac57c057",
+  "short_sha": "1490a31",
+  "dockerfile": "Dockerfile.cpu",
+  "domain": "privexbot.com",
+  "endpoints": {
+    "frontend": "https://privexbot.com",
+    "api": "https://api.privexbot.com",
+    "docs": "https://api.privexbot.com/api/docs",
+    "pgadmin": "https://pgadmin.privexbot.com",
+    "redis_ui": "https://redis-ui.privexbot.com",
+    "flower": "https://flower.privexbot.com",
+    "traefik": "https://traefik.privexbot.com"
+  }
+}

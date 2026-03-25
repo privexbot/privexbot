@@ -1,0 +1,114 @@
+# Production Dockerfile for PrivexBot Backend (CPU-only version)
+# Multi-stage build for optimized image size
+# Supports all services: backend, celery, celery-beat, flower
+
+# Build stage - Install dependencies
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency management
+RUN pip install --no-cache-dir uv
+
+# Configure uv and pip for better performance and reliability
+ENV UV_HTTP_TIMEOUT=600
+ENV UV_CONCURRENT_DOWNLOADS=4
+ENV UV_SYSTEM_PYTHON=1
+ENV PIP_TIMEOUT=600
+ENV PIP_RETRIES=5
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Copy dependency files
+COPY pyproject.toml uv.lock* ./
+
+# Install CPU-only PyTorch with extended timeout and retry settings
+RUN pip install --no-cache-dir \
+    --timeout=600 \
+    --retries=5 \
+    torch==2.5.1+cpu \
+    torchvision==0.20.1+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Install all other dependencies using uv sync (--prerelease for secret-ai-sdk's betterproto)
+RUN uv sync --system --prerelease allow || \
+    uv pip install --system --prerelease=allow -e .
+
+# Production stage
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install only essential runtime dependencies (Playwright will handle browser deps)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    libmagic1 \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Install production web server
+RUN pip install --no-cache-dir gunicorn uvicorn httptools websockets
+
+# Create app directories and user FIRST (before Playwright)
+# CRITICAL: Create volume mount points with placeholder files so Docker preserves ownership
+# when initializing named volumes. Without content, empty dirs may get root ownership.
+RUN mkdir -p /app/cache/huggingface /app/cache/ms-playwright /app/data && \
+    touch /app/cache/huggingface/.keep && \
+    useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /home/appuser
+
+# Install Playwright browser dependencies (as root)
+RUN python -m playwright install-deps chromium
+
+# Set environment variables for cache directories
+ENV HOME=/app/cache
+ENV CRAWL4AI_BASE_DIR=/app/data/crawl4ai
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/cache/ms-playwright
+
+# Install chromium browser with correct paths and permissions
+RUN PLAYWRIGHT_BROWSERS_PATH=/app/cache/ms-playwright python -m playwright install chromium && \
+    # Clean up temporary files and caches to save space
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/* /var/tmp/*
+
+# Copy entrypoint script
+COPY scripts/docker/entrypoint-prod.sh /app/scripts/
+RUN chmod +x /app/scripts/entrypoint-prod.sh
+
+# Copy initial staff setup script (runs after migrations to set admin users)
+COPY scripts/set_initial_staff.py /app/scripts/
+
+# Copy application code
+COPY src/ ./src/
+
+# Ensure all Python files are readable (fixes permission issues from local dev)
+RUN find /app/src -type f -name "*.py" -exec chmod 644 {} \;
+
+# Set Python path to include src directory
+ENV PYTHONPATH=/app/src
+
+# Switch to non-root user for security
+USER appuser
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# Run entrypoint script (handles migrations and starts gunicorn)
+CMD ["/app/scripts/entrypoint-prod.sh"]

@@ -220,6 +220,7 @@ class OrganizationResponse(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
     member_count: Optional[int] = Field(None, description="Number of members in organization")
     workspace_count: Optional[int] = Field(None, description="Number of workspaces in organization")
+    is_default: bool = Field(..., description="Whether this is the user's personal organization")
     user_role: Optional[OrgRole] = Field(None, description="Current user's role in this organization")
 
     model_config = ConfigDict(from_attributes=True)
@@ -317,8 +318,11 @@ class WorkspaceSummary(BaseModel):
     id: UUID = Field(..., description="Workspace ID")
     name: str = Field(..., description="Workspace name")
     description: Optional[str] = Field(None, description="Workspace description")
+    avatar_url: Optional[str] = Field(None, description="Workspace avatar URL")
     is_default: bool = Field(..., description="Whether this is the default workspace")
     created_at: datetime = Field(..., description="Workspace creation timestamp")
+    user_role: Optional[str] = Field(None, description="Current user's role in this workspace")
+    member_count: Optional[int] = Field(None, description="Number of members in this workspace")
 
     model_config = ConfigDict(from_attributes=True)
 

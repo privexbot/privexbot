@@ -20,7 +20,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { useWorkspaceStore } from '@/store/workspace-store';
 import apiClient, { handleApiError } from '@/lib/api-client';
 
 interface NotionPage {
@@ -33,39 +32,40 @@ interface NotionPage {
 
 interface NotionIntegrationProps {
   draftId: string;
+  workspaceId: string;
   onPagesSelected?: (pages: NotionPage[]) => void;
+  onSourcesAdded?: () => void;
 }
 
-export default function NotionIntegration({ draftId, onPagesSelected }: NotionIntegrationProps) {
+export default function NotionIntegration({ draftId, workspaceId, onPagesSelected, onSourcesAdded }: NotionIntegrationProps) {
   const { toast } = useToast();
-  const { currentWorkspace } = useWorkspaceStore();
 
   const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
 
   // Check if Notion is connected
   const { data: credentials } = useQuery({
-    queryKey: ['credentials', currentWorkspace?.id, 'notion'],
+    queryKey: ['credentials', workspaceId, 'notion'],
     queryFn: async () => {
       const response = await apiClient.get('/credentials/', {
         params: {
-          workspace_id: currentWorkspace?.id,
-          credential_type: 'notion',
+          workspace_id: workspaceId,
+          provider: 'notion',
         },
       });
       return response.data.items;
     },
-    enabled: !!currentWorkspace,
+    enabled: !!workspaceId,
   });
 
   const isConnected = credentials && credentials.length > 0;
 
   // Fetch Notion pages
   const { data: pages, isLoading, refetch } = useQuery({
-    queryKey: ['notion-pages', currentWorkspace?.id],
+    queryKey: ['notion-pages', workspaceId],
     queryFn: async () => {
       const response = await apiClient.get('/integrations/notion/pages', {
-        params: { workspace_id: currentWorkspace?.id },
+        params: { workspace_id: workspaceId },
       });
       return response.data.pages as NotionPage[];
     },
@@ -75,20 +75,22 @@ export default function NotionIntegration({ draftId, onPagesSelected }: NotionIn
   // Add pages mutation
   const addPagesMutation = useMutation({
     mutationFn: async (pageIds: string[]) => {
-      const response = await apiClient.post(`/kb-drafts/${draftId}/documents/notion`, {
+      const response = await apiClient.post(`/kb-drafts/${draftId}/sources/notion`, {
         page_ids: pageIds,
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: 'Notion pages added',
-        description: `${selectedPages.size} pages added to knowledge base`,
+        description: `${data.sources_added} pages added to knowledge base`,
       });
       if (onPagesSelected && pages) {
         const selected = pages.filter((p) => selectedPages.has(p.id));
         onPagesSelected(selected);
       }
+      setSelectedPages(new Set());
+      onSourcesAdded?.();
     },
     onError: (error) => {
       toast({
@@ -99,9 +101,19 @@ export default function NotionIntegration({ draftId, onPagesSelected }: NotionIn
     },
   });
 
-  const initiateOAuth = () => {
-    const oauthUrl = `${import.meta.env.VITE_API_BASE_URL}/credentials/oauth/authorize?provider=notion&workspace_id=${currentWorkspace?.id}`;
-    window.location.href = oauthUrl;
+  const initiateOAuth = async () => {
+    try {
+      const response = await apiClient.post(
+        `/credentials/oauth/authorize?provider=notion&workspace_id=${workspaceId}`
+      );
+      window.location.href = response.data.redirect_url;
+    } catch (error) {
+      toast({
+        title: 'Connection failed',
+        description: handleApiError(error),
+        variant: 'destructive',
+      });
+    }
   };
 
   const togglePage = (pageId: string) => {
@@ -192,6 +204,17 @@ export default function NotionIntegration({ draftId, onPagesSelected }: NotionIn
 
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+
+      {/* Connected account bar */}
+      <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+        <div className="flex items-center gap-2 text-sm">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span>Connected{credentials?.[0]?.name ? ` - ${credentials[0].name.replace('Notion - ', '')}` : ''}</span>
+        </div>
+        <Button variant="ghost" size="sm" onClick={initiateOAuth}>
+          <RefreshCw className="w-4 h-4 mr-1" /> Reconnect
         </Button>
       </div>
 

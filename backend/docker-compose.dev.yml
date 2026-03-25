@@ -7,6 +7,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    image: privexbot-backend-dev:latest  # Tag the image for reuse
     container_name: privexbot-backend-dev
     ports:
       - "8000:8000"
@@ -15,26 +16,54 @@ services:
       - ./src:/app/src
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
+      # Mount scripts for manual execution (e.g., python scripts/set_initial_staff.py)
+      - ./scripts:/app/scripts
+      # Persist Playwright browsers to avoid repeated downloads
+      - playwright-browsers:/root/.cache/ms-playwright
+      # Persist embedding model downloads (shared with Celery)
+      - huggingface_cache:/root/.cache/huggingface
     env_file:
       - .env.dev
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
+      - DATABASE_URL=postgresql+psycopg2://privexbot:privexbot_dev@postgres:5432/privexbot_dev
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - TIKA_URL=http://tika:9998
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=privexbot
+      - MINIO_ROOT_PASSWORD=privexbot_dev_storage
+      - MINIO_PUBLIC_URL=http://localhost:9000
+      # Playwright browser path for web scraping
+      - PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      tika:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     networks:
       - privexbot-dev
+    # Fix DNS resolution for external services (SMTP, APIs)
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    # Add extra hosts for better connectivity
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: privexbot-postgres-dev
     ports:
-      - "5432:5432"
+      - "5434:5432"  # Using 5434 on host to avoid conflict
     environment:
       - POSTGRES_USER=privexbot
       - POSTGRES_PASSWORD=privexbot_dev
@@ -54,7 +83,7 @@ services:
     image: redis:7-alpine
     container_name: privexbot-redis-dev
     ports:
-      - "6379:6379"
+      - "6380:6379"  # Using 6380 on host to avoid conflict
     volumes:
       - redis_data_dev:/data
     healthcheck:
@@ -66,28 +95,180 @@ services:
       - privexbot-dev
     restart: unless-stopped
 
-  # Optional: Celery worker for background tasks
-  # Uncomment when you create src/app/tasks/celery_worker.py
-  # celery-worker:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.dev
-  #   container_name: privexbot-celery-dev
-  #   command: celery -A src.app.tasks.celery_worker worker --loglevel=info
-  #   volumes:
-  #     - ./src:/app/src
-  #   env_file:
-  #     - .env.dev
-  #   environment:
-  #     - PYTHONUNBUFFERED=1
-  #     - DATABASE_URL=postgresql://privexbot:privexbot_dev@postgres:5432/privexbot_dev
-  #     - REDIS_URL=redis://redis:6379/0
-  #   depends_on:
-  #     - postgres
-  #     - redis
-  #   networks:
-  #     - privexbot-dev
-  #   restart: unless-stopped
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: privexbot-qdrant-dev
+    ports:
+      - "6335:6333"  # HTTP API (using 6335 on host to avoid conflict)
+      - "6336:6334"  # gRPC API (optional)
+    volumes:
+      - qdrant_data_dev:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  # Apache Tika for universal document parsing (PDF, DOCX, CSV, etc.)
+  tika:
+    image: apache/tika:latest-full
+    container_name: privexbot-tika-dev
+    command: ["-noFork"]  # Run in no-fork mode for Docker (single process)
+    ports:
+      - "9998:9998"  # Tika REST API
+    environment:
+      # Enable OCR for scanned documents
+      - OCR_STRATEGY=ocr_and_text
+    healthcheck:
+      # Use GET request instead of HEAD (--spider) to avoid Tika INFO log noise
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://localhost:9998/tika || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  # MinIO object storage for file uploads (avatars, KB files, chat files)
+  minio:
+    image: minio/minio:latest
+    container_name: privexbot-minio-dev
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      - MINIO_ROOT_USER=privexbot
+      - MINIO_ROOT_PASSWORD=privexbot_dev_storage
+      # CORS configuration to allow frontend to fetch images directly
+      - MINIO_API_CORS_ALLOW_ORIGIN=*
+    volumes:
+      - minio_data_dev:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  # Celery worker for background tasks (KB processing, embeddings, crawling)
+  celery-worker:
+    image: privexbot-backend-dev:latest
+    container_name: privexbot-celery-dev
+    command: celery -A app.tasks.celery_worker worker --loglevel=info --queues=default,high_priority,low_priority --pool=solo
+    volumes:
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+      - huggingface_cache:/root/.cache/huggingface  # Persist model downloads
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+psycopg2://privexbot:privexbot_dev@postgres:5432/privexbot_dev
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - QDRANT_URL=http://qdrant:6333
+      - TIKA_URL=http://tika:9998
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=privexbot
+      - MINIO_ROOT_PASSWORD=privexbot_dev_storage
+      - MINIO_PUBLIC_URL=http://localhost:9000
+      # Playwright browser path for web scraping (if Celery tasks use it)
+      - PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+      # PyTorch/OpenMP compatibility with Celery
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - VECLIB_MAXIMUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
+    depends_on:
+      backend-dev:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      tika:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Celery Beat for scheduled tasks (periodic re-indexing, maintenance)
+  celery-beat:
+    image: privexbot-backend-dev:latest
+    container_name: privexbot-celery-beat-dev
+    working_dir: /app/src
+    # Use exec form for proper signal handling
+    command: ["celery", "-A", "app.tasks.celery_worker", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid", "--schedule=/tmp/celerybeat-schedule"]
+    volumes:
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+psycopg2://privexbot:privexbot_dev@postgres:5432/privexbot_dev
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PYTHONPATH=/app/src
+    depends_on:
+      backend-dev:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
+
+  flower:
+    image: privexbot-backend-dev:latest 
+    container_name: privexbot-flower-dev
+    command: celery -A app.tasks.celery_worker flower --port=5555 --basic_auth=admin:admin123
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./src:/app/src
+    env_file:
+      - .env.dev
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      backend-dev:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - privexbot-dev
+    restart: unless-stopped
 
 networks:
   privexbot-dev:
@@ -96,3 +277,7 @@ networks:
 volumes:
   postgres_data_dev:
   redis_data_dev:
+  qdrant_data_dev:
+  minio_data_dev:
+  playwright-browsers:
+  huggingface_cache:  # Persist embedding model downloads (avoid re-downloading ~470MB)

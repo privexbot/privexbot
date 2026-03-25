@@ -1,0 +1,21 @@
+# Widget Development Dockerfile
+# Hot reload with webpack-dev-server
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code (will be overridden by volume mount in dev)
+COPY . .
+
+# Expose webpack dev server port
+EXPOSE 9000
+
+# Run webpack dev server with host 0.0.0.0 to allow external connections
+CMD ["npm", "run", "serve", "--", "--host", "0.0.0.0"]

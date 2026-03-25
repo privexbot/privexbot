@@ -145,6 +145,7 @@ class Workspace(Base):
 
     # Workspace info
     name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=True, unique=True)  # URL-friendly identifier, globally unique
     description = Column(Text, nullable=True)
     avatar_url = Column(String(512), nullable=True)  # Optional workspace avatar/logo URL
 
@@ -176,6 +177,7 @@ class Workspace(Base):
         UniqueConstraint('organization_id', 'name', name='uq_workspace_org_name'),
         Index('idx_workspace_org', 'organization_id'),
         Index('idx_workspace_created_by', 'created_by'),
+        Index('idx_workspace_slug', 'slug'),  # For fast slug lookups in public URLs
     )
 
     # Relationships
@@ -190,11 +192,18 @@ class Workspace(Base):
     )
 
     # Resources in this workspace
-    # NOTE: These relationships will be defined when the models exist
-    # chatbots = relationship("Chatbot", back_populates="workspace", cascade="all, delete-orphan")
-    # chatflows = relationship("Chatflow", back_populates="workspace", cascade="all, delete-orphan")
-    # knowledge_bases = relationship("KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan")
-    # leads = relationship("Lead", back_populates="workspace", cascade="all, delete-orphan")
+    knowledge_bases = relationship("KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan")
+    chatbots = relationship("Chatbot", back_populates="workspace", cascade="all, delete-orphan")
+    chatflows = relationship("Chatflow", back_populates="workspace", cascade="all, delete-orphan")
+    credentials = relationship("Credential", back_populates="workspace", cascade="all, delete-orphan")
+    leads = relationship("Lead", back_populates="workspace", cascade="all, delete-orphan")
+
+    # Discord guild deployments (shared bot architecture)
+    discord_guild_deployments = relationship(
+        "DiscordGuildDeployment",
+        back_populates="workspace",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Workspace(id={self.id}, name={self.name}, org_id={self.organization_id})>"

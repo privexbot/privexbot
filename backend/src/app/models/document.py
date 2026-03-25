@@ -361,3 +361,108 @@ HOW: Tenant isolation + access control
 - File storage encrypted at rest
 - API access requires valid API key with KB permissions
 """
+
+# ACTUAL IMPLEMENTATION
+from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from app.db.base_class import Base
+import uuid
+from datetime import datetime
+
+
+class Document(Base):
+    """
+    Document model - Individual documents within a knowledge base
+
+    Multi-tenancy: Organization → Workspace → KB → Document
+    Processing Pipeline: Upload → Parse → Chunk → Embed → Index
+    """
+    __tablename__ = "documents"
+
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Parent KB (multi-tenancy)
+    kb_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Also store workspace_id for direct tenant filtering
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Basic info
+    name = Column(String(500), nullable=False)
+
+    # Source information
+    source_type = Column(String(50), nullable=False, index=True)
+    # Types: file_upload, text_input, web_scraping, google_docs, notion, confluence, api
+
+    source_url = Column(String(2048), nullable=True)
+    source_metadata = Column(JSONB, nullable=False, default=dict)
+
+    # Storage
+    file_path = Column(String(1024), nullable=True)
+    content_preview = Column(Text, nullable=True)
+    content_full = Column(Text, nullable=True)  # Store full document content
+
+    # Processing status
+    status = Column(
+        String(50),
+        nullable=False,
+        default="pending",
+        index=True
+    )  # pending, processing, embedding, completed, failed, disabled, archived
+
+    processing_progress = Column(Integer, nullable=False, default=0)  # 0-100
+    error_message = Column(Text, nullable=True)
+    processing_metadata = Column(JSONB, nullable=True)
+
+    # Content statistics
+    word_count = Column(Integer, nullable=False, default=0)
+    character_count = Column(Integer, nullable=False, default=0)
+    page_count = Column(Integer, nullable=True)
+    chunk_count = Column(Integer, nullable=False, default=0)
+
+    # User metadata (custom fields for filtering)
+    custom_metadata = Column(JSONB, nullable=False, default=dict)
+
+    # Chunking configuration (document-level override)
+    chunking_config = Column(JSONB, nullable=True)
+
+    # Annotations (help AI understand document better)
+    annotations = Column(JSONB, nullable=True)
+
+    # Lifecycle management
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    is_archived = Column(Boolean, nullable=False, default=False)
+    disabled_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    auto_disabled_reason = Column(Text, nullable=True)
+
+    # Audit fields
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_accessed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    knowledge_base = relationship("KnowledgeBase", back_populates="documents")
+    workspace = relationship("Workspace")
+    creator = relationship("User")
+    chunks = relationship(
+        "Chunk",
+        back_populates="document",
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self):
+        return f"<Document(id={self.id}, name={self.name}, status={self.status})>"

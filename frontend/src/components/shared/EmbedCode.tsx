@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import { Copy, Check, Download, Code } from 'lucide-react';
+import { config } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -59,11 +60,13 @@ export default function EmbedCode({
   };
 
   const generateEmbedCode = () => {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL;
+    const widgetUrl = config.WIDGET_CDN_URL;
+    const apiUrl = config.API_BASE_URL;
     const widgetType = type === 'chatbot' ? 'chatbot' : 'chatflow';
 
     // Generate options object for the script
     const scriptOptions: Record<string, any> = {
+      baseURL: apiUrl,
       position: defaultOptions.position,
       color: defaultOptions.color,
       width: defaultOptions.width,
@@ -86,7 +89,7 @@ export default function EmbedCode({
     w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
     js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
     js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${baseUrl}/widget.js'));
+  }(window, document, 'script', 'pb', '${widgetUrl}/widget.js'));
   pb('init', {
     type: '${widgetType}',
     id: '${id}',

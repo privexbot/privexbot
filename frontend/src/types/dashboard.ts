@@ -5,6 +5,8 @@
  * HOW: TypeScript interfaces for dashboard components
  */
 
+import type { KBStatus } from "./knowledge-base";
+
 // Resource types in the platform
 export type ResourceType = "chatbot" | "chatflow" | "knowledge_base" | "lead";
 
@@ -99,7 +101,7 @@ export interface KnowledgeBaseSummary {
   id: string;
   name: string;
   description?: string;
-  status: ResourceStatus;
+  status: KBStatus; // Use proper KB status type for semantic accuracy
   documents_count: number;
   total_chunks: number;
   last_indexed_at?: string;
@@ -127,6 +129,8 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d" | "1y";
  * Dashboard Filters
  */
 export interface DashboardFilters {
-  time_range: TimeRange;
+  time_range?: TimeRange;
+  custom_date_range?: { start: string; end: string };
+  search?: string;
   resource_types?: ResourceType[];
 }

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db as get_database_session
 from app.core.security import decode_token
 from app.models.user import User
+from app.models.workspace import Workspace
 
 
 # Re-export get_db for convenience
@@ -261,3 +262,105 @@ async def get_current_user_with_org(
 
     # All validations passed - return user with org context
     return (user, org_id, ws_id)
+
+
+async def get_current_workspace(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> Workspace:
+    """
+    Get current workspace from JWT token and validate access.
+
+    WHY: Workspace-scoped endpoints need to ensure valid workspace context
+    HOW: Extract workspace ID from JWT, verify it exists and user has access
+
+    Args:
+        credentials: HTTP Bearer token from header
+        db: Database session
+
+    Returns:
+        Workspace object if valid
+
+    Raises:
+        HTTPException(401): Invalid token or inactive user
+        HTTPException(404): Workspace not found or no access
+
+    Usage:
+        @router.get("/endpoint")
+        def my_endpoint(workspace: Workspace = Depends(get_current_workspace)):
+            # Use workspace.id for filtering
+    """
+    from app.models.organization_member import OrganizationMember
+
+    # Get user and org context first
+    user, org_id, ws_id = await get_current_user_with_org(credentials, db)
+
+    # If no workspace in token, we need to handle this case
+    if not ws_id:
+        # For backward compatibility, we could get the default workspace for the org
+        # or require workspace to be specified in the token
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "NO_WORKSPACE_CONTEXT",
+                "message": "No workspace specified in authentication token.",
+                "action_required": "SWITCH_WORKSPACE"
+            }
+        )
+
+    # Verify workspace exists and belongs to the org
+    workspace = db.query(Workspace).filter(
+        Workspace.id == ws_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found or access denied"
+        )
+
+    # Verify user has access to this workspace via organization membership
+    org_member = db.query(OrganizationMember).filter(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.user_id == user.id
+    ).first()
+
+    if not org_member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No access to workspace"
+        )
+
+    return workspace
+
+
+async def get_staff_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Require staff access for admin/backoffice routes.
+
+    WHY: Protect admin routes from non-staff users
+    HOW: Check is_staff flag on user, reject if not staff
+
+    Args:
+        current_user: Authenticated user from get_current_user
+
+    Returns:
+        User object if user is staff
+
+    Raises:
+        HTTPException(403): If user is not staff
+
+    Usage:
+        @router.get("/admin/users")
+        def list_all_users(staff: User = Depends(get_staff_user)):
+            # Only staff can access this endpoint
+    """
+    if not current_user.is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff access required"
+        )
+    return current_user

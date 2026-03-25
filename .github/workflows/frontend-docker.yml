@@ -28,7 +28,7 @@ on:
 
 # Environment variables
 env:
-  DOCKER_USERNAME: harystyles
+  DOCKER_USERNAME: privexbot
   IMAGE_NAME: privexbot-frontend
   REGISTRY: docker.io
 
@@ -152,7 +152,7 @@ jobs:
 
           ## 🚀 Deployment Instructions
 
-          ### SecretVM Deployment (Primary)
+          ### SecretVM Deployment (privexbot.com)
 
           **1. Update \`docker-compose.secretvm.yml\`:**
           \`\`\`yaml
@@ -161,24 +161,17 @@ jobs:
               image: ${{ steps.digest.outputs.full_image }}
           \`\`\`
 
-          **2. Deploy to SecretVM:**
+          **2. Deploy via SecretVM Portal:**
           \`\`\`bash
-          # SSH into SecretVM
-          ssh user@silver-hedgehog.vm.scrtlabs.com
+          # Build frontend for Secret VM
+          cd frontend
+          cp .env.secretvm .env.production
+          npm run build
 
-          # Upload updated compose file
-          # (On your local machine)
-          scp docker-compose.secretvm.yml user@silver-hedgehog.vm.scrtlabs.com:/mnt/secure/docker_wd/docker-compose.yml
-
-          # On SecretVM, deploy
-          cd /mnt/secure/docker_wd/
-          docker compose down
-          docker pull ${{ steps.digest.outputs.full_image }}
-          docker compose up -d
-
-          # Verify deployment
-          docker compose ps
-          docker logs docker_wd-traefik-1 | grep "Creating router"
+          # Use Secret VM Portal to deploy
+          # 1. Upload docker-compose.secretvm.yml
+          # 2. Upload .env file
+          # 3. Deploy through portal
           \`\`\`
 
           ### Standalone Production Deployment
@@ -233,7 +226,7 @@ jobs:
 
           ---
 
-          ## SecretVM Deployment (Primary)
+          ## SecretVM Deployment (privexbot.com)
 
           ### Step 1: Update docker-compose.secretvm.yml
 
@@ -246,21 +239,20 @@ jobs:
           ### Step 2: Deploy to SecretVM
 
           \`\`\`bash
-          # SSH into SecretVM
-          ssh user@silver-hedgehog.vm.scrtlabs.com
+          # Build frontend for Secret VM
+          cd frontend
+          cp .env.secretvm .env.production
+          npm run build
 
-          # Upload compose file (from local machine)
-          scp docker-compose.secretvm.yml user@silver-hedgehog.vm.scrtlabs.com:/mnt/secure/docker_wd/docker-compose.yml
+          # Deploy via Secret VM Portal
+          # 1. Go to Secret VM Developer Portal
+          # 2. Upload docker-compose.secretvm.yml
+          # 3. Upload .env file
+          # 4. Click Deploy
 
-          # Deploy on SecretVM
-          cd /mnt/secure/docker_wd/
-          docker compose down
-          docker pull ${{ steps.digest.outputs.full_image }}
-          docker compose up -d
-
-          # Verify
-          docker compose ps
-          docker logs docker_wd-traefik-1 | grep "Creating router"
+          # Test deployment
+          curl https://privexbot.com
+          curl https://api.privexbot.com/health
           \`\`\`
 
           ---

@@ -319,3 +319,114 @@ function migrate_vector_store(kb_id: UUID, new_provider: str):
     5. Update kb.vector_store_config
     6. Delete old vector store data
 """
+
+# ACTUAL IMPLEMENTATION
+from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from app.db.base_class import Base
+import uuid
+from datetime import datetime
+
+
+class KnowledgeBase(Base):
+    """
+    Knowledge Base model - Centralized knowledge storage for RAG
+
+    Multi-tenancy: Organization → Workspace → KnowledgeBase
+    3-Phase Flow: Draft (Redis) → Finalization (Create DB record) → Background Processing (Populate chunks)
+    """
+    __tablename__ = "knowledge_bases"
+
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Basic info
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Multi-tenancy (CRITICAL for tenant isolation)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Processing status (3-phase flow)
+    status = Column(
+        String(50),
+        nullable=False,
+        default="pending",
+        index=True
+    )  # pending, processing, ready, ready_with_warnings, failed
+
+    # Configuration (stores all KB configs)
+    config = Column(JSONB, nullable=False, default=dict)
+    # Example structure:
+    # {
+    #     "chunking": {"strategy": "by_heading", "chunk_size": 1000, "chunk_overlap": 200},
+    #     "embedding": {"model": "all-MiniLM-L6-v2", "device": "cpu"},
+    #     "scraping": {"max_pages": 50, "max_depth": 3}
+    # }
+
+    # Context-based access control (simplified)
+    context = Column(
+        String(50),
+        nullable=False,
+        default="both",
+        index=True
+    )  # chatbot, chatflow, both
+
+    # Context settings (access control) - deprecated in favor of simpler context field
+    context_settings = Column(JSONB, nullable=False, default=dict)
+
+    # Embedding configuration
+    embedding_config = Column(JSONB, nullable=False, default=dict)
+
+    # Vector store configuration
+    vector_store_config = Column(JSONB, nullable=False, default=dict)
+
+    # Indexing settings
+    indexing_method = Column(String(50), nullable=False, default="high_quality")
+    reindex_required = Column(Boolean, nullable=False, default=False)
+
+    # Statistics
+    total_documents = Column(Integer, nullable=False, default=0)
+    total_chunks = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    last_indexed_at = Column(DateTime, nullable=True)
+
+    # Processing metadata
+    processed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    stats = Column(JSONB, nullable=True)
+    # Example stats:
+    # {
+    #     "successful_pages": 47,
+    #     "failed_pages": 3,
+    #     "total_chunks": 850,
+    #     "processing_duration_seconds": 165
+    # }
+
+    # Audit fields
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    workspace = relationship("Workspace", back_populates="knowledge_bases")
+    creator = relationship("User")
+    documents = relationship(
+        "Document",
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan"
+    )
+    members = relationship(
+        "KBMember",
+        back_populates="kb",
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self):
+        return f"<KnowledgeBase(id={self.id}, name={self.name}, status={self.status})>"

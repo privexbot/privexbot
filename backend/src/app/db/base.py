@@ -70,21 +70,53 @@ from app.db.base_class import Base  # noqa
 
 # Import models so they are registered with SQLAlchemy
 # These imports ensure Alembic can detect all tables for migrations
+
+# Core user and authentication models
 from app.models.user import User  # noqa
 from app.models.auth_identity import AuthIdentity  # noqa
 
-#  TODO: Uncomment these imports as you implement each model
-# from app.models.organization import Organization  # noqa
-# from app.models.workspace import Workspace  # noqa
-# from app.models.organization_member import OrganizationMember  # noqa
-# from app.models.workspace_member import WorkspaceMember  # noqa
-# from app.models.chatbot import Chatbot  # noqa
-# from app.models.chatflow import Chatflow  # noqa
-# from app.models.knowledge_base import KnowledgeBase  # noqa
-# from app.models.document import Document  # noqa
-# from app.models.chunk import Chunk  # noqa
-# from app.models.chat_session import ChatSession  # noqa
-# from app.models.chat_message import ChatMessage  # noqa
-# from app.models.lead import Lead  # noqa
-# from app.models.credential import Credential  # noqa
-# from app.models.api_key import APIKey  # noqa
+# Multi-tenancy models
+from app.models.organization import Organization  # noqa
+from app.models.organization_member import OrganizationMember  # noqa
+from app.models.workspace import Workspace  # noqa
+from app.models.workspace_member import WorkspaceMember  # noqa
+from app.models.invitation import Invitation  # noqa
+
+# Knowledge Base models
+from app.models.knowledge_base import KnowledgeBase  # noqa
+from app.models.document import Document  # noqa
+from app.models.chunk import Chunk  # noqa
+
+# KB RBAC, Audit, Notifications, Analytics
+from app.models.kb_member import KBMember  # noqa
+from app.models.kb_audit_log import KBAuditLog  # noqa
+from app.models.kb_notification import KBNotification  # noqa
+from app.models.kb_analytics import KBAnalyticsEvent  # noqa
+
+# Chatbot models
+from app.models.chatbot import Chatbot  # noqa
+
+# Chat session and message models
+from app.models.chat_session import ChatSession  # noqa
+from app.models.chat_message import ChatMessage  # noqa
+
+# API Key model
+from app.models.api_key import APIKey  # noqa
+
+# Widget Analytics
+from app.models.widget_event import WidgetEvent  # noqa
+
+# Credentials (encrypted API keys/tokens for chatflow nodes)
+from app.models.credential import Credential  # noqa
+
+# Chatflow model (advanced drag-and-drop workflow bots)
+from app.models.chatflow import Chatflow  # noqa
+
+# Lead capture model
+from app.models.lead import Lead  # noqa
+
+# Discord guild deployments (shared bot architecture)
+from app.models.discord_guild_deployment import DiscordGuildDeployment  # noqa
+
+# Slug history (for redirect support when slugs change)
+from app.models.slug_history import SlugHistory  # noqa

@@ -22,18 +22,27 @@ from enum import Enum
 
 
 class CredentialType(str, Enum):
-    """Credential type enum."""
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    COHERE = "cohere"
-    GOOGLE = "google"
-    NOTION = "notion"
-    TELEGRAM = "telegram"
-    DISCORD = "discord"
-    WHATSAPP = "whatsapp"
-    ZAPIER = "zapier"
-    HTTP = "http"
+    """
+    Credential type enum - authentication mechanism.
+
+    These are generic credential types that can be used for multiple services:
+    - API_KEY: Any API that uses a single API key (OpenAI, Anthropic, Stripe, etc.)
+    - OAUTH2: OAuth2 tokens (Google, Notion, etc.)
+    - BASIC_AUTH: Username/password authentication
+    - DATABASE: Database connection credentials
+    - SMTP: Email server credentials
+    - AWS: AWS access credentials
+    - CUSTOM: Any other credential type with custom fields
+
+    Note: Use 'provider' field to indicate which service (telegram, discord, openai, etc.)
+    """
+    API_KEY = "api_key"
+    OAUTH2 = "oauth2"
+    BASIC_AUTH = "basic_auth"
     DATABASE = "database"
+    SMTP = "smtp"
+    AWS = "aws"
+    CUSTOM = "custom"
 
 
 class CredentialCreate(BaseModel):
@@ -57,7 +66,13 @@ class CredentialCreate(BaseModel):
 
     credential_type: CredentialType = Field(
         ...,
-        description="Credential type"
+        description="Credential type (authentication mechanism)"
+    )
+
+    provider: Optional[str] = Field(
+        None,
+        description="Service provider (e.g., 'telegram', 'discord', 'openai')",
+        max_length=50
     )
 
     data: Dict[str, Any] = Field(
@@ -69,10 +84,11 @@ class CredentialCreate(BaseModel):
         json_schema_extra = {
             "example": {
                 "workspace_id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "OpenAI API Key",
-                "credential_type": "openai",
+                "name": "Telegram Bot Token",
+                "credential_type": "api_key",
+                "provider": "telegram",
                 "data": {
-                    "api_key": "sk-..."
+                    "bot_token": "123456:ABC-DEF..."
                 }
             }
         }
@@ -98,6 +114,12 @@ class CredentialUpdate(BaseModel):
         description="Enable/disable credential"
     )
 
+    provider: Optional[str] = Field(
+        None,
+        description="Service provider (e.g., 'telegram', 'discord', 'openai')",
+        max_length=50
+    )
+
     data: Optional[Dict[str, Any]] = Field(
         None,
         description="Updated credential data (will be re-encrypted)"
@@ -107,9 +129,10 @@ class CredentialUpdate(BaseModel):
         json_schema_extra = {
             "example": {
                 "name": "Updated API Key Name",
-                "is_active": false,
+                "is_active": False,
+                "provider": "telegram",
                 "data": {
-                    "api_key": "sk-new..."
+                    "bot_token": "new-token..."
                 }
             }
         }
@@ -130,6 +153,7 @@ class CredentialResponse(BaseModel):
 
     name: str = Field(..., description="Credential name")
     credential_type: CredentialType = Field(..., description="Credential type")
+    provider: Optional[str] = Field(None, description="Service provider")
 
     is_active: bool = Field(..., description="Is credential active")
     usage_count: int = Field(..., description="Usage count")
@@ -147,9 +171,10 @@ class CredentialResponse(BaseModel):
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "workspace_id": "660e8400-e29b-41d4-a716-446655440000",
-                "name": "OpenAI API Key",
-                "credential_type": "openai",
-                "is_active": true,
+                "name": "Telegram Bot Token",
+                "credential_type": "api_key",
+                "provider": "telegram",
+                "is_active": True,
                 "usage_count": 1234,
                 "last_used_at": "2025-10-01T12:00:00Z",
                 "created_at": "2025-09-01T10:00:00Z",
@@ -179,8 +204,8 @@ class CredentialListResponse(BaseModel):
                         "id": "550e8400-e29b-41d4-a716-446655440000",
                         "workspace_id": "660e8400-e29b-41d4-a716-446655440000",
                         "name": "OpenAI API Key",
-                        "credential_type": "openai",
-                        "is_active": true,
+                        "credential_type": "api_key",
+                        "is_active": True,
                         "usage_count": 1234,
                         "created_at": "2025-09-01T10:00:00Z"
                     }
@@ -210,10 +235,10 @@ class CredentialTestResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "is_valid": true,
-                "message": "OpenAI API key is valid",
+                "is_valid": True,
+                "message": "API key is valid",
                 "metadata": {
-                    "organization": "Acme Inc",
+                    "service": "OpenAI",
                     "models_available": ["gpt-4", "gpt-3.5-turbo"]
                 }
             }
@@ -315,7 +340,7 @@ class DatabaseCredentialData(BaseModel):
                 "database": "mydb",
                 "username": "dbuser",
                 "password": "dbpass",
-                "ssl": true
+                "ssl": True
             }
         }
 

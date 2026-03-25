@@ -1,25 +1,77 @@
-# Development Dockerfile for PrivexBot Backend
-# Includes hot reload and development tools
+# Development Dockerfile for PrivexBot Backend (CPU-only version)
+# Supports all services: backend, celery, celery-beat, flower
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install core system dependencies + Playwright browser dependencies
+# CRITICAL: These dependencies are required for Chromium to run properly
+# Without them, Playwright will silently fail and return empty content
 RUN apt-get update && apt-get install -y \
+    # Core build dependencies
     libpq-dev \
     gcc \
+    g++ \
     git \
+    curl \
+    ca-certificates \
+    libmagic1 \
+    # Playwright/Chromium dependencies (same as production Dockerfile)
+    libglib2.0-0 \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    libgtk-3-0 \
+    libgdk-pixbuf-2.0-0 \
+    # Additional dependencies for crawl4ai and web scraping
+    fonts-liberation \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency management
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
+# Configure uv for better performance
+ENV UV_HTTP_TIMEOUT=600
+ENV UV_CONCURRENT_DOWNLOADS=4
+ENV UV_SYSTEM_PYTHON=1
 
-# Install dependencies including dev dependencies
-RUN uv pip install --system -r pyproject.toml
+# Copy dependency files
+COPY pyproject.toml uv.lock* ./
+
+# Install CPU-only PyTorch first to avoid CUDA dependencies
+RUN pip install --no-cache-dir \
+    torch==2.5.1+cpu \
+    torchvision==0.20.1+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Copy source code (required for uv sync to work with editable install)
+COPY src/ ./src/
+
+# Install dependencies to system Python (--prerelease for secret-ai-sdk's betterproto)
+RUN uv sync --system --prerelease allow || \
+    uv pip install --system --prerelease=allow -e .
+
+# Install Playwright system dependencies first, then browsers
+# IMPORTANT: install-deps MUST run before install chromium
+# This ensures all system libraries are present before browser download
+RUN python -m playwright install-deps chromium
+RUN python -m playwright install chromium
 
 # Install additional dev tools
 RUN pip install --no-cache-dir \

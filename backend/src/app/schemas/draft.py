@@ -184,7 +184,7 @@ class DraftFinalizeResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "success": true,
+                "success": True,
                 "entity_id": "770e8400-e29b-41d4-a716-446655440000",
                 "draft_id": "draft_chatbot_abc123",
                 "errors": [],
@@ -278,7 +278,7 @@ class ChatflowDraftValidation(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "is_valid": true,
+                "is_valid": True,
                 "errors": [],
                 "warnings": ["No error handling configured for HTTP node"],
                 "graph_info": {
@@ -286,7 +286,7 @@ class ChatflowDraftValidation(BaseModel):
                     "edge_count": 4,
                     "start_node": "trigger_1",
                     "end_nodes": ["response_1"],
-                    "has_cycles": false
+                    "has_cycles": False
                 }
             }
         }

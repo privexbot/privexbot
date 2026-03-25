@@ -41,10 +41,8 @@ class GeoIPService:
         self.api_key = getattr(settings, "GEOIP_API_KEY", None)
 
         # Redis cache for IP lookups
-        self.redis_client = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=0,
+        self.redis_client = redis.from_url(
+            settings.REDIS_URL,
             decode_responses=True
         )
 

@@ -1,0 +1,676 @@
+/**
+ * Chatbot API Client
+ *
+ * Implements the 3-phase architecture:
+ * Phase 1: Draft Mode (Redis) - Configuration & Preview
+ * Phase 2: Deployment (DB + Channels) - Commit & Register
+ * Phase 3: Active Usage - Messages, Analytics
+ */
+
+import { apiClient, handleApiError } from "@/lib/api-client";
+import type {
+  // Draft Types
+  CreateChatbotDraftRequest,
+  ChatbotDraft,
+  UpdateChatbotDraftRequest,
+  AttachKBRequest,
+  DeployChatbotRequest,
+  DeploymentResponse,
+  CreateDraftResponse,
+
+  // Deployed Types
+  Chatbot,
+  ChatbotListFilters,
+  PaginatedChatbotResponse,
+
+  // Test Types
+  TestMessageRequest,
+  TestMessageResponse,
+
+  // Analytics Types
+  ChatbotAnalytics,
+
+  // API Key Types
+  APIKeyInfo,
+  APIKeyCreateResponse,
+} from "@/types/chatbot";
+
+// ========================================
+// PHASE 1: DRAFT MODE API (Redis Storage)
+// ========================================
+
+export const chatbotDraftApi = {
+  /**
+   * Create new chatbot draft (Phase 1 start)
+   * POST /api/v1/chatbots/drafts
+   */
+  async create(
+    request: CreateChatbotDraftRequest
+  ): Promise<CreateDraftResponse> {
+    try {
+      const response = await apiClient.post<CreateDraftResponse>(
+        "/chatbots/drafts",
+        request
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * List drafts for workspace
+   * GET /api/v1/chatbots/drafts?workspace_id=...
+   */
+  async list(workspaceId: string): Promise<ChatbotDraft[]> {
+    try {
+      const response = await apiClient.get<ChatbotDraft[]>("/chatbots/drafts", {
+        params: { workspace_id: workspaceId },
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Get draft details
+   * GET /api/v1/chatbots/drafts/{draft_id}
+   */
+  async get(draftId: string): Promise<ChatbotDraft> {
+    try {
+      const response = await apiClient.get<ChatbotDraft>(
+        `/chatbots/drafts/${draftId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Update draft configuration
+   * PATCH /api/v1/chatbots/drafts/{draft_id}
+   */
+  async update(
+    draftId: string,
+    request: UpdateChatbotDraftRequest
+  ): Promise<{ status: string; draft_id: string }> {
+    try {
+      const response = await apiClient.patch<{ status: string; draft_id: string }>(
+        `/chatbots/drafts/${draftId}`,
+        request
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Delete draft (abandon creation)
+   * DELETE /api/v1/chatbots/drafts/{draft_id}
+   */
+  async delete(draftId: string): Promise<void> {
+    try {
+      await apiClient.delete(`/chatbots/drafts/${draftId}`);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Attach knowledge base to draft
+   * POST /api/v1/chatbots/drafts/{draft_id}/kb
+   */
+  async attachKB(
+    draftId: string,
+    request: AttachKBRequest
+  ): Promise<{ status: string; kb_id: string; kb_name: string }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        kb_id: string;
+        kb_name: string;
+      }>(`/chatbots/drafts/${draftId}/kb`, request);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Detach knowledge base from draft
+   * DELETE /api/v1/chatbots/drafts/{draft_id}/kb/{kb_id}
+   */
+  async detachKB(draftId: string, kbId: string): Promise<void> {
+    try {
+      await apiClient.delete(`/chatbots/drafts/${draftId}/kb/${kbId}`);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Test draft with a message
+   * POST /api/v1/chatbots/drafts/{draft_id}/test
+   */
+  async test(
+    draftId: string,
+    request: TestMessageRequest
+  ): Promise<TestMessageResponse> {
+    try {
+      const response = await apiClient.post<TestMessageResponse>(
+        `/chatbots/drafts/${draftId}/test`,
+        request,
+        { timeout: 60000 } // 60 second timeout for AI response
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Deploy chatbot from draft
+   * POST /api/v1/chatbots/drafts/{draft_id}/deploy
+   */
+  async deploy(
+    draftId: string,
+    request: DeployChatbotRequest
+  ): Promise<DeploymentResponse> {
+    try {
+      const response = await apiClient.post<DeploymentResponse>(
+        `/chatbots/drafts/${draftId}/deploy`,
+        request
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+};
+
+// ========================================
+// PHASE 3: DEPLOYED CHATBOT API
+// ========================================
+
+export const chatbotApi = {
+  /**
+   * List deployed chatbots
+   * GET /api/v1/chatbots/?workspace_id=...
+   */
+  async list(filters: ChatbotListFilters): Promise<PaginatedChatbotResponse> {
+    try {
+      const params: Record<string, string | number> = {
+        workspace_id: filters.workspace_id,
+      };
+
+      if (filters.status) {
+        params.status_filter = filters.status;
+      }
+      if (filters.skip !== undefined) {
+        params.skip = filters.skip;
+      }
+      if (filters.limit !== undefined) {
+        params.limit = filters.limit;
+      }
+
+      const response = await apiClient.get<PaginatedChatbotResponse>(
+        "/chatbots/",
+        { params }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Get chatbot details
+   * GET /api/v1/chatbots/{chatbot_id}
+   */
+  async get(chatbotId: string): Promise<Chatbot> {
+    try {
+      const response = await apiClient.get<Chatbot>(`/chatbots/${chatbotId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Update deployed chatbot
+   * PATCH /api/v1/chatbots/{chatbot_id}
+   */
+  async update(
+    chatbotId: string,
+    request: UpdateChatbotDraftRequest
+  ): Promise<{ status: string; chatbot_id: string }> {
+    try {
+      const response = await apiClient.patch<{
+        status: string;
+        chatbot_id: string;
+      }>(`/chatbots/${chatbotId}`, request);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Archive chatbot (soft delete)
+   * DELETE /api/v1/chatbots/{chatbot_id}
+   *
+   * The chatbot will be hidden but can be restored later.
+   * All associated data (sessions, leads) is preserved.
+   */
+  async archive(
+    chatbotId: string
+  ): Promise<{ status: string; chatbot_id: string; archived_at: string }> {
+    try {
+      const response = await apiClient.delete<{
+        status: string;
+        chatbot_id: string;
+        archived_at: string;
+      }>(`/chatbots/${chatbotId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Restore an archived chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/restore
+   *
+   * The chatbot will be restored to PAUSED status.
+   */
+  async restore(
+    chatbotId: string
+  ): Promise<{ status: string; chatbot_id: string; new_status: string }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        chatbot_id: string;
+        new_status: string;
+      }>(`/chatbots/${chatbotId}/restore`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Update chatbot status (pause/resume)
+   * POST /api/v1/chatbots/{chatbot_id}/status?new_status=active|paused
+   *
+   * Use 'active' to resume a paused chatbot.
+   * Use 'paused' to pause an active chatbot.
+   */
+  async updateStatus(
+    chatbotId: string,
+    newStatus: "active" | "paused"
+  ): Promise<{
+    status: string;
+    chatbot_id: string;
+    old_status: string;
+    new_status: string;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        chatbot_id: string;
+        old_status: string;
+        new_status: string;
+      }>(`/chatbots/${chatbotId}/status`, null, {
+        params: { new_status: newStatus },
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Permanently delete a chatbot (hard delete)
+   * DELETE /api/v1/chatbots/{chatbot_id}/permanent?confirm=true
+   *
+   * WARNING: This is IRREVERSIBLE. All associated data will be deleted.
+   * The chatbot must be archived first.
+   */
+  async deletePermanently(
+    chatbotId: string
+  ): Promise<{
+    status: string;
+    chatbot_id: string;
+    chatbot_name: string;
+    deleted_resources: {
+      sessions: number;
+      api_keys: number;
+      leads: number;
+    };
+  }> {
+    try {
+      const response = await apiClient.delete<{
+        status: string;
+        chatbot_id: string;
+        chatbot_name: string;
+        deleted_resources: {
+          sessions: number;
+          api_keys: number;
+          leads: number;
+        };
+      }>(`/chatbots/${chatbotId}/permanent`, {
+        params: { confirm: true },
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Test deployed chatbot with a message
+   * POST /api/v1/chatbots/{chatbot_id}/test
+   */
+  async test(
+    chatbotId: string,
+    request: TestMessageRequest
+  ): Promise<TestMessageResponse> {
+    try {
+      const response = await apiClient.post<TestMessageResponse>(
+        `/chatbots/${chatbotId}/test`,
+        request,
+        { timeout: 60000 } // 60 second timeout for AI response
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Get chatbot analytics
+   * GET /api/v1/chatbots/{chatbot_id}/analytics
+   */
+  async getAnalytics(
+    chatbotId: string,
+    days: number = 7
+  ): Promise<ChatbotAnalytics> {
+    try {
+      const response = await apiClient.get<ChatbotAnalytics>(
+        `/chatbots/${chatbotId}/analytics`,
+        { params: { days } }
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Refresh cached metrics for a chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/refresh-metrics
+   *
+   * Use this to sync cached_metrics with actual session/message data
+   */
+  async refreshMetrics(chatbotId: string): Promise<{
+    status: string;
+    chatbot_id: string;
+    cached_metrics: {
+      total_conversations: number;
+      total_messages: number;
+      avg_messages_per_session: number;
+      active_sessions: number;
+      last_updated: string;
+    };
+    message: string;
+  }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        chatbot_id: string;
+        cached_metrics: {
+          total_conversations: number;
+          total_messages: number;
+          avg_messages_per_session: number;
+          active_sessions: number;
+          last_updated: string;
+        };
+        message: string;
+      }>(`/chatbots/${chatbotId}/refresh-metrics`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  // ========================================
+  // API KEY MANAGEMENT
+  // ========================================
+
+  /**
+   * List API keys for a chatbot
+   * GET /api/v1/chatbots/{chatbot_id}/api-keys
+   *
+   * Returns list of API keys with prefix only (not full key for security)
+   */
+  async listApiKeys(chatbotId: string): Promise<APIKeyInfo[]> {
+    try {
+      const response = await apiClient.get<APIKeyInfo[]>(
+        `/chatbots/${chatbotId}/api-keys`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Regenerate API key for a chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/api-keys/regenerate
+   *
+   * WARNING: This revokes all existing keys and creates a new one.
+   * The new key is returned only once - it must be saved immediately!
+   */
+  async regenerateApiKey(chatbotId: string): Promise<APIKeyCreateResponse> {
+    try {
+      const response = await apiClient.post<APIKeyCreateResponse>(
+        `/chatbots/${chatbotId}/api-keys/regenerate`
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Permanently delete a specific API key
+   * DELETE /api/v1/chatbots/{chatbot_id}/api-keys/{key_id}
+   *
+   * WARNING: This action is irreversible. The key will stop working immediately.
+   */
+  async deleteApiKey(
+    chatbotId: string,
+    keyId: string
+  ): Promise<{ status: string; key_id: string; key_prefix: string; message: string }> {
+    try {
+      const response = await apiClient.delete<{
+        status: string;
+        key_id: string;
+        key_prefix: string;
+        message: string;
+      }>(`/chatbots/${chatbotId}/api-keys/${keyId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  // ========================================
+  // CHANNEL MANAGEMENT
+  // ========================================
+
+  /**
+   * Update chatbot slug (URL identifier)
+   * PATCH /api/v1/chatbots/{chatbot_id}/slug
+   *
+   * Updates the URL slug for the chatbot. Old slugs will redirect to the new one.
+   */
+  async updateSlug(
+    chatbotId: string,
+    newSlug: string
+  ): Promise<{
+    success: boolean;
+    old_slug: string | null;
+    new_slug: string;
+    redirect_active: boolean;
+  }> {
+    try {
+      const response = await apiClient.patch<{
+        success: boolean;
+        old_slug: string | null;
+        new_slug: string;
+        redirect_active: boolean;
+      }>(`/chatbots/${chatbotId}/slug`, {
+        new_slug: newSlug,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Update KB configuration for a deployed chatbot
+   * PATCH /api/v1/chatbots/{chatbot_id}
+   *
+   * Updates the knowledge bases attached to a chatbot.
+   * Each KB is validated to exist in the same workspace.
+   */
+  async updateKBConfig(
+    chatbotId: string,
+    kbConfig: {
+      knowledge_bases: Array<{
+        kb_id: string;
+        name: string;
+        enabled: boolean;
+        priority: number;
+        retrieval_override?: Record<string, unknown>;
+      }>;
+      grounding_mode?: string;
+    }
+  ): Promise<{ status: string; chatbot_id: string }> {
+    try {
+      const response = await apiClient.patch<{
+        status: string;
+        chatbot_id: string;
+      }>(`/chatbots/${chatbotId}`, {
+        kb_config: kbConfig,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Add Telegram channel to a deployed chatbot
+   * POST /api/v1/chatbots/{chatbot_id}/channels/telegram
+   *
+   * Registers webhook with Telegram and updates deployment config
+   */
+  async addTelegramChannel(
+    chatbotId: string,
+    credentialId: string
+  ): Promise<{
+    status: string;
+    telegram: {
+      bot_username: string;
+      webhook_url: string;
+    };
+  }> {
+    try {
+      const response = await apiClient.post<{
+        status: string;
+        telegram: {
+          bot_username: string;
+          webhook_url: string;
+        };
+      }>(`/chatbots/${chatbotId}/channels/telegram`, {
+        credential_id: credentialId,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+};
+
+// ========================================
+// ERROR UTILITIES
+// ========================================
+
+export const chatbotErrorHandling = {
+  /**
+   * Get user-friendly error message
+   */
+  getUserMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === "string") {
+      return error;
+    }
+    return "An unexpected error occurred";
+  },
+
+  /**
+   * Check if error is a validation error
+   */
+  isValidationError(error: unknown): boolean {
+    if (error instanceof Error) {
+      return error.message.includes("Validation failed");
+    }
+    return false;
+  },
+
+  /**
+   * Check if error is a rate limit error
+   */
+  isRateLimitError(error: unknown): boolean {
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      return msg.includes("rate limit") || msg.includes("429");
+    }
+    return false;
+  },
+
+  /**
+   * Check if error is a network error
+   */
+  isNetworkError(error: unknown): boolean {
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      return (
+        msg.includes("network") ||
+        msg.includes("timeout") ||
+        msg.includes("econnrefused")
+      );
+    }
+    return false;
+  },
+};
+
+// ========================================
+// UNIFIED CLIENT EXPORT
+// ========================================
+
+const chatbotClient = {
+  draft: chatbotDraftApi,
+  chatbot: chatbotApi,
+  errors: chatbotErrorHandling,
+};
+
+export default chatbotClient;

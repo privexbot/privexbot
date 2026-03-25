@@ -3,7 +3,7 @@ name = "backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.16.5",
     "celery[redis]>=5.4.0",
@@ -29,4 +29,20 @@ dependencies = [
     "bech32>=1.2.0",
     # Rate limiting
     "slowapi>=0.1.9",
+    # KB implementation
+    "pgvector>=0.2.4",
+    "crawl4ai>=0.2.0",
+    "sentence-transformers>=2.2.0",
+    "qdrant-client>=1.7.0",
+    "torch>=2.0.0",
+    "playwright>=1.40.0",
+    "python-magic>=0.4.27",  # MIME type detection for file uploads
+    # Celery monitoring
+    "flower>=2.0.0",
+    # LLM Inference providers
+    "openai>=1.0.0",  # OpenAI-compatible APIs (OpenAI, Ollama, DeepSeek, Secret AI)
+    "google-genai>=0.1.0",  # Google Gemini API
+    "secret-ai-sdk>=0.1.0",  # Native Secret AI SDK (optional, enabled via USE_SECRET_AI_SDK=true)
+    # Object storage
+    "minio>=7.2.0",  # S3-compatible object storage client
 ]

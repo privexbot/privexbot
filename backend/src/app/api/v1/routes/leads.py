@@ -18,56 +18,72 @@ PSEUDOCODE follows the existing codebase patterns.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
 from datetime import datetime, timedelta
 import csv
 import io
 
 from app.db.session import get_db
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user_with_org
 from app.models.user import User
 from app.models.lead import Lead
 
 router = APIRouter(prefix="/leads", tags=["leads"])
+
+# Type alias for user context from JWT
+UserContext = Tuple[User, str, str]  # (user, org_id, ws_id)
 
 
 @router.get("/")
 async def list_leads(
     workspace_id: UUID,
     bot_id: Optional[UUID] = None,
-    status: Optional[str] = None,
+    channel: Optional[str] = None,
+    lead_status: Optional[str] = None,
+    date_range: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
-    List all leads in workspace.
+    List all leads in workspace with stats for dashboard.
 
     WHY: Display leads in dashboard
-    HOW: Query database with filters
+    HOW: Query database with filters, include stats
 
     QUERY PARAMS:
         workspace_id: Required
         bot_id: Optional - filter by specific bot
-        status: Optional - filter by status (new, contacted, qualified, converted)
+        channel: Optional - filter by platform (website, whatsapp, telegram, discord, api)
+        lead_status: Optional - filter by status (new, contacted, qualified, converted)
+        date_range: Optional - filter by time period (today, week, month, all)
 
     RETURNS:
         {
             "items": [...],
             "total": 42,
             "skip": 0,
-            "limit": 50
+            "limit": 50,
+            "stats": {
+                "total_leads": 150,
+                "leads_this_week": 25,
+                "leads_this_month": 80,
+                "top_source": "website"
+            }
         }
     """
-
+    from sqlalchemy import func
     from app.models.workspace import Workspace
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
 
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -85,8 +101,24 @@ async def list_leads(
     if bot_id:
         query = query.filter(Lead.bot_id == bot_id)
 
-    if status:
-        query = query.filter(Lead.status == status)
+    if channel:
+        query = query.filter(Lead.channel == channel)
+
+    if lead_status:
+        query = query.filter(Lead.status == lead_status)
+
+    # Apply date range filter
+    if date_range and date_range != "all":
+        now = datetime.utcnow()
+        if date_range == "today":
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(Lead.created_at >= start_of_day)
+        elif date_range == "week":
+            week_ago = now - timedelta(days=7)
+            query = query.filter(Lead.created_at >= week_ago)
+        elif date_range == "month":
+            month_ago = now - timedelta(days=30)
+            query = query.filter(Lead.created_at >= month_ago)
 
     # Order by most recent
     query = query.order_by(Lead.created_at.desc())
@@ -94,156 +126,52 @@ async def list_leads(
     total = query.count()
     leads = query.offset(skip).limit(limit).all()
 
+    # Calculate stats for dashboard
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    total_leads = db.query(Lead).filter(Lead.workspace_id == workspace_id).count()
+    leads_this_week = db.query(Lead).filter(
+        Lead.workspace_id == workspace_id,
+        Lead.created_at >= week_ago
+    ).count()
+    leads_this_month = db.query(Lead).filter(
+        Lead.workspace_id == workspace_id,
+        Lead.created_at >= month_ago
+    ).count()
+
+    # Get top source/channel
+    top_source_result = db.query(Lead.channel, func.count(Lead.id).label('count')).filter(
+        Lead.workspace_id == workspace_id
+    ).group_by(Lead.channel).order_by(func.count(Lead.id).desc()).first()
+
+    top_source = top_source_result[0] if top_source_result else "N/A"
+
     return {
         "items": leads,
         "total": total,
         "skip": skip,
-        "limit": limit
+        "limit": limit,
+        "stats": {
+            "total_leads": total_leads,
+            "leads_this_week": leads_this_week,
+            "leads_this_month": leads_this_month,
+            "top_source": top_source
+        }
     }
 
 
-@router.get("/{lead_id}")
-async def get_lead(
-    lead_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get single lead by ID.
-
-    WHY: View lead details
-    HOW: Query database, verify access
-    """
-
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id
-    ).first()
-
-    if not lead:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lead not found"
-        )
-
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == lead.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    return lead
-
-
-@router.patch("/{lead_id}")
-async def update_lead(
-    lead_id: UUID,
-    updates: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Update lead status/notes.
-
-    WHY: Manage lead lifecycle
-    HOW: Update database
-
-    BODY:
-        {
-            "status": "contacted",
-            "notes": "Called customer, interested in product"
-        }
-    """
-
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id
-    ).first()
-
-    if not lead:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lead not found"
-        )
-
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == lead.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    # Update fields
-    allowed_fields = ["status", "notes", "metadata"]
-    for key, value in updates.items():
-        if key in allowed_fields and hasattr(lead, key):
-            setattr(lead, key, value)
-
-    db.commit()
-    db.refresh(lead)
-
-    return lead
-
-
-@router.delete("/{lead_id}")
-async def delete_lead(
-    lead_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Delete lead.
-
-    WHY: Remove lead
-    HOW: Hard delete from database
-    """
-
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id
-    ).first()
-
-    if not lead:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lead not found"
-        )
-
-    # Verify access
-    from app.models.workspace import Workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == lead.workspace_id,
-        Workspace.org_id == current_user.org_id
-    ).first()
-
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-
-    db.delete(lead)
-    db.commit()
-
-    return {"status": "deleted"}
-
+# =============================================================================
+# SPECIFIC ROUTES - Must be defined BEFORE wildcard routes
+# =============================================================================
 
 @router.get("/analytics/summary")
 async def get_leads_summary(
     workspace_id: UUID,
     days: int = 30,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Get leads summary analytics.
@@ -271,10 +199,13 @@ async def get_leads_summary(
 
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -321,8 +252,56 @@ async def get_leads_summary(
     # Calculate conversion rate
     conversion_rate = converted / total_leads if total_leads > 0 else 0
 
-    # TODO: Implement leads_by_day aggregation
-    # TODO: Implement top_bots aggregation
+    # Leads by day aggregation
+    from sqlalchemy import func, cast, Date
+    leads_by_day_query = db.query(
+        cast(Lead.captured_at, Date).label('date'),
+        func.count(Lead.id).label('count')
+    ).filter(
+        Lead.workspace_id == workspace_id,
+        Lead.created_at >= start_date
+    ).group_by(
+        cast(Lead.captured_at, Date)
+    ).order_by(
+        cast(Lead.captured_at, Date)
+    ).all()
+
+    leads_by_day = [
+        {"date": row.date.isoformat(), "count": row.count}
+        for row in leads_by_day_query
+    ]
+
+    # Top bots aggregation
+    from app.models.chatbot import Chatbot
+    top_bots_query = db.query(
+        Lead.bot_id,
+        Lead.bot_type,
+        func.count(Lead.id).label('lead_count')
+    ).filter(
+        Lead.workspace_id == workspace_id,
+        Lead.created_at >= start_date
+    ).group_by(
+        Lead.bot_id,
+        Lead.bot_type
+    ).order_by(
+        func.count(Lead.id).desc()
+    ).limit(5).all()
+
+    # Get bot names
+    top_bots = []
+    for row in top_bots_query:
+        bot_name = "Unknown Bot"
+        if row.bot_type == "chatbot":
+            chatbot = db.query(Chatbot).filter(Chatbot.id == row.bot_id).first()
+            if chatbot:
+                bot_name = chatbot.name
+        # TODO: Add chatflow name lookup when chatflow model is available
+        top_bots.append({
+            "bot_id": str(row.bot_id),
+            "bot_type": row.bot_type,
+            "bot_name": bot_name,
+            "lead_count": row.lead_count
+        })
 
     return {
         "total_leads": total_leads,
@@ -331,8 +310,8 @@ async def get_leads_summary(
         "qualified": qualified,
         "converted": converted,
         "conversion_rate": round(conversion_rate, 2),
-        "leads_by_day": [],
-        "top_bots": []
+        "leads_by_day": leads_by_day,
+        "top_bots": top_bots
     }
 
 
@@ -342,7 +321,7 @@ async def export_leads_csv(
     bot_id: Optional[UUID] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Export leads as CSV.
@@ -356,10 +335,13 @@ async def export_leads_csv(
 
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -409,7 +391,7 @@ async def export_leads_csv(
             lead.status,
             str(lead.bot_id),
             str(lead.session_id) if lead.session_id else "",
-            lead.source or "",
+            lead.channel or "",
             lead.created_at.isoformat(),
             lead.notes or ""
         ])
@@ -431,9 +413,9 @@ async def export_leads_csv(
 async def export_leads_json(
     workspace_id: UUID,
     bot_id: Optional[UUID] = None,
-    status: Optional[str] = None,
+    lead_status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
     Export leads as JSON.
@@ -454,10 +436,13 @@ async def export_leads_json(
 
     from app.models.workspace import Workspace
 
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
     # Validate workspace access
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
-        Workspace.org_id == current_user.org_id
+        Workspace.organization_id == org_id
     ).first()
 
     if not workspace:
@@ -474,8 +459,8 @@ async def export_leads_json(
     if bot_id:
         query = query.filter(Lead.bot_id == bot_id)
 
-    if status:
-        query = query.filter(Lead.status == status)
+    if lead_status:
+        query = query.filter(Lead.status == lead_status)
 
     leads = query.all()
 
@@ -489,10 +474,159 @@ async def export_leads_json(
             "status": lead.status,
             "bot_id": str(lead.bot_id),
             "session_id": str(lead.session_id) if lead.session_id else None,
-            "source": lead.source,
-            "metadata": lead.metadata,
+            "channel": lead.channel,
+            "custom_fields": lead.custom_fields,
             "notes": lead.notes,
             "created_at": lead.created_at.isoformat()
         }
         for lead in leads
     ]
+
+
+# =============================================================================
+# WILDCARD ROUTES - Must be defined AFTER specific routes
+# =============================================================================
+
+@router.get("/{lead_id}")
+async def get_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Get single lead by ID.
+
+    WHY: View lead details
+    HOW: Query database, verify access
+    """
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id
+    ).first()
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found"
+        )
+
+    # Verify access
+    from app.models.workspace import Workspace
+    workspace = db.query(Workspace).filter(
+        Workspace.id == lead.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    return lead
+
+
+@router.patch("/{lead_id}")
+async def update_lead(
+    lead_id: UUID,
+    updates: dict,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Update lead status/notes.
+
+    WHY: Manage lead lifecycle
+    HOW: Update database
+
+    BODY:
+        {
+            "status": "contacted",
+            "notes": "Called customer, interested in product"
+        }
+    """
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id
+    ).first()
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found"
+        )
+
+    # Verify access
+    from app.models.workspace import Workspace
+    workspace = db.query(Workspace).filter(
+        Workspace.id == lead.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    # Update fields
+    allowed_fields = ["status", "notes", "custom_fields"]
+    for key, value in updates.items():
+        if key in allowed_fields and hasattr(lead, key):
+            setattr(lead, key, value)
+
+    db.commit()
+    db.refresh(lead)
+
+    return lead
+
+
+@router.delete("/{lead_id}")
+async def delete_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Delete lead.
+
+    WHY: Remove lead
+    HOW: Hard delete from database
+    """
+
+    # Extract user and org_id from context tuple
+    current_user, org_id, _ = user_context
+
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id
+    ).first()
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found"
+        )
+
+    # Verify access
+    from app.models.workspace import Workspace
+    workspace = db.query(Workspace).filter(
+        Workspace.id == lead.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    db.delete(lead)
+    db.commit()
+
+    return {"status": "deleted"}

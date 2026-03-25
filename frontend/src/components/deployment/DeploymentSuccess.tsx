@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import { CheckCircle, Copy, Check, Globe, MessageSquare, Users, Zap, ExternalLink, ArrowRight } from 'lucide-react';
+import { config as envConfig } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -79,8 +80,9 @@ export default function DeploymentSuccess({
     w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
     js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
     js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${import.meta.env.VITE_API_BASE_URL}/widget.js'));
+  }(window, document, 'script', 'pb', '${envConfig.WIDGET_CDN_URL}/widget.js'));
   pb('init', '${chatbotId}', {
+    baseURL: '${envConfig.API_BASE_URL}',
     position: '${config.widget_position}',
     color: '${config.widget_color}',
     greeting: ${config.greeting_message ? `'${config.greeting_message}'` : 'undefined'}
@@ -206,7 +208,7 @@ export default function DeploymentSuccess({
   };
 
   const renderZapierDeployment = (config: any) => {
-    const webhookUrl = `${import.meta.env.VITE_API_BASE_URL}/webhooks/zapier/${chatbotId}`;
+    const webhookUrl = `${envConfig.API_BASE_URL}/webhooks/zapier/${chatbotId}`;
 
     return (
       <div className="space-y-3">

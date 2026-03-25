@@ -27,11 +27,9 @@ class ChatWindow {
     container.appendChild(header);
 
     // Content area (either lead form or messages)
+    // CSS handles all styling via #privexbot-content selector
     const content = document.createElement('div');
     content.id = 'privexbot-content';
-    content.style.flex = '1';
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
 
     if (this.config.leadConfig?.enabled && this.showLeadFormFirst) {
       // Show lead form first
@@ -59,11 +57,13 @@ class ChatWindow {
   }
 
   renderChatInterface(contentContainer) {
-    // Messages
-    this.messageList = new MessageList();
+    // Messages with feedback handler
+    this.messageList = new MessageList((messageId, rating) =>
+      this.handleFeedback(messageId, rating)
+    );
     contentContainer.appendChild(this.messageList.render());
 
-    // Show greeting message
+    // Show greeting message (no message_id for greeting - it's not stored in DB)
     if (this.config.greeting) {
       this.messageList.addMessage({
         role: 'bot',
@@ -87,7 +87,7 @@ class ChatWindow {
   createHeader() {
     const header = document.createElement('div');
     header.className = 'privexbot-header';
-    header.style.background = this.config.color || '#6366f1';
+    header.style.background = this.config.color || '#3b82f6';
 
     header.innerHTML = `
       <div class="privexbot-header-info">
@@ -144,33 +144,65 @@ class ChatWindow {
     this.inputBox.focus();
 
     if (result.success) {
-      // Add bot response
+      // Add bot response with message_id for feedback
       this.messageList.addMessage({
         role: 'bot',
         content: result.data.response || result.data.message,
         timestamp: new Date().toISOString(),
+        id: result.data.message_id, // Include message_id for feedback
       });
 
       // Check if should show lead form after N messages
+      // Support both old ('after_messages') and new ('after_n_messages') config formats
+      const isAfterNMessages =
+        this.config.leadConfig?.timing === 'after_n_messages' ||
+        this.config.leadConfig?.timing === 'after_messages' ||
+        this.config.leadConfig?.timing === 'after_first_message';
+
       if (
         this.config.leadConfig?.enabled &&
-        this.config.leadConfig?.timing === 'after_messages' &&
+        isAfterNMessages &&
         !this.leadCollected
       ) {
-        const messageCount = this.messageList.messages.filter((m) => m.role === 'user').length;
-        const triggerAt = this.config.leadConfig?.messageCount || 3;
+        const userMessageCount = this.messageList.messages.filter((m) => m.role === 'user').length;
+        // Support both old (messageCount) and new (messages_before_prompt) config formats
+        const triggerAt = this.config.leadConfig?.messages_before_prompt ||
+                          this.config.leadConfig?.messageCount ||
+                          3;
 
-        if (messageCount >= triggerAt) {
+        if (userMessageCount >= triggerAt) {
           this.showLeadFormInline();
         }
       }
     } else {
-      // Show error message
+      // Show error message (no message_id - not stored in DB)
       this.messageList.addMessage({
         role: 'bot',
         content: result.error || 'Sorry, something went wrong. Please try again.',
         timestamp: new Date().toISOString(),
       });
+    }
+  }
+
+  /**
+   * Handle feedback submission from MessageList
+   */
+  async handleFeedback(messageId, rating) {
+    try {
+      const result = await this.apiClient.submitFeedback(messageId, rating);
+
+      if (result.success) {
+        // Track feedback event
+        this.apiClient.trackEvent('feedback_given', {
+          message_id: messageId,
+          rating: rating,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Feedback submission error:', error);
+      return { success: false, error: error.message };
     }
   }
 

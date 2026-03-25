@@ -221,13 +221,20 @@ async def get_organization_details(
             if org_member and org_member.role in ["owner", "admin"]:
                 user_workspace_role = "admin"  # Org admins/owners get admin access to all workspaces
 
+        # Get member count
+        member_count = db.query(WorkspaceMember).filter(
+            WorkspaceMember.workspace_id == workspace.id
+        ).count()
+
         workspace_summary = WorkspaceSummary(
             id=workspace.id,
             name=workspace.name,
             description=workspace.description,
+            avatar_url=workspace.avatar_url,
             is_default=workspace.is_default,
             created_at=workspace.created_at,
-            user_role=user_workspace_role
+            user_role=user_workspace_role,
+            member_count=member_count
         )
         workspaces.append(workspace_summary)
 

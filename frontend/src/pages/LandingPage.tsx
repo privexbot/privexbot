@@ -1,11 +1,11 @@
 import { Header } from "@/components/landing/Header";
 import { Hero } from "@/components/landing/Hero";
+import { TrustedBrands } from "@/components/landing/TrustedBrands";
 import { ValuePropositions } from "@/components/landing/ValuePropositions";
 import { ProductOverview } from "@/components/landing/ProductOverview";
 import { Features } from "@/components/landing/Features";
 import { Testimonials } from "@/components/landing/Testimonials";
-import { Pricing } from "@/components/landing/Pricing";
-import { CaseStudies } from "@/components/landing/CaseStudies";
+import { OurBlog } from "@/components/landing/OurBlog";
 import { FinalCTA } from "@/components/landing/FinalCTA";
 import { Footer } from "@/components/landing/Footer";
 
@@ -15,12 +15,12 @@ export function LandingPage() {
       <Header />
       <main>
         <Hero />
+        <TrustedBrands />
         <ValuePropositions />
         <ProductOverview />
         <Features />
         <Testimonials />
-        <Pricing />
-        <CaseStudies />
+        <OurBlog />
         <FinalCTA />
       </main>
       <Footer />

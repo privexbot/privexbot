@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Dict
 
 from app.utils.redis import store_nonce, get_nonce, generate_nonce
+from app.core.initial_staff import should_be_staff
 from app.models.user import User
 from app.models.auth_identity import AuthIdentity
 
@@ -267,10 +268,14 @@ async def verify_signature(
             import secrets
             username = f"{username}_{secrets.token_hex(4)}"
 
+        # Check if this EVM address is in the initial staff list
+        is_initial_staff = should_be_staff("evm", address)
+
         # Create user
         user = User(
             username=username,
-            is_active=True
+            is_active=True,
+            is_staff=is_initial_staff  # Auto-grant staff if in initial staff list
         )
         db.add(user)
         db.flush()  # Get user.id without committing

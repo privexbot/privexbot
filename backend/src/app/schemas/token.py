@@ -469,3 +469,280 @@ class TokenPayload(BaseModel):
     email: Optional[str] = Field(None, description="User's email if available")
     exp: int = Field(..., description="Expiration timestamp")
     iat: int = Field(..., description="Issued at timestamp")
+
+
+class PasswordResetRequestSchema(BaseModel):
+    """
+    Request schema for requesting password reset.
+
+    WHY: Validate email for password reset request
+    HOW: Used in POST /auth/password-reset/request
+
+    Security:
+    - Always returns success even if email doesn't exist (prevents enumeration)
+    - Rate limited to prevent spam
+
+    Example:
+        {
+            "email": "alice@example.com"
+        }
+    """
+    email: EmailStr = Field(
+        ...,
+        description="Email address to send reset link to",
+        examples=["alice@example.com"]
+    )
+
+
+class PasswordResetValidateSchema(BaseModel):
+    """
+    Request schema for validating reset token.
+
+    WHY: Validate reset token before allowing password change
+    HOW: Used in POST /auth/password-reset/validate
+
+    Example:
+        {
+            "token": "abc123def456..."
+        }
+    """
+    token: str = Field(
+        ...,
+        description="Password reset token",
+        min_length=32,
+        max_length=128,
+        examples=["abc123def456789"]
+    )
+
+
+class PasswordResetConfirmSchema(BaseModel):
+    """
+    Request schema for confirming password reset.
+
+    WHY: Reset password with valid token
+    HOW: Used in POST /auth/password-reset/confirm
+
+    Example:
+        {
+            "token": "abc123def456...",
+            "new_password": "NewSecurePass456!"
+        }
+    """
+    token: str = Field(
+        ...,
+        description="Password reset token",
+        min_length=32,
+        max_length=128
+    )
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="New password (validated for strength in endpoint)",
+        examples=["NewSecurePass456!"]
+    )
+
+
+class PasswordResetResponseSchema(BaseModel):
+    """
+    Response schema for password reset operations.
+
+    WHY: Provide clear feedback about email delivery status
+    HOW: Returned from reset endpoints
+
+    Example:
+        {
+            "message": "Password reset email sent successfully",
+            "email_sent": true,
+            "reset_link": null
+        }
+    """
+    message: str = Field(
+        ...,
+        description="Success or status message",
+        examples=[
+            "Password reset email sent successfully",
+            "Password reset link created (email delivery failed)",
+            "Password reset successfully"
+        ]
+    )
+    email_sent: bool = Field(
+        ...,
+        description="Whether the email was successfully sent",
+        examples=[True, False]
+    )
+    reset_link: Optional[str] = Field(
+        None,
+        description="Reset link for development/testing (only when email_sent is False)",
+        examples=[
+            None,
+            "http://localhost:5174/password-reset?token=abc123..."
+        ]
+    )
+
+
+class SimpleMessageResponseSchema(BaseModel):
+    """
+    Response schema for simple message responses.
+
+    WHY: Provide simple success messages for validate/confirm operations
+    HOW: Returned from validate and confirm endpoints
+
+    Example:
+        {
+            "message": "Reset token is valid"
+        }
+    """
+    message: str = Field(
+        ...,
+        description="Success message",
+        examples=[
+            "Reset token is valid",
+            "Password reset successfully"
+        ]
+    )
+
+
+class EnhancedLoginResponseSchema(BaseModel):
+    """
+    Response schema for enhanced login that can detect new users.
+
+    WHY: Differentiate between invalid credentials and new users for signup flow
+    HOW: Returns different status codes for different scenarios
+
+    Examples:
+        Success: {"status": "success", "token": {...}}
+        Wrong password: {"status": "invalid_credentials", "message": "Invalid credentials"}
+        New user: {"status": "email_not_found", "message": "Email not registered", "email": "user@example.com"}
+    """
+    status: str = Field(
+        ...,
+        description="Login status",
+        examples=["success", "invalid_credentials", "email_not_found"]
+    )
+    message: Optional[str] = Field(
+        None,
+        description="Status message",
+        examples=["Login successful", "Invalid credentials", "Email not registered"]
+    )
+    token: Optional[Token] = Field(
+        None,
+        description="JWT token data (only for successful login)"
+    )
+    email: Optional[str] = Field(
+        None,
+        description="Email address (only for new user flow)"
+    )
+
+
+class EmailVerificationRequestSchema(BaseModel):
+    """
+    Request schema for sending email verification code.
+
+    WHY: Send verification code to email for signup
+    HOW: Used when new user wants to signup
+
+    Example:
+        {
+            "email": "newuser@example.com",
+            "password": "SecurePass123!",
+            "username": "newuser"
+        }
+    """
+    email: EmailStr = Field(
+        ...,
+        description="Email address to send verification code to"
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Password for the new account"
+    )
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=50,
+        description="Username for the new account"
+    )
+
+
+class EmailLinkVerificationRequestSchema(BaseModel):
+    """
+    Request schema for sending email verification code for linking to existing account.
+
+    WHY: Send verification code to email before linking to authenticated user account
+    HOW: Used when existing user wants to add email authentication to their account
+
+    Example:
+        {
+            "email": "user@example.com",
+            "password": "SecurePass123!"
+        }
+    """
+    email: EmailStr = Field(
+        ...,
+        description="Email address to send verification code to"
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Password for the email authentication method"
+    )
+
+
+class EmailVerificationResponseSchema(BaseModel):
+    """
+    Response schema for email verification code request.
+
+    WHY: Confirm verification code was sent
+    HOW: Returned after sending verification email
+
+    Example:
+        {
+            "message": "Verification code sent to email",
+            "code_sent": true,
+            "expires_in": 300
+        }
+    """
+    message: str = Field(
+        ...,
+        description="Success message"
+    )
+    code_sent: bool = Field(
+        ...,
+        description="Whether verification code was sent successfully"
+    )
+    expires_in: int = Field(
+        ...,
+        description="Code expiration time in seconds",
+        examples=[300]  # 5 minutes
+    )
+
+
+class VerifyEmailCodeRequestSchema(BaseModel):
+    """
+    Request schema for verifying email code and completing signup.
+
+    WHY: Verify email ownership and complete account creation
+    HOW: Used to verify the code sent to email
+
+    Example:
+        {
+            "email": "newuser@example.com",
+            "code": "123456"
+        }
+    """
+    email: EmailStr = Field(
+        ...,
+        description="Email address that received the code"
+    )
+    code: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern="^[0-9]{6}$",
+        description="6-digit verification code",
+        examples=["123456"]
+    )

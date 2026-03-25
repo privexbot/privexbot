@@ -10,9 +10,11 @@
  * - Call-to-action button
  * - Hover animations
  * - Responsive grid layout
+ * - Consistent design system with KB and signin pages
  */
 
 import { Plus, BarChart3 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -82,15 +84,22 @@ export function ActionCards({
         const Icon = action.icon;
 
         return (
-          <Card
+          <motion.div
             key={index}
-            onClick={action.onClick}
-            className={cn(
-              "group cursor-pointer border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800",
-              "hover:shadow-lg dark:hover:shadow-gray-900/30 hover:border-gray-300 dark:hover:border-gray-500",
-              "transition-all duration-200"
-            )}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, delay: index * 0.05 }}
+            whileHover={{ y: -4 }}
+            className="h-full"
           >
+            <Card
+              onClick={action.onClick}
+              className={cn(
+                "group cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl",
+                "hover:shadow-lg dark:hover:shadow-gray-900/30 hover:border-gray-300 dark:hover:border-gray-500",
+                "transition-all duration-300 h-full"
+              )}
+            >
             <CardContent className="p-5 md:p-6 flex flex-col h-full">
               {/* Top Section: Icon + Title/Description Horizontal Layout */}
               <div className="flex items-start gap-3 mb-4 md:mb-5 flex-1">
@@ -113,12 +122,12 @@ export function ActionCards({
                 {/* Text Content - Right Side */}
                 <div className="flex-1 min-w-0">
                   {/* Title */}
-                  <h3 className="text-base md:text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  <h3 className="text-base md:text-lg font-semibold text-gray-900 dark:text-white mb-2 font-manrope">
                     {action.title}
                   </h3>
 
                   {/* Description - Below title, specific spacing and typography */}
-                  <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed font-manrope">
                     {action.description}
                   </p>
                 </div>
@@ -128,7 +137,7 @@ export function ActionCards({
               <div className="mt-auto">
                 <Button
                   className={cn(
-                    "w-full min-h-[42px] md:min-h-[44px] font-medium text-center rounded-lg transition-all duration-200",
+                    "w-full min-h-[42px] md:min-h-[44px] font-medium text-center rounded-lg transition-all duration-200 font-manrope",
                     action.buttonClass
                   )}
                   onClick={(e) => {
@@ -141,6 +150,7 @@ export function ActionCards({
               </div>
             </CardContent>
           </Card>
+          </motion.div>
         );
       })}
     </div>

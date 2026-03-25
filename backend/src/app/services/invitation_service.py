@@ -28,6 +28,10 @@ from app.models.workspace import Workspace
 from app.models.organization_member import OrganizationMember
 from app.models.workspace_member import WorkspaceMember
 from app.services import email_service
+from app.services.email_service_enhanced import (
+    send_invitation_email_enhanced,
+    send_invitation_accepted_email_enhanced
+)
 from app.services.tenant_service import (
     add_organization_member,
     add_workspace_member,
@@ -186,8 +190,8 @@ def create_invitation(
     inviter = db.query(User).filter(User.id == inviter_id).first()
     inviter_name = inviter.username if inviter else None
 
-    # Send invitation email
-    email_service.send_invitation_email(
+    # Send invitation email with enhanced retry logic
+    send_invitation_email_enhanced(
         to_email=email,
         organization_name=resource_name,
         inviter_name=inviter_name,
@@ -381,8 +385,8 @@ def accept_invitation(
 
                 resource_name = resource.name if resource else "Unknown"
 
-                # Use invitation email as the accepter email (that's who was invited)
-                email_service.send_invitation_accepted_email(
+                # Notify inviter with enhanced retry logic
+                send_invitation_accepted_email_enhanced(
                     to_email=inviter_auth.provider_id,  # Inviter's email
                     accepter_email=invitation.email,  # Invitee's email
                     organization_name=resource_name,
@@ -600,8 +604,8 @@ def resend_invitation(
     inviter = db.query(User).filter(User.id == invitation.invited_by).first()
     inviter_name = inviter.username if inviter else None
 
-    # Resend email
-    email_service.send_invitation_email(
+    # Resend email with enhanced retry logic
+    send_invitation_email_enhanced(
         to_email=invitation.email,
         organization_name=resource_name,
         inviter_name=inviter_name,

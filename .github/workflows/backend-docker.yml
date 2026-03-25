@@ -28,7 +28,7 @@ on:
 
 # Environment variables
 env:
-  DOCKER_USERNAME: harystyles
+  DOCKER_USERNAME: privexbot
   IMAGE_NAME: privexbot-backend
   REGISTRY: docker.io
 
@@ -93,13 +93,13 @@ jobs:
           echo "🌍 Environment: ${ENVIRONMENT}"
           echo "🔖 Git SHA: ${GITHUB_SHA:0:7}"
 
-      # Step 5: Build and push Docker image
+      # Step 5: Build and push Docker image (CPU-optimized for Secret VM)
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: ./backend
-          file: ./backend/Dockerfile
+          file: ./backend/Dockerfile.cpu
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
@@ -108,6 +108,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           build-args: |
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
             VCS_REF=${{ steps.meta.outputs.short_sha }}
@@ -137,6 +139,7 @@ jobs:
           - **Image Name**: \`${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}\`
           - **Version**: \`${{ steps.meta.outputs.version }}\` (Prelaunch - 1.0.0 reserved for official launch)
           - **Environment**: \`${{ steps.meta.outputs.environment }}\`
+          - **Build Type**: CPU-optimized (Dockerfile.cpu) for Secret VM compatibility
           - **Build Date**: \`${{ steps.meta.outputs.build_date }}\`
           - **Git SHA**: \`${{ steps.meta.outputs.short_sha }}\`
 
@@ -156,7 +159,7 @@ jobs:
 
           ## 🚀 Deployment Instructions
 
-          ### SecretVM Deployment (Primary - harystyles.store)
+          ### SecretVM Deployment (Primary - privexbot.com)
 
           **1. Update \`docker-compose.secretvm.yml\`:**
           \`\`\`yaml
@@ -180,14 +183,14 @@ jobs:
           **3. Test Backend:**
           \`\`\`bash
           # Health check
-          curl https://api.harystyles.store/health
+          curl https://api.privexbot.com/health
 
           # API status
-          curl https://api.harystyles.store/api/v1/status
+          curl https://api.privexbot.com/api/v1/status
 
           # Or run comprehensive tests
           cd backend
-          ./scripts/test-secretvm.sh
+          ./scripts/docker/secretvm-deploy.sh test
           \`\`\`
 
           ### Standalone Production Deployment
@@ -208,11 +211,11 @@ jobs:
           ---
 
           ### 🔗 Production Services
-          - [Backend API](https://api.harystyles.store)
-          - [API Documentation](https://api.harystyles.store/api/docs)
-          - [PgAdmin](https://pgadmin.harystyles.store)
-          - [Redis UI](https://redis-ui.harystyles.store)
-          - [Traefik Dashboard](https://traefik.harystyles.store/dashboard/)
+          - [Backend API](https://api.privexbot.com)
+          - [API Documentation](https://api.privexbot.com/api/docs)
+          - [PgAdmin](https://pgadmin.privexbot.com)
+          - [Redis UI](https://redis-ui.privexbot.com)
+          - [Traefik Dashboard](https://traefik.privexbot.com/dashboard/)
 
           ### 🔗 Resources
           - [Docker Hub Image](https://hub.docker.com/r/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }})
@@ -245,12 +248,13 @@ jobs:
           ## Image Details
           - **Version**: ${{ steps.meta.outputs.version }} (Prelaunch - 1.0.0 reserved for launch)
           - **Environment**: ${{ steps.meta.outputs.environment }}
+          - **Build Type**: CPU-optimized (Dockerfile.cpu) for Secret VM compatibility
           - **Git SHA**: ${{ steps.meta.outputs.short_sha }}
           - **Full Image**: \`${{ steps.digest.outputs.full_image }}\`
 
           ---
 
-          ## SecretVM Deployment (Primary - harystyles.store)
+          ## SecretVM Deployment (Primary - privexbot.com)
 
           ### Step 1: Update docker-compose.secretvm.yml
 
@@ -279,7 +283,7 @@ jobs:
           \`\`\`bash
           # Run comprehensive tests
           cd backend
-          ./scripts/test-secretvm.sh
+          ./scripts/docker/secretvm-deploy.sh test
           \`\`\`
 
           **Expected Results:**
@@ -296,11 +300,11 @@ jobs:
 
           After deployment, services will be available at:
 
-          - **Backend API**: https://api.harystyles.store
-          - **API Docs**: https://api.harystyles.store/api/docs
-          - **PgAdmin**: https://pgadmin.harystyles.store
-          - **Redis UI**: https://redis-ui.harystyles.store
-          - **Traefik**: https://traefik.harystyles.store/dashboard/
+          - **Backend API**: https://api.privexbot.com
+          - **API Docs**: https://api.privexbot.com/api/docs
+          - **PgAdmin**: https://pgadmin.privexbot.com
+          - **Redis UI**: https://redis-ui.privexbot.com
+          - **Traefik**: https://traefik.privexbot.com/dashboard/
 
           ---
 
@@ -335,7 +339,7 @@ jobs:
           # Configure required variables
           POSTGRES_PASSWORD=STRONG_PASSWORD_HERE
           SECRET_KEY=RANDOM_SECRET_KEY_HERE
-          BACKEND_CORS_ORIGINS=https://harystyles.store,https://api.harystyles.store
+          BACKEND_CORS_ORIGINS=https://privexbot.com,https://api.privexbot.com
           \`\`\`
 
           **Generate secure secrets:**
@@ -353,23 +357,23 @@ jobs:
 
           **Health check:**
           \`\`\`bash
-          curl https://api.harystyles.store/health
+          curl https://api.privexbot.com/health
           \`\`\`
 
           **API status:**
           \`\`\`bash
-          curl https://api.harystyles.store/api/v1/status
+          curl https://api.privexbot.com/api/v1/status
           \`\`\`
 
           **Interactive API docs:**
           \`\`\`
-          https://api.harystyles.store/api/docs
+          https://api.privexbot.com/api/docs
           \`\`\`
 
           **Comprehensive tests:**
           \`\`\`bash
           cd backend
-          ./scripts/test-secretvm.sh
+          ./scripts/docker/secretvm-deploy.sh test
           \`\`\`
 
           ---
@@ -409,5 +413,5 @@ jobs:
           echo "✅ Build completed successfully"
           echo "📦 Version: ${{ steps.meta.outputs.version }}"
           echo "🎯 Image: ${{ steps.digest.outputs.full_image }}"
-          echo "🌐 Production: https://api.harystyles.store"
+          echo "🌐 Production: https://api.privexbot.com"
           echo "📋 Check the Actions summary for full deployment instructions"

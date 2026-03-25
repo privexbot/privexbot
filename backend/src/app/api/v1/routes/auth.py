@@ -52,10 +52,21 @@ from app.schemas.token import (
     CosmosWalletVerifyRequest,
     LinkWalletRequest,
     CosmosLinkWalletRequest,
+    LinkEmailRequest,
     Token,
-    WalletChallengeResponse
+    WalletChallengeResponse,
+    PasswordResetRequestSchema,
+    PasswordResetValidateSchema,
+    PasswordResetConfirmSchema,
+    PasswordResetResponseSchema,
+    SimpleMessageResponseSchema,
+    EnhancedLoginResponseSchema,
+    EmailVerificationRequestSchema,
+    EmailLinkVerificationRequestSchema,
+    EmailVerificationResponseSchema,
+    VerifyEmailCodeRequestSchema
 )
-from app.schemas.user import UserProfile, AuthMethodInfo
+from app.schemas.user import UserProfile, AuthMethodInfo, UserUpdate
 from app.auth.strategies import email, evm, solana, cosmos
 from app.services.tenant_service import create_organization, list_user_organizations
 
@@ -126,11 +137,14 @@ async def get_current_user_profile(
         for auth in auth_identities
     ]
 
-    # Return UserProfile
+    # Return UserProfile with access flags
     return UserProfile(
         id=current_user.id,
         username=current_user.username,
+        avatar_url=current_user.avatar_url,
         is_active=current_user.is_active,
+        is_staff=current_user.is_staff,
+        has_beta_access=current_user.has_beta_access,
         created_at=current_user.created_at,
         updated_at=current_user.updated_at,
         auth_methods=auth_methods
@@ -187,7 +201,8 @@ async def email_signup(
         db=db,
         name=f"{user.username}'s Organization",
         billing_email=request.email,
-        creator_id=user.id
+        creator_id=user.id,
+        is_default=True  # Mark as personal organization
     )
 
     # Step 3: Get the default workspace that was just created
@@ -274,7 +289,8 @@ async def email_login(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=billing_email,
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
 
         # Get the default workspace that was automatically created
@@ -359,6 +375,352 @@ async def change_password(
     )
 
     return {"message": "Password changed successfully"}
+
+
+# ============================================================
+# PASSWORD RESET
+# ============================================================
+
+@router.post("/password-reset/request", response_model=PasswordResetResponseSchema)
+async def request_password_reset(
+    request: PasswordResetRequestSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Request password reset email.
+
+    WHY: Allow users to reset forgotten passwords securely
+    HOW: Generate secure token, store in Redis, send email
+
+    Flow:
+    1. Validate email address
+    2. Generate secure reset token
+    3. Store token in Redis (1 hour expiration)
+    4. Send email with reset link (TODO: implement email sending)
+    5. Always return success (prevents user enumeration)
+
+    Args:
+        request: PasswordResetRequestSchema with email
+        db: Database session (injected)
+
+    Returns:
+        Success message (always, even if email doesn't exist)
+
+    Security:
+    - Always returns success to prevent user enumeration
+    - Token expires in 1 hour
+    - Rate limited to prevent spam
+    - Secure token generation with 256 bits entropy
+
+    Example:
+        POST /auth/password-reset/request
+        Body: {"email": "alice@example.com"}
+        Response: {"message": "Password reset email sent successfully"}
+    """
+    # Call email strategy and get enhanced response
+    response_data = await email.request_password_reset(
+        email=request.email,
+        db=db
+    )
+
+    # Return enhanced response with email sending status
+    return PasswordResetResponseSchema(**response_data)
+
+
+@router.post("/password-reset/validate", response_model=SimpleMessageResponseSchema)
+async def validate_reset_token(
+    request: PasswordResetValidateSchema
+):
+    """
+    Validate password reset token.
+
+    WHY: Check if reset token is valid before allowing password change
+    HOW: Verify token exists in Redis and hasn't expired
+
+    Flow:
+    1. Check if token exists in Redis
+    2. Verify token format and expiration
+    3. Return validation result
+
+    Args:
+        request: PasswordResetValidateSchema with token
+
+    Returns:
+        Success message if token is valid
+
+    Raises:
+        HTTPException(400): Invalid or expired token
+
+    Example:
+        POST /auth/password-reset/validate
+        Body: {"token": "abc123def456..."}
+        Response: {"message": "Reset token is valid"}
+    """
+    # Validate token
+    user_id = await email.validate_reset_token(request.token)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token"
+        )
+
+    return SimpleMessageResponseSchema(
+        message="Reset token is valid"
+    )
+
+
+@router.post("/password-reset/confirm", response_model=SimpleMessageResponseSchema)
+async def confirm_password_reset(
+    request: PasswordResetConfirmSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password with valid token.
+
+    WHY: Allow users to set new password using reset token
+    HOW: Validate token, update password hash, consume token
+
+    Flow:
+    1. Validate reset token
+    2. Validate new password strength
+    3. Update user's password hash
+    4. Consume token (one-time use)
+    5. Return success
+
+    Args:
+        request: PasswordResetConfirmSchema with token and new password
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Invalid token or weak password
+        HTTPException(404): User not found
+
+    Security:
+    - Token is consumed after use (one-time only)
+    - Password strength validation
+    - Secure password hashing with bcrypt
+
+    Example:
+        POST /auth/password-reset/confirm
+        Body: {
+            "token": "abc123def456...",
+            "new_password": "NewSecurePass456!"
+        }
+        Response: {"message": "Password reset successfully"}
+    """
+    # Call email strategy
+    await email.reset_password_with_token(
+        token=request.token,
+        new_password=request.new_password,
+        db=db
+    )
+
+    return SimpleMessageResponseSchema(
+        message="Password reset successfully"
+    )
+
+
+# ============================================================
+# EMAIL VERIFICATION & SIGNUP
+# ============================================================
+
+@router.post("/email/login-enhanced", response_model=EnhancedLoginResponseSchema)
+async def enhanced_email_login(
+    request: EmailLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Enhanced email login that can differentiate new users for signup flow.
+
+    WHY: Enable seamless new user onboarding with email verification
+    HOW: Returns different responses for login success, invalid credentials, and new users
+
+    Flow:
+    1. Check if email exists in database
+    2. If email not found, return email_not_found status for signup flow
+    3. If email exists, verify password and return appropriate status
+
+    Args:
+        request: EmailLoginRequest with email and password
+        db: Database session (injected)
+
+    Returns:
+        EnhancedLoginResponseSchema with status-specific data
+
+    Security:
+    - Only reveals email existence AFTER password attempt
+    - Same timing for password verification regardless of email existence
+    - Rate limiting should be applied at API gateway level
+
+    Example Responses:
+        Success: {"status": "success", "token": {...}}
+        Wrong password: {"status": "invalid_credentials", "message": "Invalid credentials"}
+        New user: {"status": "email_not_found", "email": "user@example.com"}
+    """
+    # Call enhanced login strategy
+    result = await email.enhanced_login_with_email(
+        email=request.email,
+        password=request.password,
+        db=db
+    )
+
+    # Handle successful login - create JWT token
+    if result["status"] == "success":
+        user = result["user"]
+        access_token = create_access_token(
+            data={"sub": str(user.id), "email": request.email}
+        )
+
+        return EnhancedLoginResponseSchema(
+            status="success",
+            message="Login successful",
+            token=Token(
+                access_token=access_token,
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            )
+        )
+
+    # Handle other statuses (invalid_credentials, email_not_found)
+    return EnhancedLoginResponseSchema(**result)
+
+
+@router.post("/email/send-verification", response_model=EmailVerificationResponseSchema)
+async def send_email_verification(
+    request: EmailVerificationRequestSchema
+):
+    """
+    Send email verification code for new user signup.
+
+    WHY: Verify email ownership before creating account
+    HOW: Generate 6-digit code, store in Redis, send email
+
+    Flow:
+    1. Validate password strength
+    2. Check if email/username already exist
+    3. Generate verification code
+    4. Store signup data in Redis (5min expiry)
+    5. Send code via email
+
+    Args:
+        request: EmailVerificationRequestSchema with email, password, username
+
+    Returns:
+        EmailVerificationResponseSchema with verification status
+
+    Security:
+    - Verification codes expire in 5 minutes
+    - Single-use codes stored in Redis
+    - Password strength validation
+    - Rate limiting should be applied
+
+    Example:
+        POST /auth/email/send-verification
+        Body: {"email": "user@example.com", "password": "SecurePass123!", "username": "newuser"}
+        Response: {"message": "Verification code sent", "code_sent": true, "expires_in": 300}
+    """
+    # Step 1: Validate password strength
+    from app.auth.strategies.email import validate_password_strength
+    is_valid, error_msg = validate_password_strength(request.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    # Step 2: Check if email already exists
+    from app.models.auth_identity import AuthIdentity
+    from app.api.v1.dependencies import get_db
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        existing_email = db.query(AuthIdentity).filter(
+            AuthIdentity.provider == "email",
+            AuthIdentity.provider_id == request.email.lower()
+        ).first()
+
+        if existing_email:
+            raise HTTPException(
+                status_code=409,
+                detail="Email already registered. Please log in instead."
+            )
+
+        # Step 3: Check if username already exists
+        from app.models.user import User
+        existing_username = db.query(User).filter(
+            User.username == request.username
+        ).first()
+
+        if existing_username:
+            raise HTTPException(
+                status_code=400,
+                detail="Username already taken. Please choose a different username."
+            )
+
+    finally:
+        db.close()
+
+    # Step 4: Generate and send verification code
+    result = await email.send_email_verification_code(
+        email=request.email,
+        username=request.username,
+        password=request.password
+    )
+
+    return EmailVerificationResponseSchema(**result)
+
+
+@router.post("/email/verify-and-signup", response_model=Token)
+async def verify_email_and_signup(
+    request: VerifyEmailCodeRequestSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email code and complete user signup with automatic login.
+
+    WHY: Complete account creation after email verification
+    HOW: Verify code, create user account, return JWT token
+
+    Flow:
+    1. Retrieve verification data from Redis
+    2. Verify the submitted code
+    3. Create user account and auth identity
+    4. Generate JWT token for automatic login
+
+    Args:
+        request: VerifyEmailCodeRequestSchema with email and verification code
+        db: Database session (injected)
+
+    Returns:
+        Token for immediate authentication
+
+    Security:
+    - Single-use code consumption
+    - Race condition protection
+    - Automatic cleanup on success or failure
+
+    Example:
+        POST /auth/email/verify-and-signup
+        Body: {"email": "user@example.com", "code": "123456"}
+        Response: {"access_token": "eyJhbGciOiJIUzI1NiIs...", "expires_in": 1800}
+    """
+    # Verify code and create user
+    user = await email.verify_email_code_and_signup(
+        email=request.email,
+        code=request.code,
+        db=db
+    )
+
+    # Generate JWT token for automatic login
+    access_token = create_access_token(
+        data={"sub": str(user.id), "email": request.email}
+    )
+
+    return Token(
+        access_token=access_token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
 
 
 # ============================================================
@@ -453,7 +815,8 @@ async def evm_verify(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=f"{user.username}@wallet.user",  # Placeholder email
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
         user_orgs = [(org, "owner")]
 
@@ -620,7 +983,8 @@ async def solana_verify(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=f"{user.username}@wallet.user",  # Placeholder email
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
         user_orgs = [(org, "owner")]
 
@@ -793,7 +1157,8 @@ async def cosmos_verify(
             db=db,
             name=f"{user.username}'s Organization",
             billing_email=f"{user.username}@wallet.user",  # Placeholder email
-            creator_id=user.id
+            creator_id=user.id,
+            is_default=True  # Mark as personal organization for profile visibility
         )
         user_orgs = [(org, "owner")]
 
@@ -868,3 +1233,482 @@ async def cosmos_link(
     )
 
     return {"message": "Wallet linked successfully"}
+
+
+# ============================================================
+# EMAIL LINKING
+# ============================================================
+
+@router.post("/email/link", response_model=Dict[str, str])
+async def email_link(
+    request: LinkEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Link email/password authentication to existing user account (requires authentication).
+
+    WHY: Allow wallet-only users to add email/password login option
+    HOW: Create new AuthIdentity with email provider for existing user
+
+    Flow:
+    1. Validate current user is authenticated
+    2. Check email is not already linked to any account
+    3. Validate password strength
+    4. Hash password and create AuthIdentity
+    5. Return success message
+
+    Args:
+        request: LinkEmailRequest with email and password
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Email already linked to another account
+        HTTPException(400): Email already linked to current account
+        HTTPException(400): Weak password
+
+    Example:
+        POST /auth/email/link
+        Headers: {"Authorization": "Bearer your_jwt_token"}
+        Body: {
+            "email": "alice@example.com",
+            "password": "SecurePass123!"
+        }
+
+    Security:
+    - Requires valid JWT token (existing account)
+    - Password strength validation
+    - Email uniqueness enforcement
+    - Secure password hashing with bcrypt
+    """
+    # Call email strategy for linking
+    await email.link_email_to_user(
+        user_id=current_user.id,
+        email=request.email,
+        password=request.password,
+        db=db
+    )
+
+    return {"message": "Email linked successfully"}
+
+
+@router.post("/email/send-link-verification", response_model=EmailVerificationResponseSchema)
+async def send_email_link_verification(
+    request: EmailLinkVerificationRequestSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Send email verification code for linking email to existing account.
+
+    WHY: Verify email ownership before allowing email linking to account
+    HOW: Generate verification code, store in Redis, send email
+
+    Flow:
+    1. Validate email isn't already linked to any account
+    2. Validate password strength
+    3. Generate verification code
+    4. Store link data in Redis (5min expiry)
+    5. Send verification email
+
+    Args:
+        request: EmailLinkVerificationRequestSchema with email, password
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        EmailVerificationResponseSchema with status
+
+    Raises:
+        HTTPException(400): Email already linked to account
+        HTTPException(400): Weak password
+        HTTPException(400): Email already linked to current user
+
+    Security:
+    - Requires valid JWT token (authenticated user)
+    - Email uniqueness validation
+    - Password strength validation
+    - Verification codes expire in 5 minutes
+    """
+    # Check if email is already linked to any account
+    from app.models.auth_identity import AuthIdentity
+
+    existing_auth = db.query(AuthIdentity).filter(
+        AuthIdentity.provider == "email",
+        AuthIdentity.provider_id == request.email
+    ).first()
+
+    if existing_auth:
+        if existing_auth.user_id == current_user.id:
+            raise HTTPException(
+                status_code=400,
+                detail="This email is already linked to your account"
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="This email is already linked to another account"
+            )
+
+    # Generate and send verification code for linking
+    result = await email.send_email_link_verification_code(
+        email=request.email,
+        password=request.password,
+        user_id=current_user.id,
+        db=db
+    )
+
+    return EmailVerificationResponseSchema(**result)
+
+
+@router.post("/email/verify-and-link", response_model=Dict[str, str])
+async def verify_email_and_link(
+    request: VerifyEmailCodeRequestSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email code and link email to existing user account.
+
+    WHY: Complete email linking after email verification
+    HOW: Verify code, create AuthIdentity for email/password
+
+    Flow:
+    1. Verify the email verification code
+    2. Retrieve stored linking data from Redis
+    3. Create AuthIdentity with hashed password
+    4. Clean up Redis verification data
+    5. Return success message
+
+    Args:
+        request: VerifyEmailCodeRequestSchema with email and verification code
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Invalid or expired verification code
+        HTTPException(400): Email already linked
+
+    Security:
+    - Requires valid JWT token (authenticated user)
+    - Verification code validation
+    - Secure password hashing
+
+    Example:
+        POST /auth/email/verify-and-link
+        Headers: {"Authorization": "Bearer your_jwt_token"}
+        Body: {"email": "alice@example.com", "code": "123456"}
+    """
+    # Verify code and link email to user
+    await email.verify_email_code_and_link(
+        email=request.email,
+        code=request.code,
+        user_id=current_user.id,
+        db=db
+    )
+
+    return {"message": "Email linked successfully"}
+
+
+# ============================================================
+# AUTHENTICATION METHOD UNLINKING
+# ============================================================
+
+@router.delete("/auth-method/{provider}/{provider_id}", response_model=Dict[str, str])
+async def unlink_auth_method(
+    provider: str,
+    provider_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Unlink an authentication method from user account.
+
+    WHY: Allow users to remove authentication methods they no longer want to use
+    HOW: Delete AuthIdentity record after validating user has other auth methods
+
+    Flow:
+    1. Validate user has more than one auth method
+    2. Find the specific auth identity to remove
+    3. Delete the auth identity record
+    4. Return success message
+
+    Args:
+        provider: Auth provider type (email, evm, solana, cosmos)
+        provider_id: Provider-specific identifier (email or wallet address)
+        current_user: Currently authenticated user (injected from JWT)
+        db: Database session (injected)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException(400): Cannot remove last auth method
+        HTTPException(404): Auth method not found
+        HTTPException(403): Auth method belongs to different user
+
+    Security:
+    - Requires valid JWT token (authenticated user)
+    - Prevents removal of last auth method
+    - Validates ownership of auth method
+
+    Example:
+        DELETE /auth/auth-method/email/alice@example.com
+        DELETE /auth/auth-method/evm/0x742d35Cc...
+        Headers: {"Authorization": "Bearer your_jwt_token"}
+    """
+    from app.models.auth_identity import AuthIdentity
+
+    # Step 1: Check user has multiple auth methods
+    user_auth_count = db.query(AuthIdentity).filter(
+        AuthIdentity.user_id == current_user.id
+    ).count()
+
+    if user_auth_count <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot remove last authentication method. Please add another authentication method first."
+        )
+
+    # Step 2: Find the specific auth identity
+    auth_identity = db.query(AuthIdentity).filter(
+        AuthIdentity.user_id == current_user.id,
+        AuthIdentity.provider == provider,
+        AuthIdentity.provider_id == provider_id
+    ).first()
+
+    if not auth_identity:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Authentication method not found: {provider} {provider_id}"
+        )
+
+    # Step 3: Delete the auth identity
+    db.delete(auth_identity)
+    db.commit()
+
+    # Step 4: Log the action
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"User {current_user.id} unlinked {provider} auth method: {provider_id}")
+
+    return {"message": f"{provider.capitalize()} authentication method removed successfully"}
+
+
+
+
+# ============================================================
+# PROFILE MANAGEMENT
+# ============================================================
+
+@router.put("/me", response_model=UserProfile)
+async def update_profile(
+    profile_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current user's profile information.
+
+    WHY: Allow users to update their profile details
+    HOW: Validate input, check uniqueness, update user record
+
+    Flow:
+    1. Validate input data (username uniqueness if provided)
+    2. Update user record with provided fields
+    3. Return updated UserProfile
+
+    Args:
+        profile_update: UserUpdate schema with optional fields to update
+        current_user: Authenticated user (from JWT token)
+        db: Database session
+
+    Returns:
+        UserProfile with updated user data and auth methods
+
+    Raises:
+        HTTPException(400): Username already taken
+        HTTPException(400): Invalid input data
+        HTTPException(401): Invalid or missing JWT token
+
+    Security:
+    - Only authenticated users can update their own profile
+    - Username uniqueness enforced at database level
+    - No sensitive data exposed in response
+
+    Example Request:
+        PUT /auth/me
+        {
+            "username": "new_username"
+        }
+
+    Example Response:
+        {
+            "id": "123e4567-e89b-12d3-a456-426614174000",
+            "username": "new_username",
+            "is_active": true,
+            "created_at": "2024-01-15T10:30:00Z",
+            "updated_at": "2024-01-15T14:45:00Z",
+            "auth_methods": [...]
+        }
+    """
+    from app.models.auth_identity import AuthIdentity
+    from sqlalchemy.exc import IntegrityError
+
+    # Check if username is being updated and if it's unique
+    if profile_update.username:
+        existing_user = db.query(User).filter(
+            User.username == profile_update.username,
+            User.id != current_user.id
+        ).first()
+
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Username already taken"
+            )
+
+    # Update user fields
+    if profile_update.username:
+        current_user.username = profile_update.username
+
+    # Update timestamp
+    from datetime import datetime
+    current_user.updated_at = datetime.utcnow()
+
+    try:
+        db.commit()
+        db.refresh(current_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Username already taken"
+        )
+
+    # Get user's auth identities for response
+    auth_identities = db.query(AuthIdentity).filter(
+        AuthIdentity.user_id == current_user.id
+    ).all()
+
+    # Convert to AuthMethodInfo schemas
+    auth_methods = [
+        AuthMethodInfo(
+            provider=auth.provider,
+            provider_id=auth.provider_id,
+            linked_at=auth.created_at
+        )
+        for auth in auth_identities
+    ]
+
+    # Return updated UserProfile
+    return UserProfile(
+        id=current_user.id,
+        username=current_user.username,
+        avatar_url=current_user.avatar_url,
+        is_active=current_user.is_active,
+        is_staff=current_user.is_staff,
+        has_beta_access=current_user.has_beta_access,
+        created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
+        auth_methods=auth_methods
+    )
+
+
+@router.delete("/me", response_model=dict)
+async def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete current user's account permanently.
+
+    WHY: Allow users to delete their account and all associated data
+    HOW: Hard delete user record, cascade deletes handle all related data
+
+    Flow:
+    1. Verify user is authenticated
+    2. Delete user record from database (hard delete)
+    3. Database cascade deletes will automatically handle:
+       - AuthIdentity records (all login methods deleted)
+       - OrganizationMember records (removed from all orgs)
+       - WorkspaceMember records (removed from all workspaces)
+       - Created resources may be reassigned or marked as orphaned
+    4. Return success message
+
+    Args:
+        current_user: Authenticated user (from JWT token)
+        db: Database session
+
+    Returns:
+        Success message confirming account deletion
+
+    Raises:
+        HTTPException(401): Invalid or missing JWT token
+        HTTPException(500): Database error during deletion
+
+    Security:
+    - Only authenticated users can delete their own account
+    - Hard delete allows user to sign up again with same credentials
+    - JWT token becomes invalid immediately
+    - Database cascade deletes handle all foreign key relationships
+
+    WARNING: This action is irreversible. User will lose access to:
+    - All organizations they created or belong to
+    - All workspaces they created or have access to
+    - All chatbots, chatflows, and knowledge bases they created
+    - All authentication methods linked to their account
+    - User can sign up again fresh as a new user
+
+    Example Response:
+        {
+            "message": "Account deleted successfully",
+            "deleted_at": "2024-01-15T14:45:00Z"
+        }
+    """
+    from datetime import datetime
+
+    try:
+        # Record deletion time before deleting user
+        deletion_time = datetime.utcnow()
+
+        # Explicitly delete memberships first to avoid foreign key issues
+        # Delete organization memberships
+        from app.models.organization_member import OrganizationMember
+        from app.models.workspace_member import WorkspaceMember
+
+        db.query(OrganizationMember).filter(
+            OrganizationMember.user_id == current_user.id
+        ).delete(synchronize_session=False)
+
+        # Delete workspace memberships
+        db.query(WorkspaceMember).filter(
+            WorkspaceMember.user_id == current_user.id
+        ).delete(synchronize_session=False)
+
+        # Now delete the user record - cascade will handle auth_identities and other relations
+        db.delete(current_user)
+        db.commit()
+
+        return {
+            "message": "Account deleted successfully",
+            "deleted_at": deletion_time.isoformat() + "Z"
+        }
+
+    except Exception as e:
+        db.rollback()
+        print(f"Account deletion error: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete account: {str(e)}"
+        )

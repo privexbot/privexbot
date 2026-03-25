@@ -1,0 +1,29 @@
+# Docker Compose for Widget - Production Environment
+# Purpose: Self-hosted production deployment (or building for CDN upload)
+# Usage: docker compose up -d
+#
+# For CDN deployment:
+#   1. docker compose build widget
+#   2. docker compose run --rm widget sh -c "cp -r /usr/share/nginx/html/* /dist/"
+#   3. Upload /dist contents to CDN
+
+services:
+  widget:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: privexbot-widget
+    ports:
+      - "9001:80"
+    networks:
+      - widget-prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  widget-prod:
+    driver: bridge

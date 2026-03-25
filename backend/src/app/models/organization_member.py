@@ -148,7 +148,7 @@ class OrganizationMember(Base):
     )
 
     # Relationships
-    user = relationship("User", foreign_keys=[user_id], backref="organization_memberships")
+    user = relationship("User", foreign_keys=[user_id], back_populates="organization_memberships")
     organization = relationship("Organization", back_populates="members")
     inviter = relationship("User", foreign_keys=[invited_by])
 
