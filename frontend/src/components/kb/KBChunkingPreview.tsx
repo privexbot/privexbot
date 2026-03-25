@@ -5,7 +5,7 @@
  * with different strategies and configurations in real-time
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Eye,
   ChevronDown,
@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import axios from 'axios';
 import { useKBStore } from '@/store/kb-store';
 import kbClient from '@/lib/kb-client';
 import { ChunkingStrategy } from '@/types/knowledge-base';
@@ -84,6 +85,8 @@ export function KBChunkingPreview() {
   const [previewLimited, setPreviewLimited] = useState<boolean>(false);
   const [totalChunks, setTotalChunks] = useState<number>(0);
   const [chunksShown, setChunksShown] = useState<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
   // Get approved sources with content
   const approvedSources = useMemo(() => {
@@ -96,6 +99,14 @@ export function KBChunkingPreview() {
   // Load combined preview for ALL approved sources
   const loadCombinedPreview = async (strategy?: ChunkingStrategy, maxChunks?: number) => {
     if (!currentDraft || approvedSources.length === 0) return;
+
+    // Cancel any in-flight request before starting a new one
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    const requestId = ++requestIdRef.current;
 
     setLoading(true);
     try {
@@ -158,7 +169,8 @@ export function KBChunkingPreview() {
               enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata,
               title: currentDraft.name || 'Combined Sources',
               max_chunks: maxChunks
-            }
+            },
+            signal
           );
 
           allChunks = response.chunks.map((chunk: any) => ({
@@ -205,7 +217,8 @@ export function KBChunkingPreview() {
                 enable_enhanced_metadata: chunkingConfig.enable_enhanced_metadata,
                 title: sourceName,
                 max_chunks: maxChunks
-              }
+              },
+              signal
             );
 
             // Use chunking_decision from last response
@@ -267,6 +280,9 @@ export function KBChunkingPreview() {
       setPreviews(prev => new Map(prev).set(`combined-${currentStrategy}`, preview));
 
     } catch (error) {
+      // Silently ignore cancelled requests (user switched strategy before completion)
+      if (axios.isCancel(error)) return;
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Failed to load preview:', error);
       toast({
         title: "Preview Failed",
@@ -274,7 +290,10 @@ export function KBChunkingPreview() {
         variant: "destructive"
       });
     } finally {
-      setLoading(false);
+      // Only clear loading if this is still the active request
+      if (requestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -322,6 +341,11 @@ export function KBChunkingPreview() {
       default: return 'text-gray-600';
     }
   };
+
+  // Abort in-flight request on unmount
+  useEffect(() => {
+    return () => { abortControllerRef.current?.abort(); };
+  }, []);
 
   // Load combined preview when sources or config changes
   useEffect(() => {

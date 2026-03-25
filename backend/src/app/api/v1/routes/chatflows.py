@@ -321,6 +321,48 @@ async def get_chatflow(
     }
 
 
+@router.post("/{chatflow_id}/edit")
+async def create_edit_draft(
+    chatflow_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Create a draft from a deployed chatflow for editing.
+
+    WHY: Allow editing deployed chatflows without recreating from scratch
+    HOW: Load chatflow config into a new Redis draft, return draft_id
+    """
+    current_user, org_id, _ = user_context
+
+    # Verify chatflow exists and user has access
+    chatflow = db.query(Chatflow).filter(
+        Chatflow.id == chatflow_id,
+        Chatflow.is_deleted == False
+    ).first()
+    if not chatflow:
+        raise HTTPException(status_code=404, detail="Chatflow not found")
+
+    # Verify workspace access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatflow.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+    if not workspace:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        draft_id = draft_service.create_edit_draft(
+            chatflow_id=chatflow_id,
+            workspace_id=chatflow.workspace_id,
+            created_by=current_user.id,
+            db=db
+        )
+        return {"draft_id": draft_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.delete("/{chatflow_id}")
 async def delete_chatflow(
     chatflow_id: UUID,

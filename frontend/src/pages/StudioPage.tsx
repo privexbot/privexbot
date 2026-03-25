@@ -459,6 +459,22 @@ export function StudioPage() {
     },
   });
 
+  // Edit draft mutation
+  const editDraftMutation = useMutation({
+    mutationFn: chatflowApi.createEditDraft,
+    onSuccess: (data) => {
+      navigate(`/chatflows/builder/${data.draft_id}`);
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to load chatflow for editing",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Filter chatflows by search and status
   const filteredChatflows = chatflows.filter((cf) => {
     const matchesSearch =
@@ -507,14 +523,8 @@ export function StudioPage() {
     navigate(`/chatflows/builder/${id}`);
   };
 
-  const handleEditChatflow = (_id: string) => {
-    // TODO: Load deployed chatflow into draft and edit
-    // For MVP, show toast that this feature is coming
-    toast({
-      title: "Coming Soon",
-      description:
-        "Edit deployed chatflows will be available soon. Create a new chatflow for now.",
-    });
+  const handleEditChatflow = (id: string) => {
+    editDraftMutation.mutate(id);
   };
 
   const handleToggleChatflow = (id: string) => {

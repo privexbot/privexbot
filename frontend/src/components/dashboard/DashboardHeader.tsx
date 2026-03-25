@@ -155,9 +155,6 @@ export function DashboardHeader({
     // Clear custom date range when selecting a time range
     setSelectedDateRange(null);
     onCustomDateRangeChange?.(null);
-
-    // TODO: Fetch data for selected time range
-    console.log("Time range selected:", range);
   };
 
   const handleDateClick = (date: Date) => {

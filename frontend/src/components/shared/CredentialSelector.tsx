@@ -48,7 +48,8 @@ type CredentialProvider =
   | 'telegram'
   | 'discord'
   | 'whatsapp'
-  | 'custom';
+  | 'custom'
+  | 'smtp';
 
 // API response structure matching backend CredentialResponse
 interface Credential {

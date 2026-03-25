@@ -152,6 +152,86 @@ class UnifiedDraftService:
         return draft_id
 
 
+    def create_edit_draft(
+        self,
+        chatflow_id: UUID,
+        workspace_id: UUID,
+        created_by: UUID,
+        db: Session
+    ) -> str:
+        """
+        Create a draft pre-populated from a deployed chatflow for editing.
+
+        FLOW:
+        1. Load deployed chatflow from DB (with workspace auth check)
+        2. Create Redis draft populated with chatflow's config
+        3. Set source_entity_id = chatflow's DB UUID
+        4. Return draft_id
+
+        ARGS:
+            chatflow_id: UUID of the deployed chatflow to edit
+            workspace_id: Workspace for access control
+            created_by: User creating the edit draft
+            db: Database session
+
+        RETURNS:
+            draft_id: Unique draft identifier
+        """
+        from app.models.chatflow import Chatflow
+
+        # Load deployed chatflow with workspace auth
+        chatflow = db.query(Chatflow).filter(
+            Chatflow.id == chatflow_id,
+            Chatflow.workspace_id == workspace_id,
+            Chatflow.is_deleted == False
+        ).first()
+
+        if not chatflow:
+            raise ValueError(f"Chatflow not found: {chatflow_id}")
+
+        # Build initial_data from the deployed chatflow's config
+        config = chatflow.config or {}
+        initial_data = {
+            "name": chatflow.name or config.get("name", "Untitled Chatflow"),
+            "description": chatflow.description or config.get("description", ""),
+            "nodes": config.get("nodes", []),
+            "edges": config.get("edges", []),
+            "variables": config.get("variables", {}),
+            "settings": config.get("settings", {}),
+            "deployment": config.get("deployment", {}),
+        }
+
+        # Generate unique draft ID
+        draft_id = f"draft_{DraftType.CHATFLOW.value}_{uuid4().hex[:8]}"
+
+        # Create draft structure (same as create_draft but with source_entity_id)
+        draft = {
+            "id": draft_id,
+            "type": DraftType.CHATFLOW.value,
+            "workspace_id": str(workspace_id),
+            "created_by": str(created_by),
+            "status": "draft",
+            "auto_save_enabled": True,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "last_auto_save": None,
+            "expires_at": (datetime.utcnow() + timedelta(seconds=self.default_ttl)).isoformat(),
+            "data": initial_data,
+            "preview": {},
+            "source_entity_id": str(chatflow_id),  # Links back to deployed chatflow
+        }
+
+        # Store in Redis with TTL
+        redis_key = f"draft:{DraftType.CHATFLOW.value}:{draft_id}"
+        self.redis_client.setex(
+            redis_key,
+            self.default_ttl,
+            json.dumps(draft)
+        )
+
+        return draft_id
+
+
     def get_draft(
         self,
         draft_type: DraftType,
@@ -474,7 +554,11 @@ class UnifiedDraftService:
         if draft_type == DraftType.CHATBOT:
             result = self._deploy_chatbot(draft, db)
         elif draft_type == DraftType.CHATFLOW:
-            result = self._deploy_chatflow(draft, db)
+            # Check if this is an edit draft (updating existing chatflow)
+            if draft.get("source_entity_id"):
+                result = self._update_chatflow(draft, db)
+            else:
+                result = self._deploy_chatflow(draft, db)
         elif draft_type == DraftType.KB:
             result = self._deploy_kb(draft, db)
 
@@ -742,6 +826,76 @@ class UnifiedDraftService:
         return deployment_results
 
 
+    def _update_chatflow(self, draft: dict, db: Session) -> dict:
+        """
+        Update an existing deployed chatflow from an edit draft.
+
+        WHY: Allow editing deployed chatflows without creating duplicates.
+        HOW: Load existing chatflow by source_entity_id, update config and metadata.
+        """
+        from app.models.chatflow import Chatflow
+
+        source_id = UUID(draft["source_entity_id"])
+        workspace_id = UUID(draft["workspace_id"])
+        data = draft["data"]
+
+        # Load existing chatflow
+        chatflow = db.query(Chatflow).filter(
+            Chatflow.id == source_id,
+            Chatflow.workspace_id == workspace_id,
+            Chatflow.is_deleted == False
+        ).first()
+
+        if not chatflow:
+            raise ValueError(f"Source chatflow not found: {source_id}")
+
+        # Update name and description
+        chatflow.name = data.get("name", chatflow.name)
+        chatflow.description = data.get("description", chatflow.description)
+
+        # Update config JSONB with new nodes/edges/variables/settings
+        chatflow.config = data
+
+        # Increment version
+        chatflow.version = (chatflow.version or 1) + 1
+
+        # Update deployment timestamp
+        chatflow.deployed_at = datetime.utcnow()
+
+        # Re-initialize channels if deployment config changed
+        deployment_config = data.get("deployment", {})
+        if deployment_config and deployment_config.get("channels"):
+            try:
+                # Get existing API key for this chatflow
+                from app.models.api_key import ApiKey
+                existing_key = db.query(ApiKey).filter(
+                    ApiKey.entity_id == chatflow.id,
+                    ApiKey.entity_type == "chatflow",
+                    ApiKey.is_active == True
+                ).first()
+
+                if existing_key:
+                    deployment_results = self._initialize_channels(
+                        entity_id=chatflow.id,
+                        entity_type="chatflow",
+                        deployment_config=deployment_config,
+                        api_key=existing_key.key_prefix,  # Use existing key prefix
+                        db=db
+                    )
+                    chatflow.config["deployment"] = deployment_results["channels"]
+            except Exception:
+                # Channel re-initialization is non-critical for updates
+                pass
+
+        db.commit()
+
+        return {
+            "chatflow_id": str(chatflow.id),
+            "status": "updated",
+            "version": chatflow.version,
+        }
+
+
     def _deploy_kb(self, draft: dict, db: Session) -> dict:
         """
         Deploy KB to database.
@@ -872,11 +1026,30 @@ class UnifiedDraftService:
                     }
 
                 elif channel_type == "whatsapp":
-                    # Configure WhatsApp Business API (placeholder - requires integration)
+                    # Register WhatsApp webhook via WhatsApp Business API
+                    from app.integrations.whatsapp_integration import whatsapp_integration
+
+                    credential_id = channel.get("credential_id") or channel.get("config", {}).get("access_token")
+                    if not credential_id:
+                        raise ValueError("WhatsApp access token credential is required")
+
+                    whatsapp_result = whatsapp_integration.register_webhook(
+                        db=db,
+                        entity_id=entity_id,
+                        entity_type=entity_type,
+                        config={
+                            "access_token": credential_id,
+                            "phone_number_id": channel.get("config", {}).get("phone_number_id"),
+                            "phone_number": channel.get("config", {}).get("phone_number")
+                        }
+                    )
+
                     deployment_results["channels"]["whatsapp"] = {
                         "status": "success",
-                        "webhook_url": f"{settings.API_BASE_URL}/webhooks/whatsapp/{entity_id}",
-                        "phone_number": channel["config"].get("phone_number")
+                        "webhook_url": whatsapp_result["webhook_url"],
+                        "phone_number": whatsapp_result.get("phone_number"),
+                        "phone_number_id": whatsapp_result.get("phone_number_id"),
+                        "access_token_credential_id": credential_id
                     }
 
                 elif channel_type == "zapier":

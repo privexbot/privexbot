@@ -12,7 +12,7 @@
  * - Node descriptions
  */
 
-import { Sparkles, Database, GitBranch, Globe, Code, MessageSquare, Variable } from 'lucide-react';
+import { Sparkles, Database, GitBranch, Globe, Code, MessageSquare, Variable, Send, Mail, Bell, UserCheck, UserPlus, Brain, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface NodeType {
@@ -20,7 +20,7 @@ interface NodeType {
   label: string;
   icon: React.ReactNode;
   description: string;
-  category: 'AI' | 'Data' | 'Logic' | 'Integration' | 'Output';
+  category: 'AI' | 'Data' | 'Logic' | 'Integration' | 'Action' | 'Output';
 }
 
 const NODE_TYPES: NodeType[] = [
@@ -36,6 +36,20 @@ const NODE_TYPES: NodeType[] = [
     label: 'Knowledge Base',
     icon: <Database className="w-4 h-4" />,
     description: 'Retrieve from knowledge base',
+    category: 'Data',
+  },
+  {
+    type: 'memory',
+    label: 'Memory',
+    icon: <Brain className="w-4 h-4" />,
+    description: 'Retrieve chat history',
+    category: 'Data',
+  },
+  {
+    type: 'database',
+    label: 'Database',
+    icon: <HardDrive className="w-4 h-4" />,
+    description: 'Query SQL database',
     category: 'Data',
   },
   {
@@ -65,6 +79,41 @@ const NODE_TYPES: NodeType[] = [
     icon: <Code className="w-4 h-4" />,
     description: 'Execute custom code',
     category: 'Logic',
+  },
+  {
+    type: 'webhook',
+    label: 'Webhook',
+    icon: <Send className="w-4 h-4" />,
+    description: 'Send data to external systems',
+    category: 'Action',
+  },
+  {
+    type: 'email',
+    label: 'Send Email',
+    icon: <Mail className="w-4 h-4" />,
+    description: 'Send email via SMTP',
+    category: 'Action',
+  },
+  {
+    type: 'notification',
+    label: 'Notification',
+    icon: <Bell className="w-4 h-4" />,
+    description: 'Notify via Slack, Discord, Teams',
+    category: 'Action',
+  },
+  {
+    type: 'handoff',
+    label: 'Human Handoff',
+    icon: <UserCheck className="w-4 h-4" />,
+    description: 'Escalate to human agent',
+    category: 'Action',
+  },
+  {
+    type: 'lead_capture',
+    label: 'Lead Capture',
+    icon: <UserPlus className="w-4 h-4" />,
+    description: 'Collect and store lead data',
+    category: 'Action',
   },
   {
     type: 'response',

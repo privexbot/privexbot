@@ -10,57 +10,71 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files, notifications, integrations
-from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook
+from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook, zapier as zapier_webhook, whatsapp as whatsapp_webhook
 
 
-class PublicAPICORSMiddleware(BaseHTTPMiddleware):
+class PublicAPICORSMiddleware:
     """
-    Custom CORS middleware for public/widget API routes.
+    Pure ASGI middleware for public/widget API routes.
 
     WHY: Widget embeds on customer websites need permissive CORS (any origin).
          Dashboard/auth API needs restricted CORS (specific origins).
 
     HOW: Intercepts requests to /api/v1/public/* and adds permissive CORS headers.
-         Other routes fall through to the standard CORSMiddleware.
+         Other routes pass through directly to CORSMiddleware (zero overhead).
+
+    NOTE: This is a pure ASGI middleware (not BaseHTTPMiddleware) to avoid
+         the known Starlette issue where BaseHTTPMiddleware can drop CORS
+         headers from the inner CORSMiddleware during error responses.
     """
 
-    PUBLIC_PATHS = ["/api/v1/public/", "/api/v1/chat/"]  # Widget API paths
+    PUBLIC_PATHS = ["/api/v1/public/", "/api/v1/chat/"]
 
-    async def dispatch(self, request: Request, call_next):
-        # Check if this is a public/widget API route
-        is_public_route = any(
-            request.url.path.startswith(path) for path in self.PUBLIC_PATHS
-        )
+    def __init__(self, app):
+        self.app = app
 
-        if not is_public_route:
-            # Let standard CORSMiddleware handle non-public routes
-            return await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        is_public = any(path.startswith(p) for p in self.PUBLIC_PATHS)
+
+        if not is_public:
+            # Direct passthrough — CORSMiddleware handles CORS with zero interference
+            await self.app(scope, receive, send)
+            return
 
         # Handle OPTIONS preflight for public routes
-        if request.method == "OPTIONS":
-            return Response(
-                status_code=200,
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Max-Age": "86400",  # Cache preflight for 24 hours
-                },
-            )
+        if scope.get("method", "") == "OPTIONS":
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"access-control-allow-origin", b"*"),
+                    (b"access-control-allow-methods", b"GET, POST, PUT, DELETE, OPTIONS"),
+                    (b"access-control-allow-headers", b"*"),
+                    (b"access-control-max-age", b"86400"),
+                    (b"content-length", b"0"),
+                ],
+            })
+            await send({"type": "http.response.body", "body": b""})
+            return
 
-        # Process the actual request
-        response = await call_next(request)
+        # For public non-OPTIONS requests, wrap send to inject permissive CORS headers
+        async def send_with_public_cors(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=list(message.get("headers", [])))
+                headers["Access-Control-Allow-Origin"] = "*"
+                headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                headers["Access-Control-Allow-Headers"] = "*"
+                if "Access-Control-Allow-Credentials" in headers:
+                    del headers["Access-Control-Allow-Credentials"]
+                message = {**message, "headers": headers.raw}
+            await send(message)
 
-        # Override CORS headers for public routes (widget API needs permissive CORS)
-        # Note: credentials=false is required when origin=* per CORS spec
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        # Remove credentials header if set by CORSMiddleware (incompatible with origin=*)
-        if "Access-Control-Allow-Credentials" in response.headers:
-            del response.headers["Access-Control-Allow-Credentials"]
-
-        return response
+        await self.app(scope, receive, send_with_public_cors)
 
 
 @asynccontextmanager
@@ -295,6 +309,18 @@ app.include_router(
 
 app.include_router(
     discord_webhook.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["webhooks"]
+)
+
+app.include_router(
+    zapier_webhook.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["webhooks"]
+)
+
+app.include_router(
+    whatsapp_webhook.router,
     prefix=settings.API_V1_PREFIX,
     tags=["webhooks"]
 )

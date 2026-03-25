@@ -28,6 +28,11 @@ import { VariableNodeConfig } from './configs/VariableNodeConfig';
 import { CodeNodeConfig } from './configs/CodeNodeConfig';
 import { MemoryNodeConfig } from './configs/MemoryNodeConfig';
 import { DatabaseNodeConfig } from './configs/DatabaseNodeConfig';
+import { WebhookNodeConfig } from './configs/WebhookNodeConfig';
+import { EmailNodeConfig } from './configs/EmailNodeConfig';
+import { NotificationNodeConfig } from './configs/NotificationNodeConfig';
+import { HandoffNodeConfig } from './configs/HandoffNodeConfig';
+import { LeadCaptureNodeConfig } from './configs/LeadCaptureNodeConfig';
 
 interface NodeConfigPanelProps {
   selectedNode: Node | null;
@@ -89,6 +94,21 @@ export default function NodeConfigPanel({
 
       case 'database':
         return <DatabaseNodeConfig config={config} onChange={handleConfigChange} />;
+
+      case 'webhook':
+        return <WebhookNodeConfig config={config} onChange={handleConfigChange} />;
+
+      case 'email':
+        return <EmailNodeConfig config={config} onChange={handleConfigChange} />;
+
+      case 'notification':
+        return <NotificationNodeConfig config={config} onChange={handleConfigChange} />;
+
+      case 'handoff':
+        return <HandoffNodeConfig config={config} onChange={handleConfigChange} />;
+
+      case 'lead_capture':
+        return <LeadCaptureNodeConfig config={config} onChange={handleConfigChange} />;
 
       case 'trigger':
         return (

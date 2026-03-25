@@ -69,6 +69,7 @@ export interface ChatflowDraft {
   expires_at: string;
   created_at: string;
   updated_at: string;
+  source_entity_id?: string;
 }
 
 export interface ChatflowListResponse {
@@ -249,6 +250,23 @@ export const chatflowApi = {
         status: string;
         chatflow_id: string;
       }>(`/chatflows/${chatflowId}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
+
+  /**
+   * Create an edit draft from a deployed chatflow
+   * POST /api/v1/chatflows/{chatflow_id}/edit
+   */
+  async createEditDraft(
+    chatflowId: string
+  ): Promise<{ draft_id: string }> {
+    try {
+      const response = await apiClient.post<{ draft_id: string }>(
+        `/chatflows/${chatflowId}/edit`
+      );
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

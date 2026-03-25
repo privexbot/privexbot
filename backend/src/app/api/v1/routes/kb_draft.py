@@ -20,6 +20,7 @@ This file implements PHASE 1 & 2 (API endpoints).
 PHASE 3 is implemented in Celery tasks.
 """
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
@@ -1251,7 +1252,8 @@ async def preview_chunks_live(
 
     # PREVIEW PARITY FIX: Use smart_kb_service.make_chunking_decision_for_preview()
     # This ensures preview uses the SAME adaptive logic as production
-    chunking_decision = smart_kb_service.make_chunking_decision_for_preview(
+    chunking_decision = await asyncio.to_thread(
+        smart_kb_service.make_chunking_decision_for_preview,
         content=content,
         title=source_title,
         user_config=user_config,
@@ -1300,11 +1302,14 @@ async def preview_chunks_live(
                 include_metadata=True,
                 analyze_structure=True
             )
-            enhanced_chunks = enhanced_chunking_service.chunk_document_enhanced(content, enhanced_config)
+            enhanced_chunks = await asyncio.to_thread(
+                enhanced_chunking_service.chunk_document_enhanced, content, enhanced_config
+            )
             chunks_raw = [chunk.to_dict() for chunk in enhanced_chunks]
         else:
             # Use standard chunking_service (same as production when flag=false)
-            chunks_raw = chunking_service.chunk_document(
+            chunks_raw = await asyncio.to_thread(
+                chunking_service.chunk_document,
                 text=content,
                 strategy=strategy,
                 chunk_size=chunk_size,

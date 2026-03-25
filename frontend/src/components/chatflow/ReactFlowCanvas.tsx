@@ -33,6 +33,13 @@ import HTTPRequestNode from './nodes/HTTPRequestNode';
 import VariableNode from './nodes/VariableNode';
 import CodeNode from './nodes/CodeNode';
 import ResponseNode from './nodes/ResponseNode';
+import WebhookNode from './nodes/WebhookNode';
+import EmailNode from './nodes/EmailNode';
+import NotificationNode from './nodes/NotificationNode';
+import HandoffNode from './nodes/HandoffNode';
+import LeadCaptureNode from './nodes/LeadCaptureNode';
+import MemoryNode from './nodes/MemoryNode';
+import DatabaseNode from './nodes/DatabaseNode';
 
 const nodeTypes: NodeTypes = {
   llm: LLMNode,
@@ -42,6 +49,13 @@ const nodeTypes: NodeTypes = {
   variable: VariableNode,
   code: CodeNode,
   response: ResponseNode,
+  webhook: WebhookNode,
+  email: EmailNode,
+  notification: NotificationNode,
+  handoff: HandoffNode,
+  lead_capture: LeadCaptureNode,
+  memory: MemoryNode,
+  database: DatabaseNode,
 };
 
 interface ReactFlowCanvasProps {
@@ -105,6 +119,13 @@ export default function ReactFlowCanvas({
               variable: '#6366f1',
               code: '#6b7280',
               response: '#ef4444',
+              webhook: '#f97316',
+              email: '#0ea5e9',
+              notification: '#14b8a6',
+              handoff: '#8b5cf6',
+              lead_capture: '#22c55e',
+              memory: '#ec4899',
+              database: '#10b981',
             };
             return colors[node.type || 'default'] || '#999';
           }}

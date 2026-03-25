@@ -36,6 +36,18 @@ celery_app.conf.update(
     # Task result expiration
     result_expires=3600,
 
+    # Redis connection resilience (prevents TimeoutError during RDB saves)
+    broker_transport_options={
+        "socket_timeout": 30,
+        "socket_connect_timeout": 15,
+        "retry_on_timeout": True,
+    },
+    result_backend_transport_options={
+        "socket_timeout": 30,
+        "socket_connect_timeout": 15,
+        "retry_on_timeout": True,
+    },
+
     # Task execution settings
     task_acks_late=True,
     task_reject_on_worker_lost=True,

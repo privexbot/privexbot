@@ -319,6 +319,131 @@ class LoopNodeExecutor(BaseNodeExecutor):
             }
 
 
+class WebhookNodeExecutor(BaseNodeExecutor):
+    """
+    Outbound webhook node executor.
+
+    WHY: Push data to external systems (Zapier, Make, n8n, custom)
+    HOW: Delegate to WebhookNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.webhook_node import WebhookNode
+            node = WebhookNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class EmailNodeExecutor(BaseNodeExecutor):
+    """
+    Email sending node executor.
+
+    WHY: Send emails via SMTP as part of chatflow automation
+    HOW: Delegate to EmailNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.email_node import EmailNode
+            node = EmailNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class NotificationNodeExecutor(BaseNodeExecutor):
+    """
+    Team notification node executor.
+
+    WHY: Post messages to Slack, Discord, or Teams channels
+    HOW: Delegate to NotificationNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.notification_node import NotificationNode
+            node = NotificationNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class HandoffNodeExecutor(BaseNodeExecutor):
+    """
+    Human handoff node executor.
+
+    WHY: Escalate conversation to human agent with full context
+    HOW: Delegate to HandoffNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.handoff_node import HandoffNode
+            node = HandoffNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
+class LeadCaptureNodeExecutor(BaseNodeExecutor):
+    """
+    Lead capture node executor.
+
+    WHY: Collect, validate, and store lead data from conversations
+    HOW: Delegate to LeadCaptureNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.lead_capture_node import LeadCaptureNode
+            node = LeadCaptureNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
 class ChatflowExecutor:
     """
     Chatflow node executor registry.
@@ -347,6 +472,12 @@ class ChatflowExecutor:
             "http_request": HTTPRequestNodeExecutor(),
             "http": HTTPRequestNodeExecutor(),  # Alias for frontend compatibility
             "database": DatabaseNodeExecutor(),
+            # Action nodes
+            "webhook": WebhookNodeExecutor(),
+            "email": EmailNodeExecutor(),
+            "notification": NotificationNodeExecutor(),
+            "handoff": HandoffNodeExecutor(),
+            "lead_capture": LeadCaptureNodeExecutor(),
             # Data manipulation nodes
             "variable": VariableNodeExecutor(),
             "code": CodeNodeExecutor(),

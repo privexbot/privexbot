@@ -15,9 +15,10 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import httpx
 import requests
 from uuid import UUID
-from typing import Any, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -166,8 +167,16 @@ class WhatsAppIntegration:
                 channel_context=channel_context
             )
         else:  # chatflow
-            # Placeholder - chatflow_service not yet implemented
-            response = {"response": "Chatflow support coming soon"}
+            from app.services.chatflow_service import chatflow_service
+
+            result = await chatflow_service.execute(
+                db=db,
+                chatflow=bot,
+                user_message=user_message,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+            response = {"response": result["response"], "session_id": result["session_id"]}
 
         # Send response back to WhatsApp
         await self._send_message(
@@ -180,6 +189,95 @@ class WhatsAppIntegration:
         return {"status": "ok"}
 
 
+    async def send_message(
+        self,
+        access_token: str,
+        phone_number_id: str,
+        to: str,
+        message: str
+    ) -> dict:
+        """
+        Send a text message to a WhatsApp user via Cloud API.
+
+        Called by the webhook handler with pre-resolved credentials.
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://graph.facebook.com/v18.0/{phone_number_id}/messages",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "messaging_product": "whatsapp",
+                    "to": to,
+                    "type": "text",
+                    "text": {"body": message}
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def send_template_message(
+        self,
+        access_token: str,
+        phone_number_id: str,
+        to: str,
+        template_name: str,
+        language: str = "en",
+        components: Optional[List[dict]] = None
+    ) -> dict:
+        """
+        Send a pre-approved template message via WhatsApp Cloud API.
+        """
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": language}
+            }
+        }
+        if components:
+            payload["template"]["components"] = components
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://graph.facebook.com/v18.0/{phone_number_id}/messages",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                },
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return {
+            "message_id": data.get("messages", [{}])[0].get("id"),
+            "status": "sent"
+        }
+
+    async def get_message_templates(
+        self,
+        access_token: str,
+        business_account_id: str
+    ) -> List[dict]:
+        """
+        Fetch approved message templates from WhatsApp Business API.
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://graph.facebook.com/v18.0/{business_account_id}/message_templates",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={"limit": 100}
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return data.get("data", [])
+
     async def _send_message(
         self,
         db: Session,
@@ -187,7 +285,7 @@ class WhatsAppIntegration:
         to_number: str,
         text: str
     ):
-        """Send message to WhatsApp user."""
+        """Send message to WhatsApp user (internal — resolves credentials from bot config)."""
 
         from app.services.credential_service import credential_service
 
@@ -212,19 +310,12 @@ class WhatsAppIntegration:
 
         phone_number_id = whatsapp_config["phone_number_id"]
 
-        # Send message via WhatsApp Cloud API
-        requests.post(
-            f"https://graph.facebook.com/v18.0/{phone_number_id}/messages",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "messaging_product": "whatsapp",
-                "to": to_number,
-                "type": "text",
-                "text": {"body": text}
-            }
+        # Delegate to the public method
+        await self.send_message(
+            access_token=access_token,
+            phone_number_id=phone_number_id,
+            to=to_number,
+            message=text
         )
 
 

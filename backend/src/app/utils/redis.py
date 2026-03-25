@@ -123,9 +123,13 @@ import secrets
 
 # Create Redis client
 # WHY decode_responses=True: Returns strings instead of bytes for easier handling
+# WHY socket_timeout/retry_on_timeout: Prevents TimeoutError during Redis RDB background saves
 redis_client = Redis.from_url(
     settings.REDIS_URL,
-    decode_responses=True
+    decode_responses=True,
+    socket_timeout=30,
+    socket_connect_timeout=15,
+    retry_on_timeout=True,
 )
 
 

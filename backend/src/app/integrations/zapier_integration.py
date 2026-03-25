@@ -133,11 +133,16 @@ class ZapierIntegration:
                 channel_context=channel_context
             )
         else:  # chatflow
-            # Placeholder - chatflow_service
-            response = {
-                "response": "Chatflow support coming soon",
-                "session_id": session_id
-            }
+            from app.services.chatflow_service import chatflow_service
+
+            result = await chatflow_service.execute(
+                db=db,
+                chatflow=bot,
+                user_message=user_message,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+            response = {"response": result["response"], "session_id": result["session_id"]}
 
         return {
             "response": response["response"],

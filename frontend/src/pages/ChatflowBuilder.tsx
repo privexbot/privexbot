@@ -458,6 +458,7 @@ export default function ChatflowBuilder() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
   const [selectedChannels, setSelectedChannels] = useState<DeploymentChannel[]>(["website"]);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   // Load draft
   const { data: draft, isLoading: isLoadingDraft } = useQuery({
@@ -506,6 +507,10 @@ export default function ChatflowBuilder() {
       if (draft.data.edges) {
         // Cast draft edges to ReactFlow Edge type
         setEdges(draft.data.edges as Edge[]);
+      }
+      // Detect edit mode: draft has source_entity_id when created from deployed chatflow
+      if (draft.source_entity_id) {
+        setIsEditMode(true);
       }
     }
   }, [draft, setNodes, setEdges]);
@@ -674,8 +679,10 @@ export default function ChatflowBuilder() {
     onSuccess: () => {
       setIsDeployDialogOpen(false);
       toast({
-        title: "Chatflow Deployed!",
-        description: "Your chatflow is now live.",
+        title: isEditMode ? "Chatflow Updated!" : "Chatflow Deployed!",
+        description: isEditMode
+          ? "Your chatflow has been updated successfully."
+          : "Your chatflow is now live.",
       });
       navigate("/studio");
     },
@@ -875,7 +882,7 @@ export default function ChatflowBuilder() {
                 ) : (
                   <Rocket className="w-4 h-4 mr-2" />
                 )}
-                Deploy
+                {isEditMode ? "Update" : "Deploy"}
               </Button>
             </div>
           </div>
@@ -1074,10 +1081,12 @@ export default function ChatflowBuilder() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Rocket className="w-5 h-5 text-purple-600" />
-              Deploy Chatflow
+              {isEditMode ? "Update Chatflow" : "Deploy Chatflow"}
             </DialogTitle>
             <DialogDescription>
-              Select the channels where you want to deploy your chatflow.
+              {isEditMode
+                ? "Review the channels and update your chatflow."
+                : "Select the channels where you want to deploy your chatflow."}
             </DialogDescription>
           </DialogHeader>
           <ChannelSelector
@@ -1102,7 +1111,7 @@ export default function ChatflowBuilder() {
               ) : (
                 <Rocket className="w-4 h-4 mr-2" />
               )}
-              Deploy to {selectedChannels.length} Channel{selectedChannels.length !== 1 ? "s" : ""}
+              {isEditMode ? "Update" : "Deploy to"} {selectedChannels.length} Channel{selectedChannels.length !== 1 ? "s" : ""}
             </Button>
           </DialogFooter>
         </DialogContent>

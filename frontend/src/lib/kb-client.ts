@@ -567,7 +567,7 @@ export const kbDraftApi = {
     enable_enhanced_metadata?: boolean;
     title?: string;
     max_chunks?: number;
-  }): Promise<{
+  }, signal?: AbortSignal): Promise<{
     chunks: any[];
     metrics: any;
     total_chunks: number;
@@ -583,9 +583,10 @@ export const kbDraftApi = {
     };
   }> {
     try {
-      const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params);
+      const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params, { signal });
       return response.data;
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
       throw new Error(handleApiError(error));
     }
   },
