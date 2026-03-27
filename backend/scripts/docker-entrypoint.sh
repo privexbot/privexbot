@@ -30,24 +30,32 @@ except Exception:
 
 echo "📌 Current database revision: $CURRENT_REVISION"
 
-# Try migration, with fallback to stamp if revision not found
-if ! alembic upgrade head 2>/dev/null; then
-    echo "⚠️  Migration failed, attempting to resolve..."
+# Run migrations. Only fall back to stamp if the error is a missing revision
+# (i.e., DB has an old revision ID not found in migration files — not a fresh DB).
+MIGRATION_OUTPUT=$(alembic upgrade head 2>&1)
+MIGRATION_EXIT=$?
 
-    # Get the latest revision from migration files
-    LATEST_REVISION=$(python -c "
-from alembic import command
+if [ $MIGRATION_EXIT -ne 0 ]; then
+    echo "⚠️  Migration output:"
+    echo "$MIGRATION_OUTPUT"
+
+    # Only stamp if Alembic reports a missing revision (not a schema/table error)
+    if echo "$MIGRATION_OUTPUT" | grep -q "Can't locate revision"; then
+        LATEST_REVISION=$(python -c "
 from alembic.config import Config
-config = Config('alembic.ini')
-script_dir = config.get_main_option('script_location')
 from alembic.script import ScriptDirectory
+config = Config('alembic.ini')
 script = ScriptDirectory.from_config(config)
 print(script.get_current_head())
 " 2>/dev/null)
-
-    echo "🔧 Stamping database with latest revision: $LATEST_REVISION"
-    alembic stamp head
-    echo "✅ Database stamped successfully"
+        echo "🔧 Unknown revision in DB — stamping to head: $LATEST_REVISION"
+        alembic stamp head
+        echo "✅ Database stamped. Re-running upgrade..."
+        alembic upgrade head
+    else
+        echo "❌ Migration failed with a real error. Fix the issue before starting the server."
+        exit 1
+    fi
 else
     echo "✅ Migration completed successfully"
 fi
