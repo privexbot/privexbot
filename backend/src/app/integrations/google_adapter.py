@@ -396,5 +396,138 @@ class GoogleAdapter:
         return None
 
 
+    async def send_gmail(
+        self,
+        access_token: str,
+        to: str,
+        subject: str,
+        body: str,
+        body_type: str = "html",
+        cc: str = None,
+        bcc: str = None,
+        reply_to: str = None,
+        from_name: str = None
+    ) -> dict:
+        """
+        Send email via Gmail API.
+
+        WHY: Gmail OAuth integration for chatflow email nodes
+        HOW: Build RFC 2822 message, base64url encode, POST to Gmail API
+
+        ARGS:
+            access_token: Gmail OAuth access token
+            to: Recipient email address(es)
+            subject: Email subject
+            body: Email body content
+            body_type: "html" or "plain"
+            cc: CC recipients (optional)
+            bcc: BCC recipients (optional)
+            reply_to: Reply-To address (optional)
+            from_name: Display name for From header (optional)
+
+        RETURNS:
+            {"success": True, "message_id": "...", "thread_id": "..."} or
+            {"success": False, "error": "..."}
+        """
+        import base64
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        import httpx
+
+        try:
+            # Build RFC 2822 message
+            msg = MIMEMultipart("alternative")
+            msg["To"] = to
+            msg["Subject"] = subject
+
+            if cc:
+                msg["Cc"] = cc
+            if reply_to:
+                msg["Reply-To"] = reply_to
+
+            # Attach body
+            if body_type == "html":
+                msg.attach(MIMEText(body, "html"))
+            else:
+                msg.attach(MIMEText(body, "plain"))
+
+            # Base64url encode the message (Gmail API requirement)
+            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+
+            # Send via Gmail API
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json={"raw": raw_message},
+                    timeout=30.0
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    return {
+                        "success": True,
+                        "message_id": data.get("id"),
+                        "thread_id": data.get("threadId"),
+                        "label_ids": data.get("labelIds", [])
+                    }
+                else:
+                    error_data = response.json()
+                    error_msg = error_data.get("error", {}).get("message", response.text)
+                    return {"success": False, "error": f"Gmail API error ({response.status_code}): {error_msg}"}
+
+        except Exception as e:
+            return {"success": False, "error": f"Failed to send Gmail: {str(e)}"}
+
+    async def refresh_gmail_token(
+        self,
+        refresh_token: str,
+        client_id: str = None,
+        client_secret: str = None
+    ) -> dict:
+        """
+        Refresh expired Gmail OAuth access token.
+
+        WHY: Gmail access tokens expire after ~1 hour
+        HOW: POST to Google OAuth token endpoint with refresh_token grant
+
+        RETURNS:
+            {"access_token": "ya29...", "expires_in": 3599} or
+            {"error": "..."}
+        """
+        import httpx
+        from app.core.config import settings
+
+        if not client_id:
+            client_id = settings.GOOGLE_CLIENT_ID
+        if not client_secret:
+            client_secret = settings.GOOGLE_CLIENT_SECRET
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=10.0
+                )
+
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    return {"error": f"Token refresh failed ({response.status_code}): {response.text}"}
+
+        except Exception as e:
+            return {"error": f"Token refresh exception: {str(e)}"}
+
+
 # Global instance
 google_adapter = GoogleAdapter()

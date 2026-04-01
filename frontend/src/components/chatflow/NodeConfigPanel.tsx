@@ -33,6 +33,7 @@ import { EmailNodeConfig } from './configs/EmailNodeConfig';
 import { NotificationNodeConfig } from './configs/NotificationNodeConfig';
 import { HandoffNodeConfig } from './configs/HandoffNodeConfig';
 import { LeadCaptureNodeConfig } from './configs/LeadCaptureNodeConfig';
+import { CalendlyNodeConfig } from './configs/CalendlyNodeConfig';
 
 interface NodeConfigPanelProps {
   selectedNode: Node | null;
@@ -109,6 +110,9 @@ export default function NodeConfigPanel({
 
       case 'lead_capture':
         return <LeadCaptureNodeConfig config={config} onChange={handleConfigChange} />;
+
+      case 'calendly':
+        return <CalendlyNodeConfig config={config} onChange={handleConfigChange} />;
 
       case 'trigger':
         return (

@@ -535,7 +535,13 @@ class AggregatedAnalyticsService:
                 if chatbot:
                     bot_name = chatbot.name
 
-            # TODO: Add chatflow name lookup when Chatflow model is implemented
+            elif stats['bot_type'] == 'chatflow':
+                from app.models.chatflow import Chatflow
+                chatflow = self.db.query(Chatflow).filter(
+                    Chatflow.id == bot_id
+                ).first()
+                if chatflow:
+                    bot_name = chatflow.name
 
             # Skip orphaned sessions (bot was deleted but sessions remain)
             if bot_name is None:

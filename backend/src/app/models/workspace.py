@@ -205,6 +205,13 @@ class Workspace(Base):
         cascade="all, delete-orphan"
     )
 
+    # Slack workspace deployments (shared bot architecture)
+    slack_workspace_deployments = relationship(
+        "SlackWorkspaceDeployment",
+        back_populates="workspace",
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<Workspace(id={self.id}, name={self.name}, org_id={self.organization_id})>"
 

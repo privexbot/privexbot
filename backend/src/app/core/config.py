@@ -262,6 +262,31 @@ class Settings(BaseSettings):
         description="Discord public key for Ed25519 signature verification"
     )
 
+    # Slack Shared App (Platform-wide)
+    # ONE Slack app installed to ALL customer workspaces via team_id → chatbot_id routing
+    SLACK_CLIENT_ID: str = Field(
+        default="",
+        description="Slack app client ID (from Slack API dashboard)"
+    )
+    SLACK_CLIENT_SECRET: str = Field(
+        default="",
+        description="Slack app client secret (from Slack API dashboard)"
+    )
+    SLACK_SIGNING_SECRET: str = Field(
+        default="",
+        description="Slack signing secret for HMAC-SHA256 request verification"
+    )
+
+    # Calendly OAuth Integration
+    CALENDLY_CLIENT_ID: str = Field(
+        default="",
+        description="Calendly OAuth client ID (from Calendly developer dashboard)"
+    )
+    CALENDLY_CLIENT_SECRET: str = Field(
+        default="",
+        description="Calendly OAuth client secret (from Calendly developer dashboard)"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env.dev" if os.getenv("ENVIRONMENT") != "production" else None,
         env_file_encoding="utf-8",

@@ -325,6 +325,53 @@ class LeadCaptureService:
             consent_given=consent_given
         )
 
+    async def capture_lead(
+        self,
+        db: Session,
+        workspace_id: UUID,
+        bot_id: UUID,
+        bot_type: str,
+        session_id: str,
+        channel: str,
+        email: Optional[str] = None,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        custom_fields: Optional[Dict] = None,
+        consent_given: bool = False,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        referrer: Optional[str] = None,
+        language: Optional[str] = None
+    ) -> Lead:
+        """
+        Generic lead capture for any channel (Slack, Calendly, etc.).
+
+        WHY: Platform-specific methods exist for Widget/Telegram/Discord/WhatsApp,
+             but new integrations (Slack, Calendly) need a generic entry point.
+        HOW: Build lead_data dict and delegate to _create_or_merge_lead.
+        """
+        lead_data = {
+            "workspace_id": workspace_id,
+            "bot_id": bot_id,
+            "bot_type": bot_type,
+            "session_id": session_id,
+            "email": email,
+            "name": name,
+            "phone": phone,
+            "custom_fields": custom_fields or {},
+            "channel": channel,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "referrer": referrer,
+            "language": language,
+            "consent_given": "Y" if consent_given else "N",
+            "consent_timestamp": datetime.utcnow() if consent_given else None,
+            "consent_method": f"auto_{channel}" if consent_given else None,
+            "data_processing_agreed": "Y" if consent_given else "N",
+        }
+
+        return await self._create_or_merge_lead(db, lead_data)
+
     async def _create_or_merge_lead(
         self,
         db: Session,

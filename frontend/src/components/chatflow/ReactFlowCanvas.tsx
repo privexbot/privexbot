@@ -40,6 +40,7 @@ import HandoffNode from './nodes/HandoffNode';
 import LeadCaptureNode from './nodes/LeadCaptureNode';
 import MemoryNode from './nodes/MemoryNode';
 import DatabaseNode from './nodes/DatabaseNode';
+import CalendlyNode from './nodes/CalendlyNode';
 
 const nodeTypes: NodeTypes = {
   llm: LLMNode,
@@ -56,6 +57,7 @@ const nodeTypes: NodeTypes = {
   lead_capture: LeadCaptureNode,
   memory: MemoryNode,
   database: DatabaseNode,
+  calendly: CalendlyNode,
 };
 
 interface ReactFlowCanvasProps {
