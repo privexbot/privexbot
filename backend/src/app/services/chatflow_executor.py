@@ -444,6 +444,31 @@ class LeadCaptureNodeExecutor(BaseNodeExecutor):
             }
 
 
+class CalendlyNodeExecutor(BaseNodeExecutor):
+    """
+    Calendly scheduling node executor.
+
+    WHY: Share booking links and manage scheduling in chatflows
+    HOW: Delegate to CalendlyNode implementation
+    """
+
+    async def execute(self, db: Session, node_config: dict, context: dict) -> dict:
+        try:
+            from app.chatflow.nodes.calendly_node import CalendlyNode
+            node = CalendlyNode(node_id="temp", config=node_config)
+            return await node.execute(
+                db=db,
+                context=context,
+                inputs={"input": context.get("user_message", "")}
+            )
+        except Exception as e:
+            return {
+                "output": None,
+                "success": False,
+                "error": str(e)
+            }
+
+
 class ChatflowExecutor:
     """
     Chatflow node executor registry.
@@ -478,6 +503,7 @@ class ChatflowExecutor:
             "notification": NotificationNodeExecutor(),
             "handoff": HandoffNodeExecutor(),
             "lead_capture": LeadCaptureNodeExecutor(),
+            "calendly": CalendlyNodeExecutor(),
             # Data manipulation nodes
             "variable": VariableNodeExecutor(),
             "code": CodeNodeExecutor(),

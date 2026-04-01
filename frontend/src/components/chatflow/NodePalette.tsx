@@ -12,7 +12,7 @@
  * - Node descriptions
  */
 
-import { Sparkles, Database, GitBranch, Globe, Code, MessageSquare, Variable, Send, Mail, Bell, UserCheck, UserPlus, Brain, HardDrive } from 'lucide-react';
+import { Sparkles, Database, GitBranch, Globe, Code, MessageSquare, Variable, Send, Mail, Bell, UserCheck, UserPlus, Brain, HardDrive, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface NodeType {
@@ -91,7 +91,7 @@ const NODE_TYPES: NodeType[] = [
     type: 'email',
     label: 'Send Email',
     icon: <Mail className="w-4 h-4" />,
-    description: 'Send email via SMTP',
+    description: 'Send email via SMTP or Gmail',
     category: 'Action',
   },
   {
@@ -114,6 +114,13 @@ const NODE_TYPES: NodeType[] = [
     icon: <UserPlus className="w-4 h-4" />,
     description: 'Collect and store lead data',
     category: 'Action',
+  },
+  {
+    type: 'calendly',
+    label: 'Calendly',
+    icon: <Calendar className="w-4 h-4" />,
+    description: 'Share booking links via Calendly',
+    category: 'Integration',
   },
   {
     type: 'response',

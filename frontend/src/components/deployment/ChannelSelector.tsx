@@ -15,7 +15,7 @@
 import { Globe, MessageSquare, Zap, Users } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
-export type DeploymentChannel = 'website' | 'telegram' | 'discord' | 'whatsapp' | 'zapier';
+export type DeploymentChannel = 'website' | 'telegram' | 'discord' | 'slack' | 'whatsapp' | 'zapier';
 
 interface Channel {
   id: DeploymentChannel;
@@ -35,7 +35,7 @@ interface ChannelSelectorProps {
 
 export default function ChannelSelector({
   selectedChannels,
-  availableChannels = ['website', 'telegram', 'discord', 'whatsapp', 'zapier'],
+  availableChannels = ['website', 'telegram', 'discord', 'slack', 'whatsapp', 'zapier'],
   onChange,
 }: ChannelSelectorProps) {
   const channels: Channel[] = [
@@ -62,6 +62,14 @@ export default function ChannelSelector({
       icon: <Users className="w-6 h-6" />,
       requiresCredential: true,
       isAvailable: availableChannels.includes('discord'),
+    },
+    {
+      id: 'slack',
+      name: 'Slack',
+      description: 'Deploy to Slack workspace',
+      icon: <MessageSquare className="w-6 h-6" />,
+      requiresCredential: true,
+      isAvailable: availableChannels.includes('slack'),
     },
     {
       id: 'whatsapp',

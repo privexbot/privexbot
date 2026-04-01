@@ -159,7 +159,7 @@ class DashboardService:
                 "description": cf.description,
                 "status": "active" if cf.is_active else "inactive",
                 "nodes_count": len(cf.config.get("nodes", [])) if cf.config else 0,
-                "conversations_count": 0,  # TODO: Add when chat sessions support chatflows
+                "conversations_count": self._get_session_count(cf.id, "chatflow"),
                 "last_active_at": self._get_last_session_time(cf.id, "chatflow"),
                 "created_at": cf.created_at.isoformat() if cf.created_at else None,
                 "updated_at": cf.updated_at.isoformat() if cf.updated_at else None,
@@ -413,6 +413,17 @@ class DashboardService:
                 ChatSession.bot_type == bot_type
             )
             .scalar() or 0
+        )
+
+    def _get_session_count(self, bot_id: UUID, bot_type: str) -> int:
+        """Get the number of chat sessions for a bot."""
+        return (
+            self.db.query(ChatSession)
+            .filter(
+                ChatSession.bot_id == bot_id,
+                ChatSession.bot_type == bot_type
+            )
+            .count()
         )
 
     def _get_last_session_time(self, bot_id: UUID, bot_type: str) -> Optional[str]:

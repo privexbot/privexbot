@@ -331,6 +331,14 @@ class Chatbot(Base):
         cascade="all, delete-orphan"
     )
 
+    # Slack workspace deployments (shared bot architecture)
+    # Multiple workspaces can deploy to same chatbot (many-to-one)
+    slack_workspace_deployments = relationship(
+        "SlackWorkspaceDeployment",
+        back_populates="chatbot",
+        cascade="all, delete-orphan"
+    )
+
     # ═══════════════════════════════════════════════════════════════
     # INDEXES
     # ═══════════════════════════════════════════════════════════════

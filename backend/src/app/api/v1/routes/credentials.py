@@ -429,7 +429,7 @@ async def get_credential_usage(
 # OAUTH ENDPOINTS
 # ========================================
 
-SUPPORTED_OAUTH_PROVIDERS = {"notion", "google"}
+SUPPORTED_OAUTH_PROVIDERS = {"notion", "google", "google_gmail", "calendly"}
 
 
 @router.post("/oauth/authorize")
@@ -512,6 +512,48 @@ async def oauth_authorize(
             f"&scope={quote(scopes, safe='')}"
             f"&access_type=offline"
             f"&prompt=consent"
+            f"&state={state}"
+        )
+        return {"redirect_url": authorize_url}
+
+    elif provider == "google_gmail":
+        if not settings.GOOGLE_CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Google OAuth not configured. Set GOOGLE_CLIENT_ID in environment."
+            )
+
+        from urllib.parse import quote
+        scopes = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email"
+
+        authorize_url = (
+            f"https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={settings.GOOGLE_CLIENT_ID}"
+            f"&redirect_uri={quote(settings.google_redirect_uri, safe='')}"
+            f"&response_type=code"
+            f"&scope={quote(scopes, safe='')}"
+            f"&access_type=offline"
+            f"&prompt=consent"
+            f"&state={state}"
+        )
+        return {"redirect_url": authorize_url}
+
+    elif provider == "calendly":
+        from app.core.config import settings as app_settings
+        if not app_settings.CALENDLY_CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Calendly OAuth not configured. Set CALENDLY_CLIENT_ID in environment."
+            )
+
+        from urllib.parse import quote
+        redirect_uri = settings.google_redirect_uri  # Same callback endpoint, state distinguishes provider
+
+        authorize_url = (
+            f"https://auth.calendly.com/oauth/authorize"
+            f"?client_id={app_settings.CALENDLY_CLIENT_ID}"
+            f"&redirect_uri={quote(redirect_uri, safe='')}"
+            f"&response_type=code"
             f"&state={state}"
         )
         return {"redirect_url": authorize_url}
@@ -730,6 +772,202 @@ async def oauth_callback(
 
         return RedirectResponse(
             url=f"{settings.FRONTEND_URL}/knowledge-bases/create?google_connected=true",
+            status_code=302,
+        )
+
+    elif provider == "google_gmail":
+        # Gmail OAuth - same token exchange as Google, different scope
+        if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Google OAuth not configured"
+            )
+
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": settings.google_redirect_uri,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        if token_response.status_code != 200:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/settings/credentials?gmail_error=token_exchange_failed",
+                status_code=302,
+            )
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 3600)
+
+        if not access_token:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/settings/credentials?gmail_error=no_access_token",
+                status_code=302,
+            )
+
+        # Get user email for credential name
+        gmail_email = "Gmail Account"
+        try:
+            async with httpx.AsyncClient() as client:
+                userinfo = await client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if userinfo.status_code == 200:
+                    gmail_email = userinfo.json().get("email", "Gmail Account")
+        except Exception:
+            pass
+
+        # Encrypt and store credential
+        expires_at = (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
+        credential_data = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_in": expires_in,
+            "expires_at": expires_at,
+            "email": gmail_email,
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        }
+
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(credential_data)
+
+        # Upsert: update existing Gmail credential or create new one
+        existing = db.query(Credential).filter(
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.provider == "google_gmail",
+            Credential.is_active == True,
+        ).first()
+
+        if existing:
+            existing.encrypted_data = encrypted_data
+            existing.encryption_key_id = key_id
+            existing.name = f"Gmail - {gmail_email}"
+            db.commit()
+        else:
+            credential = Credential(
+                workspace_id=UUID(workspace_id),
+                name=f"Gmail - {gmail_email}",
+                credential_type=CredentialType.OAUTH2,
+                provider="google_gmail",
+                encrypted_data=encrypted_data,
+                encryption_key_id=key_id,
+                created_by=UUID(user_id),
+                is_active=True,
+            )
+            db.add(credential)
+            db.commit()
+
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/settings/credentials?gmail_connected=true",
+            status_code=302,
+        )
+
+    elif provider == "calendly":
+        # Calendly OAuth token exchange
+        from app.core.config import settings as app_settings
+        if not app_settings.CALENDLY_CLIENT_ID or not app_settings.CALENDLY_CLIENT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Calendly OAuth not configured"
+            )
+
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://auth.calendly.com/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": settings.google_redirect_uri,
+                    "client_id": app_settings.CALENDLY_CLIENT_ID,
+                    "client_secret": app_settings.CALENDLY_CLIENT_SECRET,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        if token_response.status_code != 200:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/settings/credentials?calendly_error=token_exchange_failed",
+                status_code=302,
+            )
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 7200)
+
+        if not access_token:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/settings/credentials?calendly_error=no_access_token",
+                status_code=302,
+            )
+
+        # Get Calendly user info
+        calendly_name = "Calendly Account"
+        calendly_uri = ""
+        try:
+            async with httpx.AsyncClient() as client:
+                user_resp = await client.get(
+                    "https://api.calendly.com/users/me",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if user_resp.status_code == 200:
+                    user_data = user_resp.json().get("resource", {})
+                    calendly_name = user_data.get("name", "Calendly Account")
+                    calendly_uri = user_data.get("uri", "")
+        except Exception:
+            pass
+
+        # Encrypt and store credential
+        expires_at = (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
+        credential_data = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_in": expires_in,
+            "expires_at": expires_at,
+            "user_name": calendly_name,
+            "user_uri": calendly_uri,
+            "client_id": app_settings.CALENDLY_CLIENT_ID,
+            "client_secret": app_settings.CALENDLY_CLIENT_SECRET,
+        }
+
+        encrypted_data, key_id = credential_service.encrypt_with_key_id(credential_data)
+
+        existing = db.query(Credential).filter(
+            Credential.workspace_id == UUID(workspace_id),
+            Credential.provider == "calendly",
+            Credential.is_active == True,
+        ).first()
+
+        if existing:
+            existing.encrypted_data = encrypted_data
+            existing.encryption_key_id = key_id
+            existing.name = f"Calendly - {calendly_name}"
+            db.commit()
+        else:
+            credential = Credential(
+                workspace_id=UUID(workspace_id),
+                name=f"Calendly - {calendly_name}",
+                credential_type=CredentialType.OAUTH2,
+                provider="calendly",
+                encrypted_data=encrypted_data,
+                encryption_key_id=key_id,
+                created_by=UUID(user_id),
+                is_active=True,
+            )
+            db.add(credential)
+            db.commit()
+
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/settings/credentials?calendly_connected=true",
             status_code=302,
         )
 

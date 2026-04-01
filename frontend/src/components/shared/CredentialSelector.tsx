@@ -43,11 +43,13 @@ type CredentialProvider =
   | 'openai'
   | 'anthropic'
   | 'google'
+  | 'google_gmail'
   | 'notion'
   | 'slack'
   | 'telegram'
   | 'discord'
   | 'whatsapp'
+  | 'calendly'
   | 'custom'
   | 'smtp';
 
@@ -177,9 +179,9 @@ export default function CredentialSelector({
   };
 
   const isOAuthProvider = (providerName: CredentialProvider) => {
-    // Only Google and Notion use true OAuth flows
+    // OAuth providers have a redirect-based flow
     // Telegram, Discord, WhatsApp use bot tokens entered manually
-    return ['google', 'notion'].includes(providerName);
+    return ['google', 'google_gmail', 'notion', 'calendly', 'slack'].includes(providerName);
   };
 
   // Filter active credentials

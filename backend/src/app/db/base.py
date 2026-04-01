@@ -120,3 +120,6 @@ from app.models.discord_guild_deployment import DiscordGuildDeployment  # noqa
 
 # Slug history (for redirect support when slugs change)
 from app.models.slug_history import SlugHistory  # noqa
+
+# Slack workspace deployments (shared bot architecture)
+from app.models.slack_workspace_deployment import SlackWorkspaceDeployment  # noqa

@@ -9,8 +9,8 @@ from starlette.datastructures import MutableHeaders
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, files, notifications, integrations
-from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook, zapier as zapier_webhook, whatsapp as whatsapp_webhook
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, slack_workspaces, files, notifications, integrations
+from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook, zapier as zapier_webhook, whatsapp as whatsapp_webhook, slack as slack_webhook, calendly as calendly_webhook
 
 
 class PublicAPICORSMiddleware:
@@ -285,6 +285,13 @@ app.include_router(
     tags=["discord"]
 )
 
+# Slack workspace management routes (shared bot architecture)
+app.include_router(
+    slack_workspaces.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["slack"]
+)
+
 # File management routes (avatars, file uploads)
 app.include_router(
     files.router,
@@ -321,6 +328,18 @@ app.include_router(
 
 app.include_router(
     whatsapp_webhook.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["webhooks"]
+)
+
+app.include_router(
+    slack_webhook.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["webhooks"]
+)
+
+app.include_router(
+    calendly_webhook.router,
     prefix=settings.API_V1_PREFIX,
     tags=["webhooks"]
 )

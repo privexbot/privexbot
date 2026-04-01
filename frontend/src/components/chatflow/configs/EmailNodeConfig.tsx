@@ -1,8 +1,9 @@
 /**
  * Email Node Configuration Panel
  *
- * Configures SMTP email sending with:
- * - SMTP credential selection
+ * Configures email sending with:
+ * - Send method: SMTP or Gmail (OAuth)
+ * - Credential selection (filtered by method)
  * - To, CC, BCC with variable support
  * - Subject and body templates
  * - HTML or plain text body type
@@ -35,6 +36,9 @@ const AVAILABLE_VARIABLES = [
 ];
 
 export function EmailNodeConfig({ config, onChange }: EmailNodeConfigProps) {
+  const [sendMethod, setSendMethod] = useState(
+    (config.send_method as string) || "smtp"
+  );
   const [credentialId, setCredentialId] = useState(
     (config.credential_id as string) || ""
   );
@@ -50,6 +54,7 @@ export function EmailNodeConfig({ config, onChange }: EmailNodeConfigProps) {
 
   const emitChange = useCallback(() => {
     onChange({
+      send_method: sendMethod,
       credential_id: credentialId,
       to,
       cc: cc || undefined,
@@ -59,7 +64,7 @@ export function EmailNodeConfig({ config, onChange }: EmailNodeConfigProps) {
       body_type: bodyType,
       reply_to: replyTo || undefined,
     });
-  }, [credentialId, to, cc, bcc, subject, body, bodyType, replyTo, onChange]);
+  }, [sendMethod, credentialId, to, cc, bcc, subject, body, bodyType, replyTo, onChange]);
 
   useEffect(() => {
     const timeoutId = setTimeout(emitChange, 300);
@@ -76,12 +81,31 @@ export function EmailNodeConfig({ config, onChange }: EmailNodeConfigProps) {
 
   return (
     <div className="space-y-4">
-      {/* SMTP Credential */}
+      {/* Send Method */}
+      <div>
+        <Label className="text-sm font-medium">Send Method</Label>
+        <Select value={sendMethod} onValueChange={(val) => { setSendMethod(val); setCredentialId(""); }}>
+          <SelectTrigger className="mt-1.5">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="smtp">SMTP</SelectItem>
+            <SelectItem value="gmail">Gmail (OAuth)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-gray-500 mt-1">
+          {sendMethod === "gmail"
+            ? "Send via your connected Gmail account (OAuth)"
+            : "Send via SMTP server credentials"}
+        </p>
+      </div>
+
+      {/* Credential */}
       <CredentialSelector
-        provider="smtp"
+        provider={sendMethod === "gmail" ? "google_gmail" : "smtp"}
         selectedId={credentialId}
         onSelect={setCredentialId}
-        label="SMTP Credential"
+        label={sendMethod === "gmail" ? "Gmail Account" : "SMTP Credential"}
         required={true}
       />
 

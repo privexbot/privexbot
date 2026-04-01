@@ -96,6 +96,8 @@ const CREDENTIAL_TYPES = [
   { value: 'telegram', label: 'Telegram Bot', icon: '✈️', requiresOAuth: false },
   { value: 'discord', label: 'Discord Bot', icon: '🎮', requiresOAuth: false },
   { value: 'whatsapp', label: 'WhatsApp Business', icon: '💬', requiresOAuth: false },
+  { value: 'google_gmail', label: 'Gmail', icon: '📧', requiresOAuth: true },
+  { value: 'calendly', label: 'Calendly', icon: '📅', requiresOAuth: true },
 ];
 
 // ========================================
