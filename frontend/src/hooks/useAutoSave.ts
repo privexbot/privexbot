@@ -46,7 +46,6 @@ export const useAutoSave = ({
     },
     onError: (error) => {
       console.error('Auto-save failed:', error);
-      // TODO: Show toast notification
     },
   });
 

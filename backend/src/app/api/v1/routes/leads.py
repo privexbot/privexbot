@@ -295,7 +295,11 @@ async def get_leads_summary(
             chatbot = db.query(Chatbot).filter(Chatbot.id == row.bot_id).first()
             if chatbot:
                 bot_name = chatbot.name
-        # TODO: Add chatflow name lookup when chatflow model is available
+        elif row.bot_type == "chatflow":
+            from app.models.chatflow import Chatflow
+            chatflow = db.query(Chatflow).filter(Chatflow.id == row.bot_id).first()
+            if chatflow:
+                bot_name = chatflow.name
         top_bots.append({
             "bot_id": str(row.bot_id),
             "bot_type": row.bot_type,

@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 import json
 
 from app.db.session import get_db
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user, get_current_user_with_org
 from app.models.user import User
 from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document
@@ -31,6 +31,20 @@ from app.models.chunk import Chunk
 from app.services.draft_service import draft_service
 
 router = APIRouter(prefix="/kbs", tags=["knowledge_bases"])
+
+
+def verify_kb_workspace_access(kb: KnowledgeBase, workspace_id: str):
+    """
+    Verify a KB belongs to the user's current workspace.
+
+    WHY: Prevent cross-workspace KB access within the same organization
+    HOW: Compare KB's workspace_id with user's active workspace from JWT
+    """
+    if str(kb.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found"
+        )
 
 
 # ========================================
@@ -356,7 +370,7 @@ async def list_kbs(
 async def get_kb(
     kb_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Get detailed KB information.
@@ -366,17 +380,19 @@ async def get_kb(
     - Prevents race conditions during deletion
 
     ACCESS CONTROL:
-    - User must be in same organization as KB's workspace
+    - User must be in same workspace as KB
 
     Returns:
         Detailed KB information including configuration
     """
+    current_user, org_id, ws_id = user_context
 
     # SAFETY CHECK: Prevent access to deleting KBs
     kb = get_kb_with_deletion_check(kb_id, db)
 
-    # Note: Access control simplified - KB access already validated at workspace level
-    # TODO: Add proper workspace membership check if needed
+    # Verify KB belongs to user's workspace
+    if ws_id:
+        verify_kb_workspace_access(kb, ws_id)
 
     # Extract stats for both new stats field and legacy compatibility fields
     kb_stats = kb.stats or {}
@@ -428,7 +444,7 @@ async def get_kb(
 async def delete_kb(
     kb_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Delete a KB and all associated data.
@@ -451,6 +467,8 @@ async def delete_kb(
         Success message with immediate deletion confirmation
     """
 
+    current_user, org_id, ws_id = user_context
+
     kb = db.query(KnowledgeBase).filter(
         KnowledgeBase.id == kb_id
     ).first()
@@ -461,6 +479,10 @@ async def delete_kb(
             detail="Knowledge base not found"
         )
 
+    # Verify KB belongs to user's workspace
+    if ws_id:
+        verify_kb_workspace_access(kb, ws_id)
+
     # Prevent deletion of already deleting KBs
     if kb.status == "deleting":
         return {
@@ -468,9 +490,6 @@ async def delete_kb(
             "kb_id": str(kb_id),
             "status": "already_deleting"
         }
-
-    # Note: Access control simplified - KB access already validated at workspace level
-    # TODO: Add proper workspace membership check if needed
 
     try:
         # STEP 1: IMMEDIATE SOFT DELETE
@@ -626,7 +645,7 @@ async def reindex_kb(
     kb_id: UUID,
     request: Optional[ReindexRequest] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Manually trigger KB re-indexing with optional configuration updates.
@@ -668,11 +687,14 @@ async def reindex_kb(
         }
     """
 
+    current_user, org_id, ws_id = user_context
+
     # SAFETY CHECK: Prevent reindexing of deleting KBs
     kb = get_kb_with_deletion_check(kb_id, db)
 
-    # Note: Access control simplified - KB access already validated at workspace level
-    # TODO: Add proper workspace membership check if needed
+    # Verify KB belongs to user's workspace
+    if ws_id:
+        verify_kb_workspace_access(kb, ws_id)
 
     # Check if KB is in re-indexable state
     # Include "reindexing" to allow retry when tasks crash/fail silently
@@ -853,7 +875,7 @@ async def retry_kb_processing(
     kb_id: UUID,
     retry_options: Optional[RetryRequest] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Enhanced retry for failed KB processing with complete state restoration.
@@ -903,11 +925,14 @@ async def retry_kb_processing(
         }
     """
 
+    current_user, org_id, ws_id = user_context
+
     # SAFETY CHECK: Prevent retry on deleting KBs AND get KB safely
     kb = get_kb_with_deletion_check(kb_id, db)
 
-    # Note: Access control simplified - KB access already validated at workspace level
-    # TODO: Add proper workspace membership check if needed
+    # Verify KB belongs to user's workspace
+    if ws_id:
+        verify_kb_workspace_access(kb, ws_id)
 
     # Check if KB is in a retryable state
     # ENHANCED: Also allow retry for stale queued pipelines (KB status "processing" but pipeline stuck in "queued")
@@ -1010,7 +1035,7 @@ async def retry_kb_processing(
 async def get_kb_stats(
     kb_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Get detailed KB statistics.
@@ -1039,6 +1064,8 @@ async def get_kb_stats(
         }
     """
 
+    current_user, org_id, ws_id = user_context
+
     kb = db.query(KnowledgeBase).filter(
         KnowledgeBase.id == kb_id
     ).first()
@@ -1049,8 +1076,9 @@ async def get_kb_stats(
             detail="Knowledge base not found"
         )
 
-    # Note: Access control simplified - KB access already validated at workspace level
-    # TODO: Add proper workspace membership check if needed
+    # Verify KB belongs to user's workspace
+    if ws_id:
+        verify_kb_workspace_access(kb, ws_id)
 
     # Get document stats
     all_documents = db.query(Document).filter(
@@ -1149,7 +1177,7 @@ async def preview_kb_rechunking(
     kb_id: UUID,
     request: RechunkPreviewRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Preview re-chunking for existing KB with comparison.
@@ -1206,6 +1234,8 @@ async def preview_kb_rechunking(
         }
     """
 
+    current_user, org_id, ws_id = user_context
+
     # Check KB exists
     kb = db.query(KnowledgeBase).filter(
         KnowledgeBase.id == kb_id
@@ -1217,8 +1247,9 @@ async def preview_kb_rechunking(
             detail="Knowledge base not found"
         )
 
-    # Note: Access control simplified - KB access already validated at workspace level
-    # TODO: Add proper workspace membership check if needed
+    # Verify KB belongs to user's workspace
+    if ws_id:
+        verify_kb_workspace_access(kb, ws_id)
 
     # KB must be in ready state (with documents)
     if kb.status not in ["ready", "ready_with_warnings"]:

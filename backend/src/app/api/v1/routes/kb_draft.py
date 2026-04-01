@@ -30,7 +30,7 @@ from datetime import datetime
 from io import BytesIO
 
 from app.db.session import get_db
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_user, get_current_user_with_org
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.services.draft_service import draft_service, DraftType
@@ -277,7 +277,7 @@ class UpdateVectorStoreConfigRequest(BaseModel):
 async def create_kb_draft(
     request: CreateKBDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    user_context = Depends(get_current_user_with_org)
 ):
     """
     Create new KB draft in Redis (Phase 1).
@@ -295,6 +295,8 @@ async def create_kb_draft(
         }
     """
 
+    current_user, org_id, ws_id = user_context
+
     # Validate workspace exists
     workspace = db.query(Workspace).filter(
         Workspace.id == request.workspace_id
@@ -306,7 +308,12 @@ async def create_kb_draft(
             detail="Workspace not found"
         )
 
-    # TODO: Add workspace membership check via RBAC service
+    # Verify user is creating draft in their current workspace
+    if ws_id and str(request.workspace_id) != str(ws_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot create KB draft in a different workspace"
+        )
 
     # Create draft in Redis
     draft_id = draft_service.create_draft(

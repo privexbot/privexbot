@@ -177,7 +177,7 @@ class ContentStrategyService:
             table_count=table_count,
             avg_paragraph_length=avg_paragraph_length,
             total_characters=total_chars,
-            language="en",  # TODO: Add language detection
+            language=self._detect_language(content),
             structure_score=structure_score,
             complexity_score=complexity_score
         )
@@ -277,6 +277,62 @@ class ContentStrategyService:
             return ContentType.ACADEMIC_PAPER
 
         return ContentType.UNKNOWN
+
+    def _detect_language(self, content: str) -> str:
+        """
+        Detect content language using simple heuristics.
+
+        Uses common word frequency detection for major languages.
+        Falls back to "en" for ambiguous or short content.
+        """
+        if not content or len(content) < 50:
+            return "en"
+
+        # Sample first 2000 chars for performance
+        sample = content[:2000].lower()
+
+        # Common words by language (high-frequency function words)
+        lang_markers = {
+            "en": ["the", "and", "is", "in", "to", "of", "that", "for", "with"],
+            "es": ["el", "la", "de", "en", "que", "los", "del", "las", "por"],
+            "fr": ["le", "la", "de", "les", "des", "est", "en", "que", "une"],
+            "de": ["der", "die", "und", "den", "das", "ist", "ein", "nicht", "von"],
+            "pt": ["de", "que", "os", "não", "uma", "para", "como", "das", "por"],
+            "zh": [],  # Detect by character range
+            "ja": [],  # Detect by character range
+            "ar": [],  # Detect by character range
+        }
+
+        # Check for CJK characters (Chinese/Japanese/Korean)
+        cjk_count = sum(1 for c in sample if '\u4e00' <= c <= '\u9fff')
+        if cjk_count > len(sample) * 0.1:
+            # Check for Japanese-specific characters (hiragana/katakana)
+            jp_count = sum(1 for c in sample if '\u3040' <= c <= '\u30ff')
+            return "ja" if jp_count > 10 else "zh"
+
+        # Check for Arabic characters
+        ar_count = sum(1 for c in sample if '\u0600' <= c <= '\u06ff')
+        if ar_count > len(sample) * 0.1:
+            return "ar"
+
+        # Word frequency detection for Latin-script languages
+        import re
+        words = re.findall(r'\b[a-z]+\b', sample)
+        if not words:
+            return "en"
+
+        word_set = set(words)
+        scores = {}
+        for lang, markers in lang_markers.items():
+            if markers:
+                scores[lang] = sum(1 for m in markers if m in word_set)
+
+        if scores:
+            best_lang = max(scores, key=scores.get)
+            if scores[best_lang] >= 3:
+                return best_lang
+
+        return "en"
 
     def _calculate_structure_score(
         self,

@@ -18,6 +18,9 @@ from typing import Dict, List, Optional, Any
 from uuid import UUID
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.integrations.notion_adapter import notion_adapter
 from app.integrations.google_adapter import google_adapter
@@ -553,8 +556,24 @@ class IntegrationService:
         credential.encryption_key_id = key_id
         db.commit()
 
-        # TODO: Queue periodic task based on frequency
-        # This would integrate with Celery beat for scheduling
+        # Queue the first sync task based on frequency
+        frequency = sync_config.get("frequency", "manual")
+        if frequency != "manual":
+            countdown_seconds = {
+                "hourly": 3600,
+                "daily": 86400,
+                "weekly": 604800,
+            }.get(frequency, 86400)  # Default to daily
+
+            try:
+                from app.tasks.integration_sync_tasks import run_auto_sync
+                run_auto_sync.apply_async(
+                    args=[str(credential_id)],
+                    countdown=countdown_seconds
+                )
+                logger.info(f"Scheduled auto-sync for credential {credential_id} in {countdown_seconds}s ({frequency})")
+            except Exception as e:
+                logger.warning(f"Failed to queue auto-sync task: {e}. Sync config saved but task not scheduled.")
 
         return {"status": "scheduled"}
 

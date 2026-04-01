@@ -396,7 +396,7 @@ async def request_password_reset(
     1. Validate email address
     2. Generate secure reset token
     3. Store token in Redis (1 hour expiration)
-    4. Send email with reset link (TODO: implement email sending)
+    4. Send email with reset link (via email_service_enhanced with retry)
     5. Always return success (prevents user enumeration)
 
     Args:

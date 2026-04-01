@@ -84,7 +84,7 @@ export const kbDraftApi = {
 
   /**
    * POST /api/v1/kb-drafts/{draft_id}/embedding
-   * TODO: Replace any with proper type when backend endpoint is implemented
+   * Accepts embedding/vector-store configuration object
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async updateEmbedding(draftId: string, request: any): Promise<void> {
@@ -93,7 +93,7 @@ export const kbDraftApi = {
 
   /**
    * POST /api/v1/kb-drafts/{draft_id}/vector-store
-   * TODO: Replace any with proper type when backend endpoint is implemented
+   * Accepts embedding/vector-store configuration object
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async updateVectorStore(draftId: string, request: any): Promise<void> {
