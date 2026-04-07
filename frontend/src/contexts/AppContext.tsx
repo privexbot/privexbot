@@ -84,15 +84,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       setError(null);
 
-      console.log("[AppContext] Refreshing data...");
-
       // Step 1: Get all organizations
       const orgsResponse = await organizationApi.list();
-      console.log("[AppContext] Organizations loaded:", orgsResponse);
       setOrganizations(orgsResponse.organizations);
 
       if (orgsResponse.organizations.length === 0) {
-        console.error("[AppContext] No organizations found!");
         throw new Error("No organizations found. Backend needs to create default org on signup.");
       }
 
@@ -108,20 +104,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!targetOrg) {
-        // Fallback: Use first organization (usually Personal)
         targetOrg = orgsResponse.organizations[0];
       }
 
       setCurrentOrganization(targetOrg);
 
       // Step 4: Get workspaces for selected organization
-      console.log("[AppContext] Loading workspaces for org:", targetOrg.id);
       const workspacesData = await organizationApi.getWorkspaces(targetOrg.id);
-      console.log("[AppContext] Workspaces loaded:", workspacesData);
       setWorkspaces(workspacesData);
 
       if (workspacesData.length === 0) {
-        console.error("[AppContext] No workspaces found for organization!");
         throw new Error("No workspaces found. Backend needs to create default workspace on signup.");
       }
 
@@ -133,12 +125,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!targetWorkspace) {
-        // Fallback: Use default workspace or first workspace
         targetWorkspace =
           workspacesData.find((w) => w.is_default) || workspacesData[0];
       }
-
-      setCurrentWorkspace(targetWorkspace);
 
       // Step 6: Persist to localStorage
       localStorage.setItem(STORAGE_KEYS.ORG_ID, targetOrg.id);
@@ -148,21 +137,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const perms = calculatePermissions(targetOrg, targetWorkspace);
       setPermissions(perms);
 
-      // Step 8: CRITICAL - Sync JWT token with current workspace context
-      // This ensures the backend receives the correct workspace_id in the JWT
-      // Without this, localStorage workspace != JWT workspace → 403 errors
-      try {
-        const response = await workspaceApi.switchOrganization({
-          organization_id: targetOrg.id,
-          workspace_id: targetWorkspace.id,
-        });
-        if (response.access_token) {
-          localStorage.setItem("access_token", response.access_token);
-          console.log("[AppContext] JWT synced with workspace context");
+      // Step 8: Sync JWT only if context actually changed
+      // This prevents redundant /switch/organization calls on every mount
+      // which cause cascading dashboard re-fetches and 401 race conditions
+      const currentToken = localStorage.getItem("access_token");
+      let needsSync = !currentToken;
+
+      if (currentToken && !needsSync) {
+        try {
+          // Decode JWT payload to check if workspace already matches
+          const payload = JSON.parse(atob(currentToken.split(".")[1]));
+          needsSync =
+            payload.organization_id !== targetOrg.id ||
+            payload.workspace_id !== targetWorkspace.id;
+        } catch {
+          needsSync = true;
         }
-      } catch (syncError) {
-        console.warn("[AppContext] Failed to sync JWT, may cause 403 errors:", syncError);
       }
+
+      if (needsSync) {
+        try {
+          const response = await workspaceApi.switchOrganization({
+            organization_id: targetOrg.id,
+            workspace_id: targetWorkspace.id,
+          });
+          if (response.access_token) {
+            localStorage.setItem("access_token", response.access_token);
+          }
+        } catch (syncError) {
+          console.warn("[AppContext] Failed to sync JWT:", syncError);
+        }
+      }
+
+      // Set workspace state AFTER JWT sync to prevent stale-token races
+      setCurrentWorkspace(targetWorkspace);
     } catch (err: any) {
       console.error("Failed to refresh app data:", err);
       setError(err.message || "Failed to load app data");
@@ -187,7 +195,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // If not found, refresh organizations list (might be newly created)
         if (!org) {
-          console.log("[AppContext] Organization not in state, refreshing list...");
           const orgsResponse = await organizationApi.list();
           setOrganizations(orgsResponse.organizations);
           org = orgsResponse.organizations.find((o) => o.id === orgId);
@@ -196,8 +203,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             throw new Error("Organization not found");
           }
         }
-
-        setCurrentOrganization(org);
 
         // Get workspaces for organization
         const workspacesData = await organizationApi.getWorkspaces(orgId);
@@ -212,12 +217,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           targetWorkspace = ws;
         } else {
-          // Use default workspace
           targetWorkspace =
             workspacesData.find((w) => w.is_default) || workspacesData[0];
         }
-
-        setCurrentWorkspace(targetWorkspace);
 
         // Persist to localStorage
         localStorage.setItem(STORAGE_KEYS.ORG_ID, orgId);
@@ -227,16 +229,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const perms = calculatePermissions(org, targetWorkspace);
         setPermissions(perms);
 
-        // Update backend context (get new JWT)
+        // Get new JWT BEFORE updating state
         const response = await workspaceApi.switchOrganization({
           organization_id: orgId,
           workspace_id: targetWorkspace.id,
         });
 
-        // Update JWT token
         if (response.access_token) {
           localStorage.setItem("access_token", response.access_token);
         }
+
+        // Set state AFTER JWT is stored — prevents stale-token API calls
+        setCurrentOrganization(org);
+        setCurrentWorkspace(targetWorkspace);
       } catch (err: any) {
         console.error("Failed to switch organization:", err);
         setError(err.message || "Failed to switch organization");
@@ -255,6 +260,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (workspaceId: string) => {
       if (!isAuthenticated || !currentOrganization) return;
 
+      // Skip if already on this workspace
+      if (currentWorkspace?.id === workspaceId) return;
+
       try {
         setIsLoading(true);
         setError(null);
@@ -264,7 +272,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // If not found, refresh workspaces list (might be newly created)
         if (!workspace) {
-          console.log("[AppContext] Workspace not in state, refreshing list...");
           const workspacesData = await organizationApi.getWorkspaces(currentOrganization.id);
           setWorkspaces(workspacesData);
           workspace = workspacesData.find((w) => w.id === workspaceId);
@@ -274,8 +281,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        setCurrentWorkspace(workspace);
-
         // Persist to localStorage
         localStorage.setItem(STORAGE_KEYS.WORKSPACE_ID, workspaceId);
 
@@ -283,15 +288,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const perms = calculatePermissions(currentOrganization, workspace);
         setPermissions(perms);
 
-        // Update backend context (get new JWT)
+        // Get new JWT BEFORE updating workspace state
+        // This prevents components from firing requests with a stale token
         const response = await workspaceApi.switchWorkspace({
           workspace_id: workspaceId,
         });
 
-        // Update JWT token
         if (response.access_token) {
           localStorage.setItem("access_token", response.access_token);
         }
+
+        // Set workspace state AFTER JWT is stored
+        setCurrentWorkspace(workspace);
       } catch (err: any) {
         console.error("Failed to switch workspace:", err);
         setError(err.message || "Failed to switch workspace");
@@ -300,7 +308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [isAuthenticated, currentOrganization, workspaces]
+    [isAuthenticated, currentOrganization, currentWorkspace, workspaces]
   );
 
   /**

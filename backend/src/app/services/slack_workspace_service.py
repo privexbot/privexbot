@@ -163,6 +163,49 @@ class SlackWorkspaceService:
 
         return (chatbot, deployment)
 
+    def get_entity_for_team(
+        self,
+        db: Session,
+        team_id: str
+    ) -> Optional[Tuple[str, Any, SlackWorkspaceDeployment]]:
+        """
+        Lookup chatbot OR chatflow for a workspace's messages.
+
+        WHY: Support both chatbots and chatflows in Slack deployments
+        HOW: Check chatbot table first, then chatflow table by chatbot_id
+
+        RETURNS:
+            Tuple of (bot_type, entity, deployment) or None
+        """
+        deployment = db.query(SlackWorkspaceDeployment).filter(
+            SlackWorkspaceDeployment.team_id == team_id,
+            SlackWorkspaceDeployment.is_active == True
+        ).first()
+
+        if not deployment:
+            return None
+
+        # Try chatbot first (primary use case)
+        chatbot = db.query(Chatbot).filter(
+            Chatbot.id == deployment.chatbot_id,
+            Chatbot.status == ChatbotStatus.ACTIVE
+        ).first()
+
+        if chatbot:
+            return ("chatbot", chatbot, deployment)
+
+        # Try chatflow (chatbot_id may reference a chatflow)
+        from app.models.chatflow import Chatflow
+        chatflow = db.query(Chatflow).filter(
+            Chatflow.id == deployment.chatbot_id,
+            Chatflow.is_active == True
+        ).first()
+
+        if chatflow:
+            return ("chatflow", chatflow, deployment)
+
+        return None
+
     def remove_workspace(
         self,
         db: Session,

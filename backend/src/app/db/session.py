@@ -62,6 +62,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import settings
 
+# Import base to register all models (needed for relationship resolution in Celery workers)
+import app.db.base  # noqa: F401
+
 
 # Create database engine
 engine = create_engine(

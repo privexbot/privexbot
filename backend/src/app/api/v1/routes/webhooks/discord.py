@@ -217,8 +217,8 @@ async def _handle_shared_interaction(db: Session, interaction: dict, interaction
             }
         }
 
-    # Lookup chatbot for this guild
-    result = discord_guild_service.get_chatbot_for_guild(db, guild_id)
+    # Lookup chatbot or chatflow for this guild
+    result = discord_guild_service.get_entity_for_guild(db, guild_id)
 
     if not result:
         return {
@@ -229,7 +229,7 @@ async def _handle_shared_interaction(db: Session, interaction: dict, interaction
             }
         }
 
-    chatbot, deployment = result
+    bot_type, bot, deployment = result
 
     # Check channel restrictions
     channel_id = interaction.get("channel_id")
@@ -292,21 +292,33 @@ async def _handle_shared_interaction(db: Session, interaction: dict, interaction
         }
     )
 
-    # Process message through chatbot service
-    response = await chatbot_service.process_message(
-        db=db,
-        chatbot=chatbot,
-        user_message=message_content,
-        session_id=session_id,
-        channel_context={
-            "platform": "discord",
-            "guild_id": guild_id,
-            "channel_id": channel_id,
-            "user_id": user_id,
-            "username": username,
-            "guild_name": deployment.guild_name
-        }
-    )
+    # Route to appropriate service based on bot type
+    channel_context = {
+        "platform": "discord",
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "user_id": user_id,
+        "username": username,
+        "guild_name": deployment.guild_name
+    }
+
+    if bot_type == "chatbot":
+        response = await chatbot_service.process_message(
+            db=db,
+            chatbot=bot,
+            user_message=message_content,
+            session_id=session_id,
+            channel_context=channel_context
+        )
+    else:  # chatflow
+        result = await chatflow_service.execute(
+            db=db,
+            chatflow=bot,
+            user_message=message_content,
+            session_id=session_id,
+            channel_context=channel_context
+        )
+        response = {"response": result["response"], "session_id": result["session_id"]}
 
     # Truncate response to Discord's 2000 char limit
     response_text = response.get("response", "")[:2000]

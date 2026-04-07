@@ -140,11 +140,25 @@ class SecretAISDKProvider:
         # Call SDK using native async method (ainvoke)
         # WHY: Using ainvoke directly instead of wrapping invoke in run_in_executor
         # HOW: LangChain's ainvoke is the proper async interface, avoiding event loop conflicts
-        try:
-            response = await self._client.ainvoke(sdk_messages)
-        except Exception as e:
-            logger.error(f"[SecretAISDKProvider] SDK ainvoke failed: {e}")
-            raise
+        # Retry once on transient failures (SDK sometimes returns empty errors)
+        last_error = None
+        for attempt in range(2):
+            try:
+                response = await self._client.ainvoke(sdk_messages)
+                break
+            except Exception as e:
+                last_error = e
+                logger.error(
+                    f"[SecretAISDKProvider] SDK ainvoke failed (attempt {attempt + 1}/2): "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                if attempt == 0:
+                    # Reset client on first failure — URL may have gone stale
+                    self._initialized = False
+                    self._ensure_client()
+                    continue
+                raise
 
         # Extract text from response
         # SDK returns AIMessage with .content attribute

@@ -54,6 +54,9 @@ export const useNotificationStore = create<
         },
 
         fetchUnreadCount: async () => {
+          // Skip if not authenticated — prevents 401 spam on public pages
+          if (!localStorage.getItem("access_token")) return;
+
           try {
             const data = await notificationsApi.getUnreadCount();
             set((state) => {

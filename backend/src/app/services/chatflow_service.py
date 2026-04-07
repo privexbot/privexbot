@@ -244,6 +244,8 @@ class ChatflowService:
             # Update context with node output
             if node_result.get("output"):
                 context["variables"][current_node["id"]] = node_result["output"]
+                # Track last output for response node default template
+                context["variables"]["_last_output"] = node_result["output"]
 
             # Check if this is response node
             if current_node["type"] == "response":

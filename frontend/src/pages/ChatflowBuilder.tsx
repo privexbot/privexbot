@@ -65,6 +65,12 @@ import {
   X,
   Check,
   Loader2,
+  Send,
+  Mail,
+  Bell,
+  UserCheck,
+  UserPlus,
+  Calendar,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -105,6 +111,14 @@ import { VariableNodeConfig } from "@/components/chatflow/configs/VariableNodeCo
 import { CodeNodeConfig } from "@/components/chatflow/configs/CodeNodeConfig";
 import { MemoryNodeConfig } from "@/components/chatflow/configs/MemoryNodeConfig";
 import { DatabaseNodeConfig } from "@/components/chatflow/configs/DatabaseNodeConfig";
+import { ResponseNodeConfig } from "@/components/chatflow/configs/ResponseNodeConfig";
+import { LoopNodeConfig } from "@/components/chatflow/configs/LoopNodeConfig";
+import { WebhookNodeConfig } from "@/components/chatflow/configs/WebhookNodeConfig";
+import { EmailNodeConfig } from "@/components/chatflow/configs/EmailNodeConfig";
+import { NotificationNodeConfig } from "@/components/chatflow/configs/NotificationNodeConfig";
+import { HandoffNodeConfig } from "@/components/chatflow/configs/HandoffNodeConfig";
+import { LeadCaptureNodeConfig } from "@/components/chatflow/configs/LeadCaptureNodeConfig";
+import { CalendlyNodeConfig } from "@/components/chatflow/configs/CalendlyNodeConfig";
 
 // ========================================
 // NODE COMPONENT DEFINITIONS
@@ -390,6 +404,120 @@ function ResponseNode({ data, selected }: { data: NodeData; selected?: boolean }
   );
 }
 
+// Webhook Node
+function WebhookNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg border border-orange-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Send className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Webhook</div>
+            <div className="text-xs opacity-80">{data.label || "Outbound Webhook"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Email Node
+function EmailNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-lg border border-sky-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Mail className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Email</div>
+            <div className="text-xs opacity-80">{data.label || "Send Email"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Notification Node
+function NotificationNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg border border-teal-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Bell className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Notification</div>
+            <div className="text-xs opacity-80">{data.label || "Team Alert"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Handoff Node
+function HandoffNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white shadow-lg border border-violet-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <UserCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Handoff</div>
+            <div className="text-xs opacity-80">{data.label || "Human Agent"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Lead Capture Node
+function LeadCaptureNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg border border-emerald-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <UserPlus className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Lead Capture</div>
+            <div className="text-xs opacity-80">{data.label || "Collect Lead"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Calendly Node
+function CalendlyNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg border border-blue-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Calendar className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Calendly</div>
+            <div className="text-xs opacity-80">{data.label || "Schedule Meeting"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
 // Register all node types
 const nodeTypes: NodeTypes = {
   trigger: TriggerNode,
@@ -403,6 +531,12 @@ const nodeTypes: NodeTypes = {
   database: DatabaseNode,
   loop: LoopNode,
   response: ResponseNode,
+  webhook: WebhookNode,
+  email: EmailNode,
+  notification: NotificationNode,
+  handoff: HandoffNode,
+  lead_capture: LeadCaptureNode,
+  calendly: CalendlyNode,
 };
 
 // ========================================
@@ -434,6 +568,17 @@ const NODE_CATEGORIES = [
       { type: "variable", label: "Variable", icon: Settings, color: "from-indigo-500 to-violet-600", description: "Set/transform data" },
       { type: "code", label: "Code", icon: Code, color: "from-gray-700 to-gray-900", description: "Python scripts" },
       { type: "database", label: "Database", icon: Database, color: "from-slate-600 to-slate-800", description: "SQL queries" },
+    ],
+  },
+  {
+    title: "Actions & Automation",
+    nodes: [
+      { type: "webhook", label: "Webhook", icon: Send, color: "from-orange-500 to-amber-600", description: "Push to Zapier, Make, etc." },
+      { type: "email", label: "Email", icon: Mail, color: "from-sky-500 to-blue-600", description: "Send emails (SMTP/Gmail)" },
+      { type: "notification", label: "Notification", icon: Bell, color: "from-teal-500 to-cyan-600", description: "Alert team via Slack/Discord" },
+      { type: "handoff", label: "Handoff", icon: UserCheck, color: "from-violet-500 to-fuchsia-600", description: "Escalate to human agent" },
+      { type: "lead_capture", label: "Lead Capture", icon: UserPlus, color: "from-emerald-500 to-green-600", description: "Collect & store leads" },
+      { type: "calendly", label: "Calendly", icon: Calendar, color: "from-blue-500 to-indigo-600", description: "Schedule meetings" },
     ],
   },
 ];
@@ -626,37 +771,41 @@ export default function ChatflowBuilder() {
         return <DatabaseNodeConfig config={config} onChange={handleNodeConfigChange} />;
       case "trigger":
         return (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              The trigger node starts the chatflow when a message is received.
+              This node activates when a user sends a message via any deployed channel
+              (website widget, Telegram, Discord, Slack, etc.).
             </p>
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-md p-3">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                Available Variables
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{"{{input}}"}</code>
+                {" "}&mdash; The user's message text
+              </p>
+            </div>
             <p className="text-xs text-gray-400 dark:text-gray-500">
               No additional configuration required.
             </p>
           </div>
         );
       case "response":
-        return (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              The response node sends the final message back to the user.
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Uses the output from the previous node as the response.
-            </p>
-          </div>
-        );
+        return <ResponseNodeConfig config={config} onChange={handleNodeConfigChange} />;
       case "loop":
-        return (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              The loop node iterates over an array and processes each item.
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Configuration coming soon.
-            </p>
-          </div>
-        );
+        return <LoopNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "webhook":
+        return <WebhookNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "email":
+        return <EmailNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "notification":
+        return <NotificationNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "handoff":
+        return <HandoffNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "lead_capture":
+        return <LeadCaptureNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "calendly":
+        return <CalendlyNodeConfig config={config} onChange={handleNodeConfigChange} />;
       default:
         return (
           <p className="text-sm text-gray-500 dark:text-gray-400">

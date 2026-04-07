@@ -233,15 +233,15 @@ class SlackIntegration:
         channel_id = event.get("channel")
         channel_type = event.get("channel_type", "")  # "im" for DMs, "channel" for public
 
-        # Lookup chatbot for this team
+        # Lookup chatbot or chatflow for this team
         from app.services.slack_workspace_service import slack_workspace_service
 
-        result = slack_workspace_service.get_chatbot_for_team(db, team_id)
+        result = slack_workspace_service.get_entity_for_team(db, team_id)
         if not result:
-            logger.warning(f"No chatbot deployment found for Slack team {team_id}")
+            logger.warning(f"No deployment found for Slack team {team_id}")
             return None
 
-        chatbot, deployment = result
+        bot_type, bot, deployment = result
 
         # Check channel restrictions (DMs always allowed)
         if channel_type != "im" and not deployment.check_channel_access(channel_id):
@@ -257,8 +257,8 @@ class SlackIntegration:
         # Auto-capture lead
         await self._auto_capture_lead(
             db=db,
-            bot=chatbot,
-            bot_type="chatbot",
+            bot=bot,
+            bot_type=bot_type,
             session_id=session_id,
             slack_user_id=user_id,
             team_id=team_id,
@@ -275,16 +275,26 @@ class SlackIntegration:
             "team_name": deployment.team_name
         }
 
-        # Route to chatbot service
-        from app.services.chatbot_service import chatbot_service
-
-        response = await chatbot_service.process_message(
-            db=db,
-            chatbot=chatbot,
-            user_message=text,
-            session_id=session_id,
-            channel_context=channel_context
-        )
+        # Route to appropriate service based on bot type
+        if bot_type == "chatbot":
+            from app.services.chatbot_service import chatbot_service
+            response = await chatbot_service.process_message(
+                db=db,
+                chatbot=bot,
+                user_message=text,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+        else:  # chatflow
+            from app.services.chatflow_service import chatflow_service
+            result = await chatflow_service.execute(
+                db=db,
+                chatflow=bot,
+                user_message=text,
+                session_id=session_id,
+                channel_context=channel_context
+            )
+            response = {"response": result["response"], "session_id": result["session_id"]}
 
         # Send response back to Slack
         bot_token = deployment.bot_token_encrypted
