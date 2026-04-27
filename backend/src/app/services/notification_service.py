@@ -5,7 +5,7 @@ Notification Service - CRUD operations and event helpers for in-app notification
 from uuid import UUID
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 
 from app.models.notification import Notification
 
@@ -24,10 +24,17 @@ def create_notification(
     resource_type: Optional[str] = None,
     resource_id: Optional[UUID] = None,
     metadata: Optional[dict] = None,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
-    """Create a single notification."""
+    """Create a single notification.
+
+    `workspace_id` is optional: pass it for resource-scoped events
+    (KB / chatbot / chatflow / lead) so the dashboard can filter by active
+    workspace; leave it None for org-level events such as invitations.
+    """
     notif = Notification(
         user_id=user_id,
+        workspace_id=workspace_id,
         event=event,
         title=title,
         body=body,
@@ -48,9 +55,23 @@ def get_notifications(
     limit: int = 20,
     offset: int = 0,
     unread_only: bool = False,
+    workspace_id: Optional[UUID] = None,
 ) -> tuple[list[Notification], int]:
-    """Paginated list with total count."""
+    """Paginated list with total count.
+
+    When `workspace_id` is provided, only events tied to that workspace plus
+    workspace-agnostic events (workspace_id IS NULL — e.g. invitations and
+    legacy rows) are returned. When None, returns everything for the user.
+    """
     query = db.query(Notification).filter(Notification.user_id == user_id)
+
+    if workspace_id is not None:
+        query = query.filter(
+            or_(
+                Notification.workspace_id == workspace_id,
+                Notification.workspace_id.is_(None),
+            )
+        )
 
     if unread_only:
         query = query.filter(Notification.is_read == False)  # noqa: E712
@@ -60,13 +81,24 @@ def get_notifications(
     return items, total
 
 
-def get_unread_count(db: Session, user_id: UUID) -> int:
+def get_unread_count(
+    db: Session,
+    user_id: UUID,
+    workspace_id: Optional[UUID] = None,
+) -> int:
     """Count unread notifications (lightweight, for badge polling)."""
-    return (
-        db.query(Notification)
-        .filter(Notification.user_id == user_id, Notification.is_read == False)  # noqa: E712
-        .count()
+    query = db.query(Notification).filter(
+        Notification.user_id == user_id,
+        Notification.is_read == False,  # noqa: E712
     )
+    if workspace_id is not None:
+        query = query.filter(
+            or_(
+                Notification.workspace_id == workspace_id,
+                Notification.workspace_id.is_(None),
+            )
+        )
+    return query.count()
 
 
 def mark_as_read(db: Session, notification_id: UUID, user_id: UUID) -> Optional[Notification]:
@@ -104,6 +136,7 @@ def notify_kb_completed(
     kb_id: UUID,
     kb_name: str,
     stats: dict,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when KB processing completes successfully."""
     chunks = stats.get("total_chunks", 0)
@@ -118,6 +151,7 @@ def notify_kb_completed(
         resource_type="kb",
         resource_id=kb_id,
         metadata=stats,
+        workspace_id=workspace_id,
     )
 
 
@@ -127,6 +161,7 @@ def notify_kb_failed(
     kb_id: UUID,
     kb_name: str,
     error: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when KB processing fails."""
     return create_notification(
@@ -139,6 +174,7 @@ def notify_kb_failed(
         resource_type="kb",
         resource_id=kb_id,
         metadata={"error": error},
+        workspace_id=workspace_id,
     )
 
 
@@ -147,6 +183,7 @@ def notify_chatbot_deployed(
     user_id: UUID,
     chatbot_id: UUID,
     chatbot_name: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a chatbot is deployed."""
     return create_notification(
@@ -158,6 +195,7 @@ def notify_chatbot_deployed(
         link=f"/chatbots/{chatbot_id}",
         resource_type="chatbot",
         resource_id=chatbot_id,
+        workspace_id=workspace_id,
     )
 
 
@@ -166,6 +204,7 @@ def notify_chatflow_deployed(
     user_id: UUID,
     chatflow_id: UUID,
     chatflow_name: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a chatflow is deployed."""
     return create_notification(
@@ -177,6 +216,7 @@ def notify_chatflow_deployed(
         link=f"/chatflows/{chatflow_id}",
         resource_type="chatflow",
         resource_id=chatflow_id,
+        workspace_id=workspace_id,
     )
 
 
@@ -186,7 +226,11 @@ def notify_invitation_accepted(
     invitee_name: str,
     org_name: str,
 ) -> Notification:
-    """Emit notification to the inviter when someone accepts their invitation."""
+    """Emit notification to the inviter when someone accepts their invitation.
+
+    Intentionally workspace-agnostic — invitations are org-level and should
+    appear regardless of which workspace the inviter has currently active.
+    """
     return create_notification(
         db=db,
         user_id=inviter_user_id,
@@ -202,6 +246,7 @@ def notify_lead_captured(
     user_id: UUID,
     lead_email: str,
     bot_name: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a lead is captured."""
     return create_notification(
@@ -212,4 +257,5 @@ def notify_lead_captured(
         body=f"{lead_email} via {bot_name}.",
         link="/leads",
         resource_type="lead",
+        workspace_id=workspace_id,
     )

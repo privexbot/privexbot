@@ -28,6 +28,31 @@ from app.services.chatflow_service import chatflow_service
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
 
 
+def _resolve_bot(db: Session, bot_id: UUID):
+    """
+    Resolve bot_id to Chatbot or Chatflow.
+
+    Returns (bot_type, bot, deployment_config).
+    Chatbot uses bot.deployment_config (dedicated column).
+    Chatflow uses chatflow.config["deployment"] (nested in config JSONB).
+    """
+    from app.models.chatbot import Chatbot
+    from app.models.chatflow import Chatflow
+
+    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
+    if bot:
+        return "chatbot", bot, bot.deployment_config or {}
+
+    chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
+    if chatflow:
+        return "chatflow", chatflow, (chatflow.config or {}).get("deployment", {})
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Bot not found"
+    )
+
+
 @router.get("/{bot_id}")
 async def whatsapp_webhook_verification(
     bot_id: UUID,
@@ -49,33 +74,18 @@ async def whatsapp_webhook_verification(
         hub.challenge (as plain text)
     """
 
-    # Get bot from database
-    from app.models.chatbot import Chatbot
-    from app.models.chatflow import Chatflow
-
-    chatbot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if chatbot:
-        bot = chatbot
-    else:
-        chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
-        if chatflow:
-            bot = chatflow
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Bot not found"
-            )
+    # Get bot from database (supports both chatbots and chatflows)
+    _bot_type, _bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Check if WhatsApp is enabled
-    deployment_config = bot.deployment_config or {}
-    if "whatsapp" not in deployment_config.get("channels", []):
+    whatsapp_config = deployment_config.get("whatsapp", {})
+    if not whatsapp_config or whatsapp_config.get("status") != "success":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="WhatsApp not enabled for this bot"
         )
 
     # Get verify token
-    whatsapp_config = deployment_config.get("whatsapp", {})
     expected_verify_token = whatsapp_config.get("verify_token")
 
     # Verify webhook
@@ -143,28 +153,12 @@ async def whatsapp_webhook(
     # Parse webhook
     webhook_data = await request.json()
 
-    # Get bot from database
-    from app.models.chatbot import Chatbot
-    from app.models.chatflow import Chatflow
-
-    chatbot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if chatbot:
-        bot_type = "chatbot"
-        bot = chatbot
-    else:
-        chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
-        if chatflow:
-            bot_type = "chatflow"
-            bot = chatflow
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Bot not found"
-            )
+    # Get bot from database (supports both chatbots and chatflows)
+    bot_type, bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Check if WhatsApp is enabled
-    deployment_config = bot.deployment_config or {}
-    if "whatsapp" not in deployment_config.get("channels", []):
+    whatsapp_config = deployment_config.get("whatsapp", {})
+    if not whatsapp_config or whatsapp_config.get("status") != "success":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="WhatsApp not enabled for this bot"
@@ -201,8 +195,7 @@ async def whatsapp_webhook(
     # Generate session ID
     session_id = f"whatsapp_{from_number}"
 
-    # Get WhatsApp config
-    whatsapp_config = deployment_config.get("whatsapp", {})
+    # WhatsApp config already resolved above
     access_token = whatsapp_config.get("access_token")
     phone_number_id = whatsapp_config.get("phone_number_id")
 
@@ -272,25 +265,10 @@ async def send_whatsapp_template(
         }
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-    from app.models.chatflow import Chatflow
-
-    chatbot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if chatbot:
-        bot = chatbot
-    else:
-        chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
-        if chatflow:
-            bot = chatflow
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Bot not found"
-            )
+    # Get bot (supports both chatbots and chatflows)
+    _bot_type, _bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get WhatsApp config
-    deployment_config = bot.deployment_config or {}
     whatsapp_config = deployment_config.get("whatsapp", {})
     access_token = whatsapp_config.get("access_token")
     phone_number_id = whatsapp_config.get("phone_number_id")
@@ -338,25 +316,10 @@ async def get_whatsapp_templates(
         }
     """
 
-    # Get bot
-    from app.models.chatbot import Chatbot
-    from app.models.chatflow import Chatflow
-
-    chatbot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if chatbot:
-        bot = chatbot
-    else:
-        chatflow = db.query(Chatflow).filter(Chatflow.id == bot_id).first()
-        if chatflow:
-            bot = chatflow
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Bot not found"
-            )
+    # Get bot (supports both chatbots and chatflows)
+    _bot_type, _bot, deployment_config = _resolve_bot(db, bot_id)
 
     # Get WhatsApp config
-    deployment_config = bot.deployment_config or {}
     whatsapp_config = deployment_config.get("whatsapp", {})
     access_token = whatsapp_config.get("access_token")
     business_account_id = whatsapp_config.get("business_account_id")

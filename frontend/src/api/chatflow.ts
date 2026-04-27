@@ -106,6 +106,31 @@ export interface FinalizeChatflowRequest {
   }>;
 }
 
+/**
+ * Per-channel deployment result. Exact keys vary by channel:
+ * - website: { status, embed_code, widget_url? }
+ * - telegram/discord/slack: { status, webhook_url?, bot_username? }
+ * - zapier/whatsapp: { status, instructions?, webhook_url? }
+ */
+export interface ChannelDeploymentResult {
+  status: string;
+  embed_code?: string;
+  widget_url?: string;
+  webhook_url?: string;
+  bot_username?: string;
+  instructions?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface FinalizeChatflowResponse {
+  status: string;
+  chatflow_id: string;
+  channels?: Record<string, ChannelDeploymentResult>;
+  api_key?: string;
+  api_key_prefix?: string;
+}
+
 // ========================================
 // DRAFT API (Phase 1 - Redis)
 // ========================================
@@ -182,16 +207,20 @@ export const chatflowDraftApi = {
   /**
    * Deploy draft to database
    * POST /api/v1/chatflows/drafts/{draft_id}/finalize
+   *
+   * Returns the chatflow ID plus per-channel deployment details and the
+   * one-time-visible API key. Shape mirrors backend
+   * draft_service._deploy_chatflow -> _initialize_channels output.
    */
   async finalize(
     draftId: string,
     request?: FinalizeChatflowRequest
-  ): Promise<{ status: string; chatflow_id: string }> {
+  ): Promise<FinalizeChatflowResponse> {
     try {
-      const response = await apiClient.post<{
-        status: string;
-        chatflow_id: string;
-      }>(`/chatflows/drafts/${draftId}/finalize`, request || {});
+      const response = await apiClient.post<FinalizeChatflowResponse>(
+        `/chatflows/drafts/${draftId}/finalize`,
+        request || {}
+      );
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

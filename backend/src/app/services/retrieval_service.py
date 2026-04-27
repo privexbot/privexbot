@@ -67,7 +67,10 @@ STRATEGY_TO_METHOD_MAP = {
     "vector": "vector",
     "hybrid": "hybrid",
     "keyword": "keyword",
-    "threshold": "threshold"
+    "threshold": "threshold",
+    # Legacy frontend values (backward compatibility for saved chatflows)
+    "semantic": "vector",
+    "bm25": "keyword",
 }
 
 

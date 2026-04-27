@@ -63,6 +63,10 @@ export function LeadCaptureNodeConfig({
   const [storeInternally, setStoreInternally] = useState(
     config.store_internally !== false
   );
+  // Initial CRM-enabled state: truthy if a URL was previously saved.
+  const [crmEnabled, setCrmEnabled] = useState(
+    Boolean((config.crm_webhook_url as string) || "")
+  );
   const [crmWebhookUrl, setCrmWebhookUrl] = useState(
     (config.crm_webhook_url as string) || ""
   );
@@ -77,11 +81,13 @@ export function LeadCaptureNodeConfig({
     onChange({
       fields,
       store_internally: storeInternally,
-      crm_webhook_url: crmWebhookUrl || undefined,
-      crm_credential_id: crmCredentialId || undefined,
+      // When CRM is disabled, explicitly drop both fields so stale values
+      // from a previous session don't get re-saved.
+      crm_webhook_url: crmEnabled ? crmWebhookUrl || undefined : undefined,
+      crm_credential_id: crmEnabled ? crmCredentialId || undefined : undefined,
       duplicate_handling: duplicateHandling,
     });
-  }, [fields, storeInternally, crmWebhookUrl, crmCredentialId, duplicateHandling, onChange]);
+  }, [fields, storeInternally, crmEnabled, crmWebhookUrl, crmCredentialId, duplicateHandling, onChange]);
 
   useEffect(() => {
     const timeoutId = setTimeout(emitChange, 300);
@@ -240,29 +246,42 @@ export function LeadCaptureNodeConfig({
         </Select>
       </div>
 
-      {/* CRM Webhook */}
-      <div>
-        <Label className="text-sm font-medium">CRM Webhook URL</Label>
-        <Input
-          value={crmWebhookUrl}
-          onChange={(e) => setCrmWebhookUrl(e.target.value)}
-          placeholder="https://api.hubspot.com/..."
-          className="mt-1.5 font-mono text-sm"
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          Optional: Push lead data to external CRM
-        </p>
+      {/* CRM push — off by default; only render the URL + credential
+          inputs once the user opts in. */}
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-sm font-medium">Push to external CRM</Label>
+          <p className="text-xs text-gray-500">
+            Forward lead data to a webhook (HubSpot, Salesforce, Zapier, etc.)
+          </p>
+        </div>
+        <Switch checked={crmEnabled} onCheckedChange={setCrmEnabled} />
       </div>
 
-      {/* CRM Credential */}
-      {crmWebhookUrl && (
-        <CredentialSelector
-          provider="custom"
-          selectedId={crmCredentialId}
-          onSelect={setCrmCredentialId}
-          label="CRM Authentication"
-          required={false}
-        />
+      {crmEnabled && (
+        <>
+          <div>
+            <Label className="text-sm font-medium">CRM Webhook URL</Label>
+            <Input
+              value={crmWebhookUrl}
+              onChange={(e) => setCrmWebhookUrl(e.target.value)}
+              placeholder="https://api.hubspot.com/..."
+              className="mt-1.5 font-mono text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              POSTs the captured lead as JSON to this URL.
+            </p>
+          </div>
+          {crmWebhookUrl && (
+            <CredentialSelector
+              provider="custom"
+              selectedId={crmCredentialId}
+              onSelect={setCrmCredentialId}
+              label="CRM Authentication"
+              required={false}
+            />
+          )}
+        </>
       )}
 
       {/* Summary */}
@@ -273,7 +292,7 @@ export function LeadCaptureNodeConfig({
         <p className="text-sm">
           {fields.filter((f) => f.name).length} fields configured
           {storeInternally ? " + Internal storage" : ""}
-          {crmWebhookUrl ? " + CRM sync" : ""}
+          {crmEnabled && crmWebhookUrl ? " + CRM sync" : ""}
         </p>
       </div>
     </div>

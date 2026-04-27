@@ -28,11 +28,14 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime, timedelta
+import logging
 import redis
 import json
 import re
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -814,9 +817,14 @@ class UnifiedDraftService:
             db=db
         )
 
-        # Update chatflow's config with actual channel results
-        # This stores bot_token_credential_id for webhook handlers to use
-        chatflow.config["deployment"] = deployment_results["channels"]
+        # Update chatflow's config with actual channel results.
+        # Reassign rather than mutate in-place: Chatflow.config is plain JSONB
+        # (no MutableDict wrapper), so SQLAlchemy does not detect in-place
+        # mutations and the change would not be persisted.
+        chatflow.config = {
+            **(chatflow.config or {}),
+            "deployment": deployment_results["channels"],
+        }
         db.commit()
 
         # Add API key to response (only shown once)
@@ -866,12 +874,17 @@ class UnifiedDraftService:
         deployment_config = data.get("deployment", {})
         if deployment_config and deployment_config.get("channels"):
             try:
-                # Get existing API key for this chatflow
-                from app.models.api_key import ApiKey
-                existing_key = db.query(ApiKey).filter(
-                    ApiKey.entity_id == chatflow.id,
-                    ApiKey.entity_type == "chatflow",
-                    ApiKey.is_active == True
+                # Get existing API key for this chatflow.
+                # NOTE: model class is APIKey (capital A/P/I). Using ApiKey
+                # silently ImportError'd here for a long time, swallowed by
+                # the bare except below — symptom: every chatflow edit failed
+                # to re-register channels and reverted config.deployment back
+                # to the legacy {channels: [...]} draft input shape.
+                from app.models.api_key import APIKey
+                existing_key = db.query(APIKey).filter(
+                    APIKey.entity_id == chatflow.id,
+                    APIKey.entity_type == "chatflow",
+                    APIKey.is_active == True
                 ).first()
 
                 if existing_key:
@@ -882,10 +895,18 @@ class UnifiedDraftService:
                         api_key=existing_key.key_prefix,  # Use existing key prefix
                         db=db
                     )
-                    chatflow.config["deployment"] = deployment_results["channels"]
+                    # Reassign rather than mutate (see _deploy_chatflow above).
+                    chatflow.config = {
+                        **(chatflow.config or {}),
+                        "deployment": deployment_results["channels"],
+                    }
             except Exception:
-                # Channel re-initialization is non-critical for updates
-                pass
+                # Channel re-initialization is non-critical for updates, but
+                # log it — silent failures here have caused channel drift.
+                logger.exception(
+                    "Channel re-initialization failed for chatflow %s",
+                    chatflow.id,
+                )
 
         db.commit()
 
@@ -1058,6 +1079,26 @@ class UnifiedDraftService:
                     deployment_results["channels"]["zapier"] = {
                         "status": "success",
                         "webhook_url": zapier_webhook
+                    }
+
+                elif channel_type == "slack":
+                    # Slack uses a shared-app install model: one global Slack
+                    # app (configured via SLACK_CLIENT_ID), and each customer
+                    # workspace installs it via OAuth. The team_id <-> entity
+                    # mapping happens later in the OAuth callback
+                    # (routes/webhooks/slack.py:147), via SlackWorkspaceDeployment.
+                    #
+                    # The install URL is global and intentionally has no `state`
+                    # tying it to a specific chatflow/chatbot — do not add one;
+                    # see slack_workspace_service.generate_install_url() and the
+                    # callback handler which routes by team_id.
+                    from app.services.slack_workspace_service import slack_workspace_service
+
+                    install_url = slack_workspace_service.generate_install_url()
+                    deployment_results["channels"]["slack"] = {
+                        "status": "success",
+                        "install_url": install_url,
+                        "webhook_url": install_url,  # frontend reads webhook_url as the setup URL
                     }
 
             except Exception as e:

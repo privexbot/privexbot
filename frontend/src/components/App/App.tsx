@@ -38,6 +38,7 @@ import ChatbotDetailPage from "@/pages/chatbots/detail";
 import ChatbotEditPage from "@/pages/chatbots/edit";
 import { StudioPage } from "@/pages/StudioPage";
 import ChatflowBuilder from "@/pages/ChatflowBuilder";
+import ChatflowDetailPage from "@/pages/chatflows/detail";
 import KnowledgeBasesPage from "@/pages/knowledge-bases/index";
 import CreateKnowledgeBasePage from "@/pages/knowledge-bases/create";
 import KBDetailPage from "@/pages/knowledge-bases/detail";
@@ -161,6 +162,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <StudioPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/studio/:chatflowId"
+                element={
+                  <ProtectedRoute>
+                    <ChatflowDetailPage />
                   </ProtectedRoute>
                 }
               />

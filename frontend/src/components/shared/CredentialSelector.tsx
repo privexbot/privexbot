@@ -13,7 +13,6 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { config } from '@/config/env';
 import {
   Key,
   Plus,
@@ -132,7 +131,7 @@ export default function CredentialSelector({
     },
   });
 
-  const initiateOAuthFlow = (selectedProvider: CredentialProvider) => {
+  const initiateOAuthFlow = async (selectedProvider: CredentialProvider) => {
     if (!workspaceId) {
       toast({
         title: 'Workspace not selected',
@@ -141,8 +140,30 @@ export default function CredentialSelector({
       });
       return;
     }
-    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=${selectedProvider}&workspace_id=${workspaceId}`;
-    window.location.href = oauthUrl;
+    try {
+      // The backend `/credentials/oauth/authorize` endpoint is a POST that
+      // returns `{redirect_url}`. We need this round-trip (instead of a
+      // direct browser navigation) because the backend reads the user from
+      // the Bearer token to seed CSRF + state — a direct GET nav would not
+      // carry the JWT (it's in localStorage, attached by the axios
+      // interceptor only on XHR).
+      const response = await apiClient.post<{ redirect_url: string }>(
+        '/credentials/oauth/authorize',
+        null,
+        { params: { provider: selectedProvider, workspace_id: workspaceId } }
+      );
+      const target = response.data?.redirect_url;
+      if (!target) {
+        throw new Error('Backend returned no redirect URL.');
+      }
+      window.location.href = target;
+    } catch (err) {
+      toast({
+        title: 'Could not start OAuth flow',
+        description: handleApiError(err),
+        variant: 'destructive',
+      });
+    }
   };
 
   const getProviderName = (providerName?: string) => {
@@ -179,14 +200,27 @@ export default function CredentialSelector({
   };
 
   const isOAuthProvider = (providerName: CredentialProvider) => {
-    // OAuth providers have a redirect-based flow
-    // Telegram, Discord, WhatsApp use bot tokens entered manually
-    return ['google', 'google_gmail', 'notion', 'calendly', 'slack'].includes(providerName);
+    // OAuth providers that produce a stored `Credential` row when finished.
+    // NOTE: Slack is NOT listed here. Slack uses the shared-bot install flow
+    // (see `webhooks/slack/install` + `SlackWorkspaceDeployment`) which does
+    // NOT create a Credential — surfacing it in this picker would silently
+    // succeed without producing a row and look like a bug. Slack is set up
+    // from the chatflow detail page's Channel Setup panel instead.
+    return ['google', 'google_gmail', 'notion', 'calendly'].includes(providerName);
   };
 
   // Filter active credentials
   const activeCredentials = credentials?.filter((c) => c.is_active) || [];
   const hasCredentials = activeCredentials.length > 0;
+
+  // Open the full credentials page in a new tab so the user does not lose
+  // unsaved chatflow state. Pre-filter by provider when one is set.
+  const openCredentialsManager = () => {
+    const target = provider
+      ? `/settings/credentials?provider=${provider}`
+      : '/settings/credentials';
+    window.open(target, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="space-y-3">
@@ -196,6 +230,14 @@ export default function CredentialSelector({
           {label}
           {required && <span className="text-red-500">*</span>}
         </Label>
+        <button
+          type="button"
+          onClick={openCredentialsManager}
+          className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline font-manrope"
+        >
+          Manage credentials
+          <ExternalLink className="h-3 w-3" />
+        </button>
       </div>
 
       {isLoading ? (
@@ -300,14 +342,12 @@ export default function CredentialSelector({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              // Navigate to credentials page to add new credential
-              window.location.href = '/settings/credentials';
-            }}
+            onClick={openCredentialsManager}
             className="flex-1 font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
           >
             <Plus className="h-4 w-4 mr-2" />
             Add New Credential
+            <ExternalLink className="h-3 w-3 ml-2" />
           </Button>
         )}
       </div>

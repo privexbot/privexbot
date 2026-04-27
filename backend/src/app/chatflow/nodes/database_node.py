@@ -85,7 +85,17 @@ class DatabaseNode(BaseNode):
 
             # Get query
             query_template = self.config.get("query", "")
-            parameters = self.config.get("parameters", {})
+            raw_parameters = self.config.get("parameters", {})
+
+            # Normalize parameters: frontend sends [{name, value}], backend needs {name: value}
+            if isinstance(raw_parameters, list):
+                parameters = {
+                    p["name"]: p.get("value", "")
+                    for p in raw_parameters
+                    if isinstance(p, dict) and p.get("name")
+                }
+            else:
+                parameters = raw_parameters
 
             # Resolve parameters
             resolved_params = {}
@@ -103,8 +113,10 @@ class DatabaseNode(BaseNode):
             with engine.connect() as conn:
                 result = conn.execute(text(query_template), resolved_params)
 
-                # Get operation type
+                # Get operation type ("query" from frontend maps to "select")
                 operation = self.config.get("operation", "select")
+                if operation == "query":
+                    operation = "select"
 
                 if operation == "select":
                     # Fetch results

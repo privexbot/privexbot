@@ -634,6 +634,7 @@ async def deploy_chatbot(
                 user_id=current_user.id,
                 chatbot_id=UUID(result.get("chatbot_id")),
                 chatbot_name=draft.get("data", {}).get("name", "Chatbot"),
+                workspace_id=UUID(draft["workspace_id"]) if draft.get("workspace_id") else None,
             )
         except Exception:
             pass

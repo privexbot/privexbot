@@ -27,12 +27,61 @@ PERFORMANCE:
 - Memory: ~4GB for 100k vectors (384 dims)
 """
 
+import os
+import threading
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.exceptions import UnexpectedResponse
-import os
+
+
+class _ResilientQdrantClient:
+    """
+    Thin wrapper around qdrant_client.QdrantClient that recovers from a
+    closed underlying httpx client.
+
+    The sync QdrantClient is a long-lived singleton inside the Celery worker.
+    After a Qdrant restart or a long idle, its httpx.Client can transition
+    to ClientState.CLOSED, after which every call raises
+    'Cannot send a request, as the client has been closed.' until the worker
+    is restarted.
+
+    This wrapper intercepts method calls, and on detection of that exact error
+    rebuilds the underlying client once and retries. Generic connection errors
+    (ConnectError, RemoteProtocolError, etc.) are NOT retried here — they
+    deserve a different policy (backoff) and propagate as-is.
+    """
+
+    def __init__(self, factory):
+        self._factory = factory
+        self._client = factory()
+        self._lock = threading.Lock()
+
+    def _reconnect(self) -> None:
+        # Best-effort close; ignore errors from already-broken state.
+        try:
+            self._client.close()
+        except Exception:
+            pass
+        self._client = self._factory()
+
+    def __getattr__(self, name):
+        attr = getattr(self._client, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args, **kwargs):
+            try:
+                return attr(*args, **kwargs)
+            except Exception as e:
+                if "client has been closed" in str(e).lower():
+                    with self._lock:
+                        self._reconnect()
+                        return getattr(self._client, name)(*args, **kwargs)
+                raise
+
+        return wrapped
 
 
 class QdrantConfig(BaseModel):
@@ -103,12 +152,19 @@ class QdrantService:
             qdrant_api_key = os.getenv("QDRANT_API_KEY")
             self.config = QdrantConfig(url=qdrant_url, api_key=qdrant_api_key)
 
-        # Initialize client
-        self.client = QdrantClient(
-            url=self.config.url,
-            api_key=self.config.api_key,
-            timeout=self.config.timeout
-        )
+        # Initialize client through a resilient wrapper so the long-lived
+        # singleton can self-heal after a Qdrant restart (see
+        # _ResilientQdrantClient docstring above).
+        cfg = self.config
+
+        def _make_client() -> QdrantClient:
+            return QdrantClient(
+                url=cfg.url,
+                api_key=cfg.api_key,
+                timeout=cfg.timeout,
+            )
+
+        self.client = _ResilientQdrantClient(_make_client)
 
         print(f"[QdrantService] Connected to Qdrant at {self.config.url}")
 

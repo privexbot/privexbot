@@ -35,9 +35,24 @@ NETWORK NOTES:
 """
 
 import os
+import re
 import asyncio
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Optional, List, Dict, Any, Union
+
+
+# Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
+# chain-of-thought wrapped in <think>...</think> before the answer. That is
+# never appropriate to surface to end users via chat / live-test responses,
+# so strip it at the inference boundary. The raw response is still kept on
+# InferenceResponse.raw_response for callers that need it.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking(text: str) -> str:
+    if not text:
+        return text
+    return _THINK_BLOCK_RE.sub("", text).strip()
 from enum import Enum
 from dataclasses import dataclass
 
@@ -286,7 +301,7 @@ class OpenAICompatibleProvider(BaseProvider):
             response = await self.async_client.chat.completions.create(**params)
 
             return InferenceResponse(
-                text=response.choices[0].message.content or "",
+                text=_strip_thinking(response.choices[0].message.content or ""),
                 usage={
                     "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
                     "completion_tokens": response.usage.completion_tokens if response.usage else 0,
@@ -323,7 +338,7 @@ class OpenAICompatibleProvider(BaseProvider):
             response = self.client.chat.completions.create(**params)
 
             return InferenceResponse(
-                text=response.choices[0].message.content or "",
+                text=_strip_thinking(response.choices[0].message.content or ""),
                 usage={
                     "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
                     "completion_tokens": response.usage.completion_tokens if response.usage else 0,

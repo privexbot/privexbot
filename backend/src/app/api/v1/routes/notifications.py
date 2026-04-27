@@ -8,6 +8,7 @@ Endpoints:
   PUT  /notifications/read-all   - Mark all as read
 """
 
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -25,6 +26,14 @@ async def list_notifications(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     unread_only: bool = Query(False),
+    workspace_id: Optional[UUID] = Query(
+        None,
+        description=(
+            "Optional workspace filter. When provided, returns events scoped "
+            "to this workspace plus workspace-agnostic events (invitations, "
+            "legacy rows). Omit to get all of the user's notifications."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -35,8 +44,11 @@ async def list_notifications(
         limit=limit,
         offset=offset,
         unread_only=unread_only,
+        workspace_id=workspace_id,
     )
-    unread_count = notification_service.get_unread_count(db, current_user.id)
+    unread_count = notification_service.get_unread_count(
+        db, current_user.id, workspace_id=workspace_id
+    )
 
     return {
         "items": [
@@ -49,6 +61,7 @@ async def list_notifications(
                 "is_read": n.is_read,
                 "resource_type": n.resource_type,
                 "resource_id": str(n.resource_id) if n.resource_id else None,
+                "workspace_id": str(n.workspace_id) if n.workspace_id else None,
                 "metadata": n.event_metadata,
                 "created_at": n.created_at.isoformat(),
             }
@@ -61,11 +74,16 @@ async def list_notifications(
 
 @router.get("/count")
 async def get_unread_count(
+    workspace_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Lightweight unread count for badge polling."""
-    return {"unread_count": notification_service.get_unread_count(db, current_user.id)}
+    return {
+        "unread_count": notification_service.get_unread_count(
+            db, current_user.id, workspace_id=workspace_id
+        )
+    }
 
 
 @router.put("/{notification_id}/read")

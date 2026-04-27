@@ -519,8 +519,9 @@ export function StudioPage() {
   }, [currentWorkspace, createDraftMutation]);
 
   const handleViewChatflow = (id: string) => {
-    // For now, navigate to builder - can add detail page later
-    navigate(`/chatflows/builder/${id}`);
+    // View opens the read-only detail page (deployment channels + test chat).
+    // Edit is the one that mints an edit-draft and opens the builder.
+    navigate(`/studio/${id}`);
   };
 
   const handleEditChatflow = (id: string) => {

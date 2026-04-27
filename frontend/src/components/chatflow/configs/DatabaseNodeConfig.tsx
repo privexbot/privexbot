@@ -64,15 +64,14 @@ export function DatabaseNodeConfig({ config, onChange }: DatabaseNodeConfigProps
     (config.parameters as Parameter[]) || []
   );
 
-  // Fetch available database credentials
+  // Fetch available database credentials from current workspace (via JWT)
   const { data: credentials, isLoading } = useQuery({
     queryKey: ["credentials", currentWorkspace?.id, "database"],
     queryFn: async () => {
       if (!currentWorkspace?.id) return [];
-      const response = await apiClient.get(
-        `/workspaces/${currentWorkspace.id}/credentials`,
-        { params: { type: "database" } }
-      );
+      const response = await apiClient.get("/credentials", {
+        params: { credential_type: "database" },
+      });
       return response.data?.items || [];
     },
     enabled: !!currentWorkspace?.id,

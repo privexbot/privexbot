@@ -2036,11 +2036,13 @@ def process_web_kb_task(
                 notification_service.notify_kb_completed(
                     db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
                     kb_name=kb.name, stats=kb.stats or {},
+                    workspace_id=kb.workspace_id,
                 )
             elif kb.status == "failed":
                 notification_service.notify_kb_failed(
                     db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
                     kb_name=kb.name, error=kb.error_message or "Processing failed",
+                    workspace_id=kb.workspace_id,
                 )
         except Exception as notif_err:
             print(f"[WARN] Notification failed: {notif_err}")
@@ -2091,6 +2093,7 @@ def process_web_kb_task(
                 notification_service.notify_kb_failed(
                     db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
                     kb_name=kb.name, error=error_message,
+                    workspace_id=kb.workspace_id,
                 )
             except Exception as notif_err:
                 print(f"[WARN] Notification failed: {notif_err}")
@@ -2443,6 +2446,7 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
             notification_service.notify_kb_completed(
                 db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
                 kb_name=kb.name, stats=kb.stats or {},
+                workspace_id=kb.workspace_id,
             )
         except Exception as notif_err:
             print(f"[WARN] Notification failed: {notif_err}")
@@ -2488,6 +2492,7 @@ def reindex_kb_task(self, kb_id: str, new_config: dict = None):
                 notification_service.notify_kb_failed(
                     db=db, user_id=kb.created_by, kb_id=UUID(kb_id),
                     kb_name=kb.name, error=f"Re-indexing failed: {str(e)}",
+                    workspace_id=kb.workspace_id,
                 )
             except Exception as notif_err:
                 print(f"[WARN] Notification failed: {notif_err}")

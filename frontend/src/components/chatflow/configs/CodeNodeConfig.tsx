@@ -27,8 +27,9 @@ const SAFE_BUILTINS = [
 const ALLOWED_MODULES = ["json", "re", "math", "datetime"];
 
 const EXAMPLE_CODE = `# Available variables:
-# - input_data: User message or previous node output
-# - variables: Context variables dict
+# - input_data: Previous node's output (or user message if first node)
+# - user_message: The original user message (always available)
+# - variables: Dict of all node outputs (access by node ID)
 
 # Your code here:
 result = input_data.upper()

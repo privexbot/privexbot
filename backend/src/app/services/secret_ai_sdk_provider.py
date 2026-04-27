@@ -10,8 +10,23 @@ HOW: Converts OpenAI message format to LangChain tuple format, uses native async
 
 from typing import List, Dict, Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+
+# Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
+# chain-of-thought wrapped in <think>...</think> before the answer. Strip it
+# at the inference boundary so it never reaches end users via chat / live-test.
+# Mirrors `_strip_thinking` in inference_service.py — kept inline to avoid a
+# circular import (inference_service lazily imports this module).
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking(text: str) -> str:
+    if not text:
+        return text
+    return _THINK_BLOCK_RE.sub("", text).strip()
 
 
 class SecretAISDKProvider:
@@ -166,6 +181,9 @@ class SecretAISDKProvider:
             response_text = response.content
         else:
             response_text = str(response)
+
+        # Drop chain-of-thought (<think>...</think>) from reasoning models.
+        response_text = _strip_thinking(response_text)
 
         logger.debug(f"[SecretAISDKProvider] Response length: {len(response_text)} chars")
 

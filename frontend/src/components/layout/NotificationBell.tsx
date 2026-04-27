@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useNotificationStore } from "@/store/notification-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import type { Notification } from "@/types/notification";
 
 const EVENT_ICONS: Record<string, string> = {
@@ -74,7 +75,18 @@ export function NotificationBell() {
     markAllAsRead,
     startPolling,
     stopPolling,
+    setWorkspaceId,
   } = useNotificationStore();
+
+  // Keep notification store in sync with the active workspace so the
+  // dropdown only surfaces events scoped to it (server-side enforcement is
+  // in `notification_service.get_notifications`).
+  const activeWorkspaceId = useWorkspaceStore(
+    (s) => s.currentWorkspace?.id ?? null,
+  );
+  useEffect(() => {
+    setWorkspaceId(activeWorkspaceId);
+  }, [activeWorkspaceId, setWorkspaceId]);
 
   // Start/stop polling on mount/unmount
   useEffect(() => {

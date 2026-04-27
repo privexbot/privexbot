@@ -4,6 +4,8 @@
 !.env.example
 !.env.*.example
 
+/docs/
+
 # Sensitive configuration files
 secrets.json
 config.production.json

@@ -96,7 +96,9 @@ export function ActivitiesPage() {
     });
   }, [activities, searchQuery]);
 
-  // Navigate to resource when clicking on activity
+  // Navigate to resource when clicking on activity.
+  // Chatflow activity → the read-only detail page (deployment channels + test
+  // chat). Users who actually want to edit click Edit from Studio.
   const handleActivityClick = (activity: Activity) => {
     if (!activity.resource_type || !activity.resource_id) return;
 
@@ -105,7 +107,7 @@ export function ActivitiesPage() {
         navigate(`/chatbots/${activity.resource_id}`);
         break;
       case "chatflow":
-        navigate(`/chatflows/builder/${activity.resource_id}`);
+        navigate(`/studio/${activity.resource_id}`);
         break;
       case "knowledge_base":
         navigate(`/knowledge-bases/${activity.resource_id}`);

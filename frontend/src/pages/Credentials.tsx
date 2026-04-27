@@ -89,15 +89,17 @@ interface Credential {
 }
 
 const CREDENTIAL_TYPES = [
-  { value: 'openai', label: 'OpenAI API Key', icon: '🤖', requiresOAuth: false },
-  { value: 'notion', label: 'Notion', icon: '📝', requiresOAuth: true },
-  { value: 'google_drive', label: 'Google Drive', icon: '📁', requiresOAuth: true },
-  { value: 'slack', label: 'Slack', icon: '💬', requiresOAuth: true },
-  { value: 'telegram', label: 'Telegram Bot', icon: '✈️', requiresOAuth: false },
-  { value: 'discord', label: 'Discord Bot', icon: '🎮', requiresOAuth: false },
-  { value: 'whatsapp', label: 'WhatsApp Business', icon: '💬', requiresOAuth: false },
-  { value: 'google_gmail', label: 'Gmail', icon: '📧', requiresOAuth: true },
-  { value: 'calendly', label: 'Calendly', icon: '📅', requiresOAuth: true },
+  { value: 'openai', label: 'OpenAI API Key', icon: '🤖', requiresOAuth: false, requiresDatabase: false },
+  { value: 'notion', label: 'Notion', icon: '📝', requiresOAuth: true, requiresDatabase: false },
+  { value: 'google_drive', label: 'Google Drive', icon: '📁', requiresOAuth: true, requiresDatabase: false },
+  { value: 'slack', label: 'Slack', icon: '💬', requiresOAuth: true, requiresDatabase: false },
+  { value: 'telegram', label: 'Telegram Bot', icon: '✈️', requiresOAuth: false, requiresDatabase: false },
+  { value: 'discord', label: 'Discord Bot', icon: '🎮', requiresOAuth: false, requiresDatabase: false },
+  { value: 'whatsapp', label: 'WhatsApp Business', icon: '💬', requiresOAuth: false, requiresDatabase: false },
+  { value: 'google_gmail', label: 'Gmail', icon: '📧', requiresOAuth: true, requiresDatabase: false },
+  { value: 'calendly', label: 'Calendly', icon: '📅', requiresOAuth: true, requiresDatabase: false },
+  { value: 'database', label: 'Database', icon: '🗄️', requiresOAuth: false, requiresDatabase: true },
+  { value: 'smtp', label: 'SMTP Email Server', icon: '📨', requiresOAuth: false, requiresDatabase: false },
 ];
 
 // ========================================
@@ -281,11 +283,18 @@ export default function Credentials() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   // Form state - provider is the service (openai, telegram, etc.)
-  // credential_type is the auth mechanism (api_key, oauth2, etc.)
+  // credential_type is the auth mechanism (api_key, oauth2, database, smtp)
   const [formData, setFormData] = useState({
     name: '',
-    provider: 'openai' as string,  // Service provider
+    provider: 'openai' as string,
     api_key: '',
+    // Database-specific fields
+    db_host: '',
+    db_port: '5432',
+    db_name: '',
+    db_username: '',
+    db_password: '',
+    db_type: 'postgresql',
   });
 
   // Fetch credentials
@@ -303,26 +312,46 @@ export default function Credentials() {
   // Create credential mutation
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      // Backend expects:
-      // - credential_type: "api_key" (auth mechanism)
-      // - provider: "openai", "telegram", etc. (service name)
-      // - data: { api_key: "..." } (credentials wrapped in data object)
-      const response = await apiClient.post('/credentials/', {
-        workspace_id: currentWorkspace?.id,
-        name: data.name,
-        credential_type: 'api_key',  // All non-OAuth services use api_key
-        provider: data.provider,
-        data: {
-          api_key: data.api_key,
-        },
-      });
+      const selectedType = CREDENTIAL_TYPES.find((t) => t.value === data.provider);
+
+      let payload;
+      if (selectedType?.requiresDatabase) {
+        // Database credentials: different type and data shape
+        payload = {
+          workspace_id: currentWorkspace?.id,
+          name: data.name,
+          credential_type: 'database',
+          provider: 'database',
+          data: {
+            host: data.db_host,
+            port: parseInt(data.db_port) || 5432,
+            database: data.db_name,
+            username: data.db_username,
+            password: data.db_password,
+            type: data.db_type,
+          },
+        };
+      } else {
+        // API key credentials (OpenAI, Telegram, Discord, etc.)
+        payload = {
+          workspace_id: currentWorkspace?.id,
+          name: data.name,
+          credential_type: 'api_key',
+          provider: data.provider,
+          data: {
+            api_key: data.api_key,
+          },
+        };
+      }
+
+      const response = await apiClient.post('/credentials/', payload);
       return response.data;
     },
     onSuccess: () => {
       toast({ title: 'Credential added successfully' });
       queryClient.invalidateQueries({ queryKey: ['credentials'] });
       setDialogOpen(false);
-      setFormData({ name: '', provider: 'openai', api_key: '' });
+      setFormData({ name: '', provider: 'openai', api_key: '', db_host: '', db_port: '5432', db_name: '', db_username: '', db_password: '', db_type: 'postgresql' });
     },
     onError: (error) => {
       toast({
@@ -524,7 +553,7 @@ export default function Credentials() {
                       />
                     </div>
 
-                    {/* OAuth or API Key Section */}
+                    {/* OAuth, Database, or API Key Section */}
                     {selectedType?.requiresOAuth ? (
                       <>
                         <Alert className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -540,6 +569,101 @@ export default function Credentials() {
                           <ExternalLink className="h-4 w-4 mr-2" />
                           Connect with {selectedType.label}
                         </Button>
+                      </>
+                    ) : selectedType?.requiresDatabase ? (
+                      <>
+                        {/* Database Type */}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                            Database Type
+                          </Label>
+                          <Select
+                            value={formData.db_type}
+                            onValueChange={(value) => setFormData({ ...formData, db_type: value })}
+                          >
+                            <SelectTrigger className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-manrope">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              <SelectItem value="postgresql">PostgreSQL</SelectItem>
+                              <SelectItem value="mysql+pymysql">MySQL</SelectItem>
+                              <SelectItem value="mssql+pyodbc">SQL Server</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Host & Port */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2 space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Host</Label>
+                            <Input
+                              value={formData.db_host}
+                              onChange={(e) => setFormData({ ...formData, db_host: e.target.value })}
+                              placeholder="db.example.com"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Port</Label>
+                            <Input
+                              value={formData.db_port}
+                              onChange={(e) => setFormData({ ...formData, db_port: e.target.value })}
+                              placeholder="5432"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Database Name */}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Database Name</Label>
+                          <Input
+                            value={formData.db_name}
+                            onChange={(e) => setFormData({ ...formData, db_name: e.target.value })}
+                            placeholder="my_database"
+                            className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                          />
+                        </div>
+
+                        {/* Username & Password */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Username</Label>
+                            <Input
+                              value={formData.db_username}
+                              onChange={(e) => setFormData({ ...formData, db_username: e.target.value })}
+                              placeholder="db_user"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Password</Label>
+                            <Input
+                              type="password"
+                              value={formData.db_password}
+                              onChange={(e) => setFormData({ ...formData, db_password: e.target.value })}
+                              placeholder="********"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                        </div>
+
+                        <DialogFooter>
+                          <Button
+                            onClick={() => createMutation.mutate(formData)}
+                            disabled={!formData.name || !formData.db_host || !formData.db_name || !formData.db_username || !formData.db_password || createMutation.isPending}
+                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-manrope"
+                          >
+                            {createMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Testing & Adding...
+                              </>
+                            ) : (
+                              'Add Database Credential'
+                            )}
+                          </Button>
+                        </DialogFooter>
                       </>
                     ) : (
                       <>
