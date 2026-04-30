@@ -12,7 +12,7 @@
  * - Type-safe props with proper validation
  */
 
-import { LucideIcon } from "lucide-react";
+import { ExternalLink, LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,8 @@ interface ComingSoonProps {
   iconColor?: string;
   expectedDate?: string;
   onBackToDashboard?: () => void;
+  /** Optional external resource (e.g. hosted docs) shown alongside Back-to-Dashboard. */
+  externalLink?: { label: string; href: string };
   className?: string;
 }
 
@@ -33,6 +35,7 @@ export function ComingSoon({
   iconColor = "text-blue-600 dark:text-blue-400",
   expectedDate,
   onBackToDashboard,
+  externalLink,
   className,
 }: ComingSoonProps) {
   return (
@@ -66,13 +69,31 @@ export function ComingSoon({
               </div>
             )}
 
-            {/* Back to Dashboard Button */}
-            <Button
-              onClick={onBackToDashboard}
-              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-medium px-6 py-2 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              Back to Dashboard
-            </Button>
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              {externalLink && (
+                <Button
+                  asChild
+                  variant="outline"
+                  className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 font-medium px-6 py-2 rounded-lg transition-all duration-200"
+                >
+                  <a
+                    href={externalLink.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {externalLink.label}
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </a>
+                </Button>
+              )}
+              <Button
+                onClick={onBackToDashboard}
+                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-medium px-6 py-2 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                Back to Dashboard
+              </Button>
+            </div>
 
             {/* Additional Info */}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-6">

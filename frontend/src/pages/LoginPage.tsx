@@ -333,7 +333,7 @@ export function LoginPage() {
         <CardFooter className="flex justify-center">
           <p className="text-sm text-muted-foreground">
             Don't have an account?{" "}
-            <Link to="/signup" className="text-primary hover:underline font-medium">
+            <Link to="/signin" className="text-primary hover:underline font-medium">
               Sign up
             </Link>
           </p>

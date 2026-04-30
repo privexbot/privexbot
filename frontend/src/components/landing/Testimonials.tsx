@@ -13,44 +13,49 @@ interface Testimonial {
 const testimonials: Testimonial[] = [
   {
     id: 1,
-    quote: "PrivexBot revolutionized our customer support. The privacy-first approach gives us confidence that our data stays secure while delivering exceptional AI responses.",
-    author: "Alex Carter",
-    title: "Product Designer",
-    company: "TechFlow",
-    avatar: "/testimonial-image0.png"
+    quote:
+      "We needed a way to ship a knowledge-base bot without sending customer documents to a third-party LLM. PrivexBot's TEE-backed inference was exactly the missing piece.",
+    author: "Early access pilot",
+    title: "Solo founder",
+    company: "B2B SaaS",
+    avatar: "/testimonial-image0.png",
   },
   {
     id: 2,
-    quote: "I've tried dozens of chatbot solutions—this is by far the most secure and versatile one yet. The Secret VM architecture gives us enterprise-grade privacy.",
-    author: "Samantha Lee",
-    title: "Product Designer",
-    company: "SecureCore",
-    avatar: "/testimonial-image1.jpg"
+    quote:
+      "Spinning up a chatflow with a Calendly node, a KB lookup, and a Discord deploy took an afternoon. The visual builder is the closest thing I've used to n8n for AI agents.",
+    author: "Community contributor",
+    title: "Backend engineer",
+    company: "Open source community",
+    avatar: "/testimonial-image1.jpg",
   },
   {
     id: 3,
-    quote: "The RAG implementation is top-tier. Our knowledge base integration was seamless, and the multi-channel deployment saved us months of development.",
-    author: "Jordan Kim",
-    title: "Frontend Engineer",
-    company: "DataVault",
-    avatar: "/testimonial-image2.png"
+    quote:
+      "The fact that the whole platform is Apache-licensed and self-hostable is what got us through procurement. We can audit the code that handles our data.",
+    author: "Open source user",
+    title: "Engineering manager",
+    company: "Self-hosted deployment",
+    avatar: "/testimonial-image2.png",
   },
   {
     id: 4,
-    quote: "It's rare to find a platform that perfectly balances powerful AI capabilities with uncompromising privacy. PrivexBot gets it right.",
-    author: "Daniel White",
-    title: "Head of Engineering",
-    company: "PrivacyFirst",
-    avatar: "/testimonial-image3.png"
+    quote:
+      "Migrating from a spreadsheet of FAQs to a chatbot with citations took less than a day. The chunking strategies actually matter — the answers come back grounded.",
+    author: "Pilot customer",
+    title: "Operations lead",
+    company: "Education non-profit",
+    avatar: "/testimonial-image3.png",
   },
   {
     id: 5,
-    quote: "The visual workflow builder made creating complex chatbots incredibly intuitive. Our team was productive from day one.",
-    author: "Maya Rodriguez",
-    title: "AI Product Manager",
-    company: "InnovateAI",
-    avatar: "/testimonial-image4.jpg"
-  }
+    quote:
+      "I shipped a Telegram support bot in one sitting and added a website widget the next day. Same agent, two channels, zero glue code.",
+    author: "Beta user",
+    title: "Indie maker",
+    company: "Side project",
+    avatar: "/testimonial-image4.jpg",
+  },
 ];
 
 export function Testimonials() {
@@ -100,10 +105,12 @@ export function Testimonials() {
         <div className="text-center mb-12 lg:mb-16">
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-2 font-manrope">Testimonials</p>
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-4 font-manrope">
-            Our customer reviews
+            What early users tell us
           </h2>
           <p className="text-lg text-gray-600 dark:text-gray-400 max-w-3xl mx-auto font-manrope">
-            See what designers and developers are saying about their experience with PrivexBot.
+            Selected feedback from early-access pilots, open-source
+            contributors, and self-hosted deployments. Names withheld until we
+            ship publicly named case studies.
           </p>
         </div>
 

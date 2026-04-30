@@ -1,11 +1,9 @@
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
 import {
   ContainerAnimated,
   ContainerInset,
   ContainerScroll,
   ContainerSticky,
-  HeroButton,
   HeroVideo,
 } from "@/components/ui/animated-video-on-scroll";
 import { Button } from "@/components/ui/button";
@@ -58,16 +56,17 @@ export function Hero() {
                 transition={{ duration: 0.8, delay: 0.2 }}
                 className="text-5xl font-semibold tracking-tight md:text-6xl font-manrope"
               >
-                Build Privacy-First AI Chatbots
+                The visual AI agent builder running on confidential compute
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.4 }}
-                className="mx-auto max-w-[54ch] text-lg text-muted-foreground font-manrope"
+                className="mx-auto max-w-[60ch] text-lg text-muted-foreground font-manrope"
               >
-                Create intelligent chatbots with complete privacy using Secret
-                Network's Trusted Execution Environment.
+                Drag-and-drop chatflows, RAG knowledge bases, and multi-channel
+                deployment — all running inside Secret Network's Trusted
+                Execution Environment so your data and prompts stay private.
               </motion.p>
             </div>
 
@@ -82,12 +81,12 @@ export function Hero() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.6, delay: 0.8 }}
               >
-                <Link to="/signin">
+                <Link to="/signup">
                   <Button
                     className="font-manrope bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg"
                     size="lg"
                   >
-                    Start Building For Free
+                    Start building for free
                   </Button>
                 </Link>
               </motion.div>
@@ -96,17 +95,30 @@ export function Hero() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.6, delay: 1.0 }}
               >
-                <Link to="/about">
+                <a
+                  href="https://github.com/privexbot/privexbot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <Button
                     variant="outline"
                     className="font-manrope border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 px-8 py-3 text-lg rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg"
                     size="lg"
                   >
-                    Explore
+                    View on GitHub
                   </Button>
-                </Link>
+                </a>
               </motion.div>
             </motion.div>
+
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 1.1 }}
+              className="text-sm text-muted-foreground font-manrope"
+            >
+              Free forever — no credit card required.
+            </motion.p>
           </ContainerAnimated>
 
           <ContainerInset
@@ -139,7 +151,7 @@ export function Hero() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span>Verifiable Execution</span>
+              <span>Attested execution</span>
             </div>
             <div className="flex items-center gap-2">
               <svg
@@ -153,7 +165,7 @@ export function Hero() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span>TEE Computing</span>
+              <span>Apache 2.0 open source</span>
             </div>
             <div className="flex items-center gap-2">
               <svg
@@ -167,7 +179,7 @@ export function Hero() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span>Confidential AI</span>
+              <span>Self-host or cloud</span>
             </div>
           </ContainerAnimated>
         </ContainerSticky>

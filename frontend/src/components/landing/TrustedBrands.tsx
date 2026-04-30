@@ -4,12 +4,12 @@ const brands = [
   {
     name: "Secret Network",
     logo: "/secret-network-logo.png",
-    alt: "Secret Network Logo",
+    alt: "Secret Network",
   },
   {
-    name: "Shade Protocol",
+    name: "Shades",
     logo: "/shade-logo.png",
-    alt: "Shade Protocol Logo",
+    alt: "Shades",
   },
 ];
 
@@ -26,7 +26,7 @@ export function TrustedBrands() {
           className="text-center mb-12"
         >
           <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 font-manrope font-medium">
-            Trusted by leading organizations
+            Built on Secret Network
           </p>
         </motion.div>
 
@@ -38,7 +38,7 @@ export function TrustedBrands() {
               {/* Triple the logos for seamless infinite loop */}
               {[...brands, ...brands, ...brands, ...brands, ...brands, ...brands].map((brand, index) => (
                 <div
-                  key={`${brand.name}-${index}`}
+                  key={`${brand.name}-${String(index)}`}
                   className="flex items-center justify-center group flex-shrink-0"
                 >
                   <img
@@ -85,7 +85,7 @@ export function TrustedBrands() {
               {/* Multiple copies for mobile infinite scroll */}
               {[...brands, ...brands, ...brands, ...brands, ...brands, ...brands].map((brand, index) => (
                 <div
-                  key={`mobile-${brand.name}-${index}`}
+                  key={`mobile-${brand.name}-${String(index)}`}
                   className="flex items-center justify-center flex-shrink-0"
                 >
                   <img

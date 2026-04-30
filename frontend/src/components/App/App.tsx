@@ -19,12 +19,15 @@ const queryClient = new QueryClient({
 });
 import { LandingPage } from "@/pages/LandingPage";
 import { PrivacyPage } from "@/pages/PrivacyPage";
+import { TermsPage } from "@/pages/TermsPage";
+import { DataCompliancePage } from "@/pages/DataCompliancePage";
+import { CookiePolicyPage } from "@/pages/CookiePolicyPage";
+import { AcceptableUsePage } from "@/pages/AcceptableUsePage";
+import { SecurityPage } from "@/pages/SecurityPage";
 import { FAQPage } from "@/pages/FAQPage";
 import { PricingPage } from "@/pages/PricingPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SignupPage } from "@/pages/SignupPage";
-import { NewLoginPage } from "@/pages/NewLoginPage";
-import { NewSignupPage } from "@/pages/NewSignupPage";
 import { PasswordResetPage } from "@/pages/PasswordResetPage";
 import { AuthTestPage } from "@/pages/AuthTestPage";
 import { SigninPage } from "@/pages/SigninPage";
@@ -90,11 +93,20 @@ function App() {
               <Route path="/about" element={<AboutPage />} />
               <Route path="/help" element={<HelpPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/data-compliance" element={<DataCompliancePage />} />
+              <Route path="/cookies" element={<CookiePolicyPage />} />
+              <Route path="/acceptable-use" element={<AcceptableUsePage />} />
+              <Route path="/security" element={<SecurityPage />} />
               <Route path="/faqs" element={<FAQPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              {/* `/signup` is the canonical auth route — SigninPage handles
+                  both signin and signup (email/password + wallet). `/signin`
+                  and `/login` are aliases kept for backward-compatible links
+                  (referral share URLs, old emails, marketing). */}
+              <Route path="/signup" element={<SigninPage />} />
               <Route path="/signin" element={<SigninPage />} />
               <Route path="/login" element={<SigninPage />} />
-              <Route path="/signup" element={<NewSignupPage />} />
               <Route path="/password-reset" element={<PasswordResetPage />} />
               <Route path="/auth/test" element={<AuthTestPage />} />
 

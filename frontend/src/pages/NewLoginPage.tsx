@@ -271,7 +271,7 @@ export function NewLoginPage() {
           </Link>
 
           <Link
-            to="/signup"
+            to="/signin"
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             New user? <span className="font-medium text-primary">Sign up</span>

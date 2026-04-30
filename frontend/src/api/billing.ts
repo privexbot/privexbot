@@ -64,6 +64,13 @@ export const billingApi = {
     return response.data;
   },
 
+  // Public — used by the marketing pricing page so it stays in sync with
+  // backend `core/plans.py` without hardcoded values.
+  async listPublicPlans(): Promise<PlanCard[]> {
+    const response = await apiClient.get<PlanCard[]>("/billing/public-plans");
+    return response.data;
+  },
+
   async getUsage(): Promise<BillingUsage> {
     const response = await apiClient.get<BillingUsage>("/billing/usage");
     return response.data;

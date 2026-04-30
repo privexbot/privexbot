@@ -86,22 +86,22 @@ export function HelpPage() {
     {
       question: "How does pricing work?",
       answer:
-        "We offer usage-based pricing. Pay only for what you use - conversations, knowledge processing, and storage. Start with our generous free tier.",
+        "We offer tier-based plans (Free, Starter, Pro, Enterprise) with quotas on chatbots, chatflows, KB documents, messages, API calls, and team members. The Free tier is free forever — no credit card required. See /pricing for the live limits and prices.",
     },
     {
       question: "Can I change plans anytime?",
       answer:
-        "Yes! Upgrade or downgrade your plan at any time. Changes take effect immediately, and billing is prorated.",
+        "Yes. While self-serve checkout is being finalized, plan upgrades go through privexbot@gmail.com — we apply the change immediately and pro-rate billing.",
     },
     {
       question: "What payment methods do you accept?",
       answer:
-        "We accept all major credit cards, bank transfers for enterprise accounts, and cryptocurrency payments for ultimate privacy.",
+        "Major credit cards via our payment processor (Stripe is being wired up). Bank transfer is available for Enterprise on request.",
     },
     {
       question: "Do you offer refunds?",
       answer:
-        "We offer a 30-day money-back guarantee for annual plans. Monthly plans can be cancelled anytime with no additional charges.",
+        "Annual plans: pro-rated refund within 30 days of purchase. Monthly plans: cancel anytime, effective at the end of the current cycle. See /terms for the full policy.",
     },
   ];
 

@@ -57,7 +57,7 @@ import { cn } from "@/lib/utils";
 export function NewSignupPage() {
   const navigate = useNavigate();
   const { emailSignup, walletLogin, isLoading, error, clearError } = useAuth();
-  // Optional referral code from `/signup?ref=<code>`. Captured once and
+  // Optional referral code from `/signin?ref=<code>`. Captured once and
   // forwarded with the signup payload; the backend writes a Referral row.
   const [searchParams] = useSearchParams();
   const referralCode = useMemo(() => {

@@ -53,6 +53,17 @@ async def list_plans(
     return billing_service.list_plans()
 
 
+@router.get("/public-plans")
+async def list_public_plans():
+    """Public plan tiers — same payload as /plans but no auth required.
+
+    Used by the marketing pricing page so it stays in sync with
+    `core/plans.py` without hardcoding. Safe to expose: the response
+    contains only static tier metadata (label, price, limits, tagline).
+    """
+    return billing_service.list_plans()
+
+
 @router.get("/usage")
 async def get_usage(
     db: Session = Depends(get_db),
