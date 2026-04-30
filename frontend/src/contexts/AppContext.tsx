@@ -377,6 +377,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, user, refreshData]);
 
+  // Bridge: mirror the live `currentWorkspace` (and user) into the legacy
+  // `useWorkspaceStore` zustand store. That store is consumed by several
+  // components (CredentialSelector, GoogleDocsIntegration, AnalyticsPage,
+  // KnowledgeBaseSelector, …) but **nothing else updates it** — they would
+  // silently see a `null` workspace and either skip work or render
+  // "Please select a workspace before connecting credentials". One-line
+  // bridge here keeps every existing consumer working without rewriting
+  // each one to read from AppContext.
+  //
+  // The store's Workspace interface uses `org_id` while the tenant type
+  // uses `organization_id`; map fields explicitly so consumers reading
+  // `currentWorkspace.org_id` get a real value.
+  useEffect(() => {
+    // Lazy import to avoid a static cross-file dependency between
+    // contexts/ and store/ at module load.
+    void import("@/store/workspace-store").then(({ useWorkspaceStore }) => {
+      const state = useWorkspaceStore.getState();
+      state.setWorkspace(
+        currentWorkspace
+          ? {
+              id: currentWorkspace.id,
+              name: currentWorkspace.name,
+              org_id: currentWorkspace.organization_id,
+            }
+          : null,
+      );
+      if (user) {
+        // Auth User shape doesn't include email on every variant; use what's
+        // available (UserProfile carries email; base User does not).
+        const email = (user as { email?: string }).email ?? "";
+        state.setUser({
+          id: user.id,
+          email,
+          name: user.username ?? email,
+        });
+      } else {
+        state.setUser(null);
+      }
+    });
+  }, [currentWorkspace, user]);
+
   const value: AppContextType = {
     organizations,
     workspaces,

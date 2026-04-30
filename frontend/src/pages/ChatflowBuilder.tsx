@@ -1625,13 +1625,13 @@ export default function ChatflowBuilder() {
 
       {/* Deploy Dialog */}
       <Dialog open={isDeployDialogOpen} onOpenChange={setIsDeployDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Rocket className="w-5 h-5 text-purple-600" />
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Rocket className="w-4 h-4 text-purple-600" />
               {isEditMode ? "Update Chatflow" : "Deploy Chatflow"}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               {isEditMode
                 ? "Review the channels and update your chatflow."
                 : "Select the channels where you want to deploy your chatflow."}
@@ -1816,13 +1816,14 @@ export default function ChatflowBuilder() {
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-2 sm:justify-end">
             <Button
               variant="outline"
               onClick={() => {
                 setDeployResult(null);
                 navigate("/studio");
               }}
+              className="w-full sm:w-auto whitespace-nowrap"
             >
               Back to Studio
             </Button>
@@ -1833,7 +1834,7 @@ export default function ChatflowBuilder() {
                   navigate(`/studio/${deployResult.chatflow_id}`);
                 }
               }}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="w-full sm:w-auto whitespace-nowrap bg-purple-600 hover:bg-purple-700"
             >
               Open detail page
             </Button>

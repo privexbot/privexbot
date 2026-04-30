@@ -91,7 +91,10 @@ interface Credential {
 const CREDENTIAL_TYPES = [
   { value: 'openai', label: 'OpenAI API Key', icon: '🤖', requiresOAuth: false, requiresDatabase: false },
   { value: 'notion', label: 'Notion', icon: '📝', requiresOAuth: true, requiresDatabase: false },
-  { value: 'google_drive', label: 'Google Drive', icon: '📁', requiresOAuth: true, requiresDatabase: false },
+  // The backend's `google` provider already requests Drive + Docs + Sheets
+  // readonly scopes (see credentials.py:505), so the credential row stored is
+  // `provider="google"`. We keep the "Google Drive" label here for UX clarity.
+  { value: 'google', label: 'Google Drive', icon: '📁', requiresOAuth: true, requiresDatabase: false },
   { value: 'slack', label: 'Slack', icon: '💬', requiresOAuth: true, requiresDatabase: false },
   { value: 'telegram', label: 'Telegram Bot', icon: '✈️', requiresOAuth: false, requiresDatabase: false },
   { value: 'discord', label: 'Discord Bot', icon: '🎮', requiresOAuth: false, requiresDatabase: false },
@@ -410,7 +413,12 @@ export default function Credentials() {
   });
 
   // OAuth initiation
-  const initiateOAuth = (credentialType: string) => {
+  // Slack is intentionally NOT in `SUPPORTED_OAUTH_PROVIDERS` on the backend —
+  // it uses the shared-bot install flow at `/webhooks/slack/install` and
+  // produces a `SlackWorkspaceDeployment`, not a `Credential` row. Other
+  // providers go through `/credentials/oauth/authorize`, which is POST-only
+  // (the backend needs the Bearer token to seed CSRF + state).
+  const initiateOAuth = async (credentialType: string) => {
     if (!currentWorkspace?.id) {
       toast({
         title: 'Workspace not selected',
@@ -419,8 +427,35 @@ export default function Credentials() {
       });
       return;
     }
-    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=${credentialType}&workspace_id=${currentWorkspace.id}`;
-    window.location.href = oauthUrl;
+
+    if (credentialType === 'slack') {
+      window.location.href = `${config.API_BASE_URL}/webhooks/slack/install`;
+      return;
+    }
+
+    try {
+      const response = await apiClient.post<{ redirect_url: string }>(
+        '/credentials/oauth/authorize',
+        null,
+        {
+          params: {
+            provider: credentialType,
+            workspace_id: currentWorkspace.id,
+          },
+        },
+      );
+      const target = response.data?.redirect_url;
+      if (!target) {
+        throw new Error('Backend returned no redirect URL.');
+      }
+      window.location.href = target;
+    } catch (err) {
+      toast({
+        title: 'Could not start OAuth flow',
+        description: handleApiError(err),
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleDelete = (credentialId: string) => {

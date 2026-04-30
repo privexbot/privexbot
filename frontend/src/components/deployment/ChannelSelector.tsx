@@ -111,16 +111,16 @@ export default function ChannelSelector({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div>
-        <h3 className="text-lg font-semibold mb-2">Select Deployment Channels</h3>
-        <p className="text-sm text-muted-foreground">
+        <h3 className="text-sm font-semibold mb-1">Select Deployment Channels</h3>
+        <p className="text-xs text-muted-foreground">
           Choose where you want to deploy your chatbot
         </p>
       </div>
 
       {/* Select Controls */}
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2 text-xs">
         <button
           onClick={selectAll}
           className="text-primary hover:underline"
@@ -141,8 +141,10 @@ export default function ChannelSelector({
         )}
       </div>
 
-      {/* Channel Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Channel Grid — keeps two columns on small screens for compactness;
+          one row of three on larger screens. The cards themselves are
+          tighter than before (p-3 + smaller icon + clipped description). */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
         {channels.map((channel) => {
           const isSelected = selectedChannels.includes(channel.id);
 
@@ -151,16 +153,16 @@ export default function ChannelSelector({
               key={channel.id}
               onClick={() => toggleChannel(channel.id)}
               disabled={!channel.isAvailable}
-              className={`relative p-6 border rounded-lg text-left transition-all ${
+              className={`relative p-3 border rounded-lg text-left transition-all ${
                 !channel.isAvailable
                   ? 'opacity-50 cursor-not-allowed'
                   : isSelected
-                  ? 'border-primary bg-primary/5 shadow-md'
-                  : 'hover:border-primary/50 hover:shadow-sm'
+                  ? 'border-primary bg-primary/5 shadow-sm'
+                  : 'hover:border-primary/50'
               }`}
             >
               {/* Checkbox */}
-              <div className="absolute top-4 right-4">
+              <div className="absolute top-2 right-2">
                 <Checkbox
                   checked={isSelected}
                   disabled={!channel.isAvailable}
@@ -170,9 +172,9 @@ export default function ChannelSelector({
               </div>
 
               {/* Content */}
-              <div className="flex items-start gap-4 pr-8">
+              <div className="flex items-start gap-2 pr-6">
                 <div
-                  className={`w-12 h-12 rounded-lg flex items-center justify-center transition-colors ${
+                  className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
                     isSelected
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-primary/10 text-primary'
@@ -181,21 +183,21 @@ export default function ChannelSelector({
                   {channel.icon}
                 </div>
 
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-semibold">{channel.name}</h4>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <h4 className="text-sm font-semibold truncate">{channel.name}</h4>
                     {channel.isPremium && (
-                      <span className="text-xs px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full">
-                        Premium
+                      <span className="text-[10px] px-1.5 py-0 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full">
+                        Pro
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs text-muted-foreground line-clamp-2">
                     {channel.description}
                   </p>
 
                   {channel.requiresCredential && !channel.isAvailable && (
-                    <p className="text-xs text-destructive mt-2">
+                    <p className="text-[10px] text-destructive mt-1">
                       ⚠️ Requires configuration
                     </p>
                   )}
@@ -207,8 +209,8 @@ export default function ChannelSelector({
       </div>
 
       {/* Info */}
-      <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-        <p className="text-sm">
+      <div className="p-2.5 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+        <p className="text-xs">
           💡 <strong>Tip:</strong> You can deploy to multiple channels simultaneously. Each channel
           will have its own configuration and analytics.
         </p>

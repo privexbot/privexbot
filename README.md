@@ -1057,7 +1057,7 @@ limitations under the License.
 
 For enterprise support, custom development, or consulting:
 
-- **Email**: support@privexbot.com
+- **Email**: privexbot@gmail.com
 - **Website**: https://privexbot.com
 
 ---

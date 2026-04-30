@@ -156,7 +156,7 @@ export default function EmbedCode({
       <Textarea
         value={embedCode}
         readOnly
-        className="font-mono text-xs h-64 resize-none"
+        className="font-mono text-xs h-40 sm:h-48 resize-none"
       />
 
       {showOptions && (

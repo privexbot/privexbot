@@ -552,4 +552,4 @@ For detailed error info, check:
 
 ---
 
-*Still stuck? Contact support@privexbot.com with details from the Issue Report Template above.*
+*Still stuck? Contact privexbot@gmail.com with details from the Issue Report Template above.*

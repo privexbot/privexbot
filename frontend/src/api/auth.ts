@@ -126,6 +126,7 @@ class AuthApiClient {
   async verifyEmailAndSignup(data: {
     email: string;
     code: string;
+    referral_code?: string;
   }): Promise<Token> {
     const response = await this.client.post("/auth/email/verify-and-signup", data);
     return response.data;

@@ -290,6 +290,19 @@ export const adminApi = {
     });
     return response.data;
   },
+
+  /**
+   * Upgrade an organization's plan tier (staff-only). Backend route:
+   * POST /admin/orgs/{org_id}/plan body { tier }. Returns the updated
+   * plan status (same shape as /billing/plan).
+   */
+  upgradeOrgPlan: async (orgId: string, tier: string): Promise<unknown> => {
+    const response = await apiClient.post<unknown>(
+      `/admin/orgs/${orgId}/plan`,
+      { tier },
+    );
+    return response.data;
+  },
 };
 
 export default adminApi;

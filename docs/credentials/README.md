@@ -277,7 +277,7 @@ Use descriptive names to identify credentials:
 
 - [PrivexBot Help Center](/help)
 - [Community Forum](https://community.privexbot.com)
-- Email: support@privexbot.com
+- Email: privexbot@gmail.com
 
 ### External Resources
 

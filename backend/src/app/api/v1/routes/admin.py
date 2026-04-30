@@ -14,7 +14,7 @@ HOW:
 
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_db, get_staff_user
@@ -367,3 +367,39 @@ async def get_platform_analytics(
     """
     service = AggregatedAnalyticsService(db)
     return await service.get_platform_analytics(days)
+
+
+# ─── Plan management ────────────────────────────────────────────────────────
+# Staff-only path to upgrade ANY org's plan tier without going through Stripe.
+# `POST /billing/upgrade` only operates on the caller's active org; this
+# parallel route lets ops change someone else's tier from the admin UI.
+
+from pydantic import BaseModel as _PlanBaseModel
+from app.core.plans import PLAN_LIMITS as _PLAN_LIMITS
+from app.services import billing_service as _billing_service
+
+
+class _AdminUpgradeRequest(_PlanBaseModel):
+    tier: str
+
+
+@router.post("/orgs/{org_id}/plan")
+async def admin_upgrade_org_plan(
+    org_id: UUID,
+    request: _AdminUpgradeRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(get_staff_user),
+):
+    """Set the subscription tier for any organization. Staff-only."""
+    if request.tier not in _PLAN_LIMITS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown tier: {request.tier}",
+        )
+
+    try:
+        _billing_service.upgrade_org_to_tier(db, org_id, request.tier)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return _billing_service.get_plan_status(db, org_id)

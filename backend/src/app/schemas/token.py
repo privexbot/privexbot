@@ -193,6 +193,12 @@ class EmailSignupRequest(BaseModel):
         description="Password (validated for strength in endpoint)",
         examples=["SecurePass123!"]
     )
+    referral_code: Optional[str] = Field(
+        default=None,
+        max_length=32,
+        description="Optional referral code from an existing user.",
+        examples=["8X4QH92K"],
+    )
 
 
 class EmailLoginRequest(BaseModel):
@@ -745,4 +751,10 @@ class VerifyEmailCodeRequestSchema(BaseModel):
         pattern="^[0-9]{6}$",
         description="6-digit verification code",
         examples=["123456"]
+    )
+    referral_code: Optional[str] = Field(
+        default=None,
+        max_length=32,
+        description="Optional referral code recorded at signup completion.",
+        examples=["8X4QH92K"],
     )

@@ -211,7 +211,21 @@ async def email_signup(
         Workspace.is_default == True
     ).first()
 
-    # Step 4: Generate JWT with org + workspace context
+    # Step 4: Record referral if a code was supplied (best-effort).
+    if request.referral_code:
+        try:
+            from app.api.v1.routes.referrals import record_referral_signup
+            record_referral_signup(
+                db=db,
+                referral_code=request.referral_code,
+                new_user_id=user.id,
+                email=request.email,
+            )
+        except Exception:
+            # Never break signup over a referral lookup failure.
+            pass
+
+    # Step 5: Generate JWT with org + workspace context
     access_token = create_access_token(data={
         "sub": str(user.id),
         "org_id": str(org.id),
@@ -711,6 +725,19 @@ async def verify_email_and_signup(
         code=request.code,
         db=db
     )
+
+    # Record referral if a code was supplied (best-effort).
+    if request.referral_code:
+        try:
+            from app.api.v1.routes.referrals import record_referral_signup
+            record_referral_signup(
+                db=db,
+                referral_code=request.referral_code,
+                new_user_id=user.id,
+                email=request.email,
+            )
+        except Exception:
+            pass
 
     # Generate JWT token for automatic login
     access_token = create_access_token(

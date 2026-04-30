@@ -9,7 +9,7 @@ from starlette.datastructures import MutableHeaders
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, slack_workspaces, files, notifications, integrations
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, slack_workspaces, files, notifications, integrations, billing, templates, referrals
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook, zapier as zapier_webhook, whatsapp as whatsapp_webhook, slack as slack_webhook, calendly as calendly_webhook
 
 
@@ -276,6 +276,24 @@ app.include_router(
     beta.router,
     prefix=settings.API_V1_PREFIX,
     tags=["beta"]
+)
+
+# Billing routes (plan tiers, usage view, manual upgrade)
+app.include_router(
+    billing.router,
+    prefix=settings.API_V1_PREFIX,
+)
+
+# Marketplace — global chatflow templates
+app.include_router(
+    templates.router,
+    prefix=settings.API_V1_PREFIX,
+)
+
+# Referrals — per-user codes + invite tracking
+app.include_router(
+    referrals.router,
+    prefix=settings.API_V1_PREFIX,
 )
 
 # Discord guild management routes (shared bot architecture)

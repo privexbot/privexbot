@@ -278,9 +278,13 @@ export function SigninPage() {
     }
 
     try {
+      // Forward `?ref=…` to the backend so the new account gets recorded
+      // as a referral. Lives on the page via existing useSearchParams().
+      const refParam = searchParams.get("ref")?.trim();
       const tokenData = await authApi.verifyEmailAndSignup({
         email: newUserEmail,
-        code: verificationCode.trim()
+        code: verificationCode.trim(),
+        ...(refParam ? { referral_code: refParam } : {}),
       });
 
       // Store token and trigger auth context refresh

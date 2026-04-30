@@ -218,7 +218,19 @@ async def finalize_chatflow(
         except Exception:
             pass
 
-        return {"status": "deployed", "chatflow_id": result.get("chatflow_id")}
+        # Surface the full deploy result so the success modal can show:
+        #   - the API key (only on first deploy — `_update_chatflow` returns
+        #     no `api_key` field, which the modal handles correctly)
+        #   - the api_key_prefix
+        #   - the per-channel registration outcomes (`channels` dict)
+        # Stripping these earlier was the cause of the empty deploy modal.
+        return {
+            "status": "deployed",
+            "chatflow_id": result.get("chatflow_id"),
+            "api_key": result.get("api_key"),
+            "api_key_prefix": result.get("api_key_prefix"),
+            "channels": result.get("channels", {}),
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

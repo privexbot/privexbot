@@ -133,6 +133,16 @@ export function AdminOrgDetail() {
         </div>
       </div>
 
+      {/* Plan management — staff-only upgrade path. Calls
+          POST /admin/orgs/{org_id}/plan and refreshes the row. */}
+      <PlanCard
+        orgId={orgId!}
+        currentTier={org.subscription_tier ?? "free"}
+        onUpdated={(nextTier) =>
+          setOrg((o) => (o ? { ...o, subscription_tier: nextTier } : o))
+        }
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Workspaces */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
@@ -226,6 +236,90 @@ export function AdminOrgDetail() {
         </div>
       </div>
       </div>
+    </div>
+  );
+}
+
+const PLAN_TIERS = [
+  { value: "free", label: "Free" },
+  { value: "starter", label: "Starter" },
+  { value: "pro", label: "Pro" },
+  { value: "enterprise", label: "Enterprise" },
+];
+
+function PlanCard({
+  orgId,
+  currentTier,
+  onUpdated,
+}: {
+  orgId: string;
+  currentTier: string;
+  onUpdated: (nextTier: string) => void;
+}) {
+  const [selected, setSelected] = useState(currentTier);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelected(currentTier);
+  }, [currentTier]);
+
+  const onSave = async () => {
+    if (selected === currentTier) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await adminApi.upgradeOrgPlan(orgId, selected);
+      onUpdated(selected);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update plan.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2 font-manrope">
+        <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+        Plan tier
+      </h2>
+      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mb-3">
+        Manually change this organization's subscription tier. No payment is
+        captured — Stripe self-serve checkout is not yet wired.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700/50 text-sm font-manrope text-gray-900 dark:text-gray-100"
+        >
+          {PLAN_TIERS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving || selected === currentTier}
+          className={cn(
+            "px-3 py-2 rounded-lg text-sm font-medium font-manrope transition-colors",
+            selected === currentTier
+              ? "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white",
+          )}
+        >
+          {saving ? "Saving…" : "Apply tier"}
+        </button>
+        <span className="text-xs text-gray-500 font-manrope">
+          Current: <span className="font-mono">{currentTier}</span>
+        </span>
+      </div>
+      {error && (
+        <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-manrope">{error}</p>
+      )}
     </div>
   );
 }

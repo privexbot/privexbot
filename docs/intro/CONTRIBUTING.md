@@ -37,7 +37,7 @@ We are committed to providing a welcoming and inspiring community for all. Pleas
 
 ### Enforcement
 
-Instances of unacceptable behavior may be reported to support@privexbot.com. All complaints will be reviewed and investigated.
+Instances of unacceptable behavior may be reported to privexbot@gmail.com. All complaints will be reviewed and investigated.
 
 ---
 
@@ -520,7 +520,7 @@ result = function_call()
 - **GitHub Issues** - Bug reports and feature requests
 - **GitHub Discussions** - Questions and ideas
 - **Discord** - Real-time chat
-- **Email** - support@privexbot.com
+- **Email** - privexbot@gmail.com
 
 ### Issue Labels
 

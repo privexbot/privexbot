@@ -76,6 +76,11 @@ class User(Base):
     is_staff = Column(Boolean, default=False, server_default="false", nullable=False)  # Staff access for backoffice
     has_beta_access = Column(Boolean, default=False, server_default="false", nullable=False)  # Beta tester access
 
+    # Public referral code — generated lazily on first read of /referrals/me.
+    # Unique across all users; nullable to keep the migration trivial for
+    # existing rows.
+    referral_code = Column(String(32), unique=True, nullable=True, index=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

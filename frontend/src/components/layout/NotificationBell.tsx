@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useNotificationStore } from "@/store/notification-store";
-import { useWorkspaceStore } from "@/store/workspace-store";
+import { useApp } from "@/contexts/AppContext";
 import type { Notification } from "@/types/notification";
 
 const EVENT_ICONS: Record<string, string> = {
@@ -81,9 +81,13 @@ export function NotificationBell() {
   // Keep notification store in sync with the active workspace so the
   // dropdown only surfaces events scoped to it (server-side enforcement is
   // in `notification_service.get_notifications`).
-  const activeWorkspaceId = useWorkspaceStore(
-    (s) => s.currentWorkspace?.id ?? null,
-  );
+  //
+  // NOTE: Subscribe to `AppContext`, NOT the older `useWorkspaceStore`
+  // zustand store — the zustand store is never updated by org/workspace
+  // switching, so reading from it would leave the bell stuck on whatever
+  // workspace the user landed on at boot.
+  const { currentWorkspace } = useApp();
+  const activeWorkspaceId = currentWorkspace?.id ?? null;
   useEffect(() => {
     setWorkspaceId(activeWorkspaceId);
   }, [activeWorkspaceId, setWorkspaceId]);

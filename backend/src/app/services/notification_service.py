@@ -49,6 +49,31 @@ def create_notification(
     return notif
 
 
+# Events that are intentionally workspace-agnostic and must surface
+# regardless of the user's currently-active workspace. Today there's only
+# one — invitations are org-level. New globally-scoped events MUST be
+# added here AND emitted with `workspace_id=None`; otherwise they will be
+# filtered out under any active workspace.
+_WORKSPACE_AGNOSTIC_EVENTS = ("invitation.accepted",)
+
+
+def _apply_workspace_scope(query, workspace_id: UUID):
+    """Strict workspace filter with a narrow exemption for org-level events.
+
+    Why strict: orgs share the user, but workspaces are the multi-tenancy
+    boundary. Old NULL rows were backfilled in migration
+    `d4e5783064df_backfill_notifications_workspace_id`; anything still NULL
+    after that is either an orphaned row (acceptable to hide) or a
+    workspace-agnostic event (whitelisted below).
+    """
+    return query.filter(
+        or_(
+            Notification.workspace_id == workspace_id,
+            Notification.event.in_(_WORKSPACE_AGNOSTIC_EVENTS),
+        )
+    )
+
+
 def get_notifications(
     db: Session,
     user_id: UUID,
@@ -60,18 +85,13 @@ def get_notifications(
     """Paginated list with total count.
 
     When `workspace_id` is provided, only events tied to that workspace plus
-    workspace-agnostic events (workspace_id IS NULL — e.g. invitations and
-    legacy rows) are returned. When None, returns everything for the user.
+    a small whitelist of workspace-agnostic events (e.g. invitations) are
+    returned. When None, returns everything for the user.
     """
     query = db.query(Notification).filter(Notification.user_id == user_id)
 
     if workspace_id is not None:
-        query = query.filter(
-            or_(
-                Notification.workspace_id == workspace_id,
-                Notification.workspace_id.is_(None),
-            )
-        )
+        query = _apply_workspace_scope(query, workspace_id)
 
     if unread_only:
         query = query.filter(Notification.is_read == False)  # noqa: E712
@@ -92,12 +112,7 @@ def get_unread_count(
         Notification.is_read == False,  # noqa: E712
     )
     if workspace_id is not None:
-        query = query.filter(
-            or_(
-                Notification.workspace_id == workspace_id,
-                Notification.workspace_id.is_(None),
-            )
-        )
+        query = _apply_workspace_scope(query, workspace_id)
     return query.count()
 
 
@@ -207,13 +222,15 @@ def notify_chatflow_deployed(
     workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a chatflow is deployed."""
+    # Frontend chatflow detail route is `/studio/:chatflowId` (App.tsx:169);
+    # `/chatflows/:id` does not exist and would 404.
     return create_notification(
         db=db,
         user_id=user_id,
         event="chatflow.deployed",
         title=f"Chatflow \"{chatflow_name}\" deployed",
         body="Your chatflow is now live and ready to receive messages.",
-        link=f"/chatflows/{chatflow_id}",
+        link=f"/studio/{chatflow_id}",
         resource_type="chatflow",
         resource_id=chatflow_id,
         workspace_id=workspace_id,

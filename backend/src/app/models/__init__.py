@@ -58,6 +58,12 @@ from app.models.slug_history import SlugHistory
 # General-purpose notifications
 from app.models.notification import Notification
 
+# Marketplace — global chatflow templates
+from app.models.chatflow_template import ChatflowTemplate
+
+# Referrals — referral_code on User + per-invite Referral rows
+from app.models.referral import Referral, ReferralStatus
+
 __all__ = [
     # Core
     "User",
@@ -108,4 +114,9 @@ __all__ = [
     "SlugHistory",
     # General-purpose notifications
     "Notification",
+    # Marketplace
+    "ChatflowTemplate",
+    # Referrals
+    "Referral",
+    "ReferralStatus",
 ]

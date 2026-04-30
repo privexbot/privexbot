@@ -502,7 +502,7 @@ Status Page:   https://status.privexbot.io
 ```
 Documentation:  /docs
 Community:      Discord server
-Email:          support@privexbot.io
+Email:          privexbot@gmail.com
 ```
 
 ---
