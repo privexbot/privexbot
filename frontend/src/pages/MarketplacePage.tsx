@@ -102,9 +102,7 @@ export function MarketplacePage() {
         </Button>
 
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 shrink-0">
-            <Sparkles className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-          </div>
+          <Sparkles className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0 mt-1" />
           <div className="flex-1">
             <h1 className="text-2xl font-bold font-manrope">Marketplace</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">

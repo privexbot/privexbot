@@ -53,7 +53,7 @@ function StatCard({
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-pink-100 dark:bg-pink-900/30">
+          <div className="text-gray-600 dark:text-gray-400 flex-shrink-0">
             {icon}
           </div>
           <div>
@@ -124,9 +124,7 @@ export function ReferralsPage() {
         </Button>
 
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl bg-pink-100 dark:bg-pink-900/30 shrink-0">
-            <Gift className="h-6 w-6 text-pink-600 dark:text-pink-400" />
-          </div>
+          <Gift className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0 mt-1" />
           <div className="flex-1">
             <h1 className="text-2xl font-bold font-manrope">Referral program</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -172,22 +170,22 @@ export function ReferralsPage() {
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard
-            icon={<Users className="h-4 w-4 text-pink-600" />}
+            icon={<Users className="h-5 w-5" />}
             label="Total invites"
             value={summary?.total_invites ?? 0}
           />
           <StatCard
-            icon={<Hourglass className="h-4 w-4 text-amber-600" />}
+            icon={<Hourglass className="h-5 w-5" />}
             label="Pending"
             value={summary?.pending ?? 0}
           />
           <StatCard
-            icon={<CheckCircle className="h-4 w-4 text-blue-600" />}
+            icon={<CheckCircle className="h-5 w-5" />}
             label="Registered"
             value={summary?.registered ?? 0}
           />
           <StatCard
-            icon={<TrendingUp className="h-4 w-4 text-emerald-600" />}
+            icon={<TrendingUp className="h-5 w-5" />}
             label="Converted"
             value={summary?.converted ?? 0}
           />

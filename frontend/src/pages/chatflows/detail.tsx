@@ -61,6 +61,8 @@ import { Switch } from "@/components/ui/switch";
 import { chatflowApi } from "@/api/chatflow";
 import { apiClient, handleApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { useApp } from "@/contexts/AppContext";
+import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
 
 type ChannelEntry = {
   type: string;
@@ -714,6 +716,7 @@ export default function ChatflowDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { currentWorkspace } = useApp();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const {
@@ -727,6 +730,13 @@ export default function ChatflowDetailPage() {
     enabled: !!chatflowId,
     retry: false,
   });
+
+  // Cross-workspace race: chatflow fetched in workspace A then user switched
+  // to B. Match the KB/chatbot pattern — show the dedicated screen.
+  const wrongWorkspaceFor =
+    chatflow && currentWorkspace && chatflow.workspace_id !== currentWorkspace.id
+      ? chatflow.workspace_id
+      : null;
 
   const editMutation = useMutation({
     mutationFn: chatflowApi.createEditDraft,
@@ -845,6 +855,16 @@ export default function ChatflowDetailPage() {
     );
   }
 
+  if (wrongWorkspaceFor) {
+    return (
+      <WrongWorkspaceScreen
+        resourceKind="chatflow"
+        resourceWorkspaceId={wrongWorkspaceFor}
+        fallbackPath="/studio"
+      />
+    );
+  }
+
   if (isError || !chatflow) {
     return (
       <DashboardLayout>
@@ -887,9 +907,7 @@ export default function ChatflowDetailPage() {
           className="mb-6 flex items-start justify-between gap-4"
         >
           <div className="flex items-start gap-4 min-w-0">
-            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl shrink-0">
-              <Workflow className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-            </div>
+            <Workflow className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0 mt-1" />
             <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold font-manrope truncate">

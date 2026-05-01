@@ -148,9 +148,7 @@ export function BillingsPage() {
         </Button>
 
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 shrink-0">
-            <CreditCard className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-          </div>
+          <CreditCard className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0 mt-1" />
           <div className="flex-1">
             <h1 className="text-2xl font-bold font-manrope">Billing &amp; Usage</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">

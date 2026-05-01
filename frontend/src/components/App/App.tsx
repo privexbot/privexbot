@@ -80,13 +80,13 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <AppProvider>
-            <Router
+          <Router
             future={{
               v7_startTransition: true,
               v7_relativeSplatPath: true,
             }}
           >
+            <AppProvider>
             <Routes>
               {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
@@ -390,9 +390,9 @@ function App() {
               {/* 404 Catch-all Route */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
-          </Router>
             <Toaster />
-          </AppProvider>
+            </AppProvider>
+          </Router>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

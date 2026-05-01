@@ -68,12 +68,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
+import { WrongWorkspaceScreen } from '@/components/shared/WrongWorkspaceScreen';
 
 export default function ChatbotDetailPage() {
   const { chatbotId } = useParams<{ chatbotId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { currentWorkspace, currentOrganization, workspaces } = useApp();
+  const [wrongWorkspaceFor, setWrongWorkspaceFor] = useState<string | null>(null);
 
   // Get initial tab from URL parameter, default to 'overview'
   const initialTab = searchParams.get('tab') ?? 'overview';
@@ -159,27 +161,14 @@ export default function ChatbotDetailPage() {
     try {
       const data = await chatbotApi.get(chatbotId);
 
-      // Verify chatbot belongs to current workspace
+      // Cross-workspace race: resource was fetched in workspace A then the
+      // user switched to B. Surface the dedicated screen instead of a toast.
       if (data.workspace_id !== currentWorkspace.id) {
-        const chatbotWorkspace = workspaces.find(ws => ws.id === data.workspace_id);
-
-        if (chatbotWorkspace) {
-          toast({
-            title: 'Wrong Workspace',
-            description: `This chatbot belongs to "${chatbotWorkspace.name}". Please switch to that workspace.`,
-            variant: 'destructive'
-          });
-        } else {
-          toast({
-            title: 'Access Denied',
-            description: 'You do not have permission to view this chatbot',
-            variant: 'destructive'
-          });
-        }
-        navigate('/chatbots');
+        setWrongWorkspaceFor(data.workspace_id);
         return;
       }
 
+      setWrongWorkspaceFor(null);
       setChatbot(data);
 
       // Add greeting as first message if available
@@ -924,6 +913,16 @@ export default function ChatbotDetailPage() {
           </div>
         </div>
       </DashboardLayout>
+    );
+  }
+
+  if (wrongWorkspaceFor) {
+    return (
+      <WrongWorkspaceScreen
+        resourceKind="chatbot"
+        resourceWorkspaceId={wrongWorkspaceFor}
+        fallbackPath="/chatbots"
+      />
     );
   }
 

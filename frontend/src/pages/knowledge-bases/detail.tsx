@@ -36,12 +36,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 import { KBTestSearch } from '@/components/kb/KBTestSearch';
+import { WrongWorkspaceScreen } from '@/components/shared/WrongWorkspaceScreen';
 
 export default function KBDetailPage() {
   const { kbId } = useParams<{ kbId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { currentWorkspace, workspaces } = useApp();
+  const [wrongWorkspaceFor, setWrongWorkspaceFor] = useState<string | null>(null);
 
   // Read initial tab from URL query parameter (e.g., ?tab=test-search)
   const initialTab = searchParams.get('tab') || 'overview';
@@ -170,30 +172,13 @@ export default function KBDetailPage() {
       // Load KB details
       const kbData = await kbClient.kb.get(kbId);
 
-      // Verify KB belongs to current workspace
+      // Cross-workspace race: show the dedicated screen instead of toast.
       if (kbData.workspace_id !== currentWorkspace.id) {
-        // Check if user has access to the KB's workspace
-        const kbWorkspace = workspaces.find(ws => ws.id === kbData.workspace_id);
-
-        if (kbWorkspace) {
-          // User has access to the workspace, suggest switching
-          toast({
-            title: 'Wrong Workspace',
-            description: `This knowledge base belongs to "${kbWorkspace.name}". Please switch to that workspace to access it.`,
-            variant: 'destructive'
-          });
-        } else {
-          // User doesn't have access to the workspace
-          toast({
-            title: 'Access Denied',
-            description: 'You do not have permission to view this knowledge base',
-            variant: 'destructive'
-          });
-        }
-        navigate('/knowledge-bases');
+        setWrongWorkspaceFor(kbData.workspace_id);
         return;
       }
 
+      setWrongWorkspaceFor(null);
       setKb(kbData);
 
       // Load documents and chunks in parallel
@@ -275,6 +260,16 @@ export default function KBDetailPage() {
           </div>
         </div>
       </DashboardLayout>
+    );
+  }
+
+  if (wrongWorkspaceFor) {
+    return (
+      <WrongWorkspaceScreen
+        resourceKind="knowledge-base"
+        resourceWorkspaceId={wrongWorkspaceFor}
+        fallbackPath="/knowledge-bases"
+      />
     );
   }
 

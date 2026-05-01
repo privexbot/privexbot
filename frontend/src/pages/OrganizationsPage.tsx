@@ -194,9 +194,7 @@ export function OrganizationsPage() {
                 <CardHeader className="pb-3 p-4 sm:p-5 md:p-6">
                   {/* Added proper spacing and pr to prevent overlap with Active badge */}
                   <div className="flex items-start gap-3 pr-16 md:pr-20">
-                    <div className="h-11 w-11 md:h-12 md:w-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                      <Building2 className="h-5 w-5 md:h-6 md:w-6 text-blue-700 dark:text-blue-300" />
-                    </div>
+                    <Building2 className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0 mt-1" />
                     <div className="min-w-0 flex-1">
                       <CardTitle className="text-base md:text-lg truncate text-gray-900 dark:text-gray-50 pr-1">
                         {org.name}

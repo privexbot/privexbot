@@ -206,9 +206,7 @@ function ChatflowCard({
       <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col">
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between mb-3">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-              <Workflow className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            </div>
+            <Workflow className="h-6 w-6 text-gray-600 dark:text-gray-400 flex-shrink-0" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -349,8 +347,8 @@ function EmptyState({ onCreateChatflow }: { onCreateChatflow: () => void }) {
       animate={{ opacity: 1, y: 0 }}
       className="text-center py-16"
     >
-      <div className="mx-auto w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mb-6">
-        <Workflow className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+      <div className="mx-auto w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+        <Workflow className="h-8 w-8 text-gray-400 dark:text-gray-500" />
       </div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope mb-2">
         No Chatflows Yet

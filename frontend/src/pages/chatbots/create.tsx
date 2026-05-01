@@ -1362,8 +1362,8 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
               Image URL for your chatbot avatar (recommended: 64x64px)
             </p>
           </div>
-          {/* Avatar Preview */}
-          <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
+          {/* Avatar Preview — outline-only circle, no bg fill */}
+          <div className="w-12 h-12 rounded-full border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
             {formData.appearance.avatar_url ? (
               <img
                 src={formData.appearance.avatar_url}

@@ -49,76 +49,27 @@ export function RecentActivities({
   onActivityClick,
   isLoading,
 }: RecentActivitiesProps) {
-  // Map activity types to icon and color
-  const getActivityIcon = (type: ActivityType) => {
-    const iconMap: Record<ActivityType, { icon: React.ComponentType<{ className?: string }>; colorClass: string; bgClass: string }> = {
-      chatbot_created: {
-        icon: ChatbotIcon,
-        colorClass: "text-blue-600 dark:text-blue-400",
-        bgClass: "bg-blue-100 dark:bg-blue-900/30",
-      },
-      chatbot_updated: {
-        icon: ChatbotIcon,
-        colorClass: "text-blue-600 dark:text-blue-400",
-        bgClass: "bg-blue-100 dark:bg-blue-900/30",
-      },
-      chatbot_deployed: {
-        icon: CheckCircle,
-        colorClass: "text-green-600 dark:text-green-400",
-        bgClass: "bg-green-100 dark:bg-green-900/30",
-      },
-      chatflow_created: {
-        icon: Network,
-        colorClass: "text-purple-600 dark:text-purple-400",
-        bgClass: "bg-purple-100 dark:bg-purple-900/30",
-      },
-      chatflow_updated: {
-        icon: Network,
-        colorClass: "text-purple-600 dark:text-purple-400",
-        bgClass: "bg-purple-100 dark:bg-purple-900/30",
-      },
-      chatflow_deployed: {
-        icon: CheckCircle,
-        colorClass: "text-green-600 dark:text-green-400",
-        bgClass: "bg-green-100 dark:bg-green-900/30",
-      },
-      kb_created: {
-        icon: Book,
-        colorClass: "text-green-600 dark:text-green-400",
-        bgClass: "bg-green-100 dark:bg-green-900/30",
-      },
-      kb_updated: {
-        icon: Book,
-        colorClass: "text-green-600 dark:text-green-400",
-        bgClass: "bg-green-100 dark:bg-green-900/30",
-      },
-      lead_captured: {
-        icon: Users,
-        colorClass: "text-orange-600 dark:text-orange-400",
-        bgClass: "bg-orange-100 dark:bg-orange-900/30",
-      },
-      conversation_started: {
-        icon: MessageCircle,
-        colorClass: "text-blue-600 dark:text-blue-400",
-        bgClass: "bg-blue-100 dark:bg-blue-900/30",
-      },
-      error_occurred: {
-        icon: AlertCircle,
-        colorClass: "text-red-600 dark:text-red-400",
-        bgClass: "bg-red-100 dark:bg-red-900/30",
-      },
-      settings_changed: {
-        icon: Settings,
-        colorClass: "text-yellow-600 dark:text-yellow-400",
-        bgClass: "bg-yellow-100 dark:bg-yellow-900/30",
-      },
+  // Map activity types to icon. The render path uses a bare neutral icon —
+  // we no longer map per-type colors here.
+  const getActivityIcon = (
+    type: ActivityType,
+  ): { icon: React.ComponentType<{ className?: string }> } => {
+    const iconMap: Record<ActivityType, { icon: React.ComponentType<{ className?: string }> }> = {
+      chatbot_created: { icon: ChatbotIcon },
+      chatbot_updated: { icon: ChatbotIcon },
+      chatbot_deployed: { icon: CheckCircle },
+      chatflow_created: { icon: Network },
+      chatflow_updated: { icon: Network },
+      chatflow_deployed: { icon: CheckCircle },
+      kb_created: { icon: Book },
+      kb_updated: { icon: Book },
+      lead_captured: { icon: Users },
+      conversation_started: { icon: MessageCircle },
+      error_occurred: { icon: AlertCircle },
+      settings_changed: { icon: Settings },
     };
 
-    return iconMap[type] || {
-      icon: Clock,
-      colorClass: "text-gray-600 dark:text-gray-400",
-      bgClass: "bg-gray-100 dark:bg-gray-700/50",
-    };
+    return iconMap[type] || { icon: Clock };
   };
 
   if (isLoading) {

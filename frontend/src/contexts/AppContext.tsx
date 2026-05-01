@@ -19,6 +19,8 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./AuthContext";
 import { organizationApi } from "@/api/organization";
 import { workspaceApi } from "@/api/workspace";
@@ -30,6 +32,29 @@ import type {
   Permission,
   CreateWorkspaceRequest,
 } from "@/types/tenant";
+
+/**
+ * If the current pathname targets a single workspace-scoped resource, return
+ * the parent list path so the user lands on something that re-fetches from
+ * scratch after an org/workspace switch. Returns null for paths that re-fetch
+ * automatically (lists, dashboard, settings).
+ */
+function redirectIfCrossWorkspaceDetail(pathname: string): string | null {
+  // Order matters: more specific patterns first.
+  const rules: Array<{ test: RegExp; redirectTo: string }> = [
+    { test: /^\/chatbots\/[^/]+(?:\/.*)?$/, redirectTo: "/chatbots" },
+    { test: /^\/knowledge-bases\/[^/]+(?:\/.*)?$/, redirectTo: "/knowledge-bases" },
+    { test: /^\/studio\/[^/]+$/, redirectTo: "/studio" },
+    { test: /^\/chatflows\/builder\/[^/]+$/, redirectTo: "/studio" },
+    { test: /^\/leads\/[^/]+$/, redirectTo: "/leads" },
+    { test: /^\/admin\/organizations\/[^/]+$/, redirectTo: "/admin/organizations" },
+    { test: /^\/admin\/users\/[^/]+$/, redirectTo: "/admin/users" },
+  ];
+  for (const rule of rules) {
+    if (rule.test.test(pathname)) return rule.redirectTo;
+  }
+  return null;
+}
 
 const STORAGE_KEYS = {
   ORG_ID: "privexbot_current_org_id",
@@ -65,6 +90,9 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -242,6 +270,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Set state AFTER JWT is stored — prevents stale-token API calls
         setCurrentOrganization(org);
         setCurrentWorkspace(targetWorkspace);
+
+        // Drop any cached resource queries — the new workspace context cannot
+        // reuse the previous workspace's data. Then redirect away from any
+        // cross-workspace detail URL so the user lands on a list page that
+        // re-fetches cleanly (instead of the previous resource's 404 toast).
+        queryClient.invalidateQueries();
+        const redirectTo = redirectIfCrossWorkspaceDetail(location.pathname);
+        if (redirectTo) {
+          navigate(redirectTo, { replace: true });
+        }
       } catch (err: any) {
         console.error("Failed to switch organization:", err);
         setError(err.message || "Failed to switch organization");
@@ -250,7 +288,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [isAuthenticated, organizations]
+    [isAuthenticated, organizations, queryClient, navigate, location.pathname]
   );
 
   /**
@@ -300,6 +338,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // Set workspace state AFTER JWT is stored
         setCurrentWorkspace(workspace);
+
+        // Same redirect-+ -invalidate dance as switchOrganization. Without this,
+        // a user sitting on /chatbots/<id> in workspace A would see the
+        // previous workspace's resource fail to load with a generic 403/404.
+        queryClient.invalidateQueries();
+        const redirectTo = redirectIfCrossWorkspaceDetail(location.pathname);
+        if (redirectTo) {
+          navigate(redirectTo, { replace: true });
+        }
       } catch (err: any) {
         console.error("Failed to switch workspace:", err);
         setError(err.message || "Failed to switch workspace");
@@ -308,7 +355,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [isAuthenticated, currentOrganization, currentWorkspace, workspaces]
+    [
+      isAuthenticated,
+      currentOrganization,
+      currentWorkspace,
+      workspaces,
+      queryClient,
+      navigate,
+      location.pathname,
+    ]
   );
 
   /**

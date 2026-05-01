@@ -173,10 +173,13 @@ function CredentialCard({
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             {/* Left: Icon + Details */}
             <div className="flex items-center gap-4 flex-1 min-w-0">
-              {/* Icon Container */}
-              <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-2xl flex-shrink-0">
+              {/* Provider emoji — bare, no colored chrome */}
+              <span
+                className="text-3xl flex-shrink-0 leading-none"
+                aria-hidden="true"
+              >
                 {type?.icon || '🔑'}
-              </div>
+              </span>
 
               {/* Details */}
               <div className="flex-1 min-w-0">

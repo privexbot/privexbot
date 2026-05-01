@@ -104,6 +104,7 @@ import { cn } from "@/lib/utils";
 import { chatflowDraftApi, type FinalizeChatflowResponse } from "@/api/chatflow";
 import { config as envConfig } from "@/config/env";
 import ChannelSelector, { type DeploymentChannel } from "@/components/deployment/ChannelSelector";
+import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
 
 // Node configuration panel for type-specific settings
 import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
@@ -1192,6 +1193,23 @@ export default function ChatflowBuilder() {
           </div>
         </div>
       </DashboardLayout>
+    );
+  }
+
+  // Cross-workspace race: draft was opened in workspace A then user switched
+  // to B. Show the dedicated screen instead of letting auto-save drift into a
+  // 403/404 loop.
+  if (
+    draft &&
+    currentWorkspace &&
+    draft.workspace_id !== currentWorkspace.id
+  ) {
+    return (
+      <WrongWorkspaceScreen
+        resourceKind="chatflow-draft"
+        resourceWorkspaceId={draft.workspace_id}
+        fallbackPath="/studio"
+      />
     );
   }
 
