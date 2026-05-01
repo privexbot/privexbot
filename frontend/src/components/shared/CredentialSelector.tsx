@@ -36,21 +36,9 @@ import { useToast } from '@/hooks/use-toast';
 import apiClient, { handleApiError } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { cn } from '@/lib/utils';
-
-// Provider types (service names)
-type CredentialProvider =
-  | 'openai'
-  | 'anthropic'
-  | 'google'
-  | 'google_gmail'
-  | 'notion'
-  | 'slack'
-  | 'telegram'
-  | 'discord'
-  | 'whatsapp'
-  | 'calendly'
-  | 'custom'
-  | 'smtp';
+// Provider list lives in `lib/credentialProviders.ts` so this picker
+// stays aligned with the management page on /settings/credentials.
+import type { CredentialProvider } from '@/lib/credentialProviders';
 
 // API response structure matching backend CredentialResponse
 interface Credential {
@@ -168,9 +156,10 @@ export default function CredentialSelector({
 
   const getProviderName = (providerName?: string) => {
     if (!providerName) return 'Unknown';
+    // Legacy rows may still have provider="openai"/"anthropic" — those fall
+    // through to the raw string so we don't pretend they're broken. New
+    // rows can no longer be created with those providers.
     const names: Record<string, string> = {
-      openai: 'OpenAI',
-      anthropic: 'Anthropic',
       google: 'Google',
       notion: 'Notion',
       slack: 'Slack',

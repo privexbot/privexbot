@@ -561,6 +561,14 @@ python scripts/set_initial_staff.py && echo "✅ Initial staff setup completed" 
     # Non-blocking: Don't exit - users may not have registered yet
     # Staff will be auto-granted on first login/signup if they match configured identifiers
 }
+
+# Step: Seed marketplace chatflow templates
+# Idempotent (upsert-by-slug), safe to run on every boot.
+echo ""
+echo "📚 Seeding chatflow templates..."
+python scripts/seed_chatflow_templates.py && echo "✅ Chatflow templates seeded" || {
+    echo "⚠️  Chatflow template seeding had issues (non-blocking, continuing...)"
+}
 cd /app/src
 
 echo "🎭 Checking Playwright browsers..."

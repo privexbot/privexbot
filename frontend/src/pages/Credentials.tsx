@@ -75,12 +75,15 @@ import { useToast } from '@/hooks/use-toast';
 import { useApp } from '@/contexts/AppContext';
 import apiClient, { handleApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
+// Provider list lives in `lib/credentialProviders.ts` so the management
+// page (here) and the chatflow-node CredentialSelector stay in sync.
+import { CREDENTIAL_PROVIDERS as CREDENTIAL_TYPES } from '@/lib/credentialProviders';
 
 interface Credential {
   id: string;
   name: string;
   credential_type: string;  // api_key, oauth2, etc. (auth mechanism)
-  provider?: string;        // openai, telegram, discord, etc. (service name)
+  provider?: string;        // notion, google, telegram, discord, etc. (service name)
   is_active: boolean;       // Whether credential is active
   usage_count: number;
   last_used_at?: string;
@@ -88,22 +91,6 @@ interface Credential {
   updated_at: string;
 }
 
-const CREDENTIAL_TYPES = [
-  { value: 'openai', label: 'OpenAI API Key', icon: '🤖', requiresOAuth: false, requiresDatabase: false },
-  { value: 'notion', label: 'Notion', icon: '📝', requiresOAuth: true, requiresDatabase: false },
-  // The backend's `google` provider already requests Drive + Docs + Sheets
-  // readonly scopes (see credentials.py:505), so the credential row stored is
-  // `provider="google"`. We keep the "Google Drive" label here for UX clarity.
-  { value: 'google', label: 'Google Drive', icon: '📁', requiresOAuth: true, requiresDatabase: false },
-  { value: 'slack', label: 'Slack', icon: '💬', requiresOAuth: true, requiresDatabase: false },
-  { value: 'telegram', label: 'Telegram Bot', icon: '✈️', requiresOAuth: false, requiresDatabase: false },
-  { value: 'discord', label: 'Discord Bot', icon: '🎮', requiresOAuth: false, requiresDatabase: false },
-  { value: 'whatsapp', label: 'WhatsApp Business', icon: '💬', requiresOAuth: false, requiresDatabase: false },
-  { value: 'google_gmail', label: 'Gmail', icon: '📧', requiresOAuth: true, requiresDatabase: false },
-  { value: 'calendly', label: 'Calendly', icon: '📅', requiresOAuth: true, requiresDatabase: false },
-  { value: 'database', label: 'Database', icon: '🗄️', requiresOAuth: false, requiresDatabase: true },
-  { value: 'smtp', label: 'SMTP Email Server', icon: '📨', requiresOAuth: false, requiresDatabase: false },
-];
 
 // ========================================
 // EMPTY STATE COMPONENT
@@ -288,11 +275,11 @@ export default function Credentials() {
   const [credentialToDelete, setCredentialToDelete] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
-  // Form state - provider is the service (openai, telegram, etc.)
+  // Form state - provider is the service (notion, telegram, etc.)
   // credential_type is the auth mechanism (api_key, oauth2, database, smtp)
   const [formData, setFormData] = useState({
     name: '',
-    provider: 'openai' as string,
+    provider: 'notion' as string,
     api_key: '',
     // Database-specific fields
     db_host: '',
@@ -338,7 +325,7 @@ export default function Credentials() {
           },
         };
       } else {
-        // API key credentials (OpenAI, Telegram, Discord, etc.)
+        // API key credentials (Telegram, Discord, custom, etc.)
         payload = {
           workspace_id: currentWorkspace?.id,
           name: data.name,
@@ -357,7 +344,7 @@ export default function Credentials() {
       toast({ title: 'Credential added successfully' });
       queryClient.invalidateQueries({ queryKey: ['credentials'] });
       setDialogOpen(false);
-      setFormData({ name: '', provider: 'openai', api_key: '', db_host: '', db_port: '5432', db_name: '', db_username: '', db_password: '', db_type: 'postgresql' });
+      setFormData({ name: '', provider: 'notion', api_key: '', db_host: '', db_port: '5432', db_name: '', db_username: '', db_password: '', db_type: 'postgresql' });
     },
     onError: (error) => {
       toast({

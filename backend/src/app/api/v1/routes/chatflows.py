@@ -434,8 +434,25 @@ async def delete_chatflow(
     if not workspace:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Soft delete
+    # Soft delete. We also flip is_active=False so the Discord shared-bot
+    # router (`discord_guild_service.get_entity_for_guild`) and other
+    # is_active-gated dispatchers stop routing to this chatflow immediately
+    # — historically only `is_deleted` was set, leaving the chatflow live in
+    # message routing until someone toggled it manually.
     chatflow.is_deleted = True
+    chatflow.is_active = False
+
+    # Remove Discord guild deployments bound to this chatflow. The polymorphic
+    # `chatbot_id` column has no DB-level FK, so deletion does NOT cascade.
+    # Without this, the unique `guild_id` slot stays occupied and the operator
+    # can't re-bind the same Discord server to a replacement chatflow.
+    from app.services.discord_guild_service import discord_guild_service
+    discord_guild_service.remove_for_entity(
+        db=db,
+        entity_type="chatflow",
+        entity_id=chatflow_id,
+    )
+
     db.commit()
 
     return {"status": "deleted", "chatflow_id": str(chatflow_id)}

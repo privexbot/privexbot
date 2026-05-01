@@ -24,9 +24,17 @@ import {
   Check,
   Trash2,
   Plus,
+  ExternalLink,
+  ShieldCheck,
 } from "lucide-react";
-import { adminApi, type SystemStats, type InviteCodeInfo } from "@/api/admin";
+import {
+  adminApi,
+  type SystemStats,
+  type InviteCodeInfo,
+  type OAuthRedirectUrisResponse,
+} from "@/api/admin";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 interface StatCardProps {
   label: string;
@@ -62,6 +70,12 @@ export function AdminDashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
+
+  // OAuth setup state — surfaced as a card so operators can copy the
+  // exact redirect URI to register in each provider's developer console.
+  const [oauthInfo, setOauthInfo] = useState<OAuthRedirectUrisResponse | null>(null);
+  const [copiedUri, setCopiedUri] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const fetchInviteCodes = async () => {
     try {
@@ -119,9 +133,26 @@ export function AdminDashboard() {
       }
     };
 
+    const fetchOAuthInfo = async () => {
+      try {
+        const info = await adminApi.getOAuthRedirectUris();
+        setOauthInfo(info);
+      } catch (err) {
+        console.error("Failed to fetch OAuth setup info:", err);
+      }
+    };
+
     void fetchStats();
     void fetchInviteCodes();
+    void fetchOAuthInfo();
   }, []);
+
+  const copyUri = (uri: string) => {
+    navigator.clipboard.writeText(uri);
+    setCopiedUri(uri);
+    setTimeout(() => setCopiedUri(null), 2000);
+    toast({ title: "Redirect URI copied" });
+  };
 
   if (isLoading) {
     return (
@@ -391,6 +422,85 @@ export function AdminDashboard() {
             </table>
           )}
         </div>
+
+        {/* OAuth setup — operator-facing view of the redirect URIs that
+            need to be registered in each provider's developer console. */}
+        {oauthInfo && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 md:p-6 mt-6">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 font-manrope">
+                  <ShieldCheck className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  OAuth setup
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+                  Register these redirect URIs in each provider's developer
+                  console — exact match required (Google &amp; co. reject any
+                  drift). Green = env var configured; amber = empty.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {oauthInfo.providers.map((p) => (
+                <div
+                  key={p.provider}
+                  className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/40"
+                >
+                  <div className="flex items-center gap-2 md:w-56 shrink-0">
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full shrink-0",
+                        p.configured ? "bg-emerald-500" : "bg-amber-500",
+                      )}
+                      title={
+                        p.configured
+                          ? `${p.env_var} is set`
+                          : `${p.env_var} is empty`
+                      }
+                    />
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                      {p.label}
+                    </span>
+                  </div>
+                  <code className="flex-1 min-w-0 font-mono text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 break-all">
+                    {p.redirect_uri}
+                  </code>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => copyUri(p.redirect_uri)}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      title="Copy redirect URI"
+                    >
+                      {copiedUri === p.redirect_uri ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
+                    <a
+                      href={p.console_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      title="Open provider console"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {oauthInfo.missing_providers.length > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3 font-manrope">
+                {oauthInfo.missing_providers.length} provider(s) still need
+                env vars populated:{" "}
+                {oauthInfo.missing_providers.join(", ")}.
+              </p>
+            )}
+          </div>
+        )}
       </div>
       </div>
     </div>

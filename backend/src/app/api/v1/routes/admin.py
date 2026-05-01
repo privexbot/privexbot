@@ -376,6 +376,7 @@ async def get_platform_analytics(
 
 from pydantic import BaseModel as _PlanBaseModel
 from app.core.plans import PLAN_LIMITS as _PLAN_LIMITS
+from app.core.config import settings
 from app.services import billing_service as _billing_service
 
 
@@ -421,3 +422,80 @@ async def admin_upgrade_org_plan(
         raise HTTPException(status_code=404, detail=str(e))
 
     return _billing_service.get_plan_status(db, org_id)
+
+
+# ─── OAuth setup discoverability ───────────────────────────────────────────
+# Operators register OAuth redirect URIs in each provider's developer
+# console (Google Cloud Console, Notion, Calendly, Slack). The URIs are
+# auto-derived from API_BASE_URL — this endpoint surfaces the exact URLs
+# so the operator can copy-paste without inspecting code or env files.
+
+@router.get("/oauth/redirect-uris")
+async def admin_get_oauth_redirect_uris(
+    staff: User = Depends(get_staff_user),
+):
+    """Return per-provider redirect URIs + which `*_CLIENT_ID` env vars are set.
+
+    Used by the admin dashboard's OAuth setup card so operators can:
+    1) Copy the exact URI to register in each provider's console.
+    2) See at a glance which providers still need credentials filled in.
+
+    Slack uses a different callback path (`/webhooks/slack/oauth/callback`)
+    because its install flow is owned by the webhooks router, not the
+    credentials router. Discord shared-bot uses the OAuth invite flow into
+    `/webhooks/discord/shared` for interactions, plus a separate callback
+    for guild grants — both surfaced here for completeness.
+    """
+    api = settings.API_BASE_URL.rstrip("/")
+    credentials_callback = f"{api}/credentials/oauth/callback"
+    slack_callback = f"{api}/webhooks/slack/oauth/callback"
+    discord_interactions = f"{api}/webhooks/discord/shared"
+
+    providers = [
+        {
+            "provider": "google",
+            "label": "Google (Drive / Docs / Sheets / Gmail)",
+            "redirect_uri": credentials_callback,
+            "console_url": "https://console.cloud.google.com/apis/credentials",
+            "configured": bool(settings.GOOGLE_CLIENT_ID),
+            "env_var": "GOOGLE_CLIENT_ID",
+        },
+        {
+            "provider": "notion",
+            "label": "Notion",
+            "redirect_uri": credentials_callback,
+            "console_url": "https://www.notion.so/my-integrations",
+            "configured": bool(settings.NOTION_CLIENT_ID),
+            "env_var": "NOTION_CLIENT_ID",
+        },
+        {
+            "provider": "calendly",
+            "label": "Calendly",
+            "redirect_uri": credentials_callback,
+            "console_url": "https://calendly.com/integrations/api_webhooks",
+            "configured": bool(settings.CALENDLY_CLIENT_ID),
+            "env_var": "CALENDLY_CLIENT_ID",
+        },
+        {
+            "provider": "slack",
+            "label": "Slack (workspace install)",
+            "redirect_uri": slack_callback,
+            "console_url": "https://api.slack.com/apps",
+            "configured": bool(settings.SLACK_CLIENT_ID),
+            "env_var": "SLACK_CLIENT_ID",
+        },
+        {
+            "provider": "discord",
+            "label": "Discord (shared bot, interactions endpoint)",
+            "redirect_uri": discord_interactions,
+            "console_url": "https://discord.com/developers/applications",
+            "configured": bool(settings.DISCORD_SHARED_APPLICATION_ID),
+            "env_var": "DISCORD_SHARED_APPLICATION_ID",
+        },
+    ]
+
+    return {
+        "providers": providers,
+        "configured_providers": [p["provider"] for p in providers if p["configured"]],
+        "missing_providers": [p["provider"] for p in providers if not p["configured"]],
+    }

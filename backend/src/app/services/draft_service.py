@@ -751,7 +751,8 @@ class UnifiedDraftService:
             entity_type="chatbot",
             deployment_config=data.get("deployment", {}),
             api_key=plain_key,  # Use plain key for embed code
-            db=db
+            db=db,
+            workspace_id=chatbot.workspace_id,
         )
 
         # Update chatbot's deployment_config with actual channel results
@@ -814,7 +815,8 @@ class UnifiedDraftService:
             entity_type="chatflow",
             deployment_config=data.get("deployment", {}),
             api_key=plain_key,
-            db=db
+            db=db,
+            workspace_id=chatflow.workspace_id
         )
 
         # Update chatflow's config with actual channel results.
@@ -893,7 +895,8 @@ class UnifiedDraftService:
                         entity_type="chatflow",
                         deployment_config=deployment_config,
                         api_key=existing_key.key_prefix,  # Use existing key prefix
-                        db=db
+                        db=db,
+                        workspace_id=chatflow.workspace_id,
                     )
                     # Reassign rather than mutate (see _deploy_chatflow above).
                     chatflow.config = {
@@ -954,7 +957,8 @@ class UnifiedDraftService:
         entity_type: str,
         deployment_config: dict,
         api_key: str,
-        db: Session
+        db: Session,
+        workspace_id: Optional[UUID] = None,
     ) -> dict:
         """
         Initialize multi-channel deployments (shared by chatbot & chatflow).
@@ -1006,6 +1010,34 @@ class UnifiedDraftService:
                     if not credential_id:
                         raise ValueError("Telegram bot token credential is required")
 
+                    # Telegram bot tokens are 1:1 — one webhook per bot.
+                    # If another chatbot/chatflow in this workspace is
+                    # already wired to this credential, deploying here
+                    # would silently overwrite their webhook (data loss).
+                    # Block until the conflicting entity is unlinked.
+                    if workspace_id is not None:
+                        conflicts = telegram_integration.find_existing_telegram_users(
+                            db=db,
+                            credential_id=str(credential_id),
+                            workspace_id=workspace_id,
+                            exclude_entity_id=entity_id,
+                        )
+                        if conflicts:
+                            primary = conflicts[0]
+                            deployment_results["channels"]["telegram"] = {
+                                "status": "error",
+                                "error_code": "telegram_credential_in_use",
+                                "error": (
+                                    f"This Telegram credential is already wired to "
+                                    f"{primary['entity_type']} '{primary['entity_name']}'. "
+                                    f"Disable Telegram on that {primary['entity_type']} "
+                                    f"before deploying this one — Telegram only allows "
+                                    f"one webhook per bot."
+                                ),
+                                "conflict": primary,
+                            }
+                            continue
+
                     telegram_result = telegram_integration.register_webhook(
                         db=db,
                         entity_id=entity_id,
@@ -1022,29 +1054,65 @@ class UnifiedDraftService:
                     }
 
                 elif channel_type == "discord":
-                    # Register Discord webhook via Discord API
-                    from app.integrations.discord_integration import discord_integration
-
-                    # Get credential_id from channel (frontend stores at top level)
+                    # Discord supports two deploy paths:
+                    # 1. Shared-bot (preferred): one app per platform, install
+                    #    via OAuth per guild. Uses DISCORD_SHARED_* env vars.
+                    #    No per-user credential needed.
+                    # 2. Per-user bot (legacy): user provides their own bot
+                    #    token credential. Kept for back-compat with existing
+                    #    deploys.
                     credential_id = channel.get("credential_id") or channel.get("config", {}).get("bot_token")
-                    if not credential_id:
-                        raise ValueError("Discord bot token credential is required")
 
-                    discord_result = discord_integration.register_webhook(
-                        db=db,
-                        entity_id=entity_id,
-                        entity_type=entity_type,
-                        config={"bot_token": credential_id}
-                    )
+                    if not credential_id and settings.DISCORD_SHARED_APPLICATION_ID and workspace_id is not None:
+                        # Shared-bot path. Return install URL with state
+                        # encoding entity_type + entity_id + workspace_id.
+                        # The OAuth callback at /webhooks/discord/oauth/callback
+                        # decodes state, creates the DiscordGuildDeployment,
+                        # and registers per-guild slash commands.
+                        from app.services.discord_guild_service import discord_guild_service
 
-                    deployment_results["channels"]["discord"] = {
-                        "status": "success",
-                        "webhook_url": discord_result["webhook_url"],
-                        "bot_username": discord_result["bot_username"],
-                        "application_id": discord_result.get("application_id"),
-                        "invite_url": discord_result.get("invite_url"),  # URL for users to add bot to servers
-                        "bot_token_credential_id": credential_id  # Store credential ref for webhook handler
-                    }
+                        install_url = discord_guild_service.generate_invite_url(
+                            entity_type=entity_type,
+                            entity_id=entity_id,
+                            workspace_id=workspace_id,
+                        )
+                        deployment_results["channels"]["discord"] = {
+                            "status": "needs_install",
+                            "install_url": install_url,
+                            "webhook_url": install_url,
+                            "shared_bot": True,
+                            "instructions": (
+                                "Click the install URL to add the bot to your "
+                                "Discord server. After authorization, the bot "
+                                "will be bound to this entity automatically."
+                            ),
+                        }
+                    elif credential_id:
+                        # Legacy per-user-credential path.
+                        from app.integrations.discord_integration import discord_integration
+
+                        discord_result = discord_integration.register_webhook(
+                            db=db,
+                            entity_id=entity_id,
+                            entity_type=entity_type,
+                            config={"bot_token": credential_id}
+                        )
+
+                        deployment_results["channels"]["discord"] = {
+                            "status": "success",
+                            "webhook_url": discord_result["webhook_url"],
+                            "bot_username": discord_result["bot_username"],
+                            "application_id": discord_result.get("application_id"),
+                            "invite_url": discord_result.get("invite_url"),
+                            "bot_token_credential_id": credential_id,
+                            "shared_bot": False,
+                        }
+                    else:
+                        # Neither shared bot configured nor credential provided.
+                        raise ValueError(
+                            "Discord deployment requires either DISCORD_SHARED_APPLICATION_ID "
+                            "(operator config) or a per-user bot token credential."
+                        )
 
                 elif channel_type == "whatsapp":
                     # Register WhatsApp webhook via WhatsApp Business API

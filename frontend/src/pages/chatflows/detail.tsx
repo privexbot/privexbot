@@ -10,8 +10,8 @@
  * the edit-draft flow) and does NOT include analytics (that's a follow-up).
  */
 
-import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -63,6 +63,7 @@ import { apiClient, handleApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
 import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
+import { classifyChannelError } from "@/lib/channelErrors";
 
 type ChannelEntry = {
   type: string;
@@ -103,6 +104,7 @@ function ChannelCard({
   chatflowId: string;
   entry: ChannelEntry;
 }) {
+  const navigate = useNavigate();
   const channelMeta: Record<string, { label: string; icon: React.ReactNode }> = {
     website: { label: "Website Widget", icon: <Globe className="h-4 w-4" /> },
     telegram: { label: "Telegram", icon: <MessageCircle className="h-4 w-4" /> },
@@ -116,9 +118,10 @@ function ChannelCard({
     icon: <MessageCircle className="h-4 w-4" />,
   };
   const cfg = entry.config ?? {};
+  const installUrl = (cfg.install_url as string | undefined) ?? "";
   const webhookUrl =
     (cfg.webhook_url as string | undefined) ??
-    (cfg.install_url as string | undefined) ??
+    installUrl ??
     (cfg.url as string | undefined) ??
     "";
   // Only treat status === "success" as success. Anything else (including
@@ -126,22 +129,32 @@ function ChannelCard({
   const rawStatus = cfg.status as string | undefined;
   const isError = rawStatus === "error";
   const isRegistered = rawStatus === "success" || rawStatus === "ok";
+  // Discord shared-bot path returns `needs_install` instead of an error —
+  // operator needs to add the bot to their server via the install URL.
+  const needsInstall = rawStatus === "needs_install";
+  const installInstructions = (cfg.instructions as string | undefined) ?? "";
   const errorMessage = (cfg.error as string | undefined) ?? "";
 
-  // Slack uses install URL semantics, not webhook semantics.
-  const urlLabel = entry.type === "slack" ? "Install URL" : "Webhook URL";
+  // Slack and shared-bot Discord use install URL semantics; the rest are
+  // webhook URLs.
+  const isInstallChannel = entry.type === "slack" || needsInstall;
+  const urlLabel = isInstallChannel ? "Install URL" : "Webhook URL";
   const urlHelp =
     entry.type === "slack"
       ? "Open this URL to install the Slack app into your workspace."
-      : null;
+      : needsInstall
+        ? "Open this URL to add the bot to your Discord server. Binding completes automatically on authorization."
+        : null;
 
   const badgeText = !entry.enabled
     ? "disabled"
-    : isError
-      ? "error"
-      : isRegistered
-        ? "success"
-        : "not registered";
+    : needsInstall
+      ? "install required"
+      : isError
+        ? "error"
+        : isRegistered
+          ? "success"
+          : "not registered";
   const badgeVariant = !entry.enabled || isError
     ? "destructive"
     : isRegistered
@@ -172,16 +185,90 @@ function ChannelCard({
               </code>
               <CopyButton value={webhookUrl} />
             </div>
-            {urlHelp && (
-              <p className="text-xs text-gray-500">{urlHelp}</p>
+            {(urlHelp || installInstructions) && (
+              <p className="text-xs text-gray-500">
+                {installInstructions || urlHelp}
+              </p>
+            )}
+            {needsInstall && installUrl && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  window.open(installUrl, "_blank", "noopener,noreferrer");
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                {entry.type === "discord" ? "Add to Discord" : `Install ${entry.type}`}
+              </Button>
             )}
           </div>
         )}
-        {entry.type !== "website" && !webhookUrl && isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">
-            {errorMessage || "Channel registration failed — check the credential."}
-          </p>
-        )}
+        {entry.type !== "website" && !webhookUrl && isError && (() => {
+          // Use the shared classifier so errors render with the same
+          // bucket-specific CTAs as the deploy modal in ChatflowBuilder.
+          const errorInfo = classifyChannelError(entry.type, {
+            status: rawStatus,
+            error: errorMessage,
+            error_code: cfg.error_code as string | undefined,
+            conflict: cfg.conflict as
+              | { entity_type?: "chatbot" | "chatflow"; entity_id?: string; entity_name?: string }
+              | undefined,
+          });
+          if (!errorInfo) {
+            return (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                {errorMessage || "Channel registration failed — check the credential."}
+              </p>
+            );
+          }
+          return (
+            <div className="space-y-2">
+              <p
+                className={
+                  errorInfo.bucket === "operator_config"
+                    ? "text-xs text-gray-500 dark:text-gray-400"
+                    : errorInfo.bucket === "credential_missing"
+                      ? "text-xs text-amber-700 dark:text-amber-400"
+                      : "text-xs text-red-600 dark:text-red-400"
+                }
+              >
+                {errorInfo.bucket === "operator_config"
+                  ? `Not configured — ${errorInfo.message}`
+                  : errorInfo.message ||
+                    "Channel registration failed — check the credential."}
+              </p>
+              {errorInfo.bucket === "credential_missing" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigate(
+                      `/settings/credentials?provider=${encodeURIComponent(
+                        errorInfo.hint?.provider ?? entry.type,
+                      )}`,
+                    );
+                  }}
+                >
+                  Add {entry.type} credential
+                </Button>
+              )}
+              {/* No CTA for operator_config — end users can't fix env vars;
+                  the message itself is enough. */}
+              {errorInfo.bucket === "conflict" &&
+                errorInfo.hint?.conflictingEntityId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      navigate(`/studio/${errorInfo.hint!.conflictingEntityId!}`);
+                    }}
+                  >
+                    Open {errorInfo.hint.conflictingEntityName ?? "conflicting chatflow"}
+                  </Button>
+                )}
+            </div>
+          );
+        })()}
         {entry.type !== "website" && !webhookUrl && !isError && (
           <p className="text-xs text-gray-500">
             This channel is configured but has not been registered yet. Open
@@ -727,6 +814,7 @@ export default function ChatflowDetailPage() {
   const { toast } = useToast();
   const { currentWorkspace } = useApp();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const {
     data: chatflow,
@@ -739,6 +827,34 @@ export default function ChatflowDetailPage() {
     enabled: !!chatflowId,
     retry: false,
   });
+
+  // Discord OAuth callback redirects here with `?discord_guild=<id>` after
+  // the user authorizes the bot. Refresh chatflow data so the channel card
+  // updates from `needs_install` → registered, then strip the query param.
+  useEffect(() => {
+    const guildId = searchParams.get("discord_guild");
+    const discordError = searchParams.get("discord_error");
+    if (guildId) {
+      queryClient.invalidateQueries({ queryKey: ["chatflow", chatflowId] });
+      toast({
+        title: "Discord connected",
+        description: `Bot installed in guild ${guildId}. Slash commands /ask and /chat are ready.`,
+      });
+      const next = new URLSearchParams(searchParams);
+      next.delete("discord_guild");
+      setSearchParams(next, { replace: true });
+    } else if (discordError) {
+      toast({
+        title: "Discord install failed",
+        description: discordError,
+        variant: "destructive",
+      });
+      const next = new URLSearchParams(searchParams);
+      next.delete("discord_error");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("discord_guild"), searchParams.get("discord_error"), chatflowId]);
 
   // Cross-workspace race: chatflow fetched in workspace A then user switched
   // to B. Match the KB/chatbot pattern — show the dedicated screen.

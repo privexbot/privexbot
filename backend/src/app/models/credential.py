@@ -175,7 +175,7 @@ class Credential(Base):
     description = Column(Text, nullable=True)
     credential_type = Column(Enum(CredentialType), nullable=False, index=True)
 
-    # Provider/service name (e.g., "telegram", "discord", "openai", "notion")
+    # Provider/service name (e.g., "telegram", "discord", "notion", "google")
     # This indicates which service the credential is for, separate from auth mechanism
     provider = Column(String(50), nullable=True, index=True, server_default=None)
 

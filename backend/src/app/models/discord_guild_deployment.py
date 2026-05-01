@@ -20,7 +20,7 @@ Architecture:
 - Return response to Discord channel
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
@@ -82,16 +82,28 @@ class DiscordGuildDeployment(Base):
     # Example: "https://cdn.discordapp.com/icons/123/abc.png"
 
     # ═══════════════════════════════════════════════════════════════
-    # TARGET CHATBOT
+    # TARGET ENTITY (chatbot OR chatflow)
     # ═══════════════════════════════════════════════════════════════
+    # `chatbot_id` is the historical column name; it now stores the id of
+    # whichever entity type `entity_type` indicates. The FK to chatbots was
+    # dropped in the migration that introduced `entity_type` so chatflow IDs
+    # can live here too. Application-level integrity is enforced by
+    # `discord_guild_service.deploy_to_guild` which validates the id against
+    # the right table before insert. Lifecycle cleanup happens via
+    # `discord_guild_service.remove_for_entity` when an entity is deleted.
     chatbot_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("chatbots.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
-    # The chatbot that handles messages from this guild
-    # CASCADE: When chatbot deleted, deployment is deleted
+    # entity_type: "chatbot" | "chatflow". Defaults to "chatbot" so existing
+    # rows keep working post-migration without data backfill surprises.
+    entity_type = Column(
+        String(20),
+        nullable=False,
+        default="chatbot",
+        server_default="chatbot",
+    )
 
     # ═══════════════════════════════════════════════════════════════
     # CHANNEL RESTRICTIONS
@@ -145,7 +157,9 @@ class DiscordGuildDeployment(Base):
     # RELATIONSHIPS
     # ═══════════════════════════════════════════════════════════════
     workspace = relationship("Workspace", back_populates="discord_guild_deployments")
-    chatbot = relationship("Chatbot", back_populates="discord_guild_deployments")
+    # No `chatbot` relationship: `chatbot_id` is polymorphic (chatbot OR
+    # chatflow id, disambiguated by `entity_type`) and has no DB-level FK.
+    # Resolve the target entity via `discord_guild_service.get_entity_for_guild`.
     creator = relationship("User", foreign_keys=[created_by])
 
     # ═══════════════════════════════════════════════════════════════
@@ -154,6 +168,13 @@ class DiscordGuildDeployment(Base):
     __table_args__ = (
         Index("ix_discord_guild_workspace_chatbot", "workspace_id", "chatbot_id"),
         Index("ix_discord_guild_active", "guild_id", "is_active"),
+        # Enforce the discriminator at the DB level. Without this, a typo at
+        # call-site (e.g. entity_type="Chatbot") inserts a row that
+        # `get_entity_for_guild` can't classify and silently routes nowhere.
+        CheckConstraint(
+            "entity_type IN ('chatbot', 'chatflow')",
+            name="ck_discord_guild_deployments_entity_type",
+        ),
     )
 
     def __repr__(self):

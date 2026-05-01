@@ -70,6 +70,29 @@ case $COMMAND in
         # Create deployment directory
         mkdir -p deploy/secretvm
 
+        # Safety: if deploy/secretvm/.env already exists, refuse to overwrite
+        # unless the operator explicitly opts in with --force. This file is
+        # the canonical production env and is hand-curated with real OAuth
+        # secrets, Discord shared bot tokens, etc. — silently overwriting it
+        # has wiped credentials before. Pass --force to bypass.
+        FORCE=0
+        for arg in "$@"; do
+            case "$arg" in
+                --force|-f) FORCE=1 ;;
+            esac
+        done
+
+        if [ -f "deploy/secretvm/.env" ] && [ "$FORCE" -ne 1 ]; then
+            echo -e "${YELLOW}⚠️  deploy/secretvm/.env already exists.${NC}"
+            echo -e "${YELLOW}    Refusing to overwrite — this file may contain real production secrets.${NC}"
+            echo ""
+            echo -e "${BLUE}Options:${NC}"
+            echo "  • Edit it directly in place if it just needs an update"
+            echo "  • Re-run with --force to regenerate from .env.secretvm.local / .env.secretvm.example"
+            echo "  • Delete deploy/secretvm/.env first if you really want a clean copy"
+            exit 1
+        fi
+
         # Copy .env template
         # Priority: .env.secretvm.local (with real credentials) > .env.secretvm.example (template)
         if [ -f ".env.secretvm.local" ]; then

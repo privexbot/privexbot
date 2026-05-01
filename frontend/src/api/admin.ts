@@ -326,6 +326,34 @@ export const adminApi = {
     const response = await apiClient.get<PlanCard[]>("/billing/public-plans");
     return response.data;
   },
+
+  /**
+   * Per-provider OAuth redirect URIs + which env vars are populated.
+   * Used by the AdminDashboard "OAuth setup" card so operators can copy
+   * the exact URI to register in Google / Notion / Calendly / Slack /
+   * Discord developer consoles.
+   */
+  getOAuthRedirectUris: async (): Promise<OAuthRedirectUrisResponse> => {
+    const response = await apiClient.get<OAuthRedirectUrisResponse>(
+      "/admin/oauth/redirect-uris",
+    );
+    return response.data;
+  },
 };
+
+export interface OAuthProviderInfo {
+  provider: string;
+  label: string;
+  redirect_uri: string;
+  console_url: string;
+  configured: boolean;
+  env_var: string;
+}
+
+export interface OAuthRedirectUrisResponse {
+  providers: OAuthProviderInfo[];
+  configured_providers: string[];
+  missing_providers: string[];
+}
 
 export default adminApi;

@@ -107,6 +107,60 @@ async def lifespan(app: FastAPI):
         print(f"⚠️  MinIO initialization warning: {e}")
         print("   (File storage features will be unavailable)")
 
+    # Surface missing OAuth / shared-bot env vars at startup so operators
+    # see the gaps once instead of debugging deploy errors per-channel later.
+    # No hard-fail — local dev only needs the providers it's actively
+    # working on; deploys for unconfigured channels will report
+    # "needs platform setup" in the UI.
+    _provider_env_checks = [
+        ("Slack",            "SLACK_CLIENT_ID",            settings.SLACK_CLIENT_ID),
+        ("Google",           "GOOGLE_CLIENT_ID",           settings.GOOGLE_CLIENT_ID),
+        ("Notion",           "NOTION_CLIENT_ID",           settings.NOTION_CLIENT_ID),
+        ("Calendly",         "CALENDLY_CLIENT_ID",         settings.CALENDLY_CLIENT_ID),
+        ("Discord shared bot", "DISCORD_SHARED_APPLICATION_ID", settings.DISCORD_SHARED_APPLICATION_ID),
+    ]
+    missing = [(provider, var) for provider, var, value in _provider_env_checks if not value]
+    if missing:
+        print("⚠️  OAuth / shared-bot configuration:")
+        for provider, var in missing:
+            print(f"   - {var} empty → {provider} channel will report 'needs platform setup'.")
+    else:
+        print("✅ All OAuth / shared-bot env vars set.")
+
+    # Discord shared-bot: register global slash commands on startup so /ask
+    # and /chat are available across all guilds without per-guild calls.
+    # Per-guild registration still runs at install time for instant
+    # availability; this is the safety net for guilds installed before
+    # per-guild registration was wired up. Idempotent (PUT replaces all).
+    if settings.DISCORD_SHARED_BOT_TOKEN and settings.DISCORD_SHARED_APPLICATION_ID:
+        try:
+            from app.integrations.discord_integration import discord_integration
+
+            commands = [
+                {
+                    "name": "ask",
+                    "description": "Ask the assistant a question",
+                    "options": [
+                        {"name": "message", "type": 3, "description": "Your question", "required": True}
+                    ],
+                },
+                {
+                    "name": "chat",
+                    "description": "Chat with the assistant",
+                    "options": [
+                        {"name": "message", "type": 3, "description": "Your message", "required": True}
+                    ],
+                },
+            ]
+            await discord_integration.register_global_commands(
+                bot_token=settings.DISCORD_SHARED_BOT_TOKEN,
+                application_id=settings.DISCORD_SHARED_APPLICATION_ID,
+                commands=commands,
+            )
+            print("✅ Discord global slash commands registered (/ask, /chat).")
+        except Exception as exc:
+            print(f"⚠️  Discord global slash registration failed: {exc}")
+
     yield
 
     # Shutdown

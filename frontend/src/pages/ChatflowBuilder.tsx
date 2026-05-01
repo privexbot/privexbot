@@ -105,6 +105,7 @@ import { chatflowDraftApi, type FinalizeChatflowResponse } from "@/api/chatflow"
 import { config as envConfig } from "@/config/env";
 import ChannelSelector, { type DeploymentChannel } from "@/components/deployment/ChannelSelector";
 import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
+import { classifyChannelError } from "@/lib/channelErrors";
 
 // Node configuration panel for type-specific settings
 import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
@@ -1764,18 +1765,17 @@ export default function ChatflowBuilder() {
                   <Label className="text-xs text-gray-500">Channels</Label>
                   <div className="mt-2 space-y-3">
                     {Object.entries(deployResult.channels).map(([channelName, info]) => {
-                      // Distinguish "the operator hasn't wired this channel
-                      // up yet" from "this actually failed at deploy time".
-                      // Backend doesn't expose a reason code, so we pattern-
-                      // match the human error string against known
-                      // configuration-gap phrasings.
-                      const errLower = (info.error ?? "").toLowerCase();
-                      const isUnconfigured =
-                        info.status !== "success" &&
-                        (errLower.includes("not configured") ||
-                          errLower.includes("credential is required") ||
-                          errLower.includes("client_id") ||
-                          errLower.includes("token credential"));
+                      // Classify failures into actionable buckets so each
+                      // row can show the right next-step CTA. Helper lives
+                      // in `lib/channelErrors.ts` and is shared with the
+                      // chatflow detail page.
+                      const errorInfo = classifyChannelError(channelName, info);
+                      const needsInstall = info.status === "needs_install";
+                      const installUrl =
+                        (info as { install_url?: string }).install_url ||
+                        info.webhook_url;
+                      const installInstructions =
+                        (info as { instructions?: string }).instructions;
 
                       return (
                         <div
@@ -1785,18 +1785,54 @@ export default function ChatflowBuilder() {
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-medium capitalize">{channelName}</span>
                             {info.status === "success" ? (
-                              <Badge variant="secondary">{info.status}</Badge>
-                            ) : isUnconfigured ? (
+                              <Badge variant="secondary">success</Badge>
+                            ) : needsInstall ? (
+                              <Badge
+                                variant="outline"
+                                className="text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700"
+                              >
+                                Install required
+                              </Badge>
+                            ) : errorInfo?.bucket === "operator_config" ? (
                               <Badge
                                 variant="outline"
                                 className="text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600"
                               >
                                 Skipped
                               </Badge>
+                            ) : errorInfo?.bucket === "credential_missing" ? (
+                              <Badge
+                                variant="outline"
+                                className="text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+                              >
+                                Needs credential
+                              </Badge>
+                            ) : errorInfo?.bucket === "conflict" ? (
+                              <Badge variant="destructive">Conflict</Badge>
                             ) : (
                               <Badge variant="destructive">{info.status}</Badge>
                             )}
                           </div>
+                          {needsInstall && installUrl && (
+                            <div className="space-y-2">
+                              {installInstructions && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400">
+                                  {installInstructions}
+                                </p>
+                              )}
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  window.open(installUrl, "_blank", "noopener,noreferrer");
+                                }}
+                                className="font-manrope bg-indigo-600 hover:bg-indigo-700 text-white"
+                              >
+                                {channelName === "discord"
+                                  ? "Add to Discord"
+                                  : `Install ${channelName}`}
+                              </Button>
+                            </div>
+                          )}
                           {channelName === "website" && info.status === "success" && (
                             <EmbedCode
                               type="chatflow"
@@ -1804,7 +1840,7 @@ export default function ChatflowBuilder() {
                               showOptions={false}
                             />
                           )}
-                          {channelName !== "website" && info.webhook_url && (
+                          {channelName !== "website" && info.webhook_url && !needsInstall && (
                             <div className="flex items-center gap-2">
                               <code className="flex-1 min-w-0 font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded px-2 py-1 break-all">
                                 {info.webhook_url}
@@ -1821,16 +1857,52 @@ export default function ChatflowBuilder() {
                               </Button>
                             </div>
                           )}
-                          {info.error && (
-                            <p
-                              className={
-                                isUnconfigured
-                                  ? "text-xs text-gray-500 dark:text-gray-400"
-                                  : "text-xs text-red-600"
-                              }
-                            >
-                              {isUnconfigured ? `Not configured — ${info.error}` : info.error}
-                            </p>
+                          {errorInfo && (
+                            <div className="mt-1 space-y-2">
+                              <p
+                                className={
+                                  errorInfo.bucket === "operator_config"
+                                    ? "text-xs text-gray-500 dark:text-gray-400"
+                                    : errorInfo.bucket === "credential_missing"
+                                      ? "text-xs text-amber-700 dark:text-amber-400"
+                                      : "text-xs text-red-600 dark:text-red-400"
+                                }
+                              >
+                                {errorInfo.bucket === "operator_config"
+                                  ? `Not configured — ${errorInfo.message}`
+                                  : errorInfo.message}
+                              </p>
+                              {errorInfo.bucket === "credential_missing" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    navigate(
+                                      `/settings/credentials?provider=${encodeURIComponent(
+                                        errorInfo.hint?.provider ?? channelName,
+                                      )}`,
+                                    );
+                                  }}
+                                  className="font-manrope"
+                                >
+                                  Add {channelName} credential
+                                </Button>
+                              )}
+                              {/* No CTA for operator_config — end users can't
+                                  fix env vars; the message itself is enough. */}
+                              {errorInfo.bucket === "conflict" && errorInfo.hint?.conflictingEntityId && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    navigate(`/studio/${errorInfo.hint!.conflictingEntityId!}`);
+                                  }}
+                                  className="font-manrope"
+                                >
+                                  Open {errorInfo.hint.conflictingEntityName ?? "conflicting chatflow"}
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </div>
                       );

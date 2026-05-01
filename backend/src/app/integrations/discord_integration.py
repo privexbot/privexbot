@@ -289,12 +289,35 @@ class DiscordIntegration:
 
         WHY: Set up bot commands users can invoke
         HOW: Call Discord API to register commands
+
+        NOTE: global commands take up to 1 hour to propagate to clients.
+        For instant availability use `register_guild_commands` per guild.
         """
         headers = {"Authorization": f"Bot {bot_token}"}
         response = requests.put(
             f"https://discord.com/api/v10/applications/{application_id}/commands",
             headers=headers,
             json=commands
+        )
+        return response.json()
+
+    async def register_guild_commands(
+        self,
+        bot_token: str,
+        application_id: str,
+        guild_id: str,
+        commands: list,
+    ) -> dict:
+        """
+        Register slash commands for a single guild — instant availability,
+        no 1-hour propagation delay. Used by the OAuth install callback so
+        users see /ask and /chat the moment the bot lands in their server.
+        """
+        headers = {"Authorization": f"Bot {bot_token}"}
+        response = requests.put(
+            f"https://discord.com/api/v10/applications/{application_id}/guilds/{guild_id}/commands",
+            headers=headers,
+            json=commands,
         )
         return response.json()
 

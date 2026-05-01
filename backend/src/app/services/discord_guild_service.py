@@ -59,42 +59,50 @@ class DiscordGuildService:
         user_id: UUID = None,
         guild_name: str = None,
         guild_icon: str = None,
-        allowed_channel_ids: List[str] = None
+        allowed_channel_ids: List[str] = None,
+        entity_type: str = "chatbot",
     ) -> DiscordGuildDeployment:
         """
-        Deploy chatbot to a Discord guild (server).
+        Deploy a chatbot OR chatflow to a Discord guild (server).
 
-        WHY: Enable chatbot to receive messages from Discord server
-        HOW: Create DiscordGuildDeployment record mapping guild → chatbot
+        Despite the historical `chatbot_id` argument name, this method now
+        accepts either a chatbot UUID or a chatflow UUID; the `entity_type`
+        argument disambiguates which table to validate against. The
+        `chatbot_id` column on the row stores the entity id; the
+        `entity_type` column distinguishes them. The FK on chatbot_id was
+        dropped in the migration that introduced entity_type so chatflow
+        ids can live there.
 
         ARGS:
-            db: Database session
-            workspace_id: Workspace ID (for tenant isolation)
-            chatbot_id: Chatbot ID to deploy
-            guild_id: Discord server ID (snowflake)
-            user_id: User creating the deployment
-            guild_name: Discord server name (cached for display)
-            guild_icon: Discord server icon URL
-            allowed_channel_ids: Optional list of channel IDs to respond in (empty = all)
-
-        RETURNS:
-            Created DiscordGuildDeployment instance
-
-        RAISES:
-            ValueError: If chatbot not found, wrong workspace, or guild already deployed
+            entity_type: "chatbot" (default) or "chatflow".
+            chatbot_id:  The id to bind, regardless of entity_type.
         """
-        # Verify chatbot belongs to workspace
-        chatbot = db.query(Chatbot).filter(
-            Chatbot.id == chatbot_id,
-            Chatbot.workspace_id == workspace_id
-        ).first()
+        if entity_type not in ("chatbot", "chatflow"):
+            raise ValueError(f"Unsupported entity_type: {entity_type!r}")
 
-        if not chatbot:
-            raise ValueError("Chatbot not found in this workspace")
+        # Validate the entity exists in this workspace and is dispatch-ready.
+        if entity_type == "chatbot":
+            chatbot = db.query(Chatbot).filter(
+                Chatbot.id == chatbot_id,
+                Chatbot.workspace_id == workspace_id,
+            ).first()
+            if not chatbot:
+                raise ValueError("Chatbot not found in this workspace")
+            if chatbot.status != ChatbotStatus.ACTIVE:
+                raise ValueError(
+                    f"Chatbot must be active to deploy (current status: {chatbot.status})"
+                )
+        else:
+            from app.models.chatflow import Chatflow
 
-        # Check chatbot is active
-        if chatbot.status != ChatbotStatus.ACTIVE:
-            raise ValueError(f"Chatbot must be active to deploy (current status: {chatbot.status})")
+            chatflow = db.query(Chatflow).filter(
+                Chatflow.id == chatbot_id,
+                Chatflow.workspace_id == workspace_id,
+            ).first()
+            if not chatflow:
+                raise ValueError("Chatflow not found in this workspace")
+            if not chatflow.is_active:
+                raise ValueError("Chatflow must be active to deploy")
 
         # Check guild not already deployed
         existing = db.query(DiscordGuildDeployment).filter(
@@ -103,7 +111,9 @@ class DiscordGuildService:
 
         if existing:
             if existing.workspace_id == workspace_id:
-                raise ValueError(f"Guild {guild_id} is already deployed to chatbot {existing.chatbot_id}")
+                raise ValueError(
+                    f"Guild {guild_id} is already deployed to {existing.entity_type} {existing.chatbot_id}"
+                )
             else:
                 raise ValueError(f"Guild {guild_id} is already deployed to another workspace")
 
@@ -114,6 +124,7 @@ class DiscordGuildService:
             guild_name=guild_name,
             guild_icon=guild_icon,
             chatbot_id=chatbot_id,
+            entity_type=entity_type,
             allowed_channel_ids=allowed_channel_ids or [],
             is_active=True,
             created_by=user_id,
@@ -126,52 +137,18 @@ class DiscordGuildService:
 
         return deployment
 
-    def get_chatbot_for_guild(
-        self,
-        db: Session,
-        guild_id: str
-    ) -> Optional[Tuple[Chatbot, DiscordGuildDeployment]]:
-        """
-        Lookup which chatbot handles a guild's messages.
-
-        WHY: Route incoming Discord messages to correct chatbot
-        HOW: Find active deployment for guild_id
-
-        ARGS:
-            db: Database session
-            guild_id: Discord server ID
-
-        RETURNS:
-            Tuple of (Chatbot, DiscordGuildDeployment) or None if not found
-        """
-        deployment = db.query(DiscordGuildDeployment).filter(
-            DiscordGuildDeployment.guild_id == guild_id,
-            DiscordGuildDeployment.is_active == True
-        ).first()
-
-        if not deployment:
-            return None
-
-        chatbot = db.query(Chatbot).filter(
-            Chatbot.id == deployment.chatbot_id,
-            Chatbot.status == ChatbotStatus.ACTIVE
-        ).first()
-
-        if not chatbot:
-            return None
-
-        return (chatbot, deployment)
-
     def get_entity_for_guild(
         self,
         db: Session,
         guild_id: str
     ) -> Optional[Tuple[str, Any, DiscordGuildDeployment]]:
         """
-        Lookup chatbot OR chatflow for a guild's messages.
+        Lookup the chatbot OR chatflow that handles this guild.
 
-        WHY: Support both chatbots and chatflows in Discord shared bot
-        HOW: Check chatbot table first, then chatflow table by chatbot_id
+        Reads `entity_type` from the deployment row to dispatch to the right
+        table. Falls back to chatbot for legacy rows where entity_type would
+        be NULL — but the column has a server default of 'chatbot' so that
+        path shouldn't trigger in practice.
 
         RETURNS:
             Tuple of (bot_type, entity, deployment) or None
@@ -184,7 +161,19 @@ class DiscordGuildService:
         if not deployment:
             return None
 
-        # Try chatbot first (primary use case)
+        entity_type = (deployment.entity_type or "chatbot").lower()
+
+        if entity_type == "chatflow":
+            from app.models.chatflow import Chatflow
+            chatflow = db.query(Chatflow).filter(
+                Chatflow.id == deployment.chatbot_id,
+                Chatflow.is_active == True
+            ).first()
+            if chatflow:
+                return ("chatflow", chatflow, deployment)
+            return None
+
+        # Default / chatbot path
         chatbot = db.query(Chatbot).filter(
             Chatbot.id == deployment.chatbot_id,
             Chatbot.status == ChatbotStatus.ACTIVE
@@ -193,17 +182,43 @@ class DiscordGuildService:
         if chatbot:
             return ("chatbot", chatbot, deployment)
 
-        # Try chatflow (chatbot_id may reference a chatflow)
-        from app.models.chatflow import Chatflow
-        chatflow = db.query(Chatflow).filter(
-            Chatflow.id == deployment.chatbot_id,
-            Chatflow.is_active == True
-        ).first()
-
-        if chatflow:
-            return ("chatflow", chatflow, deployment)
-
         return None
+
+    def remove_for_entity(
+        self,
+        db: Session,
+        entity_type: str,
+        entity_id: UUID,
+    ) -> int:
+        """
+        Delete all Discord guild deployments bound to a chatbot or chatflow.
+
+        WHY: `discord_guild_deployments.chatbot_id` is polymorphic (chatbot
+        OR chatflow id, disambiguated by `entity_type`) and the DB-level FK
+        was dropped in migration `d876f78053d0`. Without that FK there is no
+        ON DELETE CASCADE — orphan rows would block re-binding the same
+        `guild_id` to a replacement entity (the column is UNIQUE). This
+        method restores cascade semantics at the application layer; callers
+        invoke it from chatbot/chatflow delete code paths.
+
+        IMPORTANT: does NOT commit. The bulk delete runs in the caller's
+        transaction so that if the surrounding entity-delete fails after
+        this call, both rollback together.
+
+        ARGS:
+            entity_type: "chatbot" or "chatflow".
+            entity_id:   The chatbot or chatflow uuid.
+
+        RETURNS:
+            Number of deployment rows removed.
+        """
+        if entity_type not in ("chatbot", "chatflow"):
+            raise ValueError(f"Unsupported entity_type: {entity_type!r}")
+
+        return db.query(DiscordGuildDeployment).filter(
+            DiscordGuildDeployment.chatbot_id == entity_id,
+            DiscordGuildDeployment.entity_type == entity_type,
+        ).delete(synchronize_session=False)
 
     def remove_guild(
         self,
@@ -431,16 +446,34 @@ class DiscordGuildService:
         db.refresh(deployment)
         return deployment
 
-    def generate_invite_url(self) -> str:
+    def generate_invite_url(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[UUID] = None,
+        workspace_id: Optional[UUID] = None,
+    ) -> str:
         """
-        Generate Discord bot invite URL for shared bot.
+        Generate Discord bot invite URL for the shared bot.
 
-        WHY: Users need to add the shared bot to their server
-        HOW: Use environment-configured application ID
+        When `entity_type` and `entity_id` are passed, the URL includes a
+        signed `state` parameter and `redirect_uri` pointing at our OAuth
+        callback (`/webhooks/discord/oauth/callback`). The callback decodes
+        state, creates a `DiscordGuildDeployment` row binding `guild_id` to
+        the entity, then redirects the user back to the studio. Without
+        these args (legacy use), the URL is the bare invite — operator must
+        bind manually via the API.
 
-        RETURNS:
-            Discord OAuth2 invite URL
+        ARGS:
+            entity_type:  "chatbot" or "chatflow" — only required for
+                          state-encoded URLs.
+            entity_id:    The chatbot/chatflow id to bind on install.
+            workspace_id: Workspace id (carried in state for auth).
         """
+        import base64
+        import json
+        import secrets as _secrets
+        from urllib.parse import quote, urlencode
+
         application_id = settings.DISCORD_SHARED_APPLICATION_ID
 
         if not application_id:
@@ -456,9 +489,38 @@ class DiscordGuildService:
         # - Use Slash Commands (2147483648) - /ask, /chat commands
         permissions = 1024 | 2048 | 16384 | 32768 | 65536 | 64 | 2147483648
 
-        scopes = "bot+applications.commands"
+        params = {
+            "client_id": application_id,
+            "permissions": str(permissions),
+            "scope": "bot applications.commands",
+        }
 
-        return f"https://discord.com/api/oauth2/authorize?client_id={application_id}&permissions={permissions}&scope={scopes}"
+        if entity_type and entity_id and workspace_id:
+            # `response_type=code` switches Discord to the OAuth flow that
+            # gives us back an exchangeable code on our redirect_uri. Without
+            # this, install is "bot drops in server, no callback." With it,
+            # we can finish binding automatically.
+            params["response_type"] = "code"
+            params["redirect_uri"] = f"{settings.API_BASE_URL.rstrip('/')}/webhooks/discord/oauth/callback"
+            state_payload = {
+                "entity_type": entity_type,
+                "entity_id": str(entity_id),
+                "workspace_id": str(workspace_id),
+                "csrf": _secrets.token_urlsafe(16),
+            }
+            params["state"] = base64.urlsafe_b64encode(
+                json.dumps(state_payload).encode()
+            ).decode().rstrip("=")
+
+        # Use `+` between scopes for Discord's parser (urllib quote replaces
+        # spaces with %20 which Discord also accepts but the existing tests
+        # in this repo expect `+`). Override scope encoding manually.
+        scope_value = params.pop("scope")
+        query = urlencode(params, quote_via=quote)
+        return (
+            f"https://discord.com/api/oauth2/authorize?{query}"
+            f"&scope={scope_value.replace(' ', '+')}"
+        )
 
     async def fetch_bot_guilds(self, force_refresh: bool = False) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
