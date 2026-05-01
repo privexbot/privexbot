@@ -278,29 +278,48 @@ export function AdminUserDetail() {
             <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">No organizations</p>
           ) : (
             <div className="space-y-3">
-              {user.organizations.map((org) => (
-                <Link
-                  key={org.id}
-                  to={`/admin/organizations/${org.id}`}
-                  className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
-                      {org.name}
-                    </p>
-                    <p
+              {user.organizations.map((org) => {
+                const tier = org.subscription_tier ?? "free";
+                const tierClass =
+                  tier === "pro"
+                    ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                    : tier === "enterprise"
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                      : tier === "starter"
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                        : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300";
+                return (
+                  <Link
+                    key={org.id}
+                    to={`/admin/organizations/${org.id}`}
+                    className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                        {org.name}
+                      </p>
+                      <p
+                        className={cn(
+                          "text-xs font-manrope",
+                          org.role === "owner"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-gray-600 dark:text-gray-400"
+                        )}
+                      >
+                        {org.role}
+                      </p>
+                    </div>
+                    <span
                       className={cn(
-                        "text-xs font-manrope",
-                        org.role === "owner"
-                          ? "text-amber-600 dark:text-amber-400"
-                          : "text-gray-600 dark:text-gray-400"
+                        "px-2 py-0.5 rounded-full text-[11px] font-medium font-manrope capitalize",
+                        tierClass,
                       )}
                     >
-                      {org.role}
-                    </p>
-                  </div>
-                </Link>
-              ))}
+                      {tier}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>

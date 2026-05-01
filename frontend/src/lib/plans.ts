@@ -7,7 +7,7 @@
 
 import type { BillingLimits, BillingTier, PlanCard } from "@/api/billing";
 
-const RESOURCE_LABELS: Record<keyof BillingLimits, string> = {
+export const RESOURCE_LABELS: Record<keyof BillingLimits, string> = {
   chatbots: "Chatbots",
   chatflows: "Chatflows",
   kb_documents: "Knowledge base documents",

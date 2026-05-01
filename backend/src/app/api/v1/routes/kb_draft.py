@@ -1219,13 +1219,22 @@ async def preview_chunks_live(
     max_chunks = request.get("max_chunks", None)  # Allow frontend to control chunk limit
     enable_enhanced_metadata = request.get("enable_enhanced_metadata", False)
 
-    # CONTENT SIZE VALIDATION: Prevent timeout on large content
-    # 500KB limit prevents Traefik timeouts on CPU-intensive chunking operations
-    MAX_PREVIEW_CONTENT_SIZE = 500_000  # 500KB limit
+    # CONTENT SIZE VALIDATION: Prevent timeout on large content.
+    # Raised from 500KB → 2MB. Chunking is CPU-bound but fast (~1s/MB on
+    # commodity CPU), and sites with 30-50 pages of dense docs routinely
+    # produce 600KB-1MB of text. The frontend ALSO truncates to ~200KB
+    # before posting, so this cap is mainly a safety net against pathological
+    # inputs. Keep well under Traefik's default 60s timeout window.
+    MAX_PREVIEW_CONTENT_SIZE = 2_000_000  # 2 MB
     if len(content) > MAX_PREVIEW_CONTENT_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Content too large for preview ({len(content):,} chars). Maximum: {MAX_PREVIEW_CONTENT_SIZE:,} chars. Consider using fewer sources or smaller pages."
+            detail=(
+                f"Content too large for preview ({len(content):,} chars). "
+                f"Maximum: {MAX_PREVIEW_CONTENT_SIZE:,} chars. The actual "
+                f"ingestion will process the full content; the preview is "
+                f"capped to keep the response fast."
+            )
         )
 
     # CRITICAL: Normalize content to match pipeline processing

@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Globe, Settings, Plus, Eye, Loader2, CheckCircle, XCircle, AlertCircle, Copy, Download, Pencil, FileText, CheckSquare, Square } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useApp } from '@/contexts/AppContext';
 import { CrawlMethod, WebSourceConfig, KBContext } from '@/types/knowledge-base';
 import { Button } from '@/components/ui/button';
@@ -18,8 +19,17 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ContentEditor } from '@/components/ui/content-editor';
 import kbClient from '@/lib/kb-client';
+import { billingApi } from '@/api/billing';
 
 // Type for preview pages used in the enhanced immediate preview
 interface PreviewPage {
@@ -45,7 +55,10 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
   const [bulkMode, setBulkMode] = useState(false);
   const [config, setConfig] = useState<Partial<WebSourceConfig>>({
     method: CrawlMethod.CRAWL as CrawlMethod,
-    max_pages: 50,
+    // Default to 1 so a user who clicks through doesn't accidentally
+    // start a 50-page crawl. They can dial it up; warnings kick in at >10
+    // and confirmation at >20.
+    max_pages: 1,
     max_depth: 3,
     include_patterns: [] as string[],
     exclude_patterns: [] as string[],
@@ -80,6 +93,43 @@ export function KBWebSourceForm({ onAdd, onCancel, context = 'both' as KBContext
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
   const [editingPageIndex, setEditingPageIndex] = useState<number | null>(null);
   const [editedPages, setEditedPages] = useState<Record<number, string>>({});
+
+  // Confirmation dialog for crawls > 20 pages — gives the user a moment to
+  // reconsider before kicking off a crawl that will consume meaningful quota.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingSubmit, setPendingSubmit] = useState<(() => void) | null>(null);
+
+  // Pull plan + usage so the warning above 10 pages can show "you have N
+  // documents remaining on your <plan>" — keeps the user from kicking off a
+  // crawl that would later be quota-rejected at finalize time. Cached for
+  // 5 min via React Query default; cheap because it shares the same key
+  // BillingsPage uses.
+  const { data: planStatus } = useQuery({
+    queryKey: ['billing-plan'],
+    queryFn: () => billingApi.getPlan(),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const planQuotaHint = (() => {
+    if (!planStatus) return null;
+    const docBreakdown = planStatus.breakdown?.kb_documents;
+    if (!docBreakdown) return null;
+    if (docBreakdown.unlimited) return null;
+    const remaining = Math.max(0, docBreakdown.limit - docBreakdown.usage);
+    const planLabel = planStatus.label ?? planStatus.tier;
+    return `You have ${remaining.toLocaleString()} documents remaining on your ${planLabel} plan.`;
+  })();
+
+  // NOTE: An earlier revision of this form auto-filled an include pattern
+  // from the URL's path (e.g. pasting `https://example.com/docs` would
+  // pre-add `/docs/**`). That broke SPA-rendered docs sites — Vocs /
+  // React-Router setups often deploy under `/docs/...` but emit nav links
+  // at `/sdk/...`, `/api/...`, etc., so the auto-pattern silently rejected
+  // every discovered link. The diagnostic log line in
+  // `crawl4ai_service.py` (`N links match patterns (of M internal links
+  // found)`) makes it easy for users to add their own pattern when needed.
+  // Patterns stay opt-in; helper text below the field guides the user.
 
   // Cleanup function to delete temporary preview draft
   const cleanupPreviewDraft = async (draftId: string) => {
@@ -807,6 +857,21 @@ ${selectedPagesData.map((page: PreviewPage) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Confirmation gate: single-mode crawls > 20 pages prompt before adding,
+    // since they consume meaningful quota. We don't gate bulk mode here —
+    // bulk submissions already imply the user reviewed each URL.
+    if (!bulkMode && (config.max_pages ?? 1) > 20) {
+      setPendingSubmit(() => () => {
+        executeSubmit();
+      });
+      setConfirmOpen(true);
+      return;
+    }
+
+    executeSubmit();
+  };
+
+  const executeSubmit = () => {
     if (bulkMode) {
       // Handle bulk URL submission
       const urls = bulkUrls
@@ -880,10 +945,11 @@ ${selectedPagesData.map((page: PreviewPage) => {
       setValidationResult(null);
     }
 
-    // Reset common config
+    // Reset common config — keep max_pages at the safe default of 1 so the
+    // next source the user adds doesn't inherit a previous large value.
     setConfig({
       method: CrawlMethod.CRAWL,
-      max_pages: 50,
+      max_pages: 1,
       max_depth: 3,
       include_patterns: [],
       exclude_patterns: [],
@@ -1616,14 +1682,24 @@ https://docs.example.com
                   <Input
                     type="number"
                     min="1"
-                    max="1000"
+                    max="50"
                     value={config.max_pages}
                     onChange={(e) =>
-                      { setConfig({ ...config, max_pages: parseInt(e.target.value) || 50 }); }
+                      {
+                        const raw = parseInt(e.target.value);
+                        const next = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 50) : 1;
+                        setConfig({ ...config, max_pages: next });
+                      }
                     }
                     className="h-11 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-manrope"
                   />
-                  <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">1-1000 pages</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">1-50 pages</p>
+                  {(config.max_pages ?? 1) > 10 && (
+                    <div className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-2.5 text-xs text-amber-800 dark:text-amber-200 font-manrope">
+                      Crawling {config.max_pages} pages can take several minutes.
+                      {planQuotaHint && <> {planQuotaHint}</>}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -1681,7 +1757,9 @@ https://docs.example.com
                   ))}
                 </div>
                 <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope">
-                  Patterns to include in crawling
+                  Patterns match URL path (e.g. <code>/docs/**</code>). Leave
+                  empty to crawl every page on the same subdomain — recommended
+                  unless your site links use a path prefix you want to enforce.
                 </p>
               </div>
 
@@ -2209,6 +2287,52 @@ https://docs.example.com
           </div>
         </form>
       </CardContent>
+
+      {/* Confirmation dialog for high-page crawls — gives the user a moment
+          to acknowledge the quota cost before kicking off the crawl. */}
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          setConfirmOpen(open);
+          if (!open) setPendingSubmit(null);
+        }}
+      >
+        <DialogContent className="max-w-md w-[calc(100vw-2rem)]">
+          <DialogHeader>
+            <DialogTitle className="font-manrope">
+              Crawl up to {config.max_pages ?? 0} pages?
+            </DialogTitle>
+            <DialogDescription className="font-manrope">
+              This counts as up to {config.max_pages ?? 0} documents against
+              your plan and may take several minutes.
+              {planQuotaHint && <> {planQuotaHint}</>}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConfirmOpen(false);
+                setPendingSubmit(null);
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const fn = pendingSubmit;
+                setConfirmOpen(false);
+                setPendingSubmit(null);
+                fn?.();
+              }}
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

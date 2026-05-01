@@ -202,14 +202,23 @@ function TestChatPanel({ chatflowId }: { chatflowId: string }) {
 
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
+      // Per-request 90s timeout: chatflow inference goes through Secret AI
+      // (cold-start latency + remote inference) plus optional KB embedding
+      // and Qdrant search. The global axios timeout is 30s, which routinely
+      // trips on the first message of a session. Override here so the test
+      // panel waits for a real answer instead of dying mid-request.
       const response = await apiClient.post<{
         response?: string;
         message?: string;
         session_id?: string;
-      }>(`/chatflows/${chatflowId}/test`, {
-        message,
-        session_id: sessionId,
-      });
+      }>(
+        `/chatflows/${chatflowId}/test`,
+        {
+          message,
+          session_id: sessionId,
+        },
+        { timeout: 90000 },
+      );
       return response.data;
     },
     onSuccess: (data) => {

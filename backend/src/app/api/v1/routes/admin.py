@@ -383,6 +383,24 @@ class _AdminUpgradeRequest(_PlanBaseModel):
     tier: str
 
 
+@router.get("/orgs/{org_id}/plan")
+async def admin_get_org_plan(
+    org_id: UUID,
+    db: Session = Depends(get_db),
+    staff: User = Depends(get_staff_user),
+):
+    """Read the current plan status (tier + live usage) for any organization.
+
+    Staff-only — `GET /billing/plan` only operates on the caller's active org;
+    this lets ops inspect another org's tier and usage breakdown before
+    deciding whether to upgrade or downgrade them.
+    """
+    try:
+        return _billing_service.get_plan_status(db, org_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/orgs/{org_id}/plan")
 async def admin_upgrade_org_plan(
     org_id: UUID,

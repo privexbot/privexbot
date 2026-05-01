@@ -122,6 +122,8 @@ class UserOrgMembership(BaseModel):
     name: str
     role: str
     joined_at: Optional[str] = None
+    subscription_tier: Optional[str] = None
+    subscription_status: Optional[str] = None
 
 
 class UserWorkspaceMembership(BaseModel):

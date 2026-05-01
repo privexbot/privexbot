@@ -84,9 +84,24 @@ CUSTOMER_SUPPORT_FAQ = {
         "nodes": [
             _node("trigger_1", "trigger", x=60, y=120, label="Trigger"),
             _node(
+                "memory_1",
+                "memory",
+                x=300,
+                y=120,
+                label="Conversation memory",
+                config={
+                    # Pull the last 6 turns into `{{memory_1}}` so the LLM
+                    # can resolve follow-ups like "yes" / "the second one"
+                    # against prior context.
+                    "max_messages": 6,
+                    "format": "text",
+                    "include_system": False,
+                },
+            ),
+            _node(
                 "kb_1",
                 "kb",
-                x=320,
+                x=560,
                 y=120,
                 label="KB lookup",
                 config={
@@ -95,23 +110,33 @@ CUSTOMER_SUPPORT_FAQ = {
                     "query": "{{input}}",
                     "top_k": 4,
                     "search_method": "hybrid",
-                    "threshold": 0.55,
+                    # 0.55 was overly strict and silently dropped good hybrid
+                    # hits, making the template feel broken on first use.
+                    # 0.4 is the conventional hybrid default — relaxed enough
+                    # for typed questions to surface real chunks.
+                    "threshold": 0.4,
                 },
             ),
             _node(
                 "llm_1",
                 "llm",
-                x=600,
+                x=820,
                 y=120,
                 label="Answer",
                 config={
                     "system_prompt": (
                         "You are a helpful customer support assistant. "
-                        "Use only the provided context to answer. If the context "
-                        "does not contain the answer, say you don't know and "
-                        "offer to connect the user with a human."
+                        "Use only the provided context to answer. If the "
+                        "context does not contain the answer, say you don't "
+                        "know and offer to connect the user with a human. "
+                        "Use the conversation history to resolve short "
+                        "follow-up replies (e.g. 'yes', 'the first one')."
                     ),
-                    "prompt": "Context:\n{{kb_1}}\n\nUser question: {{input}}",
+                    "prompt": (
+                        "Conversation so far:\n{{memory_1}}\n\n"
+                        "Knowledge base context:\n{{kb_1}}\n\n"
+                        "User question: {{input}}"
+                    ),
                     "temperature": 0.3,
                     "max_tokens": 600,
                 },
@@ -119,7 +144,7 @@ CUSTOMER_SUPPORT_FAQ = {
             _node(
                 "response_1",
                 "response",
-                x=900,
+                x=1100,
                 y=120,
                 label="Response",
                 config={
@@ -130,9 +155,10 @@ CUSTOMER_SUPPORT_FAQ = {
             ),
         ],
         "edges": [
-            _edge("e1", "trigger_1", "kb_1"),
-            _edge("e2", "kb_1", "llm_1"),
-            _edge("e3", "llm_1", "response_1"),
+            _edge("e1", "trigger_1", "memory_1"),
+            _edge("e2", "memory_1", "kb_1"),
+            _edge("e3", "kb_1", "llm_1"),
+            _edge("e4", "llm_1", "response_1"),
         ],
         "variables": [],
         "settings": {},

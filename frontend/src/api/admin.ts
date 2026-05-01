@@ -7,6 +7,7 @@
 
 import apiClient from "@/lib/api-client";
 import type { AggregatedAnalytics } from "@/types/analytics";
+import type { PlanCard, PlanStatus } from "@/api/billing";
 
 // ============== Types ==============
 
@@ -99,6 +100,8 @@ export interface UserOrgMembership {
   name: string;
   role: string;
   joined_at?: string;
+  subscription_tier?: string;
+  subscription_status?: string;
 }
 
 export interface UserWorkspaceMembership {
@@ -292,15 +295,35 @@ export const adminApi = {
   },
 
   /**
-   * Upgrade an organization's plan tier (staff-only). Backend route:
-   * POST /admin/orgs/{org_id}/plan body { tier }. Returns the updated
-   * plan status (same shape as /billing/plan).
+   * Read an organization's current plan + live usage (staff-only).
+   * Mirrors `GET /billing/plan` but for any org id.
    */
-  upgradeOrgPlan: async (orgId: string, tier: string): Promise<unknown> => {
-    const response = await apiClient.post<unknown>(
+  getOrgPlan: async (orgId: string): Promise<PlanStatus> => {
+    const response = await apiClient.get<PlanStatus>(
+      `/admin/orgs/${orgId}/plan`,
+    );
+    return response.data;
+  },
+
+  /**
+   * Upgrade (or downgrade) an organization's plan tier (staff-only).
+   * Returns the updated plan status (same shape as /billing/plan).
+   */
+  upgradeOrgPlan: async (orgId: string, tier: string): Promise<PlanStatus> => {
+    const response = await apiClient.post<PlanStatus>(
       `/admin/orgs/${orgId}/plan`,
       { tier },
     );
+    return response.data;
+  },
+
+  /**
+   * Public list of all plan tiers (label, price, tagline, limits).
+   * Re-exported via the admin client so the org-detail page only depends
+   * on one client; the underlying endpoint is `/billing/public-plans`.
+   */
+  listPlans: async (): Promise<PlanCard[]> => {
+    const response = await apiClient.get<PlanCard[]>("/billing/public-plans");
     return response.data;
   },
 };

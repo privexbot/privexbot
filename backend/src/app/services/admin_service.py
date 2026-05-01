@@ -327,6 +327,8 @@ class AdminService:
                     "name": membership.organization.name,
                     "role": membership.role,
                     "joined_at": membership.created_at.isoformat() if membership.created_at else None,
+                    "subscription_tier": membership.organization.subscription_tier,
+                    "subscription_status": membership.organization.subscription_status,
                 })
 
         # Get workspace memberships

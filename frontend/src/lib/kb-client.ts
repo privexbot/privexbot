@@ -7,7 +7,31 @@
  * Phase 3: Pipeline Monitoring (Celery) - Real-time Status
  */
 
+import axios from 'axios';
 import { apiClient, handleApiError } from './api-client';
+
+/**
+ * Detect axios/fetch cancellation signals across the variants we see in
+ * practice: native AbortError DOMException, Error-shaped AbortError, and
+ * axios v1's `ERR_CANCELED` code (returned by axios.isCancel).
+ *
+ * Callers should re-throw the original error when this returns true so the
+ * cancellation signal isn't masked by handleApiError() wrapping.
+ */
+function isCancelLikeError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (error instanceof Error && error.name === 'AbortError') return true;
+  if (axios.isCancel(error)) return true;
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ERR_CANCELED'
+  ) {
+    return true;
+  }
+  return false;
+}
 import type {
   // Draft Phase Types
   CreateDraftRequest,
@@ -586,7 +610,11 @@ export const kbDraftApi = {
       const response = await apiClient.post(`/kb-drafts/${draftId}/preview-chunks-live`, params, { signal });
       return response.data;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      // Preserve every cancellation signal exactly as-is so the caller's
+      // `instanceof DOMException && name === 'AbortError'` check (and any
+      // axios.isCancel check) keeps working. Without this, handleApiError
+      // wraps the cancel into a plain Error and the caller fires a toast.
+      if (isCancelLikeError(error)) throw error;
       throw new Error(handleApiError(error));
     }
   },
@@ -594,13 +622,26 @@ export const kbDraftApi = {
   /**
    * Multi-page realistic preview
    * POST /api/v1/kb-drafts/{draft_id}/preview
+   *
+   * NOTE on auto-retry: an earlier revision retried this call up to 2 times on
+   * timeout. That spawned **concurrent backend crawls** for the same draft —
+   * the previous attempt's Playwright session kept running while a new POST
+   * kicked off another full crawl, racing each other for the same draft state
+   * (visible as interleaved page numbering in backend logs and the
+   * "is the process restarting?" symptom in the UI). The backend has no
+   * cancellation channel for an in-flight crawl, so the only safe behaviour
+   * here is one attempt with a generous timeout, then surface the error and
+   * let the user retry manually.
+   *
+   * The `retryCount` parameter is preserved for ABI compatibility with any
+   * external caller still passing it, but it is not honoured.
    */
-  async preview(draftId: string, maxPages: number = 5, retryCount: number = 0): Promise<PreviewResponse> {
-    const maxRetries = 2;
-    const timeoutMs = 300000; // 5 minutes
+  async preview(draftId: string, maxPages: number = 5, _retryCount: number = 0): Promise<PreviewResponse> {
+    void _retryCount;
+    const timeoutMs = 900000; // 15 minutes — accommodates ~50-page SPA crawls.
 
     try {
-      console.log(`🔄 Preview attempt ${retryCount + 1}/${maxRetries + 1} (timeout: ${timeoutMs/1000}s)`);
+      console.log(`🔄 Preview start (timeout: ${timeoutMs / 1000}s, max_pages: ${maxPages})`);
 
       const response = await apiClient.post<PreviewResponse>(
         `/kb-drafts/${draftId}/preview`,
@@ -612,20 +653,11 @@ export const kbDraftApi = {
       return response.data;
     } catch (error: any) {
       const isTimeoutError = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
-
-      if (isTimeoutError && retryCount < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
-        console.log(`⏰ Preview timeout, retrying in ${delay/1000}s... (attempt ${retryCount + 2}/${maxRetries + 1})`);
-
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.preview(draftId, maxPages, retryCount + 1);
-      }
-
-      // If all retries failed or non-timeout error
       if (isTimeoutError) {
-        throw new Error('Preview operation timed out after multiple attempts. The URLs may be taking too long to crawl or the websites are blocking automated access.');
+        throw new Error(
+          'Preview is still running on the server. The crawl can take several minutes for sites with many pages. Please wait and try again — refreshing or retrying immediately may start a duplicate crawl.'
+        );
       }
-
       throw new Error(handleApiError(error));
     }
   },

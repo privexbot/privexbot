@@ -1643,7 +1643,7 @@ export default function ChatflowBuilder() {
 
       {/* Deploy Dialog */}
       <Dialog open={isDeployDialogOpen} onOpenChange={setIsDeployDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Rocket className="w-4 h-4 text-purple-600" />
@@ -1691,7 +1691,7 @@ export default function ChatflowBuilder() {
           if (!open) setDeployResult(null);
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Check className="w-5 h-5 text-green-600" />
@@ -1763,53 +1763,85 @@ export default function ChatflowBuilder() {
                 <div>
                   <Label className="text-xs text-gray-500">Channels</Label>
                   <div className="mt-2 space-y-3">
-                    {Object.entries(deployResult.channels).map(([channelName, info]) => (
-                      <div
-                        key={channelName}
-                        className="rounded-md border p-3 bg-white dark:bg-gray-900"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium capitalize">{channelName}</span>
-                          <Badge variant={info.status === "success" ? "secondary" : "destructive"}>
-                            {info.status}
-                          </Badge>
-                        </div>
-                        {channelName === "website" && info.status === "success" && (
-                          <EmbedCode
-                            type="chatflow"
-                            id={deployResult.chatflow_id}
-                            showOptions={false}
-                          />
-                        )}
-                        {channelName !== "website" && info.webhook_url && (
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded px-2 py-1">
-                              {info.webhook_url}
-                            </code>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                void navigator.clipboard.writeText(info.webhook_url!);
-                                toast({ title: "Webhook URL copied" });
-                              }}
-                            >
-                              Copy
-                            </Button>
+                    {Object.entries(deployResult.channels).map(([channelName, info]) => {
+                      // Distinguish "the operator hasn't wired this channel
+                      // up yet" from "this actually failed at deploy time".
+                      // Backend doesn't expose a reason code, so we pattern-
+                      // match the human error string against known
+                      // configuration-gap phrasings.
+                      const errLower = (info.error ?? "").toLowerCase();
+                      const isUnconfigured =
+                        info.status !== "success" &&
+                        (errLower.includes("not configured") ||
+                          errLower.includes("credential is required") ||
+                          errLower.includes("client_id") ||
+                          errLower.includes("token credential"));
+
+                      return (
+                        <div
+                          key={channelName}
+                          className="rounded-md border p-3 bg-white dark:bg-gray-900"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium capitalize">{channelName}</span>
+                            {info.status === "success" ? (
+                              <Badge variant="secondary">{info.status}</Badge>
+                            ) : isUnconfigured ? (
+                              <Badge
+                                variant="outline"
+                                className="text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600"
+                              >
+                                Skipped
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive">{info.status}</Badge>
+                            )}
                           </div>
-                        )}
-                        {info.error && (
-                          <p className="text-xs text-red-600">{info.error}</p>
-                        )}
-                      </div>
-                    ))}
+                          {channelName === "website" && info.status === "success" && (
+                            <EmbedCode
+                              type="chatflow"
+                              id={deployResult.chatflow_id}
+                              showOptions={false}
+                            />
+                          )}
+                          {channelName !== "website" && info.webhook_url && (
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 min-w-0 font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded px-2 py-1 break-all">
+                                {info.webhook_url}
+                              </code>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(info.webhook_url!);
+                                  toast({ title: "Webhook URL copied" });
+                                }}
+                              >
+                                Copy
+                              </Button>
+                            </div>
+                          )}
+                          {info.error && (
+                            <p
+                              className={
+                                isUnconfigured
+                                  ? "text-xs text-gray-500 dark:text-gray-400"
+                                  : "text-xs text-red-600"
+                              }
+                            >
+                              {isUnconfigured ? `Not configured — ${info.error}` : info.error}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               <div className="rounded-md bg-gray-50 dark:bg-gray-900/60 p-3 text-xs text-gray-600 dark:text-gray-400">
                 Test it via the public widget endpoint:
-                <pre className="mt-1 font-mono overflow-x-auto">
+                <pre className="mt-1 font-mono whitespace-pre-wrap break-all text-xs">
 {(() => {
   // Build the full URL from the configured API base — works in dev (localhost),
   // staging, and production without hardcoding any host.
