@@ -53,7 +53,7 @@ export function DocumentationPage() {
   return (
     <DashboardLayout>
       <div className="w-full bg-background min-h-screen">
-        <div className="px-4 sm:px-6 lg:pl-6 lg:pr-8 xl:pl-8 xl:pr-12 max-w-5xl mx-auto py-10 md:py-14">
+        <div className="py-8 md:py-12 px-4 sm:px-6 lg:px-8 xl:px-12">
           <Button
             variant="ghost"
             onClick={() => {

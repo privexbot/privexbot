@@ -11,3 +11,4 @@ export { AdminOrgDetail } from "./AdminOrgDetail";
 export { AdminUsers } from "./AdminUsers";
 export { AdminUserDetail } from "./AdminUserDetail";
 export { AdminAnalytics } from "./AdminAnalytics";
+export { AdminTemplates } from "./AdminTemplates";

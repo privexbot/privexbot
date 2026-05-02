@@ -73,6 +73,7 @@ import {
   AdminUsers,
   AdminUserDetail,
   AdminAnalytics,
+  AdminTemplates,
 } from "@/pages/admin";
 
 function App() {
@@ -384,6 +385,7 @@ function App() {
                 <Route path="organizations/:orgId" element={<AdminOrgDetail />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="users/:userId" element={<AdminUserDetail />} />
+                <Route path="templates" element={<AdminTemplates />} />
                 <Route path="analytics" element={<AdminAnalytics />} />
               </Route>
 

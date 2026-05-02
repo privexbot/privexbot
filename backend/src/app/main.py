@@ -161,6 +161,30 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             print(f"⚠️  Discord global slash registration failed: {exc}")
 
+    # Marketplace sanity check — surface an empty templates table once at
+    # boot. Without this, an operator who hits /marketplace and sees "No
+    # templates available" can't tell whether the seed step failed or no
+    # templates were ever published. One log line per boot fixes that.
+    try:
+        from app.db.session import SessionLocal
+        from app.models.chatflow_template import ChatflowTemplate
+
+        db = SessionLocal()
+        try:
+            public_count = db.query(ChatflowTemplate).filter(
+                ChatflowTemplate.is_public == True  # noqa: E712
+            ).count()
+            if public_count == 0:
+                print("⚠️  Marketplace has 0 public templates — /marketplace will appear empty.")
+                print("   Fix: docker exec <container> python scripts/seed_chatflow_templates.py")
+            else:
+                print(f"✅ Marketplace: {public_count} public template(s) available.")
+        finally:
+            db.close()
+    except Exception as exc:
+        # Table may not exist yet (migration pending). Don't crash boot.
+        print(f"⚠️  Could not check marketplace template count: {exc}")
+
     yield
 
     # Shutdown

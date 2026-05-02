@@ -136,7 +136,7 @@ export function BillingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6">
+      <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 sm:space-y-8">
         <Button
           variant="ghost"
           size="sm"

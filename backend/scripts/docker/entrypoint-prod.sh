@@ -564,11 +564,20 @@ python scripts/set_initial_staff.py && echo "✅ Initial staff setup completed" 
 
 # Step: Seed marketplace chatflow templates
 # Idempotent (upsert-by-slug), safe to run on every boot.
+# Non-blocking: a malformed seed must not bring the API down. But the prior
+# warning was buried in the boot log — operators couldn't tell whether the
+# empty marketplace was a seed failure or a deliberately-empty deployment.
+# Loud failure with grep-able marker + recovery instruction.
 echo ""
 echo "📚 Seeding chatflow templates..."
-python scripts/seed_chatflow_templates.py && echo "✅ Chatflow templates seeded" || {
-    echo "⚠️  Chatflow template seeding had issues (non-blocking, continuing...)"
-}
+if python scripts/seed_chatflow_templates.py 2>&1; then
+    echo "✅ Chatflow templates seeded"
+else
+    SEED_RC=$?
+    echo "❌ Chatflow template seeding FAILED (rc=$SEED_RC) — non-blocking, continuing."
+    echo "   Marketplace will appear empty until staff publishes templates."
+    echo "   Diagnose: docker exec \$CONTAINER python scripts/seed_chatflow_templates.py"
+fi
 cd /app/src
 
 echo "🎭 Checking Playwright browsers..."
