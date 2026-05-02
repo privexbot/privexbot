@@ -142,6 +142,12 @@ class ChatflowService:
                     "chatflow_id": str(chatflow.id),
                     "nodes_executed": nodes_executed,
                     "execution_time_ms": execution_time_ms,
+                    # Mirror chatbot_service's `latency_ms` key so analytics
+                    # aggregation (`aggregated_analytics_service` reads
+                    # `response_metadata['latency_ms']`) picks up chatflow
+                    # latency too — without this, "Avg Response" was 0.0s
+                    # for any workspace whose only bot was a chatflow.
+                    "latency_ms": execution_time_ms,
                     "tokens_used": {
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,

@@ -141,12 +141,19 @@ async def list_leads(
         Lead.created_at >= month_ago
     ).count()
 
-    # Get top source/channel
+    # Get top source/channel.
+    #
+    # Older leads imported before the channel default kicked in can have
+    # `channel = NULL`. Without filtering them out, the GROUP BY returns
+    # `(None, count)` as the top row and the dashboard shows "N/A" even when
+    # most leads ARE legitimately from the website. Filter nulls explicitly;
+    # only fall through to "N/A" when there are truly zero qualifying leads.
     top_source_result = db.query(Lead.channel, func.count(Lead.id).label('count')).filter(
-        Lead.workspace_id == workspace_id
+        Lead.workspace_id == workspace_id,
+        Lead.channel.isnot(None),
     ).group_by(Lead.channel).order_by(func.count(Lead.id).desc()).first()
 
-    top_source = top_source_result[0] if top_source_result else "N/A"
+    top_source = top_source_result[0] if top_source_result and top_source_result[0] else "N/A"
 
     return {
         "items": leads,

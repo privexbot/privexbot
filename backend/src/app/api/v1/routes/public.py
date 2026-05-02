@@ -381,10 +381,10 @@ async def capture_lead(
             detail="Consent is required before submitting your information"
         )
 
-    # Get client IP from headers (handles proxies)
-    client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if not client_ip:
-        client_ip = http_request.client.host if http_request.client else None
+    # Get the real client IP. Prefers Cloudflare's `Cf-Connecting-Ip` over
+    # XFF — without this we mis-attributed Lagos users to Cloudflare's SA edge.
+    from app.utils.client_ip import get_client_ip
+    client_ip = get_client_ip(http_request)
 
     # Use unified LeadCaptureService
     from app.services.lead_capture_service import lead_capture_service
@@ -880,10 +880,10 @@ async def capture_lead_hosted_page(
             detail="Consent is required before submitting your information"
         )
 
-    # Get client IP from headers (handles proxies)
-    client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if not client_ip:
-        client_ip = http_request.client.host if http_request.client else None
+    # Get the real client IP. Prefers Cloudflare's `Cf-Connecting-Ip` over
+    # XFF — without this we mis-attributed Lagos users to Cloudflare's SA edge.
+    from app.utils.client_ip import get_client_ip
+    client_ip = get_client_ip(http_request)
 
     # Capture lead with geolocation
     lead = await lead_capture_service.capture_from_widget(

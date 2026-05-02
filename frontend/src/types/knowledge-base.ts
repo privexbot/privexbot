@@ -718,6 +718,9 @@ export interface KBSummary {
   // file_upload document lacks a MinIO original (`file_path` IS NULL),
   // mirroring the backend precondition at routes/kb.py:reindex.
   can_reindex?: boolean;
+  // Failure reason populated when status === "failed". Surfaced inline on
+  // the KB card so operators see WHY without opening the detail page.
+  error_message?: string | null;
 }
 
 /**

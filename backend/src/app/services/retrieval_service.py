@@ -378,6 +378,22 @@ class RetrievalService:
         if not kb:
             raise ValueError("Knowledge base not found")
 
+        # Skip retrieval gracefully when the KB isn't in a queryable state.
+        # `failed` / `reindexing` / `processing` / `pending` KBs may have
+        # zero or partial chunks in Qdrant — querying them would silently
+        # return empty results and the bot would reply "I don't know" without
+        # any signal to the operator. Returning an empty result with a flag
+        # lets the caller (chatbot_service / chatflow KB node) log it and
+        # fall through to LLM-only generation. We don't raise — that would
+        # take down message processing entirely for one bad KB.
+        _QUERYABLE_STATUSES = ("ready", "ready_with_warnings")
+        if kb.status not in _QUERYABLE_STATUSES:
+            print(
+                f"[RetrievalService] KB {kb_id} status={kb.status!r} — skipping "
+                f"retrieval. Falling back to LLM-only response."
+            )
+            return []
+
         # NEW: Get KB-level retrieval config from context_settings
         kb_retrieval_config = {}
         if kb.context_settings:

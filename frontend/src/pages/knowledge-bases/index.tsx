@@ -296,12 +296,6 @@ function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, onRerun
                 <span className="truncate">Re-run indexing</span>
               </Button>
             )}
-            {isFailed && !canReindex && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
-                Can't re-run — file uploads weren't persisted at creation. Re-create the KB with{' '}
-                <span className="font-medium">"Persist files"</span> enabled to allow rechunking.
-              </p>
-            )}
           </div>
         </CardContent>
       </Card>

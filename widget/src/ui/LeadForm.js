@@ -98,6 +98,12 @@ class LeadForm {
     const container = document.createElement('div');
     container.className = 'privexbot-lead-form';
 
+    // Honor the widget's primary color (configurable via `pb('init', { color: '#...' })`)
+    // by setting a CSS custom property on the container; widget.css consumes
+    // this for input focus rings + the submit button background.
+    const primaryColor = this.config.color || this.config.primaryColor || '#3b82f6';
+    container.style.setProperty('--privexbot-primary', primaryColor);
+
     const fields = this.buildFormFields();
 
     const fieldsHtml = fields

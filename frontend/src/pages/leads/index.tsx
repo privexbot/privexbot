@@ -77,6 +77,11 @@ interface Lead {
   country?: string;
   country_code?: string;
   region?: string;
+  // Backend returns latitude/longitude as flat top-level fields on the
+  // Lead row. The legacy `location` nested shape is kept only as a
+  // fallback so older API responses don't break the map.
+  latitude?: number;
+  longitude?: number;
   location?: {
     city?: string;
     country?: string;
@@ -792,10 +797,14 @@ export default function LeadsDashboard() {
     );
   }, [leads, searchQuery]);
 
-  // Get leads with location for map
+  // Get leads with location for map. Read flat lat/lng first (canonical
+  // backend shape), fall through to nested `location.*` for older API
+  // responses.
   const leadsWithLocation = useMemo(() => {
     return filteredLeads.filter(
-      (lead) => lead.location?.latitude && lead.location?.longitude
+      (lead) =>
+        (lead.latitude && lead.longitude) ||
+        (lead.location?.latitude && lead.location?.longitude),
     );
   }, [filteredLeads]);
 
@@ -838,9 +847,12 @@ export default function LeadsDashboard() {
       }
     });
 
-    // Add markers for leads with location
+    // Add markers for leads with location. Resolve coords from either
+    // shape (flat or legacy nested).
     leadsWithLocation.forEach((lead) => {
-      if (lead.location?.latitude && lead.location?.longitude) {
+      const lat = lead.latitude ?? lead.location?.latitude;
+      const lng = lead.longitude ?? lead.location?.longitude;
+      if (lat && lng) {
         const popupContent = `
           <div class="p-2">
             <h4 class="font-semibold mb-1">${lead.name || 'Anonymous'}</h4>
@@ -848,9 +860,7 @@ export default function LeadsDashboard() {
             ${lead.city ? `<p class="text-xs text-gray-500">${lead.city}${lead.country ? `, ${lead.country}` : ''}</p>` : ''}
           </div>
         `;
-        L.marker([lead.location.latitude, lead.location.longitude])
-          .bindPopup(popupContent)
-          .addTo(map);
+        L.marker([lat, lng]).bindPopup(popupContent).addTo(map);
       }
     });
   }, [leadsWithLocation, viewMode]);

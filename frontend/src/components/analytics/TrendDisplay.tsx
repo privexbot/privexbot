@@ -161,10 +161,24 @@ export function TrendDisplay({
             })}
           </div>
 
-          {/* X-axis labels */}
-          <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 font-manrope">
-            <span>{data.length > 0 ? format(parseISO(data[0].date), 'MMM d') : ''}</span>
-            <span>{data.length > 0 ? format(parseISO(data[data.length - 1].date), 'MMM d') : ''}</span>
+          {/* X-axis labels.
+              When there's only one data point, both first and last reduce
+              to the same date — render it once, centered, instead of
+              showing it twice with a confusing gap. */}
+          <div className="text-[10px] text-gray-400 dark:text-gray-500 font-manrope">
+            {data.length === 0 ? null : data.length === 1 ? (
+              <div className="text-center">{format(parseISO(data[0].date), 'MMM d')}</div>
+            ) : (
+              <div className="flex justify-between">
+                <span>{format(parseISO(data[0].date), 'MMM d')}</span>
+                <span>{format(parseISO(data[data.length - 1].date), 'MMM d')}</span>
+              </div>
+            )}
+            {data.length === 1 && (
+              <p className="text-center text-[10px] text-gray-400 mt-1 italic">
+                Only one day of data so far — more trends will appear over time.
+              </p>
+            )}
           </div>
         </div>
 

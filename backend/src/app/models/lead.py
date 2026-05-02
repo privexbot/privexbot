@@ -12,7 +12,7 @@ HOW:
 - Minimal design - just essential lead data
 """
 
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index, Enum
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index, Enum, Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
@@ -112,6 +112,14 @@ class Lead(Base):
     timezone = Column(String(50), nullable=True)
     # User's timezone for follow-up scheduling
     # Example: "America/Los_Angeles"
+
+    # Geographic coordinates (resolved by geoip alongside city/country).
+    # Stored separately so the /leads map view can plot pins without a
+    # second geo lookup at read time. Existing rows captured before these
+    # columns were added simply have NULL — those leads won't appear on the
+    # map until the operator runs the optional backfill script.
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
 
     # ═══════════════════════════════════════════════════════════════
     # ENGAGEMENT METADATA

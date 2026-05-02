@@ -225,6 +225,10 @@ class KBResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
     created_by: str
+    can_reindex: bool = True
+    # Surface the failure reason on the list card so users see WHY a KB is in
+    # `failed` state instead of just a red badge with no explanation.
+    error_message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -381,6 +385,7 @@ async def list_kbs(
             updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
             created_by=str(kb.created_by),
             can_reindex=kb.id not in not_reindexable_kb_ids,
+            error_message=kb.error_message,
         )
         for kb in kbs
     ]

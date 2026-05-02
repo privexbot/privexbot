@@ -170,7 +170,13 @@ function CostStatsSection({
     {
       icon: Zap,
       title: 'Estimated Cost',
-      value: `$${(analytics?.cost_usage?.estimated_cost_usd || 0).toFixed(2)}`,
+      value: (() => {
+        const cost = analytics?.cost_usage?.estimated_cost_usd || 0;
+        // Tiny costs round to $0.00 which reads as "free" — show "<$0.01"
+        // so usage with non-zero tokens is honest.
+        if (cost > 0 && cost < 0.01) return '<$0.01';
+        return `$${cost.toFixed(2)}`;
+      })(),
       subtitle: 'Based on usage',
     },
     {

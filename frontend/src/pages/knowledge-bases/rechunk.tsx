@@ -228,7 +228,7 @@ export default function KBRechunkPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
