@@ -1539,7 +1539,7 @@ curl "https://api.privexbot.com/api/v1/chatbots/{chatbot_id}/analytics" \
 ### Need Help?
 
 - **Documentation:** docs.privexbot.com
-- **Support:** support@privexbot.com
+- **Support:** privexbot@gmail.com
 - **Community:** Discord server
 - **API Reference:** api.privexbot.com/docs
 

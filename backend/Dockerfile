@@ -75,6 +75,13 @@ RUN pip install --no-cache-dir gunicorn uvicorn[standard]
 COPY scripts/docker/entrypoint-prod.sh /app/scripts/
 RUN chmod +x /app/scripts/entrypoint-prod.sh
 
+# Copy startup-time Python scripts the entrypoint runs (idempotent upserts):
+# set_initial_staff.py grants the configured staff users on cold start;
+# seed_chatflow_templates.py populates the marketplace. Both are required for
+# a fresh production deploy to land in a usable state.
+COPY scripts/seed_chatflow_templates.py /app/scripts/
+COPY scripts/set_initial_staff.py /app/scripts/
+
 # Copy application code
 COPY src/ ./src/
 

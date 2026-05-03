@@ -104,7 +104,10 @@ class CodeNode(BaseNode):
             }
 
             exec_locals = {
-                "input_data": inputs.get("input", ""),
+                "input_data": context.get("variables", {}).get(
+                    "_last_output", inputs.get("input", "")
+                ),
+                "user_message": inputs.get("input", ""),
                 "variables": context.get("variables", {}),
                 "result": None  # User sets this variable
             }

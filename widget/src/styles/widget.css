@@ -442,31 +442,39 @@
 }
 
 /* Lead Form */
+/* Lead form — visual style aligned with the PrivexBot dashboard:
+   rounded-xl (12px) corners, generous padding, primary-color from config
+   (injected as `--privexbot-primary` on the container).
+   Font intentionally inherits system-ui — bundling Manrope here would add
+   ~50KB to the widget for a marginal visual gain on third-party sites. */
 .privexbot-lead-form {
-  padding: 20px;
+  padding: 24px 20px;
   background: white;
+  --privexbot-primary: #3b82f6;
 }
 
 .privexbot-lead-form h3 {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 8px;
+  color: #111827;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
 }
 
 .privexbot-lead-form p {
-  font-size: 14px;
+  font-size: 13px;
   color: #6b7280;
-  margin-bottom: 20px;
+  margin: 0 0 18px;
+  line-height: 1.45;
 }
 
 .privexbot-form-group {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .privexbot-form-label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: #374151;
   margin-bottom: 6px;
@@ -474,56 +482,77 @@
 
 .privexbot-form-input {
   width: 100%;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 11px 14px;
   font-size: 14px;
+  color: #111827;
+  background: #fff;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.privexbot-form-input::placeholder {
+  color: #9ca3af;
 }
 
 .privexbot-form-input:focus {
-  border-color: #3b82f6;
+  border-color: var(--privexbot-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--privexbot-primary) 18%, transparent);
 }
 
 .privexbot-form-error {
-  color: #ef4444;
+  color: #dc2626;
   font-size: 12px;
   margin-top: 4px;
 }
 
 .privexbot-form-submit {
   width: 100%;
-  background: #3b82f6;
+  background: var(--privexbot-primary);
   color: white;
   border: none;
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 12px;
+  padding: 12px 16px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: filter 0.15s ease, transform 0.05s ease;
 }
 
 .privexbot-form-submit:hover:not(:disabled) {
-  background: #4f46e5;
+  filter: brightness(0.93);
+}
+
+.privexbot-form-submit:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .privexbot-form-submit:disabled {
   background: #d1d5db;
   cursor: not-allowed;
+  filter: none;
 }
 
 .privexbot-form-skip {
+  display: block;
   width: 100%;
   background: transparent;
   color: #6b7280;
   border: none;
-  padding: 8px;
+  padding: 10px;
   font-size: 13px;
   cursor: pointer;
-  margin-top: 8px;
-  text-decoration: underline;
+  margin-top: 6px;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.privexbot-form-skip:hover {
+  background: #f3f4f6;
+  color: #374151;
 }
 
 /* Branding */

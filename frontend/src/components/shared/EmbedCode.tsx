@@ -156,7 +156,7 @@ export default function EmbedCode({
       <Textarea
         value={embedCode}
         readOnly
-        className="font-mono text-xs h-64 resize-none"
+        className="font-mono text-xs h-40 sm:h-48 resize-none"
       />
 
       {showOptions && (
@@ -264,8 +264,7 @@ export default function EmbedCode({
       <div className="text-xs text-muted-foreground">
         <p className="font-medium mb-1">Browser Compatibility:</p>
         <p>
-          Works with all modern browsers (Chrome, Firefox, Safari, Edge). IE11 is not
-          supported.
+          Works with all modern browsers (Chrome, Firefox, Safari, Edge)
         </p>
       </div>
     </div>

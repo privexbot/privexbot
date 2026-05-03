@@ -26,15 +26,17 @@ class CredentialType(str, Enum):
     Credential type enum - authentication mechanism.
 
     These are generic credential types that can be used for multiple services:
-    - API_KEY: Any API that uses a single API key (OpenAI, Anthropic, Stripe, etc.)
-    - OAUTH2: OAuth2 tokens (Google, Notion, etc.)
+    - API_KEY: Any API that uses a single API key (Telegram bot tokens,
+      WhatsApp access tokens, etc.). Note: per-user OpenAI/Anthropic keys
+      are NOT consumed today — the LLM node uses operator-managed env vars.
+    - OAUTH2: OAuth2 tokens (Google, Notion, Calendly, Slack)
     - BASIC_AUTH: Username/password authentication
     - DATABASE: Database connection credentials
     - SMTP: Email server credentials
     - AWS: AWS access credentials
     - CUSTOM: Any other credential type with custom fields
 
-    Note: Use 'provider' field to indicate which service (telegram, discord, openai, etc.)
+    Note: Use 'provider' field to indicate which service (telegram, discord, notion, etc.)
     """
     API_KEY = "api_key"
     OAUTH2 = "oauth2"
@@ -71,7 +73,7 @@ class CredentialCreate(BaseModel):
 
     provider: Optional[str] = Field(
         None,
-        description="Service provider (e.g., 'telegram', 'discord', 'openai')",
+        description="Service provider (e.g., 'telegram', 'discord', 'notion')",
         max_length=50
     )
 
@@ -116,7 +118,7 @@ class CredentialUpdate(BaseModel):
 
     provider: Optional[str] = Field(
         None,
-        description="Service provider (e.g., 'telegram', 'discord', 'openai')",
+        description="Service provider (e.g., 'telegram', 'discord', 'notion')",
         max_length=50
     )
 
@@ -203,7 +205,7 @@ class CredentialListResponse(BaseModel):
                     {
                         "id": "550e8400-e29b-41d4-a716-446655440000",
                         "workspace_id": "660e8400-e29b-41d4-a716-446655440000",
-                        "name": "OpenAI API Key",
+                        "name": "Telegram Bot Token",
                         "credential_type": "api_key",
                         "is_active": True,
                         "usage_count": 1234,
@@ -238,8 +240,8 @@ class CredentialTestResponse(BaseModel):
                 "is_valid": True,
                 "message": "API key is valid",
                 "metadata": {
-                    "service": "OpenAI",
-                    "models_available": ["gpt-4", "gpt-3.5-turbo"]
+                    "service": "Telegram",
+                    "bot_username": "@my_support_bot"
                 }
             }
         }

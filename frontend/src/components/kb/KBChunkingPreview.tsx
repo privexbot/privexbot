@@ -85,8 +85,25 @@ export function KBChunkingPreview() {
   const [previewLimited, setPreviewLimited] = useState<boolean>(false);
   const [totalChunks, setTotalChunks] = useState<number>(0);
   const [chunksShown, setChunksShown] = useState<number>(0);
+  // When the combined approved content exceeds the per-request preview cap,
+  // we truncate before posting and surface the truncation in the UI so the
+  // user knows the preview is sampled (the actual ingestion processes
+  // everything via Celery — no HTTP timeout pressure there).
+  const [truncationInfo, setTruncationInfo] = useState<{
+    sentChars: number;
+    totalChars: number;
+  } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
+  // De-dupes the destructive error toast so a single bad config doesn't
+  // produce one toast per re-render of the chunking step.
+  const lastErrorToastRef = useRef<string | null>(null);
+
+  // The backend caps preview input at 2 MB; we cap at 200 KB on the client
+  // because preview only shows the first ~20 chunks anyway. Keeping the
+  // request small means a 50-page crawl previews instantly instead of
+  // pushing 600+ KB on every config tweak.
+  const MAX_PREVIEW_INPUT_CHARS = 200_000;
 
   // Get approved sources with content
   const approvedSources = useMemo(() => {
@@ -156,11 +173,23 @@ export function KBChunkingPreview() {
         const combinedContent = allApprovedContent.join('\n\n');
 
         if (combinedContent) {
+          // Cap preview payload — the actual ingestion processes everything.
+          const totalChars = combinedContent.length;
+          const sendContent =
+            totalChars > MAX_PREVIEW_INPUT_CHARS
+              ? combinedContent.slice(0, MAX_PREVIEW_INPUT_CHARS)
+              : combinedContent;
+          if (totalChars > MAX_PREVIEW_INPUT_CHARS) {
+            setTruncationInfo({ sentChars: sendContent.length, totalChars });
+          } else {
+            setTruncationInfo(null);
+          }
+
           const response = await kbClient.draft.previewChunks(
             currentDraft.draft_id,
             {
               source_id: 'combined',
-              content: combinedContent,
+              content: sendContent,
               strategy: currentStrategy,
               chunk_size: chunkingConfig.chunk_size,
               chunk_overlap: chunkingConfig.chunk_overlap,
@@ -190,7 +219,10 @@ export function KBChunkingPreview() {
         // Store combined content for display in no chunking mode
         originalContentForPreview = combinedContent;
       } else {
-        // For other strategies, show chunks from ALL sources (matches backend behavior)
+        // For other strategies, show chunks from ALL sources (matches backend behavior).
+        // Track per-call truncation across all sources so the UI hint is correct.
+        let aggregateTotal = 0;
+        let aggregateSent = 0;
         for (const source of approvedSources) {
           const approvedIndices = source.metadata?.approvedPageIndices || [];
           const previewPages = source.metadata?.previewPages || [];
@@ -204,11 +236,22 @@ export function KBChunkingPreview() {
           if (sourceContent) {
             const sourceName = source.url ? new URL(source.url).hostname : 'Source';
 
+            // Same cap as the combined path. A single source with 50 dense
+            // pages can easily produce 600KB+; we send the first 200KB so
+            // the user gets an instant, representative chunking preview.
+            const sourceTotal = sourceContent.length;
+            const sendSourceContent =
+              sourceTotal > MAX_PREVIEW_INPUT_CHARS
+                ? sourceContent.slice(0, MAX_PREVIEW_INPUT_CHARS)
+                : sourceContent;
+            aggregateTotal += sourceTotal;
+            aggregateSent += sendSourceContent.length;
+
             const response = await kbClient.draft.previewChunks(
               currentDraft.draft_id,
               {
                 source_id: source.source_id,
-                content: sourceContent,
+                content: sendSourceContent,
                 strategy: currentStrategy,
                 chunk_size: chunkingConfig.chunk_size,
                 chunk_overlap: chunkingConfig.chunk_overlap,
@@ -264,6 +307,13 @@ export function KBChunkingPreview() {
         setTotalChunks(combinedMetrics.total_chunks);
         setChunksShown(allChunks.length);
         setPreviewLimited(maxChunks ? allChunks.length >= maxChunks : allChunks.length >= 20);
+
+        // Surface aggregate truncation across the per-source loop.
+        if (aggregateTotal > aggregateSent) {
+          setTruncationInfo({ sentChars: aggregateSent, totalChars: aggregateTotal });
+        } else {
+          setTruncationInfo(null);
+        }
       }
 
       const preview: SourcePreview = {
@@ -278,17 +328,41 @@ export function KBChunkingPreview() {
       };
 
       setPreviews(prev => new Map(prev).set(`combined-${currentStrategy}`, preview));
+      // Clear toast-dedupe key on success so the next genuine failure can
+      // surface a fresh toast.
+      lastErrorToastRef.current = null;
 
     } catch (error) {
-      // Silently ignore cancelled requests (user switched strategy before completion)
-      if (axios.isCancel(error)) return;
-      if (error instanceof DOMException && error.name === 'AbortError') return;
+      // Silently ignore cancelled requests (user switched strategy before
+      // completion). Cancellation can surface in three shapes depending on
+      // which layer reports it: a DOMException (native fetch abort), a
+      // plain Error with name="AbortError", or an axios cancel (sometimes
+      // a plain object whose `code === "ERR_CANCELED"` after wrapping).
+      const isCancel =
+        axios.isCancel(error) ||
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && error.name === 'AbortError') ||
+        (error !== null &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error as { code?: unknown }).code === 'ERR_CANCELED');
+      if (isCancel) return;
       console.error('Failed to load preview:', error);
-      toast({
-        title: "Preview Failed",
-        description: "Failed to generate chunking preview",
-        variant: "destructive"
-      });
+      // Surface the backend's specific message when present (e.g. 413 cap
+      // hint). De-dupe so a single misconfiguration doesn't fire a toast on
+      // every config tweak.
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to generate chunking preview';
+      if (lastErrorToastRef.current !== message) {
+        lastErrorToastRef.current = message;
+        toast({
+          title: 'Preview Failed',
+          description: message,
+          variant: 'destructive',
+        });
+      }
     } finally {
       // Only clear loading if this is still the active request
       if (requestIdRef.current === requestId) {
@@ -375,6 +449,20 @@ export function KBChunkingPreview() {
         </CardHeader>
 
         <CardContent className="space-y-4 p-4 sm:p-6">
+          {truncationInfo && (
+            <Alert className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl">
+              <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <AlertDescription className="text-blue-700 dark:text-blue-300 font-manrope">
+                Preview shown for the first{' '}
+                <span className="font-semibold">
+                  {truncationInfo.sentChars.toLocaleString()} of{' '}
+                  {truncationInfo.totalChars.toLocaleString()} characters
+                </span>{' '}
+                of approved content. The actual ingestion will process
+                everything; this cap keeps the preview instant on big crawls.
+              </AlertDescription>
+            </Alert>
+          )}
           {approvedSources.length === 0 ? (
             <Alert className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
               <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />

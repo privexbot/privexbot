@@ -197,6 +197,16 @@ async def chat(
             bot_id,
             api_key
         )
+
+        # Feature gate: programmatic API access is Starter+. Widget calls
+        # (no API key) are NOT gated — free users can still embed the
+        # widget on their site. The gate is specifically for "I want to
+        # call the bot from my own backend / Zapier / curl."
+        from app.models.workspace import Workspace as _Workspace
+        from app.services.billing_service import require_feature
+        _ws = db.query(_Workspace).filter(_Workspace.id == workspace_id).first()
+        if _ws:
+            require_feature(db, _ws.organization_id, "public_api_access")
     else:
         # No API key - check if bot is public
         bot_type, bot, workspace_id = await _get_public_bot(db, bot_id)
@@ -381,10 +391,10 @@ async def capture_lead(
             detail="Consent is required before submitting your information"
         )
 
-    # Get client IP from headers (handles proxies)
-    client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if not client_ip:
-        client_ip = http_request.client.host if http_request.client else None
+    # Get the real client IP. Prefers Cloudflare's `Cf-Connecting-Ip` over
+    # XFF — without this we mis-attributed Lagos users to Cloudflare's SA edge.
+    from app.utils.client_ip import get_client_ip
+    client_ip = get_client_ip(http_request)
 
     # Use unified LeadCaptureService
     from app.services.lead_capture_service import lead_capture_service
@@ -442,6 +452,22 @@ async def get_widget_config(
     messages = prompt_config.get("messages", {})
     lead_capture = bot.lead_capture_config
 
+    # `show_branding` is force-true unless the bot's tier has the
+    # `remove_branding` feature flag (Pro+). Free + Starter customers
+    # always show "Powered by PrivexBot" in the widget; Pro+ can hide it.
+    from app.models.workspace import Workspace as _Workspace
+    from app.core.plans import get_features
+    show_branding = True
+    _ws = db.query(_Workspace).filter(_Workspace.id == workspace_id).first()
+    if _ws and _ws.organization:
+        tier = (_ws.organization.subscription_tier or "free").lower()
+        # If the tier allows branding removal AND the bot owner explicitly
+        # opted in (branding.show_powered_by == False), hide it. Default
+        # is to show.
+        can_hide = bool(get_features(tier).get("remove_branding"))
+        opted_to_hide = branding.get("show_powered_by") is False
+        show_branding = not (can_hide and opted_to_hide)
+
     return WidgetConfigResponse(
         chatbot_id=str(bot_id),
         name=bot.name,
@@ -450,7 +476,7 @@ async def get_widget_config(
         color=branding.get("primary_color"),
         secondary_color=branding.get("secondary_color"),
         position=branding.get("position", "bottom-right"),
-        show_branding=True,  # Could be made configurable per plan
+        show_branding=show_branding,
         lead_config=lead_capture,
         avatar_url=branding.get("avatar_url"),
         font_family=branding.get("font_family", "Inter"),
@@ -880,10 +906,10 @@ async def capture_lead_hosted_page(
             detail="Consent is required before submitting your information"
         )
 
-    # Get client IP from headers (handles proxies)
-    client_ip = http_request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if not client_ip:
-        client_ip = http_request.client.host if http_request.client else None
+    # Get the real client IP. Prefers Cloudflare's `Cf-Connecting-Ip` over
+    # XFF — without this we mis-attributed Lagos users to Cloudflare's SA edge.
+    from app.utils.client_ip import get_client_ip
+    client_ip = get_client_ip(http_request)
 
     # Capture lead with geolocation
     lead = await lead_capture_service.capture_from_widget(

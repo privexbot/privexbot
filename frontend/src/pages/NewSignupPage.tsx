@@ -9,8 +9,8 @@
  * - Success states and onboarding guidance
  */
 
-import { useState, FormEvent, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, FormEvent, useEffect, useMemo } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,13 @@ import { cn } from "@/lib/utils";
 export function NewSignupPage() {
   const navigate = useNavigate();
   const { emailSignup, walletLogin, isLoading, error, clearError } = useAuth();
+  // Optional referral code from `/signin?ref=<code>`. Captured once and
+  // forwarded with the signup payload; the backend writes a Referral row.
+  const [searchParams] = useSearchParams();
+  const referralCode = useMemo(() => {
+    const raw = searchParams.get("ref");
+    return raw ? raw.trim() : "";
+  }, [searchParams]);
 
   // Form state
   const [username, setUsername] = useState("");
@@ -142,6 +149,7 @@ export function NewSignupPage() {
         username: username.trim(),
         email: email.trim(),
         password,
+        ...(referralCode ? { referral_code: referralCode } : {}),
       });
 
       setSignupSuccess(true);

@@ -7,6 +7,7 @@
 
 import apiClient from "@/lib/api-client";
 import type { AggregatedAnalytics } from "@/types/analytics";
+import type { PlanCard, PlanStatus } from "@/api/billing";
 
 // ============== Types ==============
 
@@ -99,6 +100,8 @@ export interface UserOrgMembership {
   name: string;
   role: string;
   joined_at?: string;
+  subscription_tier?: string;
+  subscription_status?: string;
 }
 
 export interface UserWorkspaceMembership {
@@ -290,6 +293,67 @@ export const adminApi = {
     });
     return response.data;
   },
+
+  /**
+   * Read an organization's current plan + live usage (staff-only).
+   * Mirrors `GET /billing/plan` but for any org id.
+   */
+  getOrgPlan: async (orgId: string): Promise<PlanStatus> => {
+    const response = await apiClient.get<PlanStatus>(
+      `/admin/orgs/${orgId}/plan`,
+    );
+    return response.data;
+  },
+
+  /**
+   * Upgrade (or downgrade) an organization's plan tier (staff-only).
+   * Returns the updated plan status (same shape as /billing/plan).
+   */
+  upgradeOrgPlan: async (orgId: string, tier: string): Promise<PlanStatus> => {
+    const response = await apiClient.post<PlanStatus>(
+      `/admin/orgs/${orgId}/plan`,
+      { tier },
+    );
+    return response.data;
+  },
+
+  /**
+   * Public list of all plan tiers (label, price, tagline, limits).
+   * Re-exported via the admin client so the org-detail page only depends
+   * on one client; the underlying endpoint is `/billing/public-plans`.
+   */
+  listPlans: async (): Promise<PlanCard[]> => {
+    const response = await apiClient.get<PlanCard[]>("/billing/public-plans");
+    return response.data;
+  },
+
+  /**
+   * Per-provider OAuth redirect URIs + which env vars are populated.
+   * Used by the AdminDashboard "OAuth setup" card so operators can copy
+   * the exact URI to register in Google / Notion / Calendly / Slack /
+   * Discord developer consoles.
+   */
+  getOAuthRedirectUris: async (): Promise<OAuthRedirectUrisResponse> => {
+    const response = await apiClient.get<OAuthRedirectUrisResponse>(
+      "/admin/oauth/redirect-uris",
+    );
+    return response.data;
+  },
 };
+
+export interface OAuthProviderInfo {
+  provider: string;
+  label: string;
+  redirect_uri: string;
+  console_url: string;
+  configured: boolean;
+  env_var: string;
+}
+
+export interface OAuthRedirectUrisResponse {
+  providers: OAuthProviderInfo[];
+  configured_providers: string[];
+  missing_providers: string[];
+}
 
 export default adminApi;

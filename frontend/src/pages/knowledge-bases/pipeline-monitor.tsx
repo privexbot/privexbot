@@ -485,18 +485,16 @@ export default function PipelineMonitorPage() {
                       !isActive && !isCompleted && "bg-white dark:bg-gray-800/30 border-gray-200 dark:border-gray-700"
                     )}
                   >
-                    <div className={cn(
-                      "flex items-center justify-center w-12 h-12 rounded-xl shadow-sm",
-                      isCompleted && "bg-gradient-to-br from-green-500 to-emerald-600 text-white",
-                      isActive && "bg-gradient-to-br from-blue-500 to-indigo-600 text-white animate-pulse",
-                      !isCompleted && !isActive && "bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 text-gray-500 dark:text-gray-400"
-                    )}>
+                    {/* Stage status icon — color alone carries the signal,
+                        no colored tile needed (matches the bare-icon pattern
+                        used elsewhere in the app). */}
+                    <div className="flex-shrink-0">
                       {isCompleted ? (
-                        <CheckCircle2 className="h-6 w-6" />
+                        <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                       ) : isActive ? (
-                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <Loader2 className="h-6 w-6 text-blue-600 dark:text-blue-400 animate-spin" />
                       ) : (
-                        <Icon className="h-6 w-6" />
+                        <Icon className="h-6 w-6 text-gray-400 dark:text-gray-500" />
                       )}
                     </div>
 

@@ -10,6 +10,10 @@ interface NotificationState {
   total: number;
   isLoading: boolean;
   pollingInterval: ReturnType<typeof setInterval> | null;
+  // Active workspace filter applied to subsequent fetches. Set this when the
+  // user switches workspaces so the dropdown doesn't show events from other
+  // workspaces (server-side enforcement is in notification_service.py).
+  workspaceId: string | null;
 }
 
 interface NotificationActions {
@@ -19,6 +23,7 @@ interface NotificationActions {
   markAllAsRead: () => Promise<void>;
   startPolling: () => void;
   stopPolling: () => void;
+  setWorkspaceId: (workspaceId: string | null) => void;
 }
 
 export const useNotificationStore = create<
@@ -33,13 +38,18 @@ export const useNotificationStore = create<
         total: 0,
         isLoading: false,
         pollingInterval: null,
+        workspaceId: null,
 
         fetchNotifications: async (limit = 20) => {
           set((state) => {
             state.isLoading = true;
           });
           try {
-            const data = await notificationsApi.list({ limit });
+            const workspaceId = get().workspaceId;
+            const data = await notificationsApi.list({
+              limit,
+              ...(workspaceId ? { workspace_id: workspaceId } : {}),
+            });
             set((state) => {
               state.notifications = data.items;
               state.total = data.total;
@@ -54,8 +64,14 @@ export const useNotificationStore = create<
         },
 
         fetchUnreadCount: async () => {
+          // Skip if not authenticated — prevents 401 spam on public pages
+          if (!localStorage.getItem("access_token")) return;
+
           try {
-            const data = await notificationsApi.getUnreadCount();
+            const workspaceId = get().workspaceId;
+            const data = await notificationsApi.getUnreadCount(
+              workspaceId ? { workspace_id: workspaceId } : undefined,
+            );
             set((state) => {
               state.unreadCount = data.unread_count;
             });
@@ -125,6 +141,23 @@ export const useNotificationStore = create<
               state.pollingInterval = null;
             });
           }
+        },
+
+        setWorkspaceId: (workspaceId: string | null) => {
+          if (get().workspaceId === workspaceId) return;
+          set((state) => {
+            state.workspaceId = workspaceId;
+            // Reset cached items so the dropdown does not flash stale rows
+            // from the previous workspace before the next fetch lands.
+            state.notifications = [];
+            state.total = 0;
+            state.unreadCount = 0;
+          });
+          // Refetch with the new filter. fetchNotifications already guards
+          // for unauth, but the count fetch we call from elsewhere also
+          // checks; calling them sequentially is fine.
+          get().fetchNotifications();
+          get().fetchUnreadCount();
         },
       }))
     ),

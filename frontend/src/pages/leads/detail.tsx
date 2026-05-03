@@ -344,7 +344,7 @@ export default function LeadDetailPage() {
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 sm:space-y-8 max-w-6xl mx-auto">
+        <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 sm:space-y-8">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}

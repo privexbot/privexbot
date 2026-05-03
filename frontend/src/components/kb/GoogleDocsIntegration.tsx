@@ -15,7 +15,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Cloud, ExternalLink, Loader2, CheckCircle, RefreshCw, Folder, FileText } from 'lucide-react';
-import { config } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,14 +56,16 @@ export default function GoogleDocsIntegration({
   const [fileTypeFilter, setFileTypeFilter] = useState<string>('all');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
 
-  // Check if Google Drive is connected
+  // Check if a Google credential is connected (Drive scopes are part of the
+  // shared "google" provider — see backend `credentials.py:497-517`). Filter
+  // by `provider` (service name), NOT `credential_type` (auth-mechanism enum).
   const { data: credentials } = useQuery({
-    queryKey: ['credentials', currentWorkspace?.id, 'google_drive'],
+    queryKey: ['credentials', currentWorkspace?.id, 'google'],
     queryFn: async () => {
       const response = await apiClient.get('/credentials/', {
         params: {
           workspace_id: currentWorkspace?.id,
-          credential_type: 'google_drive',
+          provider: 'google',
         },
       });
       return response.data.items;
@@ -117,9 +118,34 @@ export default function GoogleDocsIntegration({
     },
   });
 
-  const initiateOAuth = () => {
-    const oauthUrl = `${config.API_BASE_URL}/credentials/oauth/authorize?provider=google_drive&workspace_id=${currentWorkspace?.id}`;
-    window.location.href = oauthUrl;
+  const initiateOAuth = async () => {
+    if (!currentWorkspace?.id) {
+      toast({
+        title: 'Workspace not selected',
+        description: 'Pick a workspace before connecting Google Drive.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      // POST so the JWT travels with the request (the backend reads
+      // current_user from the Bearer header to seed the OAuth state /
+      // CSRF token). The browser then navigates to the returned consent URL.
+      const response = await apiClient.post<{ redirect_url: string }>(
+        '/credentials/oauth/authorize',
+        null,
+        { params: { provider: 'google', workspace_id: currentWorkspace.id } },
+      );
+      const target = response.data?.redirect_url;
+      if (!target) throw new Error('Backend returned no redirect URL.');
+      window.location.href = target;
+    } catch (err) {
+      toast({
+        title: 'Could not start Google sign-in',
+        description: handleApiError(err),
+        variant: 'destructive',
+      });
+    }
   };
 
   const toggleFile = (fileId: string) => {

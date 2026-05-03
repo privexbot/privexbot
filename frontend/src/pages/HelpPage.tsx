@@ -86,22 +86,22 @@ export function HelpPage() {
     {
       question: "How does pricing work?",
       answer:
-        "We offer usage-based pricing. Pay only for what you use - conversations, knowledge processing, and storage. Start with our generous free tier.",
+        "We offer tier-based plans (Free, Starter, Pro, Enterprise) with quotas on chatbots, chatflows, KB documents, messages, API calls, and team members. The Free tier is free forever — no credit card required. See /pricing for the live limits and prices.",
     },
     {
       question: "Can I change plans anytime?",
       answer:
-        "Yes! Upgrade or downgrade your plan at any time. Changes take effect immediately, and billing is prorated.",
+        "Yes. While self-serve checkout is being finalized, plan upgrades go through privexbot@gmail.com — we apply the change immediately and pro-rate billing.",
     },
     {
       question: "What payment methods do you accept?",
       answer:
-        "We accept all major credit cards, bank transfers for enterprise accounts, and cryptocurrency payments for ultimate privacy.",
+        "Major credit cards via our payment processor (Stripe is being wired up). Bank transfer is available for Enterprise on request.",
     },
     {
       question: "Do you offer refunds?",
       answer:
-        "We offer a 30-day money-back guarantee for annual plans. Monthly plans can be cancelled anytime with no additional charges.",
+        "Annual plans: pro-rated refund within 30 days of purchase. Monthly plans: cancel anytime, effective at the end of the current cycle. See /terms for the full policy.",
     },
   ];
 
@@ -263,6 +263,44 @@ export function HelpPage() {
 
           <div id="billing">
             {renderFAQSection("Billing & Plans", billingFAQs, 3)}
+          </div>
+
+          {/* Contact section — single canonical contact channel.
+              All "contact sales / contact support / talk to us" CTAs across
+              the marketing site funnel here. Keep email in one place
+              (`SUPPORT_EMAIL` in Footer.tsx) so changes only need to happen
+              there for the public-facing footer; this section duplicates
+              the value intentionally for quick scanning on /help. */}
+          <div id="contact" className="mt-20">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 md:p-10 text-center">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-3 font-manrope">
+                Still need help?
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-6 font-manrope max-w-xl mx-auto">
+                Sales questions, plan upgrades, custom limits, or anything
+                we didn't cover above — we read every email.
+              </p>
+              <a
+                href="mailto:privexbot@gmail.com"
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium font-manrope px-6 py-3 rounded-xl transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="1.5"
+                  stroke="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+                  />
+                </svg>
+                privexbot@gmail.com
+              </a>
+            </div>
           </div>
 
         </div>

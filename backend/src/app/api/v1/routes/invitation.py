@@ -88,6 +88,12 @@ async def create_organization_invitation(
             detail="Resource ID in request body must match organization ID in URL"
         )
 
+    # Plan quota — block invites when at the org's team_members cap.
+    # Checked here (before sending the email) so the user doesn't get a
+    # confusing "you've been invited but can't join" experience.
+    from app.services.billing_service import require_quota
+    require_quota(db, org_id, "team_members")
+
     invitation = invitation_service.create_invitation(
         db=db,
         email=invitation_data.email,

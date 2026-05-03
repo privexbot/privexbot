@@ -158,15 +158,20 @@ class Crawl4AIService:
         - `wait_for` tells Playwright to wait until a CSS selector appears
         - `delay_before_return_html` adds extra wait time after selector is found
 
-        RETURNS:
-            tuple of (wait_for_selector, delay_seconds)
+        Returns a (wait_for_selector, delay_seconds) pair that works for both
+        statically-rendered docs and SPA-rendered docs (Vocs, Docusaurus v3,
+        GitBook, etc.).
+
+        The selector list uses Playwright's CSS-list semantics: it resolves on
+        whichever element appears first. `main, article, [role='main']` covers
+        classic content; `aside, nav, [role='navigation']` covers SPA sites
+        whose nav is the last thing to hydrate. The crawler also passes
+        `wait_until="networkidle"` in run_config (see callers), so the delay
+        below is just a worst-case ceiling — fast on static sites, longer for
+        SPAs that need extra hydration time.
         """
-        # Simple approach: wait for main content area, works for most sites
-        # The key is content validation AFTER scraping, not complex selectors
-        if stealth_mode:
-            return 'body', 2.0
-        else:
-            return 'body', 1.0
+        selector = "main, article, [role='main'], aside, nav, [role='navigation']"
+        return (selector, 4.0) if stealth_mode else (selector, 3.0)
 
     def _is_meaningful_content(self, content: str) -> bool:
         """
@@ -382,11 +387,22 @@ class Crawl4AIService:
             ]
         )
 
-        # Configure crawler run - use user config values dynamically
+        # Configure crawler run - use user config values dynamically.
+        # `wait_until="load"` fires after the main document + resources finish
+        # (typically 3-5s). The `delay_before_return_html` (3-4s smart
+        # default) gives SPA frameworks time to hydrate their nav after that
+        # — so `result.links["internal"]` includes sidebar links on Vocs /
+        # Docusaurus v3 / GitBook sites. We avoid `networkidle` because some
+        # SPAs run analytics / websockets / lazy-load images that never let
+        # the network truly settle, blowing past `page_timeout` on every
+        # page (observed: 18-22s/page on developers.uniswap.org).
         run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,  # Always fresh content
+            wait_until="load",  # main doc + resources loaded
             wait_for=wait_for,  # From user config or default
-            delay_before_return_html=delay,  # From user config or smart default
+            wait_for_timeout=15000,  # 15s cap on selector wait
+            page_timeout=30000,  # 30s cap on full page load
+            delay_before_return_html=delay,  # SPA hydration buffer
             # Extraction strategy (just get markdown)
             extraction_strategy=NoExtractionStrategy(),
         )
@@ -505,11 +521,16 @@ class Crawl4AIService:
         wait_for = config.wait_for_selector or smart_selector
         delay = config.wait_time if config.wait_time > 0 else smart_delay
 
+        # Surface include/exclude patterns up-front so when the per-page
+        # diagnostic prints "0 links match patterns" the operator can tell
+        # immediately whether the user-supplied patterns are the cause.
         print(f"🕷️ Crawling website starting from {start_url}")
         print(f"   - max_pages: {config.max_pages}")
         print(f"   - max_depth: {config.max_depth}")
         print(f"   - wait_for: {wait_for}")
         print(f"   - delay: {delay}s")
+        print(f"   - include_patterns: {config.include_patterns or '(none — crawl whole subdomain)'}")
+        print(f"   - exclude_patterns: {config.exclude_patterns or '(none)'}")
 
         # Browser configuration for stealth
         browser_config = BrowserConfig(
@@ -553,11 +574,20 @@ class Crawl4AIService:
                     continue
 
                 try:
-                    # Configure crawler run - use user config values dynamically
+                    # Configure crawler run - mirrors single-page config above.
+                    # `wait_until="load"` + `delay_before_return_html` is the
+                    # SPA-friendly combo: load fires fast (3-5s for main doc
+                    # + resources), then the delay gives the JS framework
+                    # time to hydrate its nav. Avoids the per-page
+                    # 18-22s networkidle stalls observed on docs sites with
+                    # background analytics / lazy-load images.
                     run_config = CrawlerRunConfig(
                         cache_mode=CacheMode.BYPASS,
-                        wait_for=wait_for,  # From user config or default
-                        delay_before_return_html=delay,  # From user config or smart default
+                        wait_until="load",
+                        wait_for=wait_for,
+                        wait_for_timeout=15000,
+                        page_timeout=30000,
+                        delay_before_return_html=delay,
                         extraction_strategy=NoExtractionStrategy(),
                     )
 
@@ -583,24 +613,26 @@ class Crawl4AIService:
                         "character_count": len(markdown_content) if markdown_content else 0,
                     }
 
-                    # Extract links
+                    # Extract links (lifted out of the result.links truthy
+                    # check so the diagnostic log below always has counts).
                     links = []
-                    if result.links:
-                        internal_links = result.links.get("internal", [])
-                        for link in internal_links:
-                            if not link:
-                                continue
+                    internal_links = (
+                        result.links.get("internal", []) if result.links else []
+                    )
+                    for link in internal_links:
+                        if not link:
+                            continue
 
-                            # Extract href from link object (can be dict or string)
-                            link_url = link.get("href") if isinstance(link, dict) else link
-                            if not link_url:
-                                continue
+                        # Extract href from link object (can be dict or string)
+                        link_url = link.get("href") if isinstance(link, dict) else link
+                        if not link_url:
+                            continue
 
-                            if self._should_crawl_url(link_url, config, start_url):
-                                full_url = urljoin(url, link_url)
-                                if full_url not in crawled_urls:
-                                    pending_urls.append((full_url, depth + 1))
-                                links.append(link_url)
+                        if self._should_crawl_url(link_url, config, start_url):
+                            full_url = urljoin(url, link_url)
+                            if full_url not in crawled_urls:
+                                pending_urls.append((full_url, depth + 1))
+                            links.append(link_url)
 
                     # Add to results
                     scraped_pages.append(ScrapedPage(
@@ -614,7 +646,15 @@ class Crawl4AIService:
                     ))
 
                     crawled_urls.add(url)
-                    print(f"✅ [{len(scraped_pages)}/{config.max_pages}] Crawled {url}: {metadata['word_count']} words")
+                    # Diagnostic log: shows whether the page yielded zero
+                    # internal links (hydration / JS issue) or yielded links
+                    # but the pattern filtered them out (config issue).
+                    print(
+                        f"✅ [{len(scraped_pages)}/{config.max_pages}] "
+                        f"Crawled {url}: {metadata['word_count']} words, "
+                        f"{len(links)} links match patterns "
+                        f"(of {len(internal_links)} internal links found on page)"
+                    )
 
                     # Human-like delay between requests
                     if config.delay_between_requests > 0:

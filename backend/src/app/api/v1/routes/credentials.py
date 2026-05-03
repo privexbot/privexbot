@@ -60,7 +60,7 @@ async def create_credential(
     BODY:
         {
             "workspace_id": "uuid",
-            "name": "OpenAI API Key",
+            "name": "Telegram Bot Token",
             "credential_type": "api_key",
             "data": {
                 "api_key": "sk-..."
@@ -70,7 +70,7 @@ async def create_credential(
     RETURNS:
         {
             "credential_id": "uuid",
-            "name": "OpenAI API Key",
+            "name": "Telegram Bot Token",
             "credential_type": "api_key",
             "is_active": true
         }
@@ -138,7 +138,7 @@ async def list_credentials(
 
     QUERY PARAMS:
         credential_type: Filter by auth type (e.g., "api_key", "oauth2")
-        provider: Filter by service provider (e.g., "telegram", "discord", "openai")
+        provider: Filter by service provider (e.g., "telegram", "discord", "notion")
 
     RETURNS:
         {

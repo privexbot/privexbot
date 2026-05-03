@@ -195,7 +195,7 @@ export default function KBProcessingPage() {
   if (error || !pipelineStatus) {
     return (
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto py-8 px-4">
+        <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -214,7 +214,7 @@ export default function KBProcessingPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto py-8 px-4">
+      <div className="py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
         {/* Header */}
         <div className="mb-8">
           <Button variant="ghost" onClick={handleBackToList} className="mb-4">

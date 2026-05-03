@@ -158,14 +158,14 @@ const validateChatflowDraft = (data: any): ValidationError[] => {
     });
   }
 
-  // Check for start node
-  const hasStartNode = data.nodes?.some((node: any) => node.type === 'start');
-  if (!hasStartNode && data.nodes?.length > 0) {
+  // Check for trigger node
+  const hasTriggerNode = data.nodes?.some((node: any) => node.type === 'trigger');
+  if (!hasTriggerNode && data.nodes?.length > 0) {
     errors.push({
       field: 'nodes',
-      message: 'No start node found',
+      message: 'No trigger node found',
       severity: 'error',
-      suggestion: 'Add a start node to define the entry point',
+      suggestion: 'Add a trigger node to define the entry point',
     });
   }
 
@@ -205,7 +205,7 @@ const validateChatflowDraft = (data: any): ValidationError[] => {
     ]);
 
     const orphanedNodes = data.nodes.filter(
-      (node: any) => node.type !== 'start' && !connectedNodeIds.has(node.id)
+      (node: any) => node.type !== 'trigger' && !connectedNodeIds.has(node.id)
     );
 
     if (orphanedNodes.length > 0) {

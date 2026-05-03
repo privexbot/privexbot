@@ -1,9 +1,12 @@
 export { Header } from "./Header";
 export { Hero } from "./Hero";
+export { TrustedBrands } from "./TrustedBrands";
 export { ValuePropositions } from "./ValuePropositions";
 export { ProductOverview } from "./ProductOverview";
 export { Features } from "./Features";
+export { CaseStudies } from "./CaseStudies";
 export { Testimonials } from "./Testimonials";
+export { OurBlog } from "./OurBlog";
 export { Pricing } from "./Pricing";
 export { FinalCTA } from "./FinalCTA";
 export { Footer } from "./Footer";

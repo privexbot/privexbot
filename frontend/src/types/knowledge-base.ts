@@ -714,6 +714,13 @@ export interface KBSummary {
   total_documents?: number;
   total_chunks?: number;
   total_size_bytes?: number;
+  // Whether this KB is re-indexable today. Returns false when any
+  // file_upload document lacks a MinIO original (`file_path` IS NULL),
+  // mirroring the backend precondition at routes/kb.py:reindex.
+  can_reindex?: boolean;
+  // Failure reason populated when status === "failed". Surfaced inline on
+  // the KB card so operators see WHY without opening the detail page.
+  error_message?: string | null;
 }
 
 /**

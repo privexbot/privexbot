@@ -4,6 +4,8 @@ import { TrustedBrands } from "@/components/landing/TrustedBrands";
 import { ValuePropositions } from "@/components/landing/ValuePropositions";
 import { ProductOverview } from "@/components/landing/ProductOverview";
 import { Features } from "@/components/landing/Features";
+import { CaseStudies } from "@/components/landing/CaseStudies";
+import { Pricing } from "@/components/landing/Pricing";
 import { Testimonials } from "@/components/landing/Testimonials";
 import { OurBlog } from "@/components/landing/OurBlog";
 import { FinalCTA } from "@/components/landing/FinalCTA";
@@ -19,6 +21,8 @@ export function LandingPage() {
         <ValuePropositions />
         <ProductOverview />
         <Features />
+        <CaseStudies />
+        <Pricing />
         <Testimonials />
         <OurBlog />
         <FinalCTA />

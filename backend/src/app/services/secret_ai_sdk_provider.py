@@ -10,8 +10,23 @@ HOW: Converts OpenAI message format to LangChain tuple format, uses native async
 
 from typing import List, Dict, Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+
+# Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
+# chain-of-thought wrapped in <think>...</think> before the answer. Strip it
+# at the inference boundary so it never reaches end users via chat / live-test.
+# Mirrors `_strip_thinking` in inference_service.py — kept inline to avoid a
+# circular import (inference_service lazily imports this module).
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking(text: str) -> str:
+    if not text:
+        return text
+    return _THINK_BLOCK_RE.sub("", text).strip()
 
 
 class SecretAISDKProvider:
@@ -140,11 +155,25 @@ class SecretAISDKProvider:
         # Call SDK using native async method (ainvoke)
         # WHY: Using ainvoke directly instead of wrapping invoke in run_in_executor
         # HOW: LangChain's ainvoke is the proper async interface, avoiding event loop conflicts
-        try:
-            response = await self._client.ainvoke(sdk_messages)
-        except Exception as e:
-            logger.error(f"[SecretAISDKProvider] SDK ainvoke failed: {e}")
-            raise
+        # Retry once on transient failures (SDK sometimes returns empty errors)
+        last_error = None
+        for attempt in range(2):
+            try:
+                response = await self._client.ainvoke(sdk_messages)
+                break
+            except Exception as e:
+                last_error = e
+                logger.error(
+                    f"[SecretAISDKProvider] SDK ainvoke failed (attempt {attempt + 1}/2): "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                if attempt == 0:
+                    # Reset client on first failure — URL may have gone stale
+                    self._initialized = False
+                    self._ensure_client()
+                    continue
+                raise
 
         # Extract text from response
         # SDK returns AIMessage with .content attribute
@@ -152,6 +181,9 @@ class SecretAISDKProvider:
             response_text = response.content
         else:
             response_text = str(response)
+
+        # Drop chain-of-thought (<think>...</think>) from reasoning models.
+        response_text = _strip_thinking(response_text)
 
         logger.debug(f"[SecretAISDKProvider] Response length: {len(response_text)} chars")
 

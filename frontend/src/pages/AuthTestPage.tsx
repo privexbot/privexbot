@@ -444,7 +444,7 @@ export function AuthTestPage() {
                     </Button>
                   </Link>
 
-                  <Link to="/signup">
+                  <Link to="/signin">
                     <Button variant="outline" className="w-full">
                       <Code className="h-4 w-4 mr-2" />
                       New Signup Page
@@ -458,7 +458,7 @@ export function AuthTestPage() {
                     </Button>
                   </Link>
 
-                  <Link to="/auth/signup">
+                  <Link to="/auth/signin">
                     <Button variant="ghost" className="w-full">
                       <Code className="h-4 w-4 mr-2" />
                       Old Signup Page

@@ -160,6 +160,32 @@ def reindex_stale_kbs_task(self):
             KnowledgeBase.updated_at < thirty_days_ago
         ).all()
 
+        # Pre-filter out KBs that can't be re-indexed (any file_upload doc
+        # without a MinIO original — same precondition as the manual route).
+        # Skipping these here prevents the scheduler from filling the
+        # notifications table with "Re-indexing failed" rows on every run.
+        if stale_kbs:
+            from app.models.document import Document
+
+            kb_ids = [kb.id for kb in stale_kbs]
+            blocked_kb_ids = {
+                row[0]
+                for row in db.query(Document.kb_id)
+                .filter(
+                    Document.kb_id.in_(kb_ids),
+                    Document.source_type == "file_upload",
+                    Document.file_path.is_(None),
+                )
+                .distinct()
+                .all()
+            }
+            if blocked_kb_ids:
+                print(
+                    f"[reindex_stale_kbs] Skipping {len(blocked_kb_ids)} KB(s) "
+                    "that have non-persisted file uploads"
+                )
+            stale_kbs = [kb for kb in stale_kbs if kb.id not in blocked_kb_ids]
+
         queued = 0
 
         for kb in stale_kbs:

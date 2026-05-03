@@ -47,6 +47,11 @@ export interface EmailSignupRequest {
   username: string;
   email: string;
   password: string;
+  /**
+   * Optional referral code from `?ref=…` on the signup URL. Backend
+   * matches it against `User.referral_code` and writes a Referral row.
+   */
+  referral_code?: string;
 }
 
 export interface EmailLoginRequest {

@@ -102,10 +102,10 @@ def log_kb_action_from_request(
     Returns:
         Created KBAuditLog object
     """
-    # Extract IP address (handle proxies)
-    ip_address = request.client.host if request.client else None
-    if "x-forwarded-for" in request.headers:
-        ip_address = request.headers["x-forwarded-for"].split(",")[0].strip()
+    # Extract IP address. Prefers Cf-Connecting-Ip / X-Real-IP / X-Forwarded-For
+    # over `request.client.host` (which is the proxy IP in containerized prod).
+    from app.utils.client_ip import get_client_ip
+    ip_address = get_client_ip(request)
 
     # Extract user agent
     user_agent = request.headers.get("user-agent")

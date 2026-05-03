@@ -96,7 +96,9 @@ export function ActivitiesPage() {
     });
   }, [activities, searchQuery]);
 
-  // Navigate to resource when clicking on activity
+  // Navigate to resource when clicking on activity.
+  // Chatflow activity → the read-only detail page (deployment channels + test
+  // chat). Users who actually want to edit click Edit from Studio.
   const handleActivityClick = (activity: Activity) => {
     if (!activity.resource_type || !activity.resource_id) return;
 
@@ -105,7 +107,7 @@ export function ActivitiesPage() {
         navigate(`/chatbots/${activity.resource_id}`);
         break;
       case "chatflow":
-        navigate(`/chatflows/builder/${activity.resource_id}`);
+        navigate(`/studio/${activity.resource_id}`);
         break;
       case "knowledge_base":
         navigate(`/knowledge-bases/${activity.resource_id}`);
@@ -133,7 +135,7 @@ export function ActivitiesPage() {
     return (
       <DashboardLayout>
         <div className="w-full bg-white dark:bg-gray-800">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="px-4 sm:px-6 lg:px-8 xl:px-12 py-8">
             {/* Header skeleton */}
             <div className="mb-6">
               <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-2" />
@@ -168,7 +170,7 @@ export function ActivitiesPage() {
   return (
     <DashboardLayout>
       <div className="w-full bg-white dark:bg-gray-800 min-h-screen">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="px-4 sm:px-6 lg:px-8 xl:px-12 py-8">
           {/* Header */}
           <div className="mb-6">
             <Button

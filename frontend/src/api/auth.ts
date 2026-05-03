@@ -126,6 +126,7 @@ class AuthApiClient {
   async verifyEmailAndSignup(data: {
     email: string;
     code: string;
+    referral_code?: string;
   }): Promise<Token> {
     const response = await this.client.post("/auth/email/verify-and-signup", data);
     return response.data;
@@ -238,6 +239,17 @@ class AuthApiClient {
   async getCurrentUser(): Promise<UserProfile> {
     const response = await this.client.get<UserProfile>("/auth/me");
     return response.data;
+  }
+
+  /**
+   * Sign out — best-effort server call. Today the endpoint is a no-op
+   * on the backend (JWTs are stateless), but having the contract lets
+   * us layer a Redis revocation blacklist later without changing this
+   * client. Callers should ALWAYS clear localStorage afterwards
+   * regardless of whether this resolves or rejects.
+   */
+  async logout(): Promise<void> {
+    await this.client.post("/auth/logout");
   }
 
   // ============================================================

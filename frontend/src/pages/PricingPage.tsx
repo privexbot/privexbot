@@ -3,105 +3,42 @@ import { Header } from "@/components/landing/Header";
 import { Footer } from "@/components/landing/Footer";
 import { FinalCTA } from "@/components/landing/FinalCTA";
 import { motion } from "framer-motion";
-import { Check, Star } from "lucide-react";
+import { Check, Star, X } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { billingApi, type PlanCard as PlanCardData } from "@/api/billing";
+import {
+  planCtaCopy,
+  planFeatureBullets,
+  priceLabel,
+  FEATURE_LABELS,
+  FEATURE_ORDER,
+  formatRetentionDays,
+  formatSupportTier,
+} from "@/lib/plans";
 
-const pricingTiers = [
-  {
-    name: "Free",
-    description: "Perfect for trying out PrivexBot",
-    priceMonthly: 0,
-    priceAnnual: 0,
-    features: [
-      "1 Chatbot",
-      "1 Knowledge Base",
-      "1,000 messages/month",
-      "Basic analytics",
-      "Community support",
-      "Embeddable widget",
-    ],
-    cta: "Get Started",
-    ctaVariant: "outline" as const,
-    popular: false,
-  },
-  {
-    name: "Starter",
-    description: "For small businesses getting started",
-    priceMonthly: 19,
-    priceAnnual: 180,
-    features: [
-      "3 Chatbots",
-      "2 Knowledge Bases",
-      "10,000 messages/month",
-      "Advanced analytics",
-      "Email support",
-      "Custom branding",
-      "Basic API access",
-      "WhatsApp integration",
-    ],
-    cta: "Start Free Trial",
-    ctaVariant: "outline" as const,
-    popular: false,
-  },
-  {
-    name: "Pro",
-    description: "For growing teams and businesses",
-    priceMonthly: 49,
-    priceAnnual: 470,
-    features: [
-      "10 Chatbots",
-      "5 Knowledge Bases",
-      "50,000 messages/month",
-      "Priority support",
-      "Full API access",
-      "Webhook integrations",
-      "Multi-language support",
-      "Advanced workflows",
-      "A/B testing",
-    ],
-    cta: "Start Free Trial",
-    ctaVariant: "default" as const,
-    popular: true,
-  },
-  {
-    name: "Enterprise",
-    description: "For large organizations",
-    priceMonthly: null,
-    priceAnnual: null,
-    features: [
-      "Unlimited chatbots",
-      "Unlimited knowledge bases",
-      "Unlimited messages",
-      "Dedicated support",
-      "Custom deployment",
-      "SLA guarantee",
-      "White-label solution",
-      "On-premise option",
-      "Custom integrations",
-      "Advanced security",
-    ],
-    cta: "Contact Sales",
-    ctaVariant: "outline" as const,
-    popular: false,
-  },
-];
+const HIGHLIGHT_TIER = "pro";
 
 export function PricingPage() {
   const [annual, setAnnual] = useState(false);
+
+  const { data: plans, isLoading } = useQuery({
+    queryKey: ["public-plans"],
+    queryFn: () => billingApi.listPublicPlans(),
+    staleTime: 60 * 60 * 1000,
+  });
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <Header />
 
       <main>
-        {/* Hero Section with Grid Background */}
         <section className="pt-24 pb-16 md:pt-32 md:pb-24 relative overflow-hidden">
-          {/* Grid background pattern with diamond intersections */}
           <div
             className="absolute inset-0 opacity-30 dark:opacity-20"
             style={{
@@ -126,16 +63,15 @@ export function PricingPage() {
                 Simple, Transparent Pricing
               </h1>
               <p className="text-lg md:text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto font-manrope">
-                Choose the plan that's right for you. All plans include Secret VM security.
+                Free forever — no credit card required. Every plan runs on Secret VM
+                confidential compute.
               </p>
             </motion.div>
           </div>
         </section>
 
-        {/* Pricing Content Section */}
         <section className="pb-16 md:pb-24">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {/* Billing Toggle */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -143,104 +79,41 @@ export function PricingPage() {
               transition={{ duration: 0.6 }}
               className="flex items-center justify-center gap-4 mb-12"
             >
-              <Label htmlFor="billing-toggle" className={`font-manrope ${!annual ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
+              <Label htmlFor="billing-toggle-page" className={`font-manrope ${!annual ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
                 Monthly
               </Label>
               <Switch
-                id="billing-toggle"
+                id="billing-toggle-page"
                 checked={annual}
                 onCheckedChange={setAnnual}
               />
-              <Label htmlFor="billing-toggle" className={`font-manrope ${annual ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
+              <Label htmlFor="billing-toggle-page" className={`font-manrope ${annual ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-400"}`}>
                 Annual
                 <Badge variant="secondary" className="ml-2">Save 20%</Badge>
               </Label>
             </motion.div>
 
-            {/* Pricing Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {pricingTiers.map((tier, index) => (
+              {(isLoading || !plans
+                ? Array.from({ length: 4 }).map(() => null)
+                : plans
+              ).map((tier, index) => (
                 <motion.div
-                  key={index}
+                  key={tier?.tier ?? index}
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-50px" }}
                   transition={{ delay: index * 0.1, duration: 0.6 }}
                 >
-                  <Card
-                    className={`relative h-full transition-all duration-300 hover:shadow-xl ${
-                      tier.popular ? "border-blue-500 shadow-lg scale-105" : "border-gray-200 dark:border-gray-700"
-                    } bg-white dark:bg-gray-800`}
-                  >
-                    {tier.popular && (
-                      <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                        <Badge className="px-4 py-1 bg-blue-600">
-                          <Star className="h-3 w-3 mr-1 fill-current" />
-                          Most Popular
-                        </Badge>
-                      </div>
-                    )}
-
-                    <CardHeader className="text-center pb-6 pt-8 space-y-4">
-                      <div>
-                        <h3 className="text-2xl font-bold mb-2 font-manrope text-gray-900 dark:text-white">
-                          {tier.name}
-                        </h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
-                          {tier.description}
-                        </p>
-                      </div>
-
-                      {/* Price */}
-                      <div className="min-h-[120px] flex flex-col items-center justify-center">
-                        {tier.priceMonthly !== null ? (
-                          <div className="space-y-2">
-                            <div>
-                              <span className="text-4xl font-bold text-gray-900 dark:text-white font-manrope">
-                                ${annual ? Math.round(tier.priceAnnual / 12) : tier.priceMonthly}
-                              </span>
-                              <span className="text-base text-gray-600 dark:text-gray-400 font-manrope">/month</span>
-                            </div>
-                            {annual && tier.priceAnnual > 0 && (
-                              <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
-                                Billed ${tier.priceAnnual}/year
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-4xl font-bold text-gray-900 dark:text-white font-manrope">Custom</span>
-                        )}
-                      </div>
-
-                      {/* CTA */}
-                      <Link to={tier.name === "Enterprise" ? "/contact" : "/signup"}>
-                        <Button
-                          variant={tier.ctaVariant}
-                          className="w-full font-manrope"
-                          size="lg"
-                        >
-                          {tier.cta}
-                        </Button>
-                      </Link>
-                    </CardHeader>
-
-                    <CardContent>
-                      {/* Features List */}
-                      <ul className="space-y-3">
-                        {tier.features.map((feature, featureIndex) => (
-                          <li key={featureIndex} className="flex items-start gap-3">
-                            <Check className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-                            <span className="text-sm text-gray-600 dark:text-gray-400 font-manrope">{feature}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </CardContent>
-                  </Card>
+                  <PlanColumn
+                    tier={tier}
+                    annual={annual}
+                    isHighlight={tier?.tier === HIGHLIGHT_TIER}
+                  />
                 </motion.div>
               ))}
             </div>
 
-            {/* FAQ Link */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -254,19 +127,171 @@ export function PricingPage() {
                   View FAQ
                 </Link>{" "}
                 or{" "}
-                <Link to="/contact" className="text-blue-600 hover:underline">
-                  contact sales
+                <Link to="/help" className="text-blue-600 hover:underline">
+                  contact support
                 </Link>
               </p>
             </motion.div>
           </div>
         </section>
 
-        {/* CTA Section */}
         <FinalCTA />
       </main>
 
       <Footer />
     </div>
+  );
+}
+
+function PlanColumn({
+  tier,
+  annual,
+  isHighlight,
+}: {
+  tier: PlanCardData | null;
+  annual: boolean;
+  isHighlight: boolean;
+}) {
+  if (!tier) {
+    return (
+      <Card className="relative h-[480px] animate-pulse bg-muted/30 border" />
+    );
+  }
+
+  const { primary, secondary } = priceLabel(tier, annual);
+  const features = planFeatureBullets(tier.limits);
+  const cta = planCtaCopy(tier.tier);
+
+  return (
+    <Card
+      className={`relative h-full transition-all duration-300 hover:shadow-xl ${
+        isHighlight
+          ? "border-blue-500 shadow-lg scale-105"
+          : "border-gray-200 dark:border-gray-700"
+      } bg-white dark:bg-gray-800`}
+    >
+      {isHighlight && (
+        <div className="absolute -top-4 left-0 right-0 flex justify-center">
+          <Badge className="px-4 py-1 bg-blue-600">
+            <Star className="h-3 w-3 mr-1 fill-current" />
+            Most Popular
+          </Badge>
+        </div>
+      )}
+
+      <CardHeader className="text-center pb-6 pt-8 space-y-4">
+        <div>
+          <h3 className="text-2xl font-bold mb-2 font-manrope text-gray-900 dark:text-white">
+            {tier.label}
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope min-h-[40px]">
+            {tier.tagline}
+          </p>
+        </div>
+
+        <div className="min-h-[120px] flex flex-col items-center justify-center">
+          <div className="space-y-2">
+            <div>
+              <span className="text-4xl font-bold text-gray-900 dark:text-white font-manrope">
+                {primary}
+              </span>
+              {tier.price_monthly_usd !== null && tier.price_monthly_usd > 0 && (
+                <span className="text-base text-gray-600 dark:text-gray-400 font-manrope">
+                  /month
+                </span>
+              )}
+            </div>
+            {secondary && (
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                {secondary}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <Link to={cta.to}>
+          <Button
+            variant={isHighlight ? "default" : "outline"}
+            className="w-full font-manrope"
+            size="lg"
+          >
+            {cta.label}
+          </Button>
+        </Link>
+      </CardHeader>
+
+      <CardContent>
+        {/* Numeric quotas */}
+        <ul className="space-y-3">
+          {features.map((feature) => (
+            <li key={feature} className="flex items-start gap-3">
+              <Check className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+              <span className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
+                {feature}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        {/* Boolean feature gates — render ✓ for true, ✗ for false. */}
+        {tier.features && (
+          <>
+            <hr className="my-4 border-gray-200 dark:border-gray-700" />
+            <ul className="space-y-2.5">
+              {FEATURE_ORDER.map((key) => {
+                const enabled = Boolean(
+                  (tier.features as unknown as Record<string, unknown>)[key],
+                );
+                return (
+                  <li
+                    key={key}
+                    className="flex items-start gap-3"
+                  >
+                    {enabled ? (
+                      <Check className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <X className="h-4 w-4 text-gray-300 dark:text-gray-600 shrink-0 mt-0.5" />
+                    )}
+                    <span
+                      className={
+                        "text-sm font-manrope " +
+                        (enabled
+                          ? "text-gray-700 dark:text-gray-300"
+                          : "text-gray-400 dark:text-gray-500 line-through")
+                      }
+                    >
+                      {FEATURE_LABELS[key] ?? key}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Categorical features */}
+            <hr className="my-4 border-gray-200 dark:border-gray-700" />
+            <ul className="space-y-1.5 text-xs text-gray-600 dark:text-gray-400 font-manrope">
+              <li>
+                <span className="text-gray-500 dark:text-gray-500">Audit logs:</span>{" "}
+                <span className="text-gray-800 dark:text-gray-200">
+                  {formatRetentionDays(
+                    (tier.features as unknown as { audit_log_retention_days: number })
+                      .audit_log_retention_days,
+                  )}
+                </span>
+              </li>
+              <li>
+                <span className="text-gray-500 dark:text-gray-500">Support:</span>{" "}
+                <span className="text-gray-800 dark:text-gray-200">
+                  {formatSupportTier(
+                    (tier.features as unknown as { priority_support: string })
+                      .priority_support,
+                  )}
+                </span>
+              </li>
+            </ul>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

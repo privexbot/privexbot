@@ -12,6 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2, Loader2, Users as UsersIcon, Shield, Crown, User, Mail, RefreshCw, X, Clock, CheckCircle2 } from "lucide-react";
 import { organizationApi } from "@/api/organization";
 import { invitationApi } from "@/api/invitation";
+import { handleApiError } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -114,20 +115,8 @@ export const OrganizationMembersTab = ({
     } catch (err: any) {
       console.error("[OrganizationMembersTab] Error sending invitation:", err);
 
-      // Extract error message properly
-      let errorMessage = "Failed to send invitation";
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((e: any) => e.msg || e.message || String(e)).join(', ');
-        } else if (typeof detail === 'object') {
-          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
-        }
-      }
+      const errorMessage = handleApiError(err);
 
-      // Set form-level error
       setFormError("root", {
         type: "manual",
         message: errorMessage,

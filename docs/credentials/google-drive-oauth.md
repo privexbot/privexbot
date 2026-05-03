@@ -357,6 +357,62 @@ After connecting, verify by:
 
 ---
 
+## Troubleshooting: "Access blocked: ... has not completed the Google verification process" (Error 403 access_denied)
+
+This error means Google's OAuth consent screen blocked the user before any token exchange happened. The cause is **never a code bug in PrivexBot** — it's the publishing status of the Google Cloud Console OAuth client and which scopes the app requests.
+
+PrivexBot ships two distinct Google providers, and they behave differently:
+
+| Provider | Backend route | Scopes | Sensitivity tier | Used by |
+|---|---|---|---|---|
+| `google` | `routes/credentials.py` (line 497–517) | `drive.readonly`, `documents.readonly`, `spreadsheets.readonly` | **Sensitive** | KB document import (Drive picker → Docs/Sheets read) |
+| `google_gmail` | `routes/credentials.py` (line 519–539) | `gmail.send`, `userinfo.email` | **Restricted** (highest tier) | Chatflow email node (Gmail API as alternative to SMTP) |
+
+The unblock path depends on which provider is failing.
+
+### Case A — `google` provider (Drive / Docs / Sheets)
+
+Sensitive scopes can be unblocked **today** without waiting for Google's verification audit:
+
+1. Open Google Cloud Console → **APIs & Services** → **OAuth consent screen**.
+2. Confirm Publishing status is **Testing**. Scroll to **Test users** → click **Add users**.
+3. Add the email of every user who needs to connect Google to PrivexBot (yourself first, plus testers). Cap is 100 users.
+4. Save. The user retries the Connect Google flow on PrivexBot.
+5. Google now shows an **"unverified app"** warning screen with the text *"Continue to privexbot.com (unsafe)"*. This is expected for sensitive scopes in Testing mode — clicking Continue completes the OAuth and creates the credential.
+6. To remove the warning entirely, the OAuth client must be moved to **Production** and pass Google's sensitive-scope verification audit. That review typically takes **2–4 weeks** but can run longer; do not rely on the timeline.
+
+### Case B — `google_gmail` provider (Gmail send)
+
+`gmail.send` is in Google's most-strict tier (Restricted). The behaviour is harsher than Sensitive scopes:
+
+- **Test users do NOT get a click-through warning** — they get a hard "Access blocked" error with no Continue button.
+- The only path to unblock is **completing Google's Restricted-scope verification** (a deeper review than Sensitive scopes; typically 4–6 weeks; possibly longer for Gmail-class scopes due to incremental review milestones).
+
+While verification is pending, **the chatflow Email node still works via SMTP** (`backend/src/app/chatflow/nodes/email_node.py:180-294`). Operators can:
+
+- Tell users to attach a generic SMTP credential rather than `google_gmail` until verification clears.
+- Hide the `google_gmail` connect option in the credentials UI if it's adding more confusion than value.
+
+### Required: register the redirect URI byte-for-byte
+
+Whichever provider, the OAuth client in Google Cloud Console must have `{API_BASE_URL}/api/v1/credentials/oauth/callback` registered under **Authorized redirect URIs**. Examples:
+
+- Dev: `http://localhost:8000/api/v1/credentials/oauth/callback`
+- Prod: `https://api.privexbot.com/api/v1/credentials/oauth/callback`
+
+If the redirect URI is missing or wrong, Google returns `redirect_uri_mismatch` (a different error from `access_denied` — but worth checking when troubleshooting). Add both dev and prod URIs to the same client so both deployments share one `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+### What end users see (and how to handle it in product)
+
+When the OAuth screen blocks the user, PrivexBot's KB-creation wizard receives a `?google_error=access_denied` callback. The wizard surfaces a destructive toast: *"Google connection failed — verify the OAuth client and try again."* No data loss; the user can retry once the operator completes the steps above.
+
+### Reduce-scope alternatives we explicitly DO NOT take
+
+- `drive.readonly` → `drive.file`: would limit access to files opened via the Drive picker. PrivexBot opens documents by ID after user selection (`google_adapter.py:46-282`), which `drive.file` does not cover. This would break document import.
+- Disable `google_gmail`: would remove the Gmail-send option for chatflows. The Email node falls back to SMTP, but power users rely on Gmail auth for deliverability.
+
+---
+
 ## Useful Links
 
 - [Google Drive API Documentation](https://developers.google.com/drive)

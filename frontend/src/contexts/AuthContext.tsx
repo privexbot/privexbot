@@ -209,9 +209,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   /**
-   * Logout
+   * Logout. Best-effort backend call (records the intent server-side and
+   * gives us a stable contract for a future Redis blacklist) followed by
+   * local cleanup. The local cleanup runs regardless of whether the
+   * server call succeeds — an already-expired token would 401 here, but
+   * the user still wants to be signed out locally.
    */
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      /* swallow — local cleanup must run regardless */
+    }
     localStorage.removeItem("access_token");
     localStorage.removeItem("token_expires_at");
     setUser(null);

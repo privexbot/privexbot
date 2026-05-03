@@ -225,6 +225,10 @@ class KBResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
     created_by: str
+    can_reindex: bool = True
+    # Surface the failure reason on the list card so users see WHY a KB is in
+    # `failed` state instead of just a red badge with no explanation.
+    error_message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -344,6 +348,25 @@ async def list_kbs(
     # Order by most recent
     kbs = query.order_by(KnowledgeBase.created_at.desc()).all()
 
+    # Batch-compute `can_reindex` per KB: a KB is NOT reindexable if any of
+    # its `file_upload` documents have no `file_path` (no MinIO original).
+    # Mirrors the precondition at the reindex route (kb.py:707-720). Done in
+    # a single query rather than N+1 — list pages can hold dozens of KBs.
+    kb_ids = [kb.id for kb in kbs]
+    not_reindexable_kb_ids: set[UUID] = set()
+    if kb_ids:
+        rows = (
+            db.query(Document.kb_id)
+            .filter(
+                Document.kb_id.in_(kb_ids),
+                Document.source_type == "file_upload",
+                Document.file_path.is_(None),
+            )
+            .distinct()
+            .all()
+        )
+        not_reindexable_kb_ids = {row[0] for row in rows}
+
     # Convert to response model
     return [
         KBResponse(
@@ -360,7 +383,9 @@ async def list_kbs(
             total_size_bytes=(kb.stats or {}).get("total_size_bytes", 0),
             created_at=kb.created_at.isoformat(),
             updated_at=kb.updated_at.isoformat() if kb.updated_at else None,
-            created_by=str(kb.created_by)
+            created_by=str(kb.created_by),
+            can_reindex=kb.id not in not_reindexable_kb_ids,
+            error_message=kb.error_message,
         )
         for kb in kbs
     ]
@@ -739,10 +764,13 @@ async def reindex_kb(
         if configuration_updated:
             db.commit()
 
-    # Queue re-indexing task (high priority)
+    # Queue re-indexing task (high priority).
+    # Flip status to "reindexing" synchronously so the UI reflects the
+    # transition immediately instead of waiting for the celery worker to
+    # pick up the job and write the status itself. On broker failure we
+    # revert to the captured prior status so the row never sticks.
     from app.tasks.kb_pipeline_tasks import reindex_kb_task
 
-    # Pass configuration to task if it was updated
     task_kwargs = {"kb_id": str(kb_id)}
     if configuration_updated:
         task_kwargs["new_config"] = {
@@ -751,10 +779,22 @@ async def reindex_kb(
             "vector_store_config": request.vector_store_config if request and request.vector_store_config else None
         }
 
-    task = reindex_kb_task.apply_async(
-        kwargs=task_kwargs,
-        queue="high_priority"
-    )
+    prior_status = kb.status
+    kb.status = "reindexing"
+    db.commit()
+
+    try:
+        task = reindex_kb_task.apply_async(
+            kwargs=task_kwargs,
+            queue="high_priority",
+        )
+    except Exception as e:
+        kb.status = prior_status
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not queue re-indexing job. Try again shortly. ({str(e)[:200]})",
+        )
 
     message = f"Re-indexing queued for KB '{kb.name}'"
     if configuration_updated:
@@ -1760,9 +1800,17 @@ async def create_kb_document(
     """
 
     from app.services.kb_rbac_service import verify_kb_access
+    from app.services.billing_service import require_quota
+    from app.models.workspace import Workspace as _Workspace
 
     # Verify user has edit access
     kb = verify_kb_access(db, kb_id, current_user.id, "edit")
+
+    # Plan quota — block creation when at-or-over the org's tier cap.
+    # Documents are counted org-wide across all KBs.
+    _ws = db.query(_Workspace).filter(_Workspace.id == kb.workspace_id).first()
+    if _ws:
+        require_quota(db, _ws.organization_id, "kb_documents")
 
     # Validation
     MAX_CONTENT_SIZE = 10 * 1024 * 1024  # 10MB

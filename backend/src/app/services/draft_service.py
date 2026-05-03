@@ -28,11 +28,14 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime, timedelta
+import logging
 import redis
 import json
 import re
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -550,6 +553,12 @@ class UnifiedDraftService:
 
         draft = self.get_draft(draft_type, draft_id)
 
+        # Quota check — only on FRESH deploys, not edits. Editing a deployed
+        # entity doesn't grow the count, so no upgrade should be required.
+        is_edit = draft.get("source_entity_id") is not None
+        if not is_edit:
+            self._enforce_create_quota(draft_type, draft, db)
+
         # Deploy based on type
         if draft_type == DraftType.CHATBOT:
             result = self._deploy_chatbot(draft, db)
@@ -566,6 +575,60 @@ class UnifiedDraftService:
         self.delete_draft(draft_type, draft_id)
 
         return result
+
+    def _enforce_create_quota(
+        self,
+        draft_type: "DraftType",
+        draft: dict,
+        db: Session,
+    ) -> None:
+        """Hard-block deploy when the org is at its tier's cap for the
+        resource being created. Maps DraftType -> billing resource key
+        and delegates to `billing_service.require_quota` which raises 402.
+
+        Edit drafts are skipped by the caller (no count change).
+
+        Concurrency: takes a Postgres advisory lock keyed on the org id
+        so two simultaneous deploys on the same org can't both pass a
+        check that's only safe for one. Without this, a Free org with
+        chatbots=0 hitting two parallel deploy requests would create two
+        chatbots — both reads return 0, both writes succeed. The lock is
+        transaction-scoped (`pg_advisory_xact_lock`) so it releases on
+        commit/rollback automatically.
+        """
+        from sqlalchemy import text
+        from app.models.workspace import Workspace
+        from app.services.billing_service import require_quota
+
+        workspace_id = UUID(draft["workspace_id"])
+        workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+        if not workspace:
+            return  # Validation already would have caught this
+
+        # Serialize quota checks per-org. Advisory locks take a 64-bit int;
+        # we hash the org UUID's int form to fit. Collisions are harmless
+        # — they just queue more orgs together than strictly necessary.
+        try:
+            org_lock_key = workspace.organization_id.int & 0x7FFFFFFFFFFFFFFF
+            db.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": org_lock_key},
+            )
+        except Exception:
+            # Lock failure is non-fatal — fall back to optimistic check.
+            pass
+
+        # Resource key per draft type
+        if draft_type == DraftType.CHATBOT:
+            resource = "chatbots"
+        elif draft_type == DraftType.CHATFLOW:
+            resource = "chatflows"
+        elif draft_type == DraftType.KB:
+            resource = "knowledge_bases"
+        else:
+            return
+
+        require_quota(db, workspace.organization_id, resource)
 
     def _generate_unique_slug(self, name: str, workspace_id: UUID, db: Session) -> str:
         """
@@ -748,7 +811,8 @@ class UnifiedDraftService:
             entity_type="chatbot",
             deployment_config=data.get("deployment", {}),
             api_key=plain_key,  # Use plain key for embed code
-            db=db
+            db=db,
+            workspace_id=chatbot.workspace_id,
         )
 
         # Update chatbot's deployment_config with actual channel results
@@ -811,12 +875,18 @@ class UnifiedDraftService:
             entity_type="chatflow",
             deployment_config=data.get("deployment", {}),
             api_key=plain_key,
-            db=db
+            db=db,
+            workspace_id=chatflow.workspace_id
         )
 
-        # Update chatflow's config with actual channel results
-        # This stores bot_token_credential_id for webhook handlers to use
-        chatflow.config["deployment"] = deployment_results["channels"]
+        # Update chatflow's config with actual channel results.
+        # Reassign rather than mutate in-place: Chatflow.config is plain JSONB
+        # (no MutableDict wrapper), so SQLAlchemy does not detect in-place
+        # mutations and the change would not be persisted.
+        chatflow.config = {
+            **(chatflow.config or {}),
+            "deployment": deployment_results["channels"],
+        }
         db.commit()
 
         # Add API key to response (only shown once)
@@ -866,12 +936,17 @@ class UnifiedDraftService:
         deployment_config = data.get("deployment", {})
         if deployment_config and deployment_config.get("channels"):
             try:
-                # Get existing API key for this chatflow
-                from app.models.api_key import ApiKey
-                existing_key = db.query(ApiKey).filter(
-                    ApiKey.entity_id == chatflow.id,
-                    ApiKey.entity_type == "chatflow",
-                    ApiKey.is_active == True
+                # Get existing API key for this chatflow.
+                # NOTE: model class is APIKey (capital A/P/I). Using ApiKey
+                # silently ImportError'd here for a long time, swallowed by
+                # the bare except below — symptom: every chatflow edit failed
+                # to re-register channels and reverted config.deployment back
+                # to the legacy {channels: [...]} draft input shape.
+                from app.models.api_key import APIKey
+                existing_key = db.query(APIKey).filter(
+                    APIKey.entity_id == chatflow.id,
+                    APIKey.entity_type == "chatflow",
+                    APIKey.is_active == True
                 ).first()
 
                 if existing_key:
@@ -880,12 +955,21 @@ class UnifiedDraftService:
                         entity_type="chatflow",
                         deployment_config=deployment_config,
                         api_key=existing_key.key_prefix,  # Use existing key prefix
-                        db=db
+                        db=db,
+                        workspace_id=chatflow.workspace_id,
                     )
-                    chatflow.config["deployment"] = deployment_results["channels"]
+                    # Reassign rather than mutate (see _deploy_chatflow above).
+                    chatflow.config = {
+                        **(chatflow.config or {}),
+                        "deployment": deployment_results["channels"],
+                    }
             except Exception:
-                # Channel re-initialization is non-critical for updates
-                pass
+                # Channel re-initialization is non-critical for updates, but
+                # log it — silent failures here have caused channel drift.
+                logger.exception(
+                    "Channel re-initialization failed for chatflow %s",
+                    chatflow.id,
+                )
 
         db.commit()
 
@@ -933,7 +1017,8 @@ class UnifiedDraftService:
         entity_type: str,
         deployment_config: dict,
         api_key: str,
-        db: Session
+        db: Session,
+        workspace_id: Optional[UUID] = None,
     ) -> dict:
         """
         Initialize multi-channel deployments (shared by chatbot & chatflow).
@@ -985,6 +1070,34 @@ class UnifiedDraftService:
                     if not credential_id:
                         raise ValueError("Telegram bot token credential is required")
 
+                    # Telegram bot tokens are 1:1 — one webhook per bot.
+                    # If another chatbot/chatflow in this workspace is
+                    # already wired to this credential, deploying here
+                    # would silently overwrite their webhook (data loss).
+                    # Block until the conflicting entity is unlinked.
+                    if workspace_id is not None:
+                        conflicts = telegram_integration.find_existing_telegram_users(
+                            db=db,
+                            credential_id=str(credential_id),
+                            workspace_id=workspace_id,
+                            exclude_entity_id=entity_id,
+                        )
+                        if conflicts:
+                            primary = conflicts[0]
+                            deployment_results["channels"]["telegram"] = {
+                                "status": "error",
+                                "error_code": "telegram_credential_in_use",
+                                "error": (
+                                    f"This Telegram credential is already wired to "
+                                    f"{primary['entity_type']} '{primary['entity_name']}'. "
+                                    f"Disable Telegram on that {primary['entity_type']} "
+                                    f"before deploying this one — Telegram only allows "
+                                    f"one webhook per bot."
+                                ),
+                                "conflict": primary,
+                            }
+                            continue
+
                     telegram_result = telegram_integration.register_webhook(
                         db=db,
                         entity_id=entity_id,
@@ -1001,29 +1114,65 @@ class UnifiedDraftService:
                     }
 
                 elif channel_type == "discord":
-                    # Register Discord webhook via Discord API
-                    from app.integrations.discord_integration import discord_integration
-
-                    # Get credential_id from channel (frontend stores at top level)
+                    # Discord supports two deploy paths:
+                    # 1. Shared-bot (preferred): one app per platform, install
+                    #    via OAuth per guild. Uses DISCORD_SHARED_* env vars.
+                    #    No per-user credential needed.
+                    # 2. Per-user bot (legacy): user provides their own bot
+                    #    token credential. Kept for back-compat with existing
+                    #    deploys.
                     credential_id = channel.get("credential_id") or channel.get("config", {}).get("bot_token")
-                    if not credential_id:
-                        raise ValueError("Discord bot token credential is required")
 
-                    discord_result = discord_integration.register_webhook(
-                        db=db,
-                        entity_id=entity_id,
-                        entity_type=entity_type,
-                        config={"bot_token": credential_id}
-                    )
+                    if not credential_id and settings.DISCORD_SHARED_APPLICATION_ID and workspace_id is not None:
+                        # Shared-bot path. Return install URL with state
+                        # encoding entity_type + entity_id + workspace_id.
+                        # The OAuth callback at /webhooks/discord/oauth/callback
+                        # decodes state, creates the DiscordGuildDeployment,
+                        # and registers per-guild slash commands.
+                        from app.services.discord_guild_service import discord_guild_service
 
-                    deployment_results["channels"]["discord"] = {
-                        "status": "success",
-                        "webhook_url": discord_result["webhook_url"],
-                        "bot_username": discord_result["bot_username"],
-                        "application_id": discord_result.get("application_id"),
-                        "invite_url": discord_result.get("invite_url"),  # URL for users to add bot to servers
-                        "bot_token_credential_id": credential_id  # Store credential ref for webhook handler
-                    }
+                        install_url = discord_guild_service.generate_invite_url(
+                            entity_type=entity_type,
+                            entity_id=entity_id,
+                            workspace_id=workspace_id,
+                        )
+                        deployment_results["channels"]["discord"] = {
+                            "status": "needs_install",
+                            "install_url": install_url,
+                            "webhook_url": install_url,
+                            "shared_bot": True,
+                            "instructions": (
+                                "Click the install URL to add the bot to your "
+                                "Discord server. After authorization, the bot "
+                                "will be bound to this entity automatically."
+                            ),
+                        }
+                    elif credential_id:
+                        # Legacy per-user-credential path.
+                        from app.integrations.discord_integration import discord_integration
+
+                        discord_result = discord_integration.register_webhook(
+                            db=db,
+                            entity_id=entity_id,
+                            entity_type=entity_type,
+                            config={"bot_token": credential_id}
+                        )
+
+                        deployment_results["channels"]["discord"] = {
+                            "status": "success",
+                            "webhook_url": discord_result["webhook_url"],
+                            "bot_username": discord_result["bot_username"],
+                            "application_id": discord_result.get("application_id"),
+                            "invite_url": discord_result.get("invite_url"),
+                            "bot_token_credential_id": credential_id,
+                            "shared_bot": False,
+                        }
+                    else:
+                        # Neither shared bot configured nor credential provided.
+                        raise ValueError(
+                            "Discord deployment requires either DISCORD_SHARED_APPLICATION_ID "
+                            "(operator config) or a per-user bot token credential."
+                        )
 
                 elif channel_type == "whatsapp":
                     # Register WhatsApp webhook via WhatsApp Business API
@@ -1058,6 +1207,26 @@ class UnifiedDraftService:
                     deployment_results["channels"]["zapier"] = {
                         "status": "success",
                         "webhook_url": zapier_webhook
+                    }
+
+                elif channel_type == "slack":
+                    # Slack uses a shared-app install model: one global Slack
+                    # app (configured via SLACK_CLIENT_ID), and each customer
+                    # workspace installs it via OAuth. The team_id <-> entity
+                    # mapping happens later in the OAuth callback
+                    # (routes/webhooks/slack.py:147), via SlackWorkspaceDeployment.
+                    #
+                    # The install URL is global and intentionally has no `state`
+                    # tying it to a specific chatflow/chatbot — do not add one;
+                    # see slack_workspace_service.generate_install_url() and the
+                    # callback handler which routes by team_id.
+                    from app.services.slack_workspace_service import slack_workspace_service
+
+                    install_url = slack_workspace_service.generate_install_url()
+                    deployment_results["channels"]["slack"] = {
+                        "status": "success",
+                        "install_url": install_url,
+                        "webhook_url": install_url,  # frontend reads webhook_url as the setup URL
                     }
 
             except Exception as e:

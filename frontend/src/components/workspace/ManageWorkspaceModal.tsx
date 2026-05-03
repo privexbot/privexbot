@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X, Settings, Users, Loader2 } from "lucide-react";
 import { workspaceApi } from "@/api/workspace";
+import { handleApiError } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { useApp } from "@/contexts/AppContext";
 import { WorkspaceMembersTab } from "@/components/workspace/WorkspaceMembersTab";
@@ -87,17 +88,7 @@ export const ManageWorkspaceModal = ({
     } catch (err: any) {
       console.error("[ManageWorkspaceModal] Error updating workspace:", err);
 
-      let errorMessage = "Failed to update workspace";
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((e: any) => e.msg || e.message || String(e)).join(', ');
-        } else if (typeof detail === 'object') {
-          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
-        }
-      }
+      const errorMessage = handleApiError(err);
 
       setFormError("root", {
         type: "manual",

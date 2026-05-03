@@ -1,36 +1,36 @@
-import { Check, Shield, Users, Zap, Globe } from "lucide-react";
+import { Workflow, ShieldCheck, BookOpen, MessagesSquare, Code2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 const valueProps = [
   {
-    icon: Check,
-    title: "No-Code Builder",
+    icon: Workflow,
+    title: "Visual chatflow builder",
     description:
-      "Create sophisticated chatbots with our visual flow designer. No programming required.",
+      "Drag-and-drop editor with 17 node types — LLM, KB lookup, conditions, loops, HTTP, webhooks, lead capture, Calendly, and more.",
   },
   {
-    icon: Shield,
-    title: "Complete Privacy",
+    icon: ShieldCheck,
+    title: "Confidential by default",
     description:
-      "Data processing happens in Secret Network's TEE, ensuring your conversations stay private.",
+      "Inference runs inside Secret Network's TEE with remote attestation. Your prompts and documents stay private — even from us.",
   },
   {
-    icon: Users,
-    title: "Team Collaboration",
+    icon: BookOpen,
+    title: "RAG knowledge bases",
     description:
-      "Work together with your team to build, test, and deploy chatbots collaboratively.",
+      "Import from PDF, Word, CSV, websites (Crawl4AI), Notion, Google Drive, or paste raw text. Four chunking strategies, semantic search via Qdrant.",
   },
   {
-    icon: Zap,
-    title: "Lightning Fast",
+    icon: MessagesSquare,
+    title: "Deploy anywhere",
     description:
-      "Deploy and scale your chatbots instantly. Built for performance and reliability.",
+      "Embed widget, Discord, Slack, Telegram, WhatsApp, Zapier, or REST API. One agent, every channel — with shared-bot routing built in.",
   },
   {
-    icon: Globe,
-    title: "Multi-Platform Deploy",
+    icon: Code2,
+    title: "Open source, self-host friendly",
     description:
-      "Create KB from Notion, Google Docs, PDFs & more. Deploy chatbots on discord, web & custom platforms.",
+      "Apache 2.0. FastAPI + React 19 + Postgres + Qdrant + Celery. Run on your own infrastructure or use the hosted version.",
   },
 ];
 
@@ -46,11 +46,12 @@ export function ValuePropositions() {
               {/* Header */}
               <div className="mb-8">
                 <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 font-manrope">
-                  No-Code Builder
+                  Visual chatflow builder
                 </h2>
                 <p className="text-lg text-gray-600 dark:text-gray-400 font-manrope">
-                  Create sophisticated chatbots with our visual flow designer.
-                  No programming required.
+                  Drag-and-drop editor with 17 node types — LLM, KB lookup,
+                  conditions, loops, HTTP, webhooks, lead capture, Calendly,
+                  and more.
                 </p>
               </div>
 
@@ -111,11 +112,12 @@ export function ValuePropositions() {
             className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
           >
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3 font-manrope">
-              No-Code Builder
+              Visual chatflow builder
             </h2>
             <p className="text-gray-600 dark:text-gray-400 mb-6 font-manrope">
-              Create sophisticated chatbots with our visual flow designer. No
-              programming required.
+              Drag-and-drop editor with 17 node types — LLM, KB lookup,
+              conditions, loops, HTTP, webhooks, lead capture, Calendly, and
+              more.
             </p>
             <div className="relative">
               <img

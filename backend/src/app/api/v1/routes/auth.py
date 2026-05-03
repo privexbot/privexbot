@@ -78,6 +78,29 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 # CURRENT USER
 # ============================================================
 
+@router.post("/logout", status_code=200)
+async def logout(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Sign out the current user.
+
+    Today this is effectively a no-op on the server — JWT tokens are
+    stateless and expire naturally at the configured TTL. The endpoint
+    exists so the frontend has a stable contract to call before clearing
+    localStorage, and so we can layer a Redis revocation blacklist on
+    later without changing any client code.
+
+    Returns 200 even if the token is about to expire — the client should
+    clear local credentials regardless.
+    """
+    import logging
+    logging.getLogger(__name__).info(
+        "User %s signed out", current_user.id
+    )
+    return {"status": "ok"}
+
+
 @router.get("/me", response_model=UserProfile)
 async def get_current_user_profile(
     current_user: User = Depends(get_current_user),
@@ -211,7 +234,21 @@ async def email_signup(
         Workspace.is_default == True
     ).first()
 
-    # Step 4: Generate JWT with org + workspace context
+    # Step 4: Record referral if a code was supplied (best-effort).
+    if request.referral_code:
+        try:
+            from app.api.v1.routes.referrals import record_referral_signup
+            record_referral_signup(
+                db=db,
+                referral_code=request.referral_code,
+                new_user_id=user.id,
+                email=request.email,
+            )
+        except Exception:
+            # Never break signup over a referral lookup failure.
+            pass
+
+    # Step 5: Generate JWT with org + workspace context
     access_token = create_access_token(data={
         "sub": str(user.id),
         "org_id": str(org.id),
@@ -711,6 +748,19 @@ async def verify_email_and_signup(
         code=request.code,
         db=db
     )
+
+    # Record referral if a code was supplied (best-effort).
+    if request.referral_code:
+        try:
+            from app.api.v1.routes.referrals import record_referral_signup
+            record_referral_signup(
+                db=db,
+                referral_code=request.referral_code,
+                new_user_id=user.id,
+                email=request.email,
+            )
+        except Exception:
+            pass
 
     # Generate JWT token for automatic login
     access_token = create_access_token(

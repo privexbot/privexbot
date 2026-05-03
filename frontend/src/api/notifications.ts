@@ -9,6 +9,7 @@ export const notificationsApi = {
     limit?: number;
     offset?: number;
     unread_only?: boolean;
+    workspace_id?: string;
   }): Promise<NotificationListResponse> {
     const response = await apiClient.get<NotificationListResponse>(
       "/notifications",
@@ -17,9 +18,12 @@ export const notificationsApi = {
     return response.data;
   },
 
-  async getUnreadCount(): Promise<UnreadCountResponse> {
+  async getUnreadCount(params?: {
+    workspace_id?: string;
+  }): Promise<UnreadCountResponse> {
     const response = await apiClient.get<UnreadCountResponse>(
-      "/notifications/count"
+      "/notifications/count",
+      { params }
     );
     return response.data;
   },

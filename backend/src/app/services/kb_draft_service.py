@@ -30,6 +30,74 @@ from app.services.draft_service import draft_service, DraftType
 from app.services.crawl4ai_service import CrawlConfig
 
 
+def _enforce_web_pages_quota(
+    draft: Dict[str, Any],
+    requested_pages: int,
+    db: Session,
+) -> None:
+    """Hard-block when adding `requested_pages` URLs would push the
+    draft's owning org over its `web_pages_per_month` cap.
+
+    Lives in the SERVICE layer (not the route) so any future caller —
+    background re-scrape job, admin re-import endpoint, scheduled crawl —
+    automatically picks up the protection. Without this in the service,
+    the route-level check the user submits to today is silently skipped
+    by any other code path.
+
+    Two checks: (1) `require_quota` refuses if usage is already at cap;
+    (2) the bulk pre-flight refuses if usage + requested would exceed
+    cap, which prevents burst attacks (Free user at 24/25 submits 100
+    URLs).
+    """
+    if requested_pages <= 0:
+        return
+
+    from fastapi import HTTPException, status as _http_status
+    from uuid import UUID as _UUID
+
+    from app.core.plans import get_limits, is_unlimited
+    from app.models.workspace import Workspace as _Workspace
+    from app.services.billing_service import (
+        get_current_usage,
+        require_quota,
+    )
+
+    workspace_id_str = draft.get("workspace_id")
+    if not workspace_id_str:
+        return  # Pre-quota draft with missing workspace_id; nothing to enforce
+
+    workspace = (
+        db.query(_Workspace).filter(_Workspace.id == _UUID(workspace_id_str)).first()
+    )
+    if not workspace or not workspace.organization_id:
+        return
+
+    # 1. Refuse if already at cap.
+    require_quota(db, workspace.organization_id, "web_pages_per_month")
+
+    # 2. Refuse if the burst would push past cap.
+    tier = (workspace.organization.subscription_tier or "free").lower() if workspace.organization else "free"
+    cap = get_limits(tier).get("web_pages_per_month", 0)
+    if is_unlimited(cap):
+        return
+
+    used = get_current_usage(db, workspace.organization_id).get(
+        "web_pages_this_month", 0
+    )
+    if used + requested_pages > cap:
+        raise HTTPException(
+            status_code=_http_status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error": "quota_exceeded",
+                "resource": "web_pages_per_month",
+                "limit": cap,
+                "usage": used,
+                "requested": requested_pages,
+                "upgrade_url": "/billings",
+            },
+        )
+
+
 class KBDraftService:
     """
     Knowledge Base draft-specific operations.
@@ -42,7 +110,8 @@ class KBDraftService:
         self,
         draft_id: str,
         url: str,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        db: Optional[Session] = None,
     ) -> str:
         """
         Add web URL to KB draft.
@@ -63,12 +132,17 @@ class KBDraftService:
                 "exclude_patterns": ["/admin/**"],
                 "stealth_mode": true
             }
+            db: Optional DB session. When provided, the per-org
+                `web_pages_per_month` quota is enforced before the URL is
+                added; passing None preserves the legacy unguarded path
+                for callers who've already enforced themselves.
 
         Returns:
             source_id: Unique source identifier
 
         Raises:
             ValueError: If draft not found or URL invalid
+            HTTPException(402): If web_pages_per_month quota is exceeded
         """
 
         # Get draft
@@ -79,6 +153,12 @@ class KBDraftService:
         # Validate URL
         if not url.startswith(("http://", "https://")):
             raise ValueError("Invalid URL - must start with http:// or https://")
+
+        # Enforce per-org web_pages_per_month quota when caller passes a
+        # DB session. The route layer always passes one; background jobs
+        # may opt out by passing None.
+        if db is not None:
+            _enforce_web_pages_quota(draft, requested_pages=1, db=db)
 
         # Create source entry
         source_id = str(uuid4())
@@ -466,7 +546,8 @@ class KBDraftService:
         self,
         draft_id: str,
         sources: List[Dict[str, Any]],
-        shared_config: Optional[Dict[str, Any]] = None
+        shared_config: Optional[Dict[str, Any]] = None,
+        db: Optional[Session] = None,
     ) -> Dict[str, Any]:
         """
         Add multiple web URLs to KB draft in one atomic operation.
@@ -485,6 +566,10 @@ class KBDraftService:
                 }
             ]
             shared_config: Shared configuration applied to all sources (can be overridden per source)
+            db: Optional DB session. When provided, the per-org
+                `web_pages_per_month` quota is enforced for the full
+                bulk batch BEFORE any URLs are added. Passing None
+                preserves the legacy unguarded path.
 
         Returns:
             {
@@ -497,12 +582,22 @@ class KBDraftService:
 
         Raises:
             ValueError: If draft not found or critical validation fails
+            HTTPException(402): If the requested bulk would exceed the
+                                org's web_pages_per_month quota.
         """
 
         # Get draft
         draft = draft_service.get_draft(DraftType.KB, draft_id)
         if not draft:
             raise ValueError("KB draft not found")
+
+        # Enforce the per-org web_pages_per_month quota for the FULL
+        # batch up-front so a Free user at 24/25 can't burst-submit 100
+        # URLs in a single request.
+        if db is not None:
+            _enforce_web_pages_quota(
+                draft, requested_pages=len(sources), db=db
+            )
 
         # Get existing sources for duplicate checking
         data = draft.get("data", {})

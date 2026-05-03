@@ -80,42 +80,42 @@ export function IntegrationsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl bg-white dark:bg-gray-900">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-white dark:bg-gray-900">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white font-manrope">
-            <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-bold text-gray-900 dark:text-white font-manrope">
+            <Zap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             Cloud Integrations
           </DialogTitle>
-          <DialogDescription className="text-gray-600 dark:text-gray-400 font-manrope">
+          <DialogDescription className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-manrope">
             Connect your cloud services to import content directly into your
-            knowledge base
+            knowledge base.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
+        <div className="grid gap-3 py-2">
           {integrations.map((integration) => (
             <Card
               key={integration.id}
-              className={`transition-all duration-200 shadow-sm hover:shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl ${
+              className={`transition-all duration-200 shadow-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg ${
                 integration.available
                   ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
                   : "opacity-90"
               }`}
             >
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-start gap-4 sm:gap-6">
-                  <span className="text-2xl sm:text-3xl flex-shrink-0">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-xl flex-shrink-0">
                     {integration.icon}
                   </span>
 
                   <div className="flex-1 min-w-0">
                     {/* Title and status badge */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
-                      <h3 className="font-bold text-lg sm:text-xl text-gray-900 dark:text-white font-manrope">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <h3 className="font-semibold text-sm sm:text-base text-gray-900 dark:text-white font-manrope">
                         {integration.title}
                       </h3>
                       <Badge
-                        className={`text-xs font-manrope font-medium w-fit ${
+                        className={`text-[10px] font-manrope font-medium w-fit px-1.5 py-0 ${
                           integration.available
                             ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700"
                             : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700"
@@ -126,17 +126,17 @@ export function IntegrationsModal({
                     </div>
 
                     {/* Description with proper contrast */}
-                    <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-4 leading-relaxed">
+                    <p className="text-xs text-gray-600 dark:text-gray-400 font-manrope mb-2 leading-snug">
                       {integration.description}
                     </p>
 
                     {/* Feature badges with enhanced styling */}
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1">
                       {integration.features.map((feature, index) => (
                         <Badge
                           key={index}
                           variant="outline"
-                          className="text-xs bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-manrope font-medium hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+                          className="text-[10px] bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-manrope px-1.5 py-0"
                         >
                           {feature}
                         </Badge>
@@ -148,14 +148,14 @@ export function IntegrationsModal({
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     {integration.available ? (
                       <Button
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-manrope font-medium shadow-sm transition-all duration-200 hover:shadow-md"
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-manrope font-medium shadow-sm h-8 px-3 text-xs"
                         size="sm"
                         onClick={() => {
                           onSelectIntegration?.(integration.id);
                           onOpenChange(false);
                         }}
                       >
-                        <ExternalLink className="h-4 w-4 mr-2" />
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         Connect
                       </Button>
                     ) : (

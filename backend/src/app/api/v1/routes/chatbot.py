@@ -634,6 +634,7 @@ async def deploy_chatbot(
                 user_id=current_user.id,
                 chatbot_id=UUID(result.get("chatbot_id")),
                 chatbot_name=draft.get("data", {}).get("name", "Chatbot"),
+                workspace_id=UUID(draft["workspace_id"]) if draft.get("workspace_id") else None,
             )
         except Exception:
             pass
@@ -1369,7 +1370,18 @@ async def delete_chatbot_permanently(
     except ImportError:
         pass  # Lead model may not exist yet
 
-    # 4. Delete the chatbot itself
+    # 4. Delete Discord guild deployments — `discord_guild_deployments.chatbot_id`
+    # is polymorphic (chatbot OR chatflow) and has no DB-level FK, so there is
+    # no ON DELETE CASCADE. Without this call, orphan rows would block the
+    # operator from re-binding the same Discord guild to a different chatbot.
+    from app.services.discord_guild_service import discord_guild_service
+    deleted_discord_guilds = discord_guild_service.remove_for_entity(
+        db=db,
+        entity_type="chatbot",
+        entity_id=chatbot_id,
+    )
+
+    # 5. Delete the chatbot itself
     db.delete(chatbot)
     db.commit()
 
@@ -1380,7 +1392,8 @@ async def delete_chatbot_permanently(
         "deleted_resources": {
             "sessions": deleted_sessions,
             "api_keys": deleted_api_keys,
-            "leads": deleted_leads
+            "leads": deleted_leads,
+            "discord_guilds": deleted_discord_guilds,
         }
     }
 

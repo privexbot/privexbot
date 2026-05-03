@@ -103,6 +103,13 @@ celery_app.conf.update(
             "task": "cleanup_expired_sessions",
             "schedule": crontab(hour=3, minute=0),  # Daily at 3 AM
         },
+
+        # Free-tier inactivity sweep daily at 2 AM. Warns at 23 days
+        # idle, suspends at 30 days. Paid tiers are skipped.
+        "suspend-inactive-free-orgs": {
+            "task": "suspend_inactive_free_orgs",
+            "schedule": crontab(hour=2, minute=0),
+        },
     },
 )
 

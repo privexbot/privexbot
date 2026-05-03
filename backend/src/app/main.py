@@ -9,7 +9,7 @@ from starlette.datastructures import MutableHeaders
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, slack_workspaces, files, notifications, integrations
+from app.api.v1.routes import auth, org, workspace, context, invitation, kb_draft, kb_pipeline, kb, content_enhancement, enhanced_search, chatbot, chatflows, public, credentials, leads, analytics, dashboard, admin, beta, discord_guilds, slack_workspaces, files, notifications, integrations, billing, templates, referrals
 from app.api.v1.routes.webhooks import telegram as telegram_webhook, discord as discord_webhook, zapier as zapier_webhook, whatsapp as whatsapp_webhook, slack as slack_webhook, calendly as calendly_webhook
 
 
@@ -106,6 +106,84 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️  MinIO initialization warning: {e}")
         print("   (File storage features will be unavailable)")
+
+    # Surface missing OAuth / shared-bot env vars at startup so operators
+    # see the gaps once instead of debugging deploy errors per-channel later.
+    # No hard-fail — local dev only needs the providers it's actively
+    # working on; deploys for unconfigured channels will report
+    # "needs platform setup" in the UI.
+    _provider_env_checks = [
+        ("Slack",            "SLACK_CLIENT_ID",            settings.SLACK_CLIENT_ID),
+        ("Google",           "GOOGLE_CLIENT_ID",           settings.GOOGLE_CLIENT_ID),
+        ("Notion",           "NOTION_CLIENT_ID",           settings.NOTION_CLIENT_ID),
+        ("Calendly",         "CALENDLY_CLIENT_ID",         settings.CALENDLY_CLIENT_ID),
+        ("Discord shared bot", "DISCORD_SHARED_APPLICATION_ID", settings.DISCORD_SHARED_APPLICATION_ID),
+    ]
+    missing = [(provider, var) for provider, var, value in _provider_env_checks if not value]
+    if missing:
+        print("⚠️  OAuth / shared-bot configuration:")
+        for provider, var in missing:
+            print(f"   - {var} empty → {provider} channel will report 'needs platform setup'.")
+    else:
+        print("✅ All OAuth / shared-bot env vars set.")
+
+    # Discord shared-bot: register global slash commands on startup so /ask
+    # and /chat are available across all guilds without per-guild calls.
+    # Per-guild registration still runs at install time for instant
+    # availability; this is the safety net for guilds installed before
+    # per-guild registration was wired up. Idempotent (PUT replaces all).
+    if settings.DISCORD_SHARED_BOT_TOKEN and settings.DISCORD_SHARED_APPLICATION_ID:
+        try:
+            from app.integrations.discord_integration import discord_integration
+
+            commands = [
+                {
+                    "name": "ask",
+                    "description": "Ask the assistant a question",
+                    "options": [
+                        {"name": "message", "type": 3, "description": "Your question", "required": True}
+                    ],
+                },
+                {
+                    "name": "chat",
+                    "description": "Chat with the assistant",
+                    "options": [
+                        {"name": "message", "type": 3, "description": "Your message", "required": True}
+                    ],
+                },
+            ]
+            await discord_integration.register_global_commands(
+                bot_token=settings.DISCORD_SHARED_BOT_TOKEN,
+                application_id=settings.DISCORD_SHARED_APPLICATION_ID,
+                commands=commands,
+            )
+            print("✅ Discord global slash commands registered (/ask, /chat).")
+        except Exception as exc:
+            print(f"⚠️  Discord global slash registration failed: {exc}")
+
+    # Marketplace sanity check — surface an empty templates table once at
+    # boot. Without this, an operator who hits /marketplace and sees "No
+    # templates available" can't tell whether the seed step failed or no
+    # templates were ever published. One log line per boot fixes that.
+    try:
+        from app.db.session import SessionLocal
+        from app.models.chatflow_template import ChatflowTemplate
+
+        db = SessionLocal()
+        try:
+            public_count = db.query(ChatflowTemplate).filter(
+                ChatflowTemplate.is_public == True  # noqa: E712
+            ).count()
+            if public_count == 0:
+                print("⚠️  Marketplace has 0 public templates — /marketplace will appear empty.")
+                print("   Fix: docker exec <container> python scripts/seed_chatflow_templates.py")
+            else:
+                print(f"✅ Marketplace: {public_count} public template(s) available.")
+        finally:
+            db.close()
+    except Exception as exc:
+        # Table may not exist yet (migration pending). Don't crash boot.
+        print(f"⚠️  Could not check marketplace template count: {exc}")
 
     yield
 
@@ -276,6 +354,24 @@ app.include_router(
     beta.router,
     prefix=settings.API_V1_PREFIX,
     tags=["beta"]
+)
+
+# Billing routes (plan tiers, usage view, manual upgrade)
+app.include_router(
+    billing.router,
+    prefix=settings.API_V1_PREFIX,
+)
+
+# Marketplace — global chatflow templates
+app.include_router(
+    templates.router,
+    prefix=settings.API_V1_PREFIX,
+)
+
+# Referrals — per-user codes + invite tracking
+app.include_router(
+    referrals.router,
+    prefix=settings.API_V1_PREFIX,
 )
 
 # Discord guild management routes (shared bot architecture)

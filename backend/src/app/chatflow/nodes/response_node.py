@@ -57,7 +57,7 @@ class ResponseNode(BaseNode):
         """
 
         try:
-            message_template = self.config.get("message", "{{input}}")
+            message_template = self.config.get("message", "{{_last_output}}")
             format_type = self.config.get("format", "text")
             include_sources = self.config.get("include_sources", False)
 
@@ -101,8 +101,5 @@ class ResponseNode(BaseNode):
 
     def validate_config(self) -> tuple[bool, str | None]:
         """Validate response node configuration."""
-
-        if not self.config.get("message"):
-            return False, "Message template is required"
-
+        # No message = use default ({{_last_output}}), which is valid
         return True, None

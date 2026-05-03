@@ -91,6 +91,10 @@ RUN chmod +x /app/scripts/entrypoint-prod.sh
 # Copy initial staff setup script (runs after migrations to set admin users)
 COPY scripts/set_initial_staff.py /app/scripts/
 
+# Copy chatflow template seeder so the marketplace populates on cold start.
+# Idempotent upsert by slug (see scripts/seed_chatflow_templates.py).
+COPY scripts/seed_chatflow_templates.py /app/scripts/
+
 # Copy application code
 COPY src/ ./src/
 

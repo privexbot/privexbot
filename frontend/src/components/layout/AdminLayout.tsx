@@ -12,7 +12,7 @@
 
 import React, { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, LayoutDashboard, Building2, Users, ArrowLeft, Shield, BarChart3 } from "lucide-react";
+import { Menu, X, LayoutDashboard, Building2, Users, ArrowLeft, Shield, BarChart3, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -32,6 +32,11 @@ const adminNavItems = [
     label: "Users",
     to: "/admin/users",
     icon: Users,
+  },
+  {
+    label: "Templates",
+    to: "/admin/templates",
+    icon: Sparkles,
   },
   {
     label: "Analytics",

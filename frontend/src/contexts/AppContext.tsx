@@ -19,6 +19,8 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./AuthContext";
 import { organizationApi } from "@/api/organization";
 import { workspaceApi } from "@/api/workspace";
@@ -30,6 +32,29 @@ import type {
   Permission,
   CreateWorkspaceRequest,
 } from "@/types/tenant";
+
+/**
+ * If the current pathname targets a single workspace-scoped resource, return
+ * the parent list path so the user lands on something that re-fetches from
+ * scratch after an org/workspace switch. Returns null for paths that re-fetch
+ * automatically (lists, dashboard, settings).
+ */
+function redirectIfCrossWorkspaceDetail(pathname: string): string | null {
+  // Order matters: more specific patterns first.
+  const rules: Array<{ test: RegExp; redirectTo: string }> = [
+    { test: /^\/chatbots\/[^/]+(?:\/.*)?$/, redirectTo: "/chatbots" },
+    { test: /^\/knowledge-bases\/[^/]+(?:\/.*)?$/, redirectTo: "/knowledge-bases" },
+    { test: /^\/studio\/[^/]+$/, redirectTo: "/studio" },
+    { test: /^\/chatflows\/builder\/[^/]+$/, redirectTo: "/studio" },
+    { test: /^\/leads\/[^/]+$/, redirectTo: "/leads" },
+    { test: /^\/admin\/organizations\/[^/]+$/, redirectTo: "/admin/organizations" },
+    { test: /^\/admin\/users\/[^/]+$/, redirectTo: "/admin/users" },
+  ];
+  for (const rule of rules) {
+    if (rule.test.test(pathname)) return rule.redirectTo;
+  }
+  return null;
+}
 
 const STORAGE_KEYS = {
   ORG_ID: "privexbot_current_org_id",
@@ -65,6 +90,9 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -84,15 +112,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       setError(null);
 
-      console.log("[AppContext] Refreshing data...");
-
       // Step 1: Get all organizations
       const orgsResponse = await organizationApi.list();
-      console.log("[AppContext] Organizations loaded:", orgsResponse);
       setOrganizations(orgsResponse.organizations);
 
       if (orgsResponse.organizations.length === 0) {
-        console.error("[AppContext] No organizations found!");
         throw new Error("No organizations found. Backend needs to create default org on signup.");
       }
 
@@ -108,20 +132,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!targetOrg) {
-        // Fallback: Use first organization (usually Personal)
         targetOrg = orgsResponse.organizations[0];
       }
 
       setCurrentOrganization(targetOrg);
 
       // Step 4: Get workspaces for selected organization
-      console.log("[AppContext] Loading workspaces for org:", targetOrg.id);
       const workspacesData = await organizationApi.getWorkspaces(targetOrg.id);
-      console.log("[AppContext] Workspaces loaded:", workspacesData);
       setWorkspaces(workspacesData);
 
       if (workspacesData.length === 0) {
-        console.error("[AppContext] No workspaces found for organization!");
         throw new Error("No workspaces found. Backend needs to create default workspace on signup.");
       }
 
@@ -133,12 +153,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!targetWorkspace) {
-        // Fallback: Use default workspace or first workspace
         targetWorkspace =
           workspacesData.find((w) => w.is_default) || workspacesData[0];
       }
-
-      setCurrentWorkspace(targetWorkspace);
 
       // Step 6: Persist to localStorage
       localStorage.setItem(STORAGE_KEYS.ORG_ID, targetOrg.id);
@@ -148,21 +165,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const perms = calculatePermissions(targetOrg, targetWorkspace);
       setPermissions(perms);
 
-      // Step 8: CRITICAL - Sync JWT token with current workspace context
-      // This ensures the backend receives the correct workspace_id in the JWT
-      // Without this, localStorage workspace != JWT workspace → 403 errors
-      try {
-        const response = await workspaceApi.switchOrganization({
-          organization_id: targetOrg.id,
-          workspace_id: targetWorkspace.id,
-        });
-        if (response.access_token) {
-          localStorage.setItem("access_token", response.access_token);
-          console.log("[AppContext] JWT synced with workspace context");
+      // Step 8: Sync JWT only if context actually changed
+      // This prevents redundant /switch/organization calls on every mount
+      // which cause cascading dashboard re-fetches and 401 race conditions
+      const currentToken = localStorage.getItem("access_token");
+      let needsSync = !currentToken;
+
+      if (currentToken && !needsSync) {
+        try {
+          // Decode JWT payload to check if workspace already matches
+          const payload = JSON.parse(atob(currentToken.split(".")[1]));
+          needsSync =
+            payload.organization_id !== targetOrg.id ||
+            payload.workspace_id !== targetWorkspace.id;
+        } catch {
+          needsSync = true;
         }
-      } catch (syncError) {
-        console.warn("[AppContext] Failed to sync JWT, may cause 403 errors:", syncError);
       }
+
+      if (needsSync) {
+        try {
+          const response = await workspaceApi.switchOrganization({
+            organization_id: targetOrg.id,
+            workspace_id: targetWorkspace.id,
+          });
+          if (response.access_token) {
+            localStorage.setItem("access_token", response.access_token);
+          }
+        } catch (syncError) {
+          console.warn("[AppContext] Failed to sync JWT:", syncError);
+        }
+      }
+
+      // Set workspace state AFTER JWT sync to prevent stale-token races
+      setCurrentWorkspace(targetWorkspace);
     } catch (err: any) {
       console.error("Failed to refresh app data:", err);
       setError(err.message || "Failed to load app data");
@@ -187,7 +223,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // If not found, refresh organizations list (might be newly created)
         if (!org) {
-          console.log("[AppContext] Organization not in state, refreshing list...");
           const orgsResponse = await organizationApi.list();
           setOrganizations(orgsResponse.organizations);
           org = orgsResponse.organizations.find((o) => o.id === orgId);
@@ -196,8 +231,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             throw new Error("Organization not found");
           }
         }
-
-        setCurrentOrganization(org);
 
         // Get workspaces for organization
         const workspacesData = await organizationApi.getWorkspaces(orgId);
@@ -212,12 +245,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           targetWorkspace = ws;
         } else {
-          // Use default workspace
           targetWorkspace =
             workspacesData.find((w) => w.is_default) || workspacesData[0];
         }
-
-        setCurrentWorkspace(targetWorkspace);
 
         // Persist to localStorage
         localStorage.setItem(STORAGE_KEYS.ORG_ID, orgId);
@@ -227,15 +257,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const perms = calculatePermissions(org, targetWorkspace);
         setPermissions(perms);
 
-        // Update backend context (get new JWT)
+        // Get new JWT BEFORE updating state
         const response = await workspaceApi.switchOrganization({
           organization_id: orgId,
           workspace_id: targetWorkspace.id,
         });
 
-        // Update JWT token
         if (response.access_token) {
           localStorage.setItem("access_token", response.access_token);
+        }
+
+        // Set state AFTER JWT is stored — prevents stale-token API calls
+        setCurrentOrganization(org);
+        setCurrentWorkspace(targetWorkspace);
+
+        // Drop any cached resource queries — the new workspace context cannot
+        // reuse the previous workspace's data. Then redirect away from any
+        // cross-workspace detail URL so the user lands on a list page that
+        // re-fetches cleanly (instead of the previous resource's 404 toast).
+        queryClient.invalidateQueries();
+        const redirectTo = redirectIfCrossWorkspaceDetail(location.pathname);
+        if (redirectTo) {
+          navigate(redirectTo, { replace: true });
         }
       } catch (err: any) {
         console.error("Failed to switch organization:", err);
@@ -245,7 +288,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [isAuthenticated, organizations]
+    [isAuthenticated, organizations, queryClient, navigate, location.pathname]
   );
 
   /**
@@ -254,6 +297,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const switchWorkspace = useCallback(
     async (workspaceId: string) => {
       if (!isAuthenticated || !currentOrganization) return;
+
+      // Skip if already on this workspace
+      if (currentWorkspace?.id === workspaceId) return;
 
       try {
         setIsLoading(true);
@@ -264,7 +310,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // If not found, refresh workspaces list (might be newly created)
         if (!workspace) {
-          console.log("[AppContext] Workspace not in state, refreshing list...");
           const workspacesData = await organizationApi.getWorkspaces(currentOrganization.id);
           setWorkspaces(workspacesData);
           workspace = workspacesData.find((w) => w.id === workspaceId);
@@ -274,8 +319,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        setCurrentWorkspace(workspace);
-
         // Persist to localStorage
         localStorage.setItem(STORAGE_KEYS.WORKSPACE_ID, workspaceId);
 
@@ -283,14 +326,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const perms = calculatePermissions(currentOrganization, workspace);
         setPermissions(perms);
 
-        // Update backend context (get new JWT)
+        // Get new JWT BEFORE updating workspace state
+        // This prevents components from firing requests with a stale token
         const response = await workspaceApi.switchWorkspace({
           workspace_id: workspaceId,
         });
 
-        // Update JWT token
         if (response.access_token) {
           localStorage.setItem("access_token", response.access_token);
+        }
+
+        // Set workspace state AFTER JWT is stored
+        setCurrentWorkspace(workspace);
+
+        // Same redirect-+ -invalidate dance as switchOrganization. Without this,
+        // a user sitting on /chatbots/<id> in workspace A would see the
+        // previous workspace's resource fail to load with a generic 403/404.
+        queryClient.invalidateQueries();
+        const redirectTo = redirectIfCrossWorkspaceDetail(location.pathname);
+        if (redirectTo) {
+          navigate(redirectTo, { replace: true });
         }
       } catch (err: any) {
         console.error("Failed to switch workspace:", err);
@@ -300,7 +355,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [isAuthenticated, currentOrganization, workspaces]
+    [
+      isAuthenticated,
+      currentOrganization,
+      currentWorkspace,
+      workspaces,
+      queryClient,
+      navigate,
+      location.pathname,
+    ]
   );
 
   /**
@@ -368,6 +431,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       refreshData();
     }
   }, [isAuthenticated, user, refreshData]);
+
+  // Bridge: mirror the live `currentWorkspace` (and user) into the legacy
+  // `useWorkspaceStore` zustand store. That store is consumed by several
+  // components (CredentialSelector, GoogleDocsIntegration, AnalyticsPage,
+  // KnowledgeBaseSelector, …) but **nothing else updates it** — they would
+  // silently see a `null` workspace and either skip work or render
+  // "Please select a workspace before connecting credentials". One-line
+  // bridge here keeps every existing consumer working without rewriting
+  // each one to read from AppContext.
+  //
+  // The store's Workspace interface uses `org_id` while the tenant type
+  // uses `organization_id`; map fields explicitly so consumers reading
+  // `currentWorkspace.org_id` get a real value.
+  useEffect(() => {
+    // Lazy import to avoid a static cross-file dependency between
+    // contexts/ and store/ at module load.
+    void import("@/store/workspace-store").then(({ useWorkspaceStore }) => {
+      const state = useWorkspaceStore.getState();
+      state.setWorkspace(
+        currentWorkspace
+          ? {
+              id: currentWorkspace.id,
+              name: currentWorkspace.name,
+              org_id: currentWorkspace.organization_id,
+            }
+          : null,
+      );
+      if (user) {
+        // Auth User shape doesn't include email on every variant; use what's
+        // available (UserProfile carries email; base User does not).
+        const email = (user as { email?: string }).email ?? "";
+        state.setUser({
+          id: user.id,
+          email,
+          name: user.username ?? email,
+        });
+      } else {
+        state.setUser(null);
+      }
+    });
+  }, [currentWorkspace, user]);
 
   const value: AppContextType = {
     organizations,

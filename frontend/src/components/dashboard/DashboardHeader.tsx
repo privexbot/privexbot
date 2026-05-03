@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { Search, Bell, Calendar, Plus, Network, Book, ChevronDown, X, ChevronLeft, ChevronRight, CheckCheck } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useNotificationStore } from "@/store/notification-store";
+import { useApp } from "@/contexts/AppContext";
 import type { Notification as AppNotification } from "@/types/notification";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,20 @@ export function DashboardHeader({
     markAllAsRead: markAllNotifRead,
     startPolling,
     stopPolling,
+    setWorkspaceId,
   } = useNotificationStore();
+
+  // Scope the notification feed to the active workspace. Without this the
+  // store's `workspaceId` stays null, the API receives no `workspace_id`
+  // query param, and the backend returns the user's notifications across
+  // every org/workspace they belong to. Subscribing to AppContext (the live
+  // source) means switching org/workspace immediately re-fetches with the
+  // correct filter.
+  const { currentWorkspace } = useApp();
+  const activeWorkspaceId = currentWorkspace?.id ?? null;
+  useEffect(() => {
+    setWorkspaceId(activeWorkspaceId);
+  }, [activeWorkspaceId, setWorkspaceId]);
 
   useEffect(() => {
     startPolling();

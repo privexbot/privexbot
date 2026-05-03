@@ -14,7 +14,7 @@ HOW:
 
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_db, get_staff_user
@@ -367,3 +367,135 @@ async def get_platform_analytics(
     """
     service = AggregatedAnalyticsService(db)
     return await service.get_platform_analytics(days)
+
+
+# ─── Plan management ────────────────────────────────────────────────────────
+# Staff-only path to upgrade ANY org's plan tier without going through Stripe.
+# `POST /billing/upgrade` only operates on the caller's active org; this
+# parallel route lets ops change someone else's tier from the admin UI.
+
+from pydantic import BaseModel as _PlanBaseModel
+from app.core.plans import PLAN_LIMITS as _PLAN_LIMITS
+from app.core.config import settings
+from app.services import billing_service as _billing_service
+
+
+class _AdminUpgradeRequest(_PlanBaseModel):
+    tier: str
+
+
+@router.get("/orgs/{org_id}/plan")
+async def admin_get_org_plan(
+    org_id: UUID,
+    db: Session = Depends(get_db),
+    staff: User = Depends(get_staff_user),
+):
+    """Read the current plan status (tier + live usage) for any organization.
+
+    Staff-only — `GET /billing/plan` only operates on the caller's active org;
+    this lets ops inspect another org's tier and usage breakdown before
+    deciding whether to upgrade or downgrade them.
+    """
+    try:
+        return _billing_service.get_plan_status(db, org_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/orgs/{org_id}/plan")
+async def admin_upgrade_org_plan(
+    org_id: UUID,
+    request: _AdminUpgradeRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(get_staff_user),
+):
+    """Set the subscription tier for any organization. Staff-only."""
+    if request.tier not in _PLAN_LIMITS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown tier: {request.tier}",
+        )
+
+    try:
+        _billing_service.upgrade_org_to_tier(db, org_id, request.tier)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return _billing_service.get_plan_status(db, org_id)
+
+
+# ─── OAuth setup discoverability ───────────────────────────────────────────
+# Operators register OAuth redirect URIs in each provider's developer
+# console (Google Cloud Console, Notion, Calendly, Slack). The URIs are
+# auto-derived from API_BASE_URL — this endpoint surfaces the exact URLs
+# so the operator can copy-paste without inspecting code or env files.
+
+@router.get("/oauth/redirect-uris")
+async def admin_get_oauth_redirect_uris(
+    staff: User = Depends(get_staff_user),
+):
+    """Return per-provider redirect URIs + which `*_CLIENT_ID` env vars are set.
+
+    Used by the admin dashboard's OAuth setup card so operators can:
+    1) Copy the exact URI to register in each provider's console.
+    2) See at a glance which providers still need credentials filled in.
+
+    Slack uses a different callback path (`/webhooks/slack/oauth/callback`)
+    because its install flow is owned by the webhooks router, not the
+    credentials router. Discord shared-bot uses the OAuth invite flow into
+    `/webhooks/discord/shared` for interactions, plus a separate callback
+    for guild grants — both surfaced here for completeness.
+    """
+    api = settings.API_BASE_URL.rstrip("/")
+    credentials_callback = f"{api}/credentials/oauth/callback"
+    slack_callback = f"{api}/webhooks/slack/oauth/callback"
+    discord_interactions = f"{api}/webhooks/discord/shared"
+
+    providers = [
+        {
+            "provider": "google",
+            "label": "Google (Drive / Docs / Sheets / Gmail)",
+            "redirect_uri": credentials_callback,
+            "console_url": "https://console.cloud.google.com/apis/credentials",
+            "configured": bool(settings.GOOGLE_CLIENT_ID),
+            "env_var": "GOOGLE_CLIENT_ID",
+        },
+        {
+            "provider": "notion",
+            "label": "Notion",
+            "redirect_uri": credentials_callback,
+            "console_url": "https://www.notion.so/my-integrations",
+            "configured": bool(settings.NOTION_CLIENT_ID),
+            "env_var": "NOTION_CLIENT_ID",
+        },
+        {
+            "provider": "calendly",
+            "label": "Calendly",
+            "redirect_uri": credentials_callback,
+            "console_url": "https://calendly.com/integrations/api_webhooks",
+            "configured": bool(settings.CALENDLY_CLIENT_ID),
+            "env_var": "CALENDLY_CLIENT_ID",
+        },
+        {
+            "provider": "slack",
+            "label": "Slack (workspace install)",
+            "redirect_uri": slack_callback,
+            "console_url": "https://api.slack.com/apps",
+            "configured": bool(settings.SLACK_CLIENT_ID),
+            "env_var": "SLACK_CLIENT_ID",
+        },
+        {
+            "provider": "discord",
+            "label": "Discord (shared bot, interactions endpoint)",
+            "redirect_uri": discord_interactions,
+            "console_url": "https://discord.com/developers/applications",
+            "configured": bool(settings.DISCORD_SHARED_APPLICATION_ID),
+            "env_var": "DISCORD_SHARED_APPLICATION_ID",
+        },
+    ]
+
+    return {
+        "providers": providers,
+        "configured_providers": [p["provider"] for p in providers if p["configured"]],
+        "missing_providers": [p["provider"] for p in providers if not p["configured"]],
+    }

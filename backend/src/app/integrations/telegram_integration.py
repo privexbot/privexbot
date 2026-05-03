@@ -441,6 +441,89 @@ class TelegramIntegration:
 
         return cred_data["bot_token"]
 
+    @staticmethod
+    def find_existing_telegram_users(
+        db: Session,
+        credential_id: str,
+        workspace_id: UUID,
+        exclude_entity_id: Optional[UUID] = None,
+    ) -> list[dict]:
+        """Find chatbots/chatflows that already use this Telegram credential.
+
+        Telegram bot tokens are 1:1 with a Telegram bot, and each bot can
+        have only ONE active webhook URL. If two chatbots/chatflows try to
+        register Telegram webhooks against the same credential, the second
+        `setWebhook` silently overwrites the first — chatbot/chatflow A
+        stops receiving Telegram updates with no warning. The deploy flow
+        uses this helper to detect the collision and refuse the deploy
+        instead, surfacing the conflict to the operator.
+
+        ARGS:
+            credential_id: The credential UUID being deployed (string).
+            workspace_id: Restrict the scan to this workspace (credentials
+                are workspace-scoped, so a collision can only happen here).
+            exclude_entity_id: The entity that's currently deploying — its
+                own existing registration is not a conflict.
+
+        RETURNS:
+            List of dicts: `{entity_type, entity_id, entity_name}` for every
+            other entity already wired to this credential. Empty list when
+            it's safe to proceed.
+        """
+        # Local imports — keeps integrations free of heavy model deps at
+        # module load.
+        from app.models.chatbot import Chatbot, ChatbotStatus
+        from app.models.chatflow import Chatflow
+
+        cred_id_str = str(credential_id)
+        conflicts: list[dict] = []
+
+        # Chatbots: deployment_config.channels.telegram.bot_token_credential_id
+        chatbots = (
+            db.query(Chatbot)
+            .filter(
+                Chatbot.workspace_id == workspace_id,
+                Chatbot.status != ChatbotStatus.ARCHIVED,
+            )
+            .all()
+        )
+        for bot in chatbots:
+            if exclude_entity_id and bot.id == exclude_entity_id:
+                continue
+            channels = (bot.deployment_config or {}).get("channels", {})
+            tg = channels.get("telegram") if isinstance(channels, dict) else None
+            if isinstance(tg, dict) and str(tg.get("bot_token_credential_id") or "") == cred_id_str:
+                conflicts.append(
+                    {
+                        "entity_type": "chatbot",
+                        "entity_id": str(bot.id),
+                        "entity_name": bot.name,
+                    }
+                )
+
+        # Chatflows: config.deployment.channels.telegram.bot_token_credential_id
+        chatflows = (
+            db.query(Chatflow)
+            .filter(Chatflow.workspace_id == workspace_id)
+            .all()
+        )
+        for flow in chatflows:
+            if exclude_entity_id and flow.id == exclude_entity_id:
+                continue
+            cfg = flow.config or {}
+            channels = (cfg.get("deployment", {}) or {}).get("channels", {})
+            tg = channels.get("telegram") if isinstance(channels, dict) else None
+            if isinstance(tg, dict) and str(tg.get("bot_token_credential_id") or "") == cred_id_str:
+                conflicts.append(
+                    {
+                        "entity_type": "chatflow",
+                        "entity_id": str(flow.id),
+                        "entity_name": flow.name,
+                    }
+                )
+
+        return conflicts
+
 
 # Global instance
 telegram_integration = TelegramIntegration()

@@ -5,7 +5,7 @@ Notification Service - CRUD operations and event helpers for in-app notification
 from uuid import UUID
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 
 from app.models.notification import Notification
 
@@ -24,10 +24,17 @@ def create_notification(
     resource_type: Optional[str] = None,
     resource_id: Optional[UUID] = None,
     metadata: Optional[dict] = None,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
-    """Create a single notification."""
+    """Create a single notification.
+
+    `workspace_id` is optional: pass it for resource-scoped events
+    (KB / chatbot / chatflow / lead) so the dashboard can filter by active
+    workspace; leave it None for org-level events such as invitations.
+    """
     notif = Notification(
         user_id=user_id,
+        workspace_id=workspace_id,
         event=event,
         title=title,
         body=body,
@@ -42,15 +49,49 @@ def create_notification(
     return notif
 
 
+# Events that are intentionally workspace-agnostic and must surface
+# regardless of the user's currently-active workspace. Today there's only
+# one — invitations are org-level. New globally-scoped events MUST be
+# added here AND emitted with `workspace_id=None`; otherwise they will be
+# filtered out under any active workspace.
+_WORKSPACE_AGNOSTIC_EVENTS = ("invitation.accepted",)
+
+
+def _apply_workspace_scope(query, workspace_id: UUID):
+    """Strict workspace filter with a narrow exemption for org-level events.
+
+    Why strict: orgs share the user, but workspaces are the multi-tenancy
+    boundary. Old NULL rows were backfilled in migration
+    `d4e5783064df_backfill_notifications_workspace_id`; anything still NULL
+    after that is either an orphaned row (acceptable to hide) or a
+    workspace-agnostic event (whitelisted below).
+    """
+    return query.filter(
+        or_(
+            Notification.workspace_id == workspace_id,
+            Notification.event.in_(_WORKSPACE_AGNOSTIC_EVENTS),
+        )
+    )
+
+
 def get_notifications(
     db: Session,
     user_id: UUID,
     limit: int = 20,
     offset: int = 0,
     unread_only: bool = False,
+    workspace_id: Optional[UUID] = None,
 ) -> tuple[list[Notification], int]:
-    """Paginated list with total count."""
+    """Paginated list with total count.
+
+    When `workspace_id` is provided, only events tied to that workspace plus
+    a small whitelist of workspace-agnostic events (e.g. invitations) are
+    returned. When None, returns everything for the user.
+    """
     query = db.query(Notification).filter(Notification.user_id == user_id)
+
+    if workspace_id is not None:
+        query = _apply_workspace_scope(query, workspace_id)
 
     if unread_only:
         query = query.filter(Notification.is_read == False)  # noqa: E712
@@ -60,13 +101,19 @@ def get_notifications(
     return items, total
 
 
-def get_unread_count(db: Session, user_id: UUID) -> int:
+def get_unread_count(
+    db: Session,
+    user_id: UUID,
+    workspace_id: Optional[UUID] = None,
+) -> int:
     """Count unread notifications (lightweight, for badge polling)."""
-    return (
-        db.query(Notification)
-        .filter(Notification.user_id == user_id, Notification.is_read == False)  # noqa: E712
-        .count()
+    query = db.query(Notification).filter(
+        Notification.user_id == user_id,
+        Notification.is_read == False,  # noqa: E712
     )
+    if workspace_id is not None:
+        query = _apply_workspace_scope(query, workspace_id)
+    return query.count()
 
 
 def mark_as_read(db: Session, notification_id: UUID, user_id: UUID) -> Optional[Notification]:
@@ -104,6 +151,7 @@ def notify_kb_completed(
     kb_id: UUID,
     kb_name: str,
     stats: dict,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when KB processing completes successfully."""
     chunks = stats.get("total_chunks", 0)
@@ -118,6 +166,7 @@ def notify_kb_completed(
         resource_type="kb",
         resource_id=kb_id,
         metadata=stats,
+        workspace_id=workspace_id,
     )
 
 
@@ -127,6 +176,7 @@ def notify_kb_failed(
     kb_id: UUID,
     kb_name: str,
     error: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when KB processing fails."""
     return create_notification(
@@ -139,6 +189,7 @@ def notify_kb_failed(
         resource_type="kb",
         resource_id=kb_id,
         metadata={"error": error},
+        workspace_id=workspace_id,
     )
 
 
@@ -147,6 +198,7 @@ def notify_chatbot_deployed(
     user_id: UUID,
     chatbot_id: UUID,
     chatbot_name: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a chatbot is deployed."""
     return create_notification(
@@ -158,6 +210,7 @@ def notify_chatbot_deployed(
         link=f"/chatbots/{chatbot_id}",
         resource_type="chatbot",
         resource_id=chatbot_id,
+        workspace_id=workspace_id,
     )
 
 
@@ -166,17 +219,21 @@ def notify_chatflow_deployed(
     user_id: UUID,
     chatflow_id: UUID,
     chatflow_name: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a chatflow is deployed."""
+    # Frontend chatflow detail route is `/studio/:chatflowId` (App.tsx:169);
+    # `/chatflows/:id` does not exist and would 404.
     return create_notification(
         db=db,
         user_id=user_id,
         event="chatflow.deployed",
         title=f"Chatflow \"{chatflow_name}\" deployed",
         body="Your chatflow is now live and ready to receive messages.",
-        link=f"/chatflows/{chatflow_id}",
+        link=f"/studio/{chatflow_id}",
         resource_type="chatflow",
         resource_id=chatflow_id,
+        workspace_id=workspace_id,
     )
 
 
@@ -186,7 +243,11 @@ def notify_invitation_accepted(
     invitee_name: str,
     org_name: str,
 ) -> Notification:
-    """Emit notification to the inviter when someone accepts their invitation."""
+    """Emit notification to the inviter when someone accepts their invitation.
+
+    Intentionally workspace-agnostic — invitations are org-level and should
+    appear regardless of which workspace the inviter has currently active.
+    """
     return create_notification(
         db=db,
         user_id=inviter_user_id,
@@ -202,6 +263,7 @@ def notify_lead_captured(
     user_id: UUID,
     lead_email: str,
     bot_name: str,
+    workspace_id: Optional[UUID] = None,
 ) -> Notification:
     """Emit notification when a lead is captured."""
     return create_notification(
@@ -212,4 +274,122 @@ def notify_lead_captured(
         body=f"{lead_email} via {bot_name}.",
         link="/leads",
         resource_type="lead",
+        workspace_id=workspace_id,
     )
+
+
+def notify_org_inactivity_warning(
+    org_id: UUID,
+    org_name: str,
+    days_idle: int,
+    days_until_suspend: int,
+) -> None:
+    """In-app + email warning that an inactive Free-tier org is about
+    to be paused.
+
+    Emits one in-app notification per org owner AND best-effort sends an
+    email through the existing SMTP path (`email_service_enhanced`).
+    SMTP failure does NOT block the in-app notification, which is the
+    canonical record. The Celery task dedupes via
+    `org.settings.last_inactivity_warning_at` so this function is safe
+    to call without further dedupe.
+
+    Self-managed session so this is safe to call from the Celery task.
+    """
+    import logging
+    from app.db.session import SessionLocal as _SessionLocal
+    from app.models.organization_member import OrganizationMember
+    from app.models.user import User as _User
+
+    logger = logging.getLogger(__name__)
+
+    _db = _SessionLocal()
+    try:
+        owners = (
+            _db.query(OrganizationMember)
+            .filter(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.role == "owner",
+            )
+            .all()
+        )
+        for member in owners:
+            # 1. In-app notification (canonical record).
+            create_notification(
+                db=_db,
+                user_id=member.user_id,
+                event="org.inactivity_warning",
+                title=f"\"{org_name}\" will be paused in {days_until_suspend} days",
+                body=(
+                    f"Your free workspace has been idle for {days_idle} days. "
+                    "Sign in or upgrade to keep your bots running."
+                ),
+                link="/billings",
+                resource_type="organization",
+                resource_id=org_id,
+            )
+
+            # 2. Email — best-effort. Wrapped in try/except so an SMTP
+            #    blip doesn't take down the inactivity sweep. We only
+            #    send if the owner has a known email address.
+            try:
+                user = _db.query(_User).filter(_User.id == member.user_id).first()
+                owner_email = user.email if user else None
+                if not owner_email:
+                    continue
+
+                from app.core.config import settings as _settings
+                from app.services.email_service_enhanced import (
+                    _create_html_template,
+                    send_email_with_retry,
+                )
+
+                billing_url = (
+                    (_settings.FRONTEND_URL or "https://privexbot.com").rstrip("/")
+                    + "/billings"
+                )
+                subject = (
+                    f"\"{org_name}\" will be paused in {days_until_suspend} days"
+                )
+                body_html = (
+                    f"<p style=\"margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;\">"
+                    f"Your PrivexBot workspace <strong>{org_name}</strong> has been "
+                    f"idle for {days_idle} days. Free workspaces auto-pause after "
+                    f"30 days of inactivity to keep resources tidy."
+                    f"</p>"
+                    f"<p style=\"margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;\">"
+                    f"<strong>What happens in {days_until_suspend} days if nothing "
+                    f"changes:</strong> your bots stop responding to incoming "
+                    f"messages until you reactivate. No data is deleted; "
+                    f"reactivation is instant."
+                    f"</p>"
+                    f"<table role=\"presentation\" style=\"margin: 0 0 24px 0;\"><tr><td>"
+                    f"<a href=\"{billing_url}\" style=\"display: inline-block; padding: 12px 24px; "
+                    f"background-color: #3b82f6; color: #ffffff; text-decoration: none; "
+                    f"border-radius: 6px; font-weight: 600; font-size: 16px;\">Open billing</a>"
+                    f"</td></tr></table>"
+                    f"<p style=\"margin: 0; color: #6b7280; font-size: 14px; line-height: 1.5;\">"
+                    f"To keep your workspace active: sign in to your dashboard, "
+                    f"send a message to one of your bots, or upgrade to Starter "
+                    f"($19/mo). Paid plans never auto-pause."
+                    f"</p>"
+                )
+                html_content = _create_html_template(
+                    subject=subject,
+                    heading=subject,
+                    body_html=body_html,
+                )
+
+                send_email_with_retry(
+                    to_email=owner_email,
+                    subject=subject,
+                    html_content=html_content,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Inactivity warning email failed for org %s: %s",
+                    org_id,
+                    exc,
+                )
+    finally:
+        _db.close()

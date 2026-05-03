@@ -184,6 +184,10 @@ async def create_new_workspace(
     Organization ID is derived from the URL path parameter.
     Requires admin or owner role in the organization.
     """
+    # Plan quota — block creation when at the org's tier cap.
+    from app.services.billing_service import require_quota
+    require_quota(db, org_id, "workspaces")
+
     workspace = create_workspace(
         db=db,
         organization_id=org_id,  # From URL path parameter

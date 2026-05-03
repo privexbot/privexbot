@@ -1362,8 +1362,8 @@ function Step4Appearance({ formData, onUpdate }: Step1Props) {
               Image URL for your chatbot avatar (recommended: 64x64px)
             </p>
           </div>
-          {/* Avatar Preview */}
-          <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
+          {/* Avatar Preview — outline-only circle, no bg fill */}
+          <div className="w-12 h-12 rounded-full border-2 border-gray-200 dark:border-gray-600 overflow-hidden flex items-center justify-center flex-shrink-0">
             {formData.appearance.avatar_url ? (
               <img
                 src={formData.appearance.avatar_url}
@@ -2531,7 +2531,7 @@ export default function CreateChatbotPage() {
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-4xl mx-auto py-6 sm:py-8 px-4 sm:px-6">
+        <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 xl:px-12">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">

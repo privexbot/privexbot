@@ -101,13 +101,16 @@ class LeadCaptureService:
             "data_processing_agreed": "Y" if consent_given else "N",
         }
 
-        # Add geolocation if available
+        # Add geolocation if available. Latitude/longitude are persisted so
+        # the /leads map view can plot pins without re-running geoip on read.
         if geolocation:
             lead_data["country"] = geolocation.get("country")
             lead_data["country_code"] = geolocation.get("country_code")
             lead_data["region"] = geolocation.get("region")
             lead_data["city"] = geolocation.get("city")
             lead_data["timezone"] = geolocation.get("timezone")
+            lead_data["latitude"] = geolocation.get("latitude")
+            lead_data["longitude"] = geolocation.get("longitude")
 
         return await self._create_or_merge_lead(db, lead_data)
 
@@ -430,6 +433,8 @@ class LeadCaptureService:
             region=lead_data.get("region"),
             city=lead_data.get("city"),
             timezone=lead_data.get("timezone"),
+            latitude=lead_data.get("latitude"),
+            longitude=lead_data.get("longitude"),
             channel=lead_data.get("channel"),
             referrer=lead_data.get("referrer"),
             user_agent=lead_data.get("user_agent"),

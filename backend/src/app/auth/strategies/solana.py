@@ -6,6 +6,7 @@ See implementation guide in /backend/docs/auth/ for full documentation.
 
 # ACTUAL IMPLEMENTATION
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 from nacl.signing import VerifyKey
 from nacl.exceptions import BadSignatureError
@@ -286,10 +287,28 @@ async def verify_signature(
             }
         )
         db.add(auth_identity)
-        db.commit()
-        db.refresh(user)
-
-        return user
+        try:
+            db.commit()
+            db.refresh(user)
+            return user
+        except IntegrityError:
+            # Concurrent first-time signin race — another request created
+            # the AuthIdentity between our check and our insert. Recover
+            # by re-fetching and treating this as a sign-in.
+            db.rollback()
+            auth_identity = db.query(AuthIdentity).filter(
+                AuthIdentity.provider == "solana",
+                AuthIdentity.provider_id == address,
+            ).first()
+            if not auth_identity:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to create account; please try again",
+                )
+            user = db.query(User).filter(User.id == auth_identity.user_id).first()
+            if not user or not user.is_active:
+                raise HTTPException(status_code=401, detail="Account is inactive")
+            return user
 
 
 async def link_solana_to_user(

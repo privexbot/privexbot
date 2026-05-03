@@ -12,6 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Trash2, Loader2, Users as UsersIcon, Shield, User, Eye, Mail, RefreshCw, X, Clock } from "lucide-react";
 import { workspaceApi } from "@/api/workspace";
 import { invitationApi } from "@/api/invitation";
+import { handleApiError } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -121,20 +122,8 @@ export const WorkspaceMembersTab = ({
     } catch (err: any) {
       console.error("[WorkspaceMembersTab] Error sending invitation:", err);
 
-      // Extract error message properly
-      let errorMessage = "Failed to send invitation";
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((e: any) => e.msg || e.message || String(e)).join(', ');
-        } else if (typeof detail === 'object') {
-          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
-        }
-      }
+      const errorMessage = handleApiError(err);
 
-      // Set form-level error
       setFormError("root", {
         type: "manual",
         message: errorMessage,

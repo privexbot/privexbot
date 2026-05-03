@@ -31,8 +31,8 @@ interface KBNodeConfigProps {
 
 const SEARCH_METHODS = [
   { value: "hybrid_search", label: "Hybrid Search (Recommended)" },
-  { value: "semantic", label: "Semantic (Vector Only)" },
-  { value: "bm25", label: "BM25 (Keyword Only)" },
+  { value: "semantic_search", label: "Semantic (Vector Only)" },
+  { value: "keyword_search", label: "Keyword Search (BM25)" },
 ];
 
 export function KBNodeConfig({ config, onChange }: KBNodeConfigProps) {
@@ -45,12 +45,14 @@ export function KBNodeConfig({ config, onChange }: KBNodeConfigProps) {
   const [searchMethod, setSearchMethod] = useState((config.search_method as string) || "hybrid_search");
   const [useKbDefaults, setUseKbDefaults] = useState(config.top_k === undefined);
 
-  // Fetch available knowledge bases
+  // Fetch available knowledge bases for this workspace
   const { data: knowledgeBases, isLoading } = useQuery({
     queryKey: ["knowledge-bases", currentWorkspace?.id],
     queryFn: async () => {
       if (!currentWorkspace?.id) return [];
       const response = await kbClient.kb.list({ workspace_id: currentWorkspace.id });
+      // Backend returns either { items: [...] } (paginated) or a raw array
+      if (Array.isArray(response)) return response;
       return response.items || [];
     },
     enabled: !!currentWorkspace?.id,

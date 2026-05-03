@@ -125,7 +125,13 @@ function UnifiedStatsCard({ stats }: { stats: any }) {
 }
 
 // Modern KB Card Component
-function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, index }: any) {
+function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, onRerun, isRerunning, index }: any) {
+  const isFailed = kb.status === KBStatus.FAILED;
+  // Backend computes `can_reindex` (false when any file_upload doc has no
+  // MinIO original). Default to true for older payloads that don't include
+  // the field — the route-level guard still blocks invalid reruns.
+  const canReindex = kb.can_reindex !== false;
+
   const getStatusColor = (status: KBStatus) => {
     switch (status) {
       case KBStatus.READY:
@@ -245,35 +251,51 @@ function KBCard({ kb, onView, onViewDocuments, onEdit, onDelete, onTest, index }
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="grid grid-cols-3 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onView(kb.id)}
-              className="font-manrope rounded-lg border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-            >
-              <Eye className="h-3 w-3 mr-1" />
-              View
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewDocuments(kb.id)}
-              className="font-manrope rounded-lg border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
-            >
-              <FileText className="h-3 w-3 mr-1" />
-              Docs
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onTest(kb.id)}
-              className="font-manrope rounded-lg border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
-            >
-              <Activity className="h-3 w-3 mr-1" />
-              Test
-            </Button>
+          {/* Action Buttons — three primary actions on every card; failed
+              KBs get a separate full-width Re-run button below to avoid
+              squishing into a 4-col grid on narrow card widths. */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onView(kb.id)}
+                className="font-manrope justify-center rounded-lg border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 min-w-0"
+              >
+                <Eye className="h-3.5 w-3.5 shrink-0" />
+                <span className="ml-1.5 truncate">View</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onViewDocuments(kb.id)}
+                className="font-manrope justify-center rounded-lg border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 min-w-0"
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                <span className="ml-1.5 truncate">Docs</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onTest(kb.id)}
+                className="font-manrope justify-center rounded-lg border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 min-w-0"
+              >
+                <Activity className="h-3.5 w-3.5 shrink-0" />
+                <span className="ml-1.5 truncate">Test</span>
+              </Button>
+            </div>
+            {isFailed && canReindex && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onRerun?.(kb.id)}
+                disabled={!!isRerunning}
+                className="font-manrope w-full justify-center rounded-lg border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5 shrink-0', isRerunning && 'animate-spin')} />
+                <span className="truncate">Re-run indexing</span>
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -335,6 +357,40 @@ export default function KnowledgeBasesPage() {
   const handleViewDocuments = (kbId: string) => navigate(`/knowledge-bases/${kbId}/documents`);
   const handleEditKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}/edit`);
   const handleTestKB = (kbId: string) => navigate(`/knowledge-bases/${kbId}?tab=test-search`);
+
+  // Re-run handler for failed KBs. Calls the existing reindex endpoint with
+  // no config — backend reuses the KB's stored chunking_config (see
+  // kb_pipeline_tasks.py:2153).
+  const [rerunningId, setRerunningId] = useState<string | null>(null);
+  const handleRerunKB = async (kbId: string) => {
+    setRerunningId(kbId);
+    try {
+      const { default: kbClient } = await import('@/lib/kb-client');
+      await kbClient.kb.reindex(kbId);
+      toast({
+        title: 'Re-run started',
+        description: 'The knowledge base is being re-indexed in the background.',
+      });
+      // Refresh the list so the status flips to "reindexing".
+      if (currentWorkspace) {
+        fetchKBs({ workspace_id: currentWorkspace.id });
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to start re-run';
+      // Backend returns a 400 with a detailed reason when the KB is in a
+      // state that can't be reindexed (e.g. file uploads with no MinIO
+      // original). Distinguish that from transient failures so the toast
+      // copy doesn't blame the network.
+      const isPrecondition = /cannot reindex/i.test(message);
+      toast({
+        title: isPrecondition ? "Can't re-run this KB" : 'Re-run failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRerunningId(null);
+    }
+  };
 
   const handleDeleteKB = async (kbId: string) => {
     try {
@@ -501,6 +557,8 @@ export default function KnowledgeBasesPage() {
                       onEdit={handleEditKB}
                       onDelete={setDeleteKBId}
                       onTest={handleTestKB}
+                      onRerun={handleRerunKB}
+                      isRerunning={rerunningId === kb.id}
                     />
                   ))}
                 </motion.div>

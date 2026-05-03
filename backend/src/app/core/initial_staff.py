@@ -7,6 +7,8 @@ HOW: Check against this list during user registration/login to auto-grant staff
 This module is used by:
 1. scripts/set_initial_staff.py - Batch updates existing users on startup
 2. auth_service.py - Auto-grants staff on new registration/first login
+USAGE:
+run docker compose -f docker-compose.dev.yml exec backend-dev python scripts/set_initial_staff.py
 """
 
 from typing import Optional

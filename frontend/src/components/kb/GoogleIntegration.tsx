@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import apiClient, { handleApiError } from '@/lib/api-client';
+import { useKBStore } from '@/store/kb-store';
 
 interface GoogleFile {
   id: string;
@@ -33,10 +34,21 @@ interface GoogleIntegrationProps {
   draftId: string;
   workspaceId: string;
   onSourcesAdded?: () => void;
+  /**
+   * Fires immediately before the full-window OAuth redirect. The KB
+   * wizard uses this to persist its local React state (current step,
+   * activeSourceType) plus the Zustand draft to localStorage so the
+   * post-callback remount can restore both. See lib/kb-wizard-oauth.ts.
+   */
+  onBeforeOAuthRedirect?: () => void;
 }
 
-export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded }: GoogleIntegrationProps) {
+export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded, onBeforeOAuthRedirect }: GoogleIntegrationProps) {
   const { toast } = useToast();
+  // Pull the store action that POSTs to backend AND mirrors the result into
+  // draftSources. Without this, the wizard's source list and "Continue (N
+  // items)" button stay at zero even after a successful add.
+  const addGoogleSourcesToStore = useKBStore((state) => state.addGoogleSources);
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,13 +82,14 @@ export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded
     enabled: isConnected,
   });
 
-  // Add files mutation
+  // Add files mutation. Routes through the kb-store action so draftSources
+  // updates atomically with the backend POST — the wizard's source-list and
+  // "Continue (N items)" button reflect the new files immediately.
   const addFilesMutation = useMutation({
     mutationFn: async (fileItems: Array<{ id: string; type: string; name?: string }>) => {
-      const response = await apiClient.post(`/kb-drafts/${draftId}/sources/google`, {
-        files: fileItems,
-      });
-      return response.data;
+      return await addGoogleSourcesToStore(
+        fileItems.map((f) => ({ id: f.id, type: f.type, name: f.name ?? f.id })),
+      );
     },
     onSuccess: (data) => {
       toast({
@@ -100,6 +113,10 @@ export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded
       const response = await apiClient.post(
         `/credentials/oauth/authorize?provider=google&workspace_id=${workspaceId}`
       );
+      // Persist wizard + draft state BEFORE the redirect — `window.location.href`
+      // unmounts React and wipes every in-memory store, so the post-callback
+      // remount needs localStorage to rehydrate. See lib/kb-wizard-oauth.ts.
+      onBeforeOAuthRedirect?.();
       window.location.href = response.data.redirect_url;
     } catch (error) {
       toast({

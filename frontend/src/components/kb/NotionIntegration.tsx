@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import apiClient, { handleApiError } from '@/lib/api-client';
+import { useKBStore } from '@/store/kb-store';
 
 interface NotionPage {
   id: string;
@@ -35,10 +36,21 @@ interface NotionIntegrationProps {
   workspaceId: string;
   onPagesSelected?: (pages: NotionPage[]) => void;
   onSourcesAdded?: () => void;
+  /**
+   * Fires immediately before the full-window OAuth redirect. The KB
+   * wizard uses this to persist its local React state (current step,
+   * activeSourceType) plus the Zustand draft to localStorage so the
+   * post-callback remount can restore both. See lib/kb-wizard-oauth.ts.
+   */
+  onBeforeOAuthRedirect?: () => void;
 }
 
-export default function NotionIntegration({ draftId, workspaceId, onPagesSelected, onSourcesAdded }: NotionIntegrationProps) {
+export default function NotionIntegration({ draftId, workspaceId, onPagesSelected, onSourcesAdded, onBeforeOAuthRedirect }: NotionIntegrationProps) {
   const { toast } = useToast();
+  // Pull the store action that POSTs to backend AND mirrors the result into
+  // draftSources. Without this, the wizard's source list and "Continue (N
+  // items)" button stay at zero even after a successful add.
+  const addNotionSourcesToStore = useKBStore((state) => state.addNotionSources);
 
   const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,13 +84,15 @@ export default function NotionIntegration({ draftId, workspaceId, onPagesSelecte
     enabled: isConnected,
   });
 
-  // Add pages mutation
+  // Add pages mutation. Routes through the kb-store action so draftSources
+  // updates atomically with the backend POST — the wizard's source-list and
+  // "Continue (N items)" button reflect the new pages immediately.
   const addPagesMutation = useMutation({
     mutationFn: async (pageIds: string[]) => {
-      const response = await apiClient.post(`/kb-drafts/${draftId}/sources/notion`, {
-        page_ids: pageIds,
-      });
-      return response.data;
+      const selected = (pages ?? []).filter((p) => pageIds.includes(p.id));
+      return await addNotionSourcesToStore(
+        selected.map((p) => ({ id: p.id, title: p.title, type: p.type, url: p.url })),
+      );
     },
     onSuccess: (data) => {
       toast({
@@ -106,6 +120,10 @@ export default function NotionIntegration({ draftId, workspaceId, onPagesSelecte
       const response = await apiClient.post(
         `/credentials/oauth/authorize?provider=notion&workspace_id=${workspaceId}`
       );
+      // Persist wizard + draft state BEFORE the redirect — `window.location.href`
+      // unmounts React and wipes every in-memory store, so the post-callback
+      // remount needs localStorage to rehydrate. See lib/kb-wizard-oauth.ts.
+      onBeforeOAuthRedirect?.();
       window.location.href = response.data.redirect_url;
     } catch (error) {
       toast({

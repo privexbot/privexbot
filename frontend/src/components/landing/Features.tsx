@@ -51,11 +51,15 @@ export function Features() {
         {/* Header */}
         <div className="mb-12 lg:mb-16">
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-2 font-manrope">
-            Brainstorm and define
+            Everything you need to ship
           </h2>
-          <h3 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-12 font-manrope">
-            what to build next
+          <h3 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6 font-manrope">
+            a production AI agent
           </h3>
+          <p className="max-w-2xl text-base md:text-lg text-gray-600 dark:text-gray-400 font-manrope">
+            From the visual builder to the analytics dashboard, every surface
+            is built around the same multi-tenant, privacy-first foundation.
+          </p>
         </div>
 
         {/* Desktop Layout */}

@@ -125,7 +125,14 @@ export function FAQPage() {
                 Answered.
               </h3>
               <p className="text-lg md:text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto font-manrope">
-                Contact us if you have any other questions.
+                Got more questions?{" "}
+                <a
+                  href="mailto:privexbot@gmail.com"
+                  className="text-blue-600 dark:text-blue-400 font-medium underline-offset-2 hover:underline"
+                >
+                  Contact us at privexbot@gmail.com
+                </a>
+                .
               </p>
             </motion.div>
           </div>

@@ -431,8 +431,16 @@ def create_organization(
         Organization: Created organization with creator as owner
 
     Raises:
-        HTTPException: If creation fails
+        HTTPException: If creation fails or the user is at their tier's
+                       `owned_orgs` cap.
     """
+    # Per-user owned-orgs cap. Closes the abuse path where a Free user
+    # could spawn unlimited Free orgs (each with its own per-org quota).
+    # Raises HTTP 402 with `resource: "owned_orgs"` BEFORE any DB write
+    # so we never leave an orphan org or default workspace behind.
+    from app.services.billing_service import require_owned_orgs_quota
+    require_owned_orgs_quota(db, creator_id)
+
     # Create organization with trial period
     org = Organization(
         name=name,

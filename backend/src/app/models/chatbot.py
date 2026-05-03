@@ -323,13 +323,13 @@ class Chatbot(Base):
     creator = relationship("User", foreign_keys=[created_by])
     archiver = relationship("User", foreign_keys=[archived_by])
 
-    # Discord guild deployments (shared bot architecture)
-    # Multiple guilds can deploy to same chatbot (many-to-one)
-    discord_guild_deployments = relationship(
-        "DiscordGuildDeployment",
-        back_populates="chatbot",
-        cascade="all, delete-orphan"
-    )
+    # Discord guild deployments are NOT modeled as a SQLAlchemy relationship
+    # here. `DiscordGuildDeployment.chatbot_id` is polymorphic (it stores a
+    # chatbot OR chatflow id, disambiguated by `entity_type`) and no longer
+    # has a DB-level foreign key, so SQLAlchemy can't infer a join.
+    #   - guild → entity:    `discord_guild_service.get_entity_for_guild()`
+    #   - entity → guilds:   `discord_guild_service.list_guild_deployments()`
+    #   - delete cascade:    `discord_guild_service.remove_for_entity()`
 
     # Slack workspace deployments (shared bot architecture)
     # Multiple workspaces can deploy to same chatbot (many-to-one)

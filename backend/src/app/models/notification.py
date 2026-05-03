@@ -23,6 +23,18 @@ class Notification(Base):
         index=True
     )
 
+    # Workspace the event belongs to. Nullable for inherently cross-workspace
+    # events (e.g. "invitation.accepted") and for legacy rows created before
+    # this column existed. The list endpoint filters by `workspace_id == active`
+    # OR `workspace_id IS NULL`, so users keep seeing org-level notifications
+    # and historical rows after switching workspaces.
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     # Event type: "kb.processing.completed", "chatbot.deployed", "invitation.accepted", etc.
     event = Column(String(100), nullable=False, index=True)
 
@@ -45,7 +57,9 @@ class Notification(Base):
     __table_args__ = (
         Index('idx_notif_user_unread', 'user_id', 'is_read', 'created_at'),
         Index('idx_notif_user_event', 'user_id', 'event'),
+        Index('idx_notif_user_workspace', 'user_id', 'workspace_id', 'created_at'),
     )
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
+    workspace = relationship("Workspace", foreign_keys=[workspace_id])

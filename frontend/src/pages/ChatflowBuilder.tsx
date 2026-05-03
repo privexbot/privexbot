@@ -41,6 +41,7 @@ import ReactFlow, {
   Handle,
   Position,
   BackgroundVariant,
+  type ReactFlowInstance,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -65,6 +66,12 @@ import {
   X,
   Check,
   Loader2,
+  Send,
+  Mail,
+  Bell,
+  UserCheck,
+  UserPlus,
+  Calendar,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -72,6 +79,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import EmbedCode from "@/components/shared/EmbedCode";
 import {
   Sheet,
   SheetContent,
@@ -93,8 +101,11 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useApp } from "@/contexts/AppContext";
 import { cn } from "@/lib/utils";
-import { chatflowDraftApi } from "@/api/chatflow";
+import { chatflowDraftApi, type FinalizeChatflowResponse } from "@/api/chatflow";
+import { config as envConfig } from "@/config/env";
 import ChannelSelector, { type DeploymentChannel } from "@/components/deployment/ChannelSelector";
+import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
+import { classifyChannelError } from "@/lib/channelErrors";
 
 // Node configuration panel for type-specific settings
 import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
@@ -105,6 +116,14 @@ import { VariableNodeConfig } from "@/components/chatflow/configs/VariableNodeCo
 import { CodeNodeConfig } from "@/components/chatflow/configs/CodeNodeConfig";
 import { MemoryNodeConfig } from "@/components/chatflow/configs/MemoryNodeConfig";
 import { DatabaseNodeConfig } from "@/components/chatflow/configs/DatabaseNodeConfig";
+import { ResponseNodeConfig } from "@/components/chatflow/configs/ResponseNodeConfig";
+import { LoopNodeConfig } from "@/components/chatflow/configs/LoopNodeConfig";
+import { WebhookNodeConfig } from "@/components/chatflow/configs/WebhookNodeConfig";
+import { EmailNodeConfig } from "@/components/chatflow/configs/EmailNodeConfig";
+import { NotificationNodeConfig } from "@/components/chatflow/configs/NotificationNodeConfig";
+import { HandoffNodeConfig } from "@/components/chatflow/configs/HandoffNodeConfig";
+import { LeadCaptureNodeConfig } from "@/components/chatflow/configs/LeadCaptureNodeConfig";
+import { CalendlyNodeConfig } from "@/components/chatflow/configs/CalendlyNodeConfig";
 
 // ========================================
 // NODE COMPONENT DEFINITIONS
@@ -113,6 +132,181 @@ import { DatabaseNodeConfig } from "@/components/chatflow/configs/DatabaseNodeCo
 interface NodeData {
   label: string;
   config?: Record<string, unknown>;
+  /** Set by the validator; do not persist (stripped before auto-save). */
+  _hasIssue?: boolean;
+}
+
+// ========================================
+// VALIDATION (per-node)
+// ========================================
+
+export type ValidationIssue = {
+  nodeId?: string;
+  nodeLabel?: string;
+  nodeType?: string;
+  message: string;
+  severity: "error" | "warning";
+};
+
+/**
+ * Per-node config validator. Grounded in backend node.execute() requirements
+ * (see backend/src/app/chatflow/nodes/*_node.py). Only flags fields that have
+ * no sensible default and will fail at runtime.
+ */
+function validateNodeConfig(node: Node): ValidationIssue[] {
+  const config = ((node.data as NodeData)?.config ?? {}) as Record<string, unknown>;
+  const label = ((node.data as NodeData)?.label ?? node.type ?? "Unnamed") as string;
+  const out: ValidationIssue[] = [];
+  const base = { nodeId: node.id, nodeLabel: label, nodeType: node.type };
+  const err = (message: string) => out.push({ ...base, message, severity: "error" });
+  const warn = (message: string) => out.push({ ...base, message, severity: "warning" });
+  const str = (v: unknown) =>
+    typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
+
+  switch (node.type) {
+    case "llm":
+      if (!str(config.prompt) && !str(config.system_prompt))
+        err("Add a prompt or system prompt");
+      break;
+    case "condition": {
+      const op = config.operator as string | undefined;
+      if (!op) err("Operator is required");
+      if (!str(config.variable)) err("Variable is required");
+      const needsValue = op && !["is_empty", "is_not_empty"].includes(op);
+      if (needsValue && (config.value === undefined || config.value === null || config.value === ""))
+        err("Compare value is required");
+      break;
+    }
+    case "lead_capture": {
+      const fields = (config.fields as Array<Record<string, unknown>>) || [];
+      if (!Array.isArray(fields) || fields.length === 0) {
+        err("At least one field is required");
+      } else {
+        fields.forEach((f, i) => {
+          if (!str(f?.name)) err(`Field ${i + 1} is missing a name`);
+          if (!str(f?.source))
+            err(`Field "${str(f?.name) || i + 1}" is missing a source`);
+        });
+      }
+      break;
+    }
+    case "kb":
+      if (!config.kb_id) err("Knowledge base must be selected");
+      break;
+    case "http":
+      if (!str(config.url)) err("URL is required");
+      if (!config.method) err("HTTP method is required");
+      break;
+    case "database":
+      if (!config.credential_id) err("Database credential is required");
+      if (!str(config.query)) err("Query is required");
+      break;
+    case "webhook":
+      if (!str(config.url)) err("Webhook URL is required");
+      break;
+    case "email":
+      if (!str(config.to)) err("Recipient (to) is required");
+      if (!str(config.subject)) err("Subject is required");
+      if (!config.credential_id)
+        warn("Email credential is usually required to send");
+      break;
+    case "notification":
+      if (!config.channel) err("Channel is required");
+      if (!str(config.message)) err("Message is required");
+      break;
+    case "handoff":
+      if (!config.method) err("Handoff method is required");
+      break;
+    case "calendly":
+      if (!config.credential_id) err("Calendly credential is required");
+      if (!config.action) err("Action is required");
+      break;
+    case "code":
+      if (!str(config.code)) err("Code is required");
+      break;
+    case "variable":
+      if (!config.operation) err("Operation is required");
+      if (!str(config.variable_name)) err("Variable name is required");
+      break;
+    case "loop":
+      if (!str(config.array)) err("Array variable is required");
+      break;
+    // trigger, response, memory: no required config
+  }
+
+  return out;
+}
+
+/** Per-node connection checks. */
+function validateNodeConnections(node: Node, edges: Edge[]): ValidationIssue[] {
+  const label = ((node.data as NodeData)?.label ?? node.type) as string;
+  const out: ValidationIssue[] = [];
+  const base = { nodeId: node.id, nodeLabel: label, nodeType: node.type };
+  const err = (m: string) => out.push({ ...base, message: m, severity: "error" });
+  const warn = (m: string) => out.push({ ...base, message: m, severity: "warning" });
+
+  const inbound = edges.filter((e) => e.target === node.id);
+  const outbound = edges.filter((e) => e.source === node.id);
+
+  if (node.type !== "trigger" && inbound.length === 0) err("No incoming connection");
+  if (node.type !== "response" && outbound.length === 0) err("No outgoing connection");
+  if (node.type === "condition" && outbound.length < 2)
+    warn(
+      "Only one branch wired — wire both True and False outputs to avoid dead paths"
+    );
+
+  return out;
+}
+
+/**
+ * Semantic heuristic: if a condition compares `{{input}}` but there is an
+ * upstream node whose output the user probably wanted to branch on, warn them
+ * to reference `{{_last_output}}` or the node's ID.
+ */
+function checkConditionInputSemantics(
+  node: Node,
+  nodes: Node[],
+  edges: Edge[]
+): ValidationIssue[] {
+  if (node.type !== "condition") return [];
+  const config = ((node.data as NodeData)?.config ?? {}) as Record<string, unknown>;
+  const variable = typeof config.variable === "string" ? config.variable.trim() : "";
+  if (variable !== "{{input}}") return [];
+
+  const interestingUpstream = new Set([
+    "llm",
+    "kb",
+    "http",
+    "code",
+    "database",
+  ]);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const seen = new Set<string>();
+  const queue: string[] = edges
+    .filter((e) => e.target === node.id)
+    .map((e) => e.source);
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = byId.get(id);
+    if (!n) continue;
+    if (interestingUpstream.has(n.type ?? "")) {
+      const label = ((node.data as NodeData)?.label ?? node.type) as string;
+      return [
+        {
+          nodeId: node.id,
+          nodeLabel: label,
+          nodeType: node.type,
+          severity: "warning",
+          message:
+            "Compares raw user input. To branch on the previous node's output, use {{_last_output}} or {{<node_id>.output}}.",
+        },
+      ];
+    }
+    for (const e of edges) if (e.target === id) queue.push(e.source);
+  }
+  return [];
 }
 
 // Base node wrapper with handles
@@ -122,18 +316,23 @@ function BaseNode({
   hasInput = true,
   hasOutput = true,
   selected,
+  hasIssue,
 }: {
   children: React.ReactNode;
   className?: string;
   hasInput?: boolean;
   hasOutput?: boolean;
   selected?: boolean;
+  hasIssue?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "relative min-w-[160px] transition-all duration-200",
+        "relative min-w-[160px] transition-all duration-200 rounded-xl",
         selected && "ring-2 ring-purple-500 ring-offset-2 ring-offset-gray-900",
+        hasIssue &&
+          !selected &&
+          "ring-2 ring-red-500/70 ring-offset-2 ring-offset-transparent",
         className
       )}
     >
@@ -152,6 +351,14 @@ function BaseNode({
           className="!w-3 !h-3 !bg-gray-400 !border-2 !border-gray-600 hover:!bg-purple-500 transition-colors"
         />
       )}
+      {hasIssue && (
+        <div
+          aria-hidden
+          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center shadow"
+        >
+          !
+        </div>
+      )}
     </div>
   );
 }
@@ -159,7 +366,7 @@ function BaseNode({
 // Trigger Node (Start)
 function TriggerNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode hasInput={false} selected={selected}>
+    <BaseNode hasInput={false} selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg border border-emerald-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -178,7 +385,7 @@ function TriggerNode({ data, selected }: { data: NodeData; selected?: boolean })
 // LLM Node
 function LLMNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 text-white shadow-lg border border-purple-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -197,7 +404,7 @@ function LLMNode({ data, selected }: { data: NodeData; selected?: boolean }) {
 // KB Node
 function KBNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-lg border border-blue-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -218,10 +425,21 @@ function ConditionNode({ data, selected }: { data: NodeData; selected?: boolean 
   return (
     <div
       className={cn(
-        "relative min-w-[160px] transition-all duration-200",
-        selected && "ring-2 ring-purple-500 ring-offset-2 ring-offset-gray-900"
+        "relative min-w-[160px] transition-all duration-200 rounded-xl",
+        selected && "ring-2 ring-purple-500 ring-offset-2 ring-offset-gray-900",
+        data._hasIssue &&
+          !selected &&
+          "ring-2 ring-red-500/70 ring-offset-2 ring-offset-transparent"
       )}
     >
+      {data._hasIssue && (
+        <div
+          aria-hidden
+          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center shadow z-10"
+        >
+          !
+        </div>
+      )}
       <Handle
         type="target"
         position={Position.Top}
@@ -260,7 +478,7 @@ function ConditionNode({ data, selected }: { data: NodeData; selected?: boolean 
 // HTTP Node
 function HTTPNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg border border-green-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -279,7 +497,7 @@ function HTTPNode({ data, selected }: { data: NodeData; selected?: boolean }) {
 // Variable Node
 function VariableNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg border border-indigo-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -298,7 +516,7 @@ function VariableNode({ data, selected }: { data: NodeData; selected?: boolean }
 // Code Node
 function CodeNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 text-white shadow-lg border border-gray-500">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -317,7 +535,7 @@ function CodeNode({ data, selected }: { data: NodeData; selected?: boolean }) {
 // Memory Node
 function MemoryNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg border border-teal-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -336,7 +554,7 @@ function MemoryNode({ data, selected }: { data: NodeData; selected?: boolean }) 
 // Database Node
 function DatabaseNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 text-white shadow-lg border border-slate-500">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -355,7 +573,7 @@ function DatabaseNode({ data, selected }: { data: NodeData; selected?: boolean }
 // Loop Node
 function LoopNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode selected={selected}>
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-lg border border-rose-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -374,7 +592,7 @@ function LoopNode({ data, selected }: { data: NodeData; selected?: boolean }) {
 // Response Node
 function ResponseNode({ data, selected }: { data: NodeData; selected?: boolean }) {
   return (
-    <BaseNode hasOutput={false} selected={selected}>
+    <BaseNode hasOutput={false} selected={selected} hasIssue={data._hasIssue}>
       <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg border border-red-400">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-white/20 rounded-lg">
@@ -383,6 +601,120 @@ function ResponseNode({ data, selected }: { data: NodeData; selected?: boolean }
           <div>
             <div className="font-semibold text-sm">Response</div>
             <div className="text-xs opacity-80">{data.label || "Final Output"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Webhook Node
+function WebhookNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg border border-orange-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Send className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Webhook</div>
+            <div className="text-xs opacity-80">{data.label || "Outbound Webhook"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Email Node
+function EmailNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-lg border border-sky-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Mail className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Email</div>
+            <div className="text-xs opacity-80">{data.label || "Send Email"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Notification Node
+function NotificationNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg border border-teal-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Bell className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Notification</div>
+            <div className="text-xs opacity-80">{data.label || "Team Alert"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Handoff Node
+function HandoffNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white shadow-lg border border-violet-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <UserCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Handoff</div>
+            <div className="text-xs opacity-80">{data.label || "Human Agent"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Lead Capture Node
+function LeadCaptureNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg border border-emerald-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <UserPlus className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Lead Capture</div>
+            <div className="text-xs opacity-80">{data.label || "Collect Lead"}</div>
+          </div>
+        </div>
+      </div>
+    </BaseNode>
+  );
+}
+
+// Calendly Node
+function CalendlyNode({ data, selected }: { data: NodeData; selected?: boolean }) {
+  return (
+    <BaseNode selected={selected} hasIssue={data._hasIssue}>
+      <div className="px-4 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg border border-blue-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Calendar className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm">Calendly</div>
+            <div className="text-xs opacity-80">{data.label || "Schedule Meeting"}</div>
           </div>
         </div>
       </div>
@@ -403,6 +735,12 @@ const nodeTypes: NodeTypes = {
   database: DatabaseNode,
   loop: LoopNode,
   response: ResponseNode,
+  webhook: WebhookNode,
+  email: EmailNode,
+  notification: NotificationNode,
+  handoff: HandoffNode,
+  lead_capture: LeadCaptureNode,
+  calendly: CalendlyNode,
 };
 
 // ========================================
@@ -436,6 +774,17 @@ const NODE_CATEGORIES = [
       { type: "database", label: "Database", icon: Database, color: "from-slate-600 to-slate-800", description: "SQL queries" },
     ],
   },
+  {
+    title: "Actions & Automation",
+    nodes: [
+      { type: "webhook", label: "Webhook", icon: Send, color: "from-orange-500 to-amber-600", description: "Push to Zapier, Make, etc." },
+      { type: "email", label: "Email", icon: Mail, color: "from-sky-500 to-blue-600", description: "Send emails (SMTP/Gmail)" },
+      { type: "notification", label: "Notification", icon: Bell, color: "from-teal-500 to-cyan-600", description: "Alert team via Slack/Discord" },
+      { type: "handoff", label: "Handoff", icon: UserCheck, color: "from-violet-500 to-fuchsia-600", description: "Escalate to human agent" },
+      { type: "lead_capture", label: "Lead Capture", icon: UserPlus, color: "from-emerald-500 to-green-600", description: "Collect & store leads" },
+      { type: "calendly", label: "Calendly", icon: Calendar, color: "from-blue-500 to-indigo-600", description: "Schedule meetings" },
+    ],
+  },
 ];
 
 // ========================================
@@ -453,18 +802,30 @@ export default function ChatflowBuilder() {
   const [flowName, setFlowName] = useState("Untitled Chatflow");
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
   const [selectedChannels, setSelectedChannels] = useState<DeploymentChannel[]>(["website"]);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
+  // Deploy result: populated after a successful finalize so the success
+  // dialog can show the chatflow ID, per-channel details, and the one-time
+  // API key. Previously these were discarded in onSuccess.
+  const [deployResult, setDeployResult] = useState<FinalizeChatflowResponse | null>(null);
 
   // Load draft
-  const { data: draft, isLoading: isLoadingDraft } = useQuery({
+  const {
+    data: draft,
+    isLoading: isLoadingDraft,
+    isError: isDraftError,
+    error: draftError,
+  } = useQuery({
     queryKey: ["chatflow-draft", draftId],
     queryFn: () => (draftId ? chatflowDraftApi.get(draftId) : null),
     enabled: !!draftId,
+    // Draft 404s are a terminal signal (stale/expired/invalid ID) — do not spam retries.
+    retry: false,
   });
 
   // Create draft if none exists
@@ -515,11 +876,35 @@ export default function ChatflowBuilder() {
     }
   }, [draft, setNodes, setEdges]);
 
-  // Auto-save mutation
+  // Recover from a stale draftId in the URL (e.g. a deployed-chatflow UUID or
+  // an expired draft). Without this, the builder renders a blank canvas and
+  // auto-saves every second into a 404 loop. Return the user to Studio.
+  useEffect(() => {
+    if (!isDraftError) return;
+    toast({
+      title: "Chatflow draft unavailable",
+      description:
+        draftError instanceof Error && draftError.message
+          ? draftError.message
+          : "This draft has expired or the link is invalid. Open the chatflow from Studio to continue editing.",
+      variant: "destructive",
+    });
+    navigate("/studio", { replace: true });
+  }, [isDraftError, draftError, navigate, toast]);
+
+  // Auto-save mutation — strips underscore-prefixed internal fields (e.g.
+  // `_hasIssue`) from node.data so they don't end up in Redis.
   const saveMutation = useMutation({
     mutationFn: (data: { nodes: Node[]; edges: Edge[]; name: string }) =>
       chatflowDraftApi.update(draftId!, {
-        nodes: data.nodes,
+        nodes: data.nodes.map((n) => ({
+          ...n,
+          data: Object.fromEntries(
+            Object.entries((n.data ?? {}) as Record<string, unknown>).filter(
+              ([k]) => !k.startsWith("_")
+            )
+          ),
+        })),
         edges: data.edges,
         name: data.name,
       }),
@@ -527,14 +912,26 @@ export default function ChatflowBuilder() {
       setLastSaved(new Date());
       setIsSaving(false);
     },
-    onError: () => {
+    onError: (error) => {
       setIsSaving(false);
+      // Surface the failure instead of silently losing the user's edits.
+      // A 404 here means the draft the URL references no longer exists —
+      // the draft-load effect above will navigate back to Studio.
+      toast({
+        title: "Auto-save failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Your changes weren't saved. Check your connection and try again.",
+        variant: "destructive",
+      });
     },
   });
 
-  // Auto-save on changes
+  // Auto-save on changes. Skip when the draft is known-bad so we don't spam
+  // 404 requests while the recovery effect navigates away.
   useEffect(() => {
-    if (!draftId || nodes.length === 0) return;
+    if (!draftId || nodes.length === 0 || isDraftError) return;
 
     const timeoutId = setTimeout(() => {
       setIsSaving(true);
@@ -542,7 +939,7 @@ export default function ChatflowBuilder() {
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [nodes, edges, flowName, draftId]);
+  }, [nodes, edges, flowName, draftId, isDraftError]);
 
   // Add edge handler
   const onConnect = useCallback(
@@ -626,37 +1023,41 @@ export default function ChatflowBuilder() {
         return <DatabaseNodeConfig config={config} onChange={handleNodeConfigChange} />;
       case "trigger":
         return (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              The trigger node starts the chatflow when a message is received.
+              This node activates when a user sends a message via any deployed channel
+              (website widget, Telegram, Discord, Slack, etc.).
             </p>
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-md p-3">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                Available Variables
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{"{{input}}"}</code>
+                {" "}&mdash; The user's message text
+              </p>
+            </div>
             <p className="text-xs text-gray-400 dark:text-gray-500">
               No additional configuration required.
             </p>
           </div>
         );
       case "response":
-        return (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              The response node sends the final message back to the user.
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Uses the output from the previous node as the response.
-            </p>
-          </div>
-        );
+        return <ResponseNodeConfig config={config} onChange={handleNodeConfigChange} />;
       case "loop":
-        return (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              The loop node iterates over an array and processes each item.
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Configuration coming soon.
-            </p>
-          </div>
-        );
+        return <LoopNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "webhook":
+        return <WebhookNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "email":
+        return <EmailNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "notification":
+        return <NotificationNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "handoff":
+        return <HandoffNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "lead_capture":
+        return <LeadCaptureNodeConfig config={config} onChange={handleNodeConfigChange} />;
+      case "calendly":
+        return <CalendlyNodeConfig config={config} onChange={handleNodeConfigChange} />;
       default:
         return (
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -676,15 +1077,18 @@ export default function ChatflowBuilder() {
           config: {},
         })),
       }),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // Keep the user here: open the success dialog so they can grab the
+      // chatflow ID, per-channel details, and (first and only view of) the
+      // API key. They can jump to the detail page or back to Studio from it.
       setIsDeployDialogOpen(false);
+      setDeployResult(result);
       toast({
         title: isEditMode ? "Chatflow Updated!" : "Chatflow Deployed!",
         description: isEditMode
           ? "Your chatflow has been updated successfully."
           : "Your chatflow is now live.",
       });
-      navigate("/studio");
     },
     onError: (error) => {
       toast({
@@ -695,38 +1099,89 @@ export default function ChatflowBuilder() {
     },
   });
 
-  // Validate workflow
+  // Validate workflow — composes workflow-level checks with per-node config,
+  // per-node connection, and semantic heuristic validators. Writes structured
+  // issues so the banner can name the offending node and zoom to it on click.
   const validateWorkflow = useCallback(() => {
-    const errors: string[] = [];
+    const issues: ValidationIssue[] = [];
 
-    // Check for trigger node
+    // Workflow-level: must have Trigger + Response
     const hasTrigger = nodes.some((n) => n.type === "trigger");
     if (!hasTrigger) {
-      errors.push("Workflow must have a Trigger node");
+      issues.push({
+        message: "Workflow must have a Trigger node",
+        severity: "error",
+      });
     }
-
-    // Check for response node
     const hasResponse = nodes.some((n) => n.type === "response");
     if (!hasResponse) {
-      errors.push("Workflow must have a Response node");
+      issues.push({
+        message: "Workflow must have a Response node",
+        severity: "error",
+      });
     }
 
-    // Check for disconnected nodes
-    const connectedNodeIds = new Set<string>();
-    edges.forEach((e) => {
-      connectedNodeIds.add(e.source);
-      connectedNodeIds.add(e.target);
+    // Per-node: config + connections + heuristics
+    for (const node of nodes) {
+      issues.push(...validateNodeConfig(node));
+      issues.push(...validateNodeConnections(node, edges));
+      issues.push(...checkConditionInputSemantics(node, nodes, edges));
+    }
+
+    // Stable ordering: errors first, then by node label
+    issues.sort((a, b) => {
+      if (a.severity !== b.severity) return a.severity === "error" ? -1 : 1;
+      return (a.nodeLabel ?? "").localeCompare(b.nodeLabel ?? "");
     });
-    const disconnected = nodes.filter(
-      (n) => n.type !== "trigger" && !connectedNodeIds.has(n.id)
-    );
-    if (disconnected.length > 0) {
-      errors.push(`${disconnected.length} node(s) are not connected`);
-    }
 
-    setValidationErrors(errors);
-    return errors.length === 0;
+    setValidationIssues(issues);
+    return issues.every((i) => i.severity !== "error");
   }, [nodes, edges]);
+
+  // Sync error issues onto node.data._hasIssue so nodes can render a red ring.
+  // Only touches nodes whose marker actually changed, so this effect settles
+  // after one pass and doesn't thrash auto-save.
+  useEffect(() => {
+    const issueIds = new Set(
+      validationIssues
+        .filter((i) => i.severity === "error" && i.nodeId)
+        .map((i) => i.nodeId!)
+    );
+    setNodes((curr) => {
+      let changed = false;
+      const next = curr.map((n) => {
+        const shouldMark = issueIds.has(n.id);
+        const current = Boolean((n.data as NodeData)?._hasIssue);
+        if (shouldMark === current) return n;
+        changed = true;
+        return {
+          ...n,
+          data: { ...(n.data as NodeData), _hasIssue: shouldMark },
+        };
+      });
+      return changed ? next : curr;
+    });
+  }, [validationIssues, setNodes]);
+
+  // Focus a node by id: select it (opens config drawer) and recenter the canvas.
+  const focusNode = useCallback(
+    (nodeId: string | undefined) => {
+      if (!nodeId) return;
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      setSelectedNode(node);
+      if (rfInstance) {
+        // Node dimensions aren't measured reliably here; ~220×80 covers the
+        // typical node size well enough for re-centering.
+        rfInstance.setCenter(
+          node.position.x + 110,
+          node.position.y + 40,
+          { zoom: 1.25, duration: 400 }
+        );
+      }
+    },
+    [nodes, rfInstance]
+  );
 
   // Loading state
   if (isLoadingDraft || createDraftMutation.isPending) {
@@ -739,6 +1194,23 @@ export default function ChatflowBuilder() {
           </div>
         </div>
       </DashboardLayout>
+    );
+  }
+
+  // Cross-workspace race: draft was opened in workspace A then user switched
+  // to B. Show the dedicated screen instead of letting auto-save drift into a
+  // 403/404 loop.
+  if (
+    draft &&
+    currentWorkspace &&
+    draft.workspace_id !== currentWorkspace.id
+  ) {
+    return (
+      <WrongWorkspaceScreen
+        resourceKind="chatflow-draft"
+        resourceWorkspaceId={draft.workspace_id}
+        fallbackPath="/studio"
+      />
     );
   }
 
@@ -850,10 +1322,19 @@ export default function ChatflowBuilder() {
             </div>
 
             <div className="flex items-center gap-2">
-              {validationErrors.length > 0 && (
-                <Badge variant="destructive" className="gap-1">
+              {validationIssues.length > 0 && (
+                <Badge
+                  variant={
+                    validationIssues.some((i) => i.severity === "error")
+                      ? "destructive"
+                      : "secondary"
+                  }
+                  className="gap-1"
+                >
                   <AlertCircle className="w-3 h-3" />
-                  {validationErrors.length} issues
+                  {validationIssues.filter((i) => i.severity === "error").length} errors
+                  {validationIssues.some((i) => i.severity === "warning") &&
+                    ` · ${validationIssues.filter((i) => i.severity === "warning").length} warnings`}
                 </Badge>
               )}
               <Button
@@ -873,7 +1354,20 @@ export default function ChatflowBuilder() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => setIsDeployDialogOpen(true)}
+                onClick={() => {
+                  // Gate deploy on validation — running validators first also
+                  // populates the banner so the user sees what to fix.
+                  if (!validateWorkflow()) {
+                    toast({
+                      title: "Fix validation errors",
+                      description:
+                        "Resolve the highlighted issues before deploying.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setIsDeployDialogOpen(true);
+                }}
                 disabled={deployMutation.isPending}
                 className="bg-purple-600 hover:bg-purple-700"
               >
@@ -887,36 +1381,108 @@ export default function ChatflowBuilder() {
             </div>
           </div>
 
-          {/* Validation Errors Banner */}
+          {/* Validation Banner — clickable entries focus the offending node */}
           <AnimatePresence>
-            {validationErrors.length > 0 && (
+            {validationIssues.length > 0 && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className="bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 px-4 py-2"
+                className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
               >
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-red-800 dark:text-red-200">
-                      Validation Errors:
-                    </p>
-                    <ul className="text-xs text-red-700 dark:text-red-300 mt-1 space-y-0.5">
-                      {validationErrors.map((error, i) => (
-                        <li key={i}>- {error}</li>
-                      ))}
-                    </ul>
+                {/* Errors section */}
+                {validationIssues.some((i) => i.severity === "error") && (
+                  <div className="px-4 py-2 bg-red-50 dark:bg-red-950/30 border-b border-red-200/60 dark:border-red-800/60">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                          Validation errors
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {validationIssues
+                            .filter((i) => i.severity === "error")
+                            .map((issue, i) => (
+                              <li key={`err-${i}`}>
+                                {issue.nodeId ? (
+                                  <button
+                                    onClick={() => focusNode(issue.nodeId)}
+                                    className="text-left text-xs text-red-700 dark:text-red-300 hover:underline"
+                                  >
+                                    <span className="font-medium">
+                                      {issue.nodeLabel}
+                                    </span>
+                                    {issue.nodeType && (
+                                      <span className="opacity-60">
+                                        {" "}
+                                        ({issue.nodeType})
+                                      </span>
+                                    )}{" "}
+                                    — {issue.message}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-red-700 dark:text-red-300">
+                                    — {issue.message}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setValidationIssues([])}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setValidationErrors([])}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
+                )}
+
+                {/* Warnings section */}
+                {validationIssues.some((i) => i.severity === "warning") && (
+                  <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                          Warnings
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {validationIssues
+                            .filter((i) => i.severity === "warning")
+                            .map((issue, i) => (
+                              <li key={`warn-${i}`}>
+                                {issue.nodeId ? (
+                                  <button
+                                    onClick={() => focusNode(issue.nodeId)}
+                                    className="text-left text-xs text-amber-700 dark:text-amber-300 hover:underline"
+                                  >
+                                    <span className="font-medium">
+                                      {issue.nodeLabel}
+                                    </span>
+                                    {issue.nodeType && (
+                                      <span className="opacity-60">
+                                        {" "}
+                                        ({issue.nodeType})
+                                      </span>
+                                    )}{" "}
+                                    — {issue.message}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-amber-700 dark:text-amber-300">
+                                    — {issue.message}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -931,6 +1497,7 @@ export default function ChatflowBuilder() {
               onConnect={onConnect}
               onNodeClick={onNodeClick}
               nodeTypes={nodeTypes}
+              onInit={setRfInstance}
               fitView
               defaultEdgeOptions={{
                 animated: true,
@@ -1077,13 +1644,13 @@ export default function ChatflowBuilder() {
 
       {/* Deploy Dialog */}
       <Dialog open={isDeployDialogOpen} onOpenChange={setIsDeployDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Rocket className="w-5 h-5 text-purple-600" />
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Rocket className="w-4 h-4 text-purple-600" />
               {isEditMode ? "Update Chatflow" : "Deploy Chatflow"}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               {isEditMode
                 ? "Review the channels and update your chatflow."
                 : "Select the channels where you want to deploy your chatflow."}
@@ -1112,6 +1679,286 @@ export default function ChatflowBuilder() {
                 <Rocket className="w-4 h-4 mr-2" />
               )}
               {isEditMode ? "Update" : "Deploy to"} {selectedChannels.length} Channel{selectedChannels.length !== 1 ? "s" : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deployment Success Dialog — shows chatflow UUID, API key (once),
+          and per-channel details (website → embed code, others → webhook URL). */}
+      <Dialog
+        open={!!deployResult}
+        onOpenChange={(open) => {
+          if (!open) setDeployResult(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Check className="w-5 h-5 text-green-600" />
+              {isEditMode ? "Chatflow updated" : "Chatflow deployed"}
+            </DialogTitle>
+            <DialogDescription>
+              {deployResult?.api_key
+                ? "Save the API key now — it is shown only once."
+                : isEditMode
+                  ? "Channels re-registered. Your existing API key is unchanged — view or rotate it on the detail page."
+                  : "Deployment complete. Open the detail page to view the API key, channels, and live test."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {deployResult && (
+            <div className="space-y-4">
+              {/* Chatflow ID */}
+              <div>
+                <Label className="text-xs text-gray-500">Chatflow ID</Label>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="flex-1 font-mono text-xs bg-gray-100 dark:bg-gray-800 rounded px-2 py-1.5 truncate">
+                    {deployResult.chatflow_id}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(deployResult.chatflow_id);
+                      toast({ title: "Chatflow ID copied" });
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </div>
+
+              {/* One-time API key */}
+              {deployResult.api_key && (
+                <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <Label className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                    API key (shown once — save it now)
+                  </Label>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <code className="flex-1 font-mono text-xs bg-white dark:bg-gray-900 border rounded px-2 py-1.5 truncate">
+                      {deployResult.api_key}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(deployResult.api_key!);
+                        toast({ title: "API key copied" });
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  {deployResult.api_key_prefix && (
+                    <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+                      Prefix {deployResult.api_key_prefix} will be visible on the
+                      detail page; the full key will not.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Per-channel details */}
+              {deployResult.channels && Object.keys(deployResult.channels).length > 0 && (
+                <div>
+                  <Label className="text-xs text-gray-500">Channels</Label>
+                  <div className="mt-2 space-y-3">
+                    {Object.entries(deployResult.channels).map(([channelName, info]) => {
+                      // Classify failures into actionable buckets so each
+                      // row can show the right next-step CTA. Helper lives
+                      // in `lib/channelErrors.ts` and is shared with the
+                      // chatflow detail page.
+                      const errorInfo = classifyChannelError(channelName, info);
+                      const needsInstall = info.status === "needs_install";
+                      const installUrl =
+                        (info as { install_url?: string }).install_url ||
+                        info.webhook_url;
+                      const installInstructions =
+                        (info as { instructions?: string }).instructions;
+
+                      return (
+                        <div
+                          key={channelName}
+                          className="rounded-md border p-3 bg-white dark:bg-gray-900"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium capitalize">{channelName}</span>
+                            {info.status === "success" ? (
+                              <Badge variant="secondary">success</Badge>
+                            ) : needsInstall ? (
+                              <Badge
+                                variant="outline"
+                                className="text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700"
+                              >
+                                Install required
+                              </Badge>
+                            ) : errorInfo?.bucket === "operator_config" ? (
+                              <Badge
+                                variant="outline"
+                                className="text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600"
+                              >
+                                Skipped
+                              </Badge>
+                            ) : errorInfo?.bucket === "credential_missing" ? (
+                              <Badge
+                                variant="outline"
+                                className="text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+                              >
+                                Needs credential
+                              </Badge>
+                            ) : errorInfo?.bucket === "conflict" ? (
+                              <Badge variant="destructive">Conflict</Badge>
+                            ) : (
+                              <Badge variant="destructive">{info.status}</Badge>
+                            )}
+                          </div>
+                          {needsInstall && installUrl && (
+                            <div className="space-y-2">
+                              {installInstructions && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400">
+                                  {installInstructions}
+                                </p>
+                              )}
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  window.open(installUrl, "_blank", "noopener,noreferrer");
+                                }}
+                                className="font-manrope bg-indigo-600 hover:bg-indigo-700 text-white"
+                              >
+                                {channelName === "discord"
+                                  ? "Add to Discord"
+                                  : `Install ${channelName}`}
+                              </Button>
+                            </div>
+                          )}
+                          {channelName === "website" && info.status === "success" && (
+                            <EmbedCode
+                              type="chatflow"
+                              id={deployResult.chatflow_id}
+                              showOptions={false}
+                            />
+                          )}
+                          {channelName !== "website" && info.webhook_url && !needsInstall && (
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 min-w-0 font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded px-2 py-1 break-all">
+                                {info.webhook_url}
+                              </code>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(info.webhook_url!);
+                                  toast({ title: "Webhook URL copied" });
+                                }}
+                              >
+                                Copy
+                              </Button>
+                            </div>
+                          )}
+                          {errorInfo && (
+                            <div className="mt-1 space-y-2">
+                              <p
+                                className={
+                                  errorInfo.bucket === "operator_config"
+                                    ? "text-xs text-gray-500 dark:text-gray-400"
+                                    : errorInfo.bucket === "credential_missing"
+                                      ? "text-xs text-amber-700 dark:text-amber-400"
+                                      : "text-xs text-red-600 dark:text-red-400"
+                                }
+                              >
+                                {errorInfo.bucket === "operator_config"
+                                  ? `Not configured — ${errorInfo.message}`
+                                  : errorInfo.message}
+                              </p>
+                              {errorInfo.bucket === "credential_missing" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    navigate(
+                                      `/settings/credentials?provider=${encodeURIComponent(
+                                        errorInfo.hint?.provider ?? channelName,
+                                      )}`,
+                                    );
+                                  }}
+                                  className="font-manrope"
+                                >
+                                  Add {channelName} credential
+                                </Button>
+                              )}
+                              {/* No CTA for operator_config — end users can't
+                                  fix env vars; the message itself is enough. */}
+                              {errorInfo.bucket === "conflict" && errorInfo.hint?.conflictingEntityId && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    navigate(`/studio/${errorInfo.hint!.conflictingEntityId!}`);
+                                  }}
+                                  className="font-manrope"
+                                >
+                                  Open {errorInfo.hint.conflictingEntityName ?? "conflicting chatflow"}
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-md bg-gray-50 dark:bg-gray-900/60 p-3 text-xs text-gray-600 dark:text-gray-400">
+                Test it via the public widget endpoint:
+                <pre className="mt-1 font-mono whitespace-pre-wrap break-all text-xs">
+{(() => {
+  // Build the full URL from the configured API base — works in dev (localhost),
+  // staging, and production without hardcoding any host.
+  const apiBase = envConfig.API_BASE_URL.replace(/\/+$/, "");
+  const url = `${apiBase}/public/bots/${deployResult.chatflow_id}/chat`;
+  const auth = deployResult.api_key
+    ? deployResult.api_key
+    : "<your-api-key>";
+  return `curl -X POST ${url} \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${auth}" \\
+  -d '{"message": "hello"}'`;
+})()}
+                </pre>
+                {!deployResult.api_key && (
+                  <p className="mt-2 text-[11px]">
+                    Grab the key from the chatflow detail page (Regenerate if
+                    you no longer have it).
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeployResult(null);
+                navigate("/studio");
+              }}
+              className="w-full sm:w-auto whitespace-nowrap"
+            >
+              Back to Studio
+            </Button>
+            <Button
+              onClick={() => {
+                if (deployResult) {
+                  setDeployResult(null);
+                  navigate(`/studio/${deployResult.chatflow_id}`);
+                }
+              }}
+              className="w-full sm:w-auto whitespace-nowrap bg-purple-600 hover:bg-purple-700"
+            >
+              Open detail page
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -159,7 +159,12 @@ class ResponseNodeExecutor(BaseNodeExecutor):
             return await node.execute(
                 db=db,
                 context=context,
-                inputs={"input": context.get("user_message", "")}
+                inputs={
+                    "input": context.get("user_message", ""),
+                    "_last_output": context.get("variables", {}).get(
+                        "_last_output", context.get("user_message", "")
+                    ),
+                }
             )
         except Exception as e:
             return {
@@ -542,9 +547,11 @@ class ChatflowExecutor:
             }
 
         # Execute node
+        # React Flow stores config at node.data.config, not node.config
+        node_config = node.get("data", {}).get("config", node.get("config", {}))
         result = await executor.execute(
             db=db,
-            node_config=node.get("config", {}),
+            node_config=node_config,
             context=context
         )
 

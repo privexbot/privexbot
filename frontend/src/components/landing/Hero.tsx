@@ -1,11 +1,9 @@
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
 import {
   ContainerAnimated,
   ContainerInset,
   ContainerScroll,
   ContainerSticky,
-  HeroButton,
   HeroVideo,
 } from "@/components/ui/animated-video-on-scroll";
 import { Button } from "@/components/ui/button";
@@ -58,16 +56,17 @@ export function Hero() {
                 transition={{ duration: 0.8, delay: 0.2 }}
                 className="text-5xl font-semibold tracking-tight md:text-6xl font-manrope"
               >
-                Build Privacy-First AI Chatbots
+                The visual AI agent builder running on confidential compute
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.4 }}
-                className="mx-auto max-w-[54ch] text-lg text-muted-foreground font-manrope"
+                className="mx-auto max-w-[60ch] text-lg text-muted-foreground font-manrope"
               >
-                Create intelligent chatbots with complete privacy using Secret
-                Network's Trusted Execution Environment.
+                Drag-and-drop chatflows, RAG knowledge bases, and multi-channel
+                deployment — all running inside Secret Network's Trusted
+                Execution Environment so your data and prompts stay private.
               </motion.p>
             </div>
 
@@ -82,12 +81,12 @@ export function Hero() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.6, delay: 0.8 }}
               >
-                <Link to="/signin">
+                <Link to="/signup">
                   <Button
                     className="font-manrope bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg"
                     size="lg"
                   >
-                    Start Building For Free
+                    Start building for free
                   </Button>
                 </Link>
               </motion.div>
@@ -96,27 +95,50 @@ export function Hero() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.6, delay: 1.0 }}
               >
-                <Link to="/about">
+                <a
+                  href="https://github.com/privexbot/privexbot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <Button
                     variant="outline"
                     className="font-manrope border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 px-8 py-3 text-lg rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-lg"
                     size="lg"
                   >
-                    Explore
+                    View on GitHub
                   </Button>
-                </Link>
+                </a>
               </motion.div>
             </motion.div>
+
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 1.1 }}
+              className="text-sm text-muted-foreground font-manrope"
+            >
+              Free forever — no credit card required.
+            </motion.p>
           </ContainerAnimated>
 
+          {/* The wrapper used to be `w-auto` with no horizontal centering,
+              which left the video left-aligned inside the sticky container
+              on wide screens. As scroll-driven inset/roundedness animations
+              kicked in, the right edge had less visible curve than the left
+              because the wrapper's bounding box wasn't centered around the
+              video, so the symmetric `inset(45% 45% 45% 45%)` clip-path
+              produced an asymmetric on-screen result. Pinning the wrapper
+              to a centered fixed-max-width and letting the video fill it
+              keeps the curve symmetric across all scroll positions. */}
           <ContainerInset
-            className="max-h-[500px] w-auto py-8 mt-8 rounded-2xl overflow-hidden"
+            className="mx-auto mt-8 w-full max-w-5xl py-8 rounded-2xl overflow-hidden"
             roundednessRange={[1000, 24]}
           >
             <HeroVideo
-              src="/videos/privexbot-anime.mp4"
-              data-src="/videos/privexbot-anime.mp4"
+              src="/videos/processed_privexbot-anime.mp4"
+              data-src="/videos/processed_privexbot-anime.mp4"
               poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1920 1080'%3E%3Crect fill='%234361EE' width='1920' height='1080'/%3E%3C/svg%3E"
+              className="w-full h-auto object-cover"
             />
           </ContainerInset>
 
@@ -139,7 +161,7 @@ export function Hero() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span>Verifiable Execution</span>
+              <span>Attested execution</span>
             </div>
             <div className="flex items-center gap-2">
               <svg
@@ -153,7 +175,7 @@ export function Hero() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span>TEE Computing</span>
+              <span>Apache 2.0 open source</span>
             </div>
             <div className="flex items-center gap-2">
               <svg
@@ -167,7 +189,7 @@ export function Hero() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span>Confidential AI</span>
+              <span>Self-host or cloud</span>
             </div>
           </ContainerAnimated>
         </ContainerSticky>
