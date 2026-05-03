@@ -152,20 +152,28 @@ export default function CreateKnowledgeBasePage() {
     restoreDraftFromLocalStorage,
   } = useKBStore();
 
-  // Restore wizard + draft state after a Notion / Google OAuth round-trip.
-  // The connect button does a full-window redirect (window.location.href),
-  // so when the browser returns to /knowledge-bases/create?notion_connected=true
-  // (or google_connected) the React tree has remounted and every in-memory
-  // store is gone. We persist before the redirect (see lib/kb-wizard-oauth.ts
-  // + saveDraftToLocalStorage in kb-store.ts) and rehydrate here. Runs once
-  // on mount; the snapshot is consumed (cleared) regardless so a refresh
-  // doesn't re-trigger.
+  // Restore wizard + draft state on every mount.
+  //
+  // Two paths:
+  //   1) Plain mount / refresh — silently rehydrate `formData` + draft +
+  //      sources + configs from localStorage (24-hour TTL handled by the
+  //      store helper). Without this, a page refresh wipes the typed
+  //      name/description because Zustand state is in-memory.
+  //   2) Post-OAuth callback (`?notion_connected=true` / `?google_connected=true`)
+  //      — additionally restore the LOCAL React stepper state (current step,
+  //      completedSteps, activeSourceType) that the integration components
+  //      saved to localStorage just before the full-window redirect.
+  //
+  // The query param is cleared via replaceState so a manual refresh after
+  // the callback doesn't re-trigger the toast or the stepper restore.
   useEffect(() => {
     const notionOk = searchParams.get("notion_connected") === "true";
     const googleOk = searchParams.get("google_connected") === "true";
     const googleErr = searchParams.get("google_error");
 
-    if (!notionOk && !googleOk && !googleErr) return;
+    // Always try to restore the Zustand-backed draft. No-op if the user has
+    // never opened the wizard before (no localStorage entry).
+    restoreDraftFromLocalStorage();
 
     if (googleErr) {
       toast({
@@ -178,10 +186,11 @@ export default function CreateKnowledgeBasePage() {
               : `Google connection failed (${googleErr}). Verify the OAuth client and try again.`,
         variant: "destructive",
       });
-    } else {
-      // Pull formData / draft / sources / configs back into the Zustand store.
-      restoreDraftFromLocalStorage();
+      window.history.replaceState({}, "", "/knowledge-bases/create");
+      return;
+    }
 
+    if (notionOk || googleOk) {
       // Pull the local stepper React state back from localStorage.
       const snapshot = consumePendingOAuth();
       if (snapshot) {
@@ -204,11 +213,9 @@ export default function CreateKnowledgeBasePage() {
         description:
           "Your previous wizard progress has been restored. Continue where you left off.",
       });
-    }
 
-    // Drop the query param so a refresh doesn't re-trigger the restore /
-    // toast. Replace, don't push, to avoid polluting browser history.
-    window.history.replaceState({}, "", "/knowledge-bases/create");
+      window.history.replaceState({}, "", "/knowledge-bases/create");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -829,11 +836,19 @@ export default function CreateKnowledgeBasePage() {
                       </div>
                     )}
 
-                    {(activeSourceType as string) === "notion" && currentDraft && (
+                    {/*
+                      Render gates: BOTH currentDraft AND currentWorkspace must
+                      exist. Without the workspace check, a post-OAuth-callback
+                      remount restores the draft synchronously from localStorage
+                      but currentWorkspace is null while AppContext is still
+                      refetching. The `currentWorkspace!.id` below would then
+                      crash with "Cannot read properties of null (reading 'id')".
+                    */}
+                    {(activeSourceType as string) === "notion" && currentDraft && currentWorkspace && (
                       <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
                         <NotionIntegration
                           draftId={currentDraft.draft_id}
-                          workspaceId={currentWorkspace!.id}
+                          workspaceId={currentWorkspace.id}
                           onBeforeOAuthRedirect={() => {
                             saveDraftToLocalStorage();
                             savePendingOAuth({
@@ -854,11 +869,11 @@ export default function CreateKnowledgeBasePage() {
                       </div>
                     )}
 
-                    {(activeSourceType as string) === "google" && currentDraft && (
+                    {(activeSourceType as string) === "google" && currentDraft && currentWorkspace && (
                       <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/50">
                         <GoogleIntegration
                           draftId={currentDraft.draft_id}
-                          workspaceId={currentWorkspace!.id}
+                          workspaceId={currentWorkspace.id}
                           onBeforeOAuthRedirect={() => {
                             saveDraftToLocalStorage();
                             savePendingOAuth({

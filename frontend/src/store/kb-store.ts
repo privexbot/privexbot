@@ -174,6 +174,33 @@ interface KBStoreActions {
     message: string;
   }>;
   addTextSource: (content: string, title?: string) => Promise<void>;
+  /**
+   * Add Notion pages as sources to the current draft.
+   *
+   * Mirrors `addFileSourcesBulk`: POST to backend, then reflect the result
+   * in `draftSources` so the wizard's source-list and "Continue (N items)"
+   * button update without a manual reload. Backend auto-approves Notion
+   * sources (kb_draft.py:873 sets is_approved: True), so the user can
+   * advance through Content Approval to Chunking immediately.
+   */
+  addNotionSources: (
+    pages: Array<{ id: string; title: string; type: "page" | "database"; url: string }>,
+  ) => Promise<{
+    sources_added: number;
+    source_ids: string[];
+    failed_pages: Array<{ page_id: string; error: string }>;
+  }>;
+  /**
+   * Add Google Docs/Sheets as sources to the current draft. Same shape +
+   * lifecycle as addNotionSources.
+   */
+  addGoogleSources: (
+    files: Array<{ id: string; type: string; name: string }>,
+  ) => Promise<{
+    sources_added: number;
+    source_ids: string[];
+    failed_files: Array<{ file_id: string; error: string }>;
+  }>;
   updateSource: (sourceId: string, updates: Partial<DraftSource>) => void;
   removeSource: (sourceId: string) => void;
   updateChunkingConfig: (config: Partial<ChunkingConfig>) => void;
@@ -504,6 +531,12 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.formData = { ...state.formData, ...data };
             state.isDraftDirty = true;
           });
+          // Persist after every form-data change so a page refresh (or an
+          // OAuth round-trip that misses the dedicated saveDraftToLocalStorage
+          // call before the redirect) doesn't lose name / description /
+          // context. The helper is a no-op until createDraft has run, so this
+          // does nothing harmful before the user has reached step 2.
+          get().saveDraftToLocalStorage();
         },
 
         addWebSource: async (urlOrUrls, config = {}, perUrlConfigs = {}, metadata = {}) => {
@@ -887,6 +920,101 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.draftError = "Text sources feature is coming soon! Please use web URLs for now.";
           });
           throw error;
+        },
+
+        addNotionSources: async (pages) => {
+          const { currentDraft } = get();
+          if (!currentDraft) throw new Error("No draft available");
+
+          set((state) => {
+            state.draftError = null;
+          });
+
+          // Backend POST hands back source_ids in the same order as page_ids.
+          // We zip them with the page metadata the user already had on the
+          // client (title, url) so the wizard's source-list shows real names
+          // immediately — no second round-trip to refetch the draft.
+          const result = await kbClient.draft.addNotionSources(
+            currentDraft.draft_id,
+            pages.map((p) => p.id),
+          );
+
+          const failedIds = new Set(result.failed_pages.map((f) => f.page_id));
+          const successPages = pages.filter((p) => !failedIds.has(p.id));
+
+          const newSources: DraftSource[] = successPages.map((page, index) => ({
+            source_id: result.source_ids[index] ?? `notion_${page.id}`,
+            type: SourceType.NOTION,
+            url: page.url,
+            // Notion sources are auto-approved server-side at add time
+            // (kb_draft.py:873), so we surface them as completed/approved here
+            // — the wizard's "Continue to Approval" lets the user advance.
+            status: "completed",
+            created_at: new Date().toISOString(),
+            metadata: {
+              title: page.title,
+              notion_page_id: page.id,
+              notion_type: page.type,
+              is_approved: true,
+            },
+          }));
+
+          set((state) => {
+            state.draftSources = [...state.draftSources, ...newSources];
+            state.isDraftDirty = true;
+          });
+
+          get().saveDraftToLocalStorage();
+
+          return result;
+        },
+
+        addGoogleSources: async (files) => {
+          const { currentDraft } = get();
+          if (!currentDraft) throw new Error("No draft available");
+
+          set((state) => {
+            state.draftError = null;
+          });
+
+          const result = await kbClient.draft.addGoogleSources(
+            currentDraft.draft_id,
+            files.map((f) => ({ id: f.id, type: f.type, name: f.name })),
+          );
+
+          const failedIds = new Set(result.failed_files.map((f) => f.file_id));
+          const successFiles = files.filter((f) => !failedIds.has(f.id));
+
+          const newSources: DraftSource[] = successFiles.map((file, index) => {
+            // Backend tags Google Docs as "google_docs" and Sheets as
+            // "google_sheets" — preserve that distinction here so the source
+            // list, chunking preview, and finalize pipeline can reason about
+            // type-specific behaviour later.
+            const sourceType =
+              file.type === "spreadsheet" ? SourceType.GOOGLE_SHEETS : SourceType.GOOGLE_DOCS;
+            return {
+              source_id: result.source_ids[index] ?? `google_${file.id}`,
+              type: sourceType,
+              url: `https://docs.google.com/${file.type === "spreadsheet" ? "spreadsheets" : "document"}/d/${file.id}`,
+              status: "completed",
+              created_at: new Date().toISOString(),
+              metadata: {
+                title: file.name,
+                google_file_id: file.id,
+                google_file_type: file.type,
+                is_approved: true,
+              },
+            };
+          });
+
+          set((state) => {
+            state.draftSources = [...state.draftSources, ...newSources];
+            state.isDraftDirty = true;
+          });
+
+          get().saveDraftToLocalStorage();
+
+          return result;
         },
 
         updateSource: (sourceId: string, updates: Partial<DraftSource>) => {

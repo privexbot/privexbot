@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import apiClient, { handleApiError } from '@/lib/api-client';
+import { useKBStore } from '@/store/kb-store';
 
 interface GoogleFile {
   id: string;
@@ -44,6 +45,10 @@ interface GoogleIntegrationProps {
 
 export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded, onBeforeOAuthRedirect }: GoogleIntegrationProps) {
   const { toast } = useToast();
+  // Pull the store action that POSTs to backend AND mirrors the result into
+  // draftSources. Without this, the wizard's source list and "Continue (N
+  // items)" button stay at zero even after a successful add.
+  const addGoogleSourcesToStore = useKBStore((state) => state.addGoogleSources);
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,13 +82,14 @@ export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded
     enabled: isConnected,
   });
 
-  // Add files mutation
+  // Add files mutation. Routes through the kb-store action so draftSources
+  // updates atomically with the backend POST — the wizard's source-list and
+  // "Continue (N items)" button reflect the new files immediately.
   const addFilesMutation = useMutation({
     mutationFn: async (fileItems: Array<{ id: string; type: string; name?: string }>) => {
-      const response = await apiClient.post(`/kb-drafts/${draftId}/sources/google`, {
-        files: fileItems,
-      });
-      return response.data;
+      return await addGoogleSourcesToStore(
+        fileItems.map((f) => ({ id: f.id, type: f.type, name: f.name ?? f.id })),
+      );
     },
     onSuccess: (data) => {
       toast({
