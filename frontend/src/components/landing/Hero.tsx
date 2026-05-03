@@ -121,14 +121,24 @@ export function Hero() {
             </motion.p>
           </ContainerAnimated>
 
+          {/* The wrapper used to be `w-auto` with no horizontal centering,
+              which left the video left-aligned inside the sticky container
+              on wide screens. As scroll-driven inset/roundedness animations
+              kicked in, the right edge had less visible curve than the left
+              because the wrapper's bounding box wasn't centered around the
+              video, so the symmetric `inset(45% 45% 45% 45%)` clip-path
+              produced an asymmetric on-screen result. Pinning the wrapper
+              to a centered fixed-max-width and letting the video fill it
+              keeps the curve symmetric across all scroll positions. */}
           <ContainerInset
-            className="max-h-[500px] w-auto py-8 mt-8 rounded-2xl overflow-hidden"
+            className="mx-auto mt-8 w-full max-w-5xl py-8 rounded-2xl overflow-hidden"
             roundednessRange={[1000, 24]}
           >
             <HeroVideo
-              src="/videos/privexbot-anime.mp4"
-              data-src="/videos/privexbot-anime.mp4"
+              src="/videos/processed_privexbot-anime.mp4"
+              data-src="/videos/processed_privexbot-anime.mp4"
               poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1920 1080'%3E%3Crect fill='%234361EE' width='1920' height='1080'/%3E%3C/svg%3E"
+              className="w-full h-auto object-cover"
             />
           </ContainerInset>
 

@@ -78,6 +78,29 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 # CURRENT USER
 # ============================================================
 
+@router.post("/logout", status_code=200)
+async def logout(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Sign out the current user.
+
+    Today this is effectively a no-op on the server — JWT tokens are
+    stateless and expire naturally at the configured TTL. The endpoint
+    exists so the frontend has a stable contract to call before clearing
+    localStorage, and so we can layer a Redis revocation blacklist on
+    later without changing any client code.
+
+    Returns 200 even if the token is about to expire — the client should
+    clear local credentials regardless.
+    """
+    import logging
+    logging.getLogger(__name__).info(
+        "User %s signed out", current_user.id
+    )
+    return {"status": "ok"}
+
+
 @router.get("/me", response_model=UserProfile)
 async def get_current_user_profile(
     current_user: User = Depends(get_current_user),

@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StaffRoute } from "@/components/auth/StaffRoute";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Toaster } from "@/components/ui/toaster";
+import { UpgradeModal } from "@/components/modals/UpgradeModal";
 
 // Create a single QueryClient instance for the app
 const queryClient = new QueryClient({
@@ -393,6 +394,7 @@ function App() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
             <Toaster />
+            <UpgradeModal />
             </AppProvider>
           </Router>
         </AuthProvider>

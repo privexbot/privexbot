@@ -1800,9 +1800,17 @@ async def create_kb_document(
     """
 
     from app.services.kb_rbac_service import verify_kb_access
+    from app.services.billing_service import require_quota
+    from app.models.workspace import Workspace as _Workspace
 
     # Verify user has edit access
     kb = verify_kb_access(db, kb_id, current_user.id, "edit")
+
+    # Plan quota — block creation when at-or-over the org's tier cap.
+    # Documents are counted org-wide across all KBs.
+    _ws = db.query(_Workspace).filter(_Workspace.id == kb.workspace_id).first()
+    if _ws:
+        require_quota(db, _ws.organization_id, "kb_documents")
 
     # Validation
     MAX_CONTENT_SIZE = 10 * 1024 * 1024  # 10MB

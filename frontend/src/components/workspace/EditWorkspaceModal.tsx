@@ -12,6 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
 import { AvatarUpload } from "@/components/shared/AvatarUpload";
 import { workspaceApi } from "@/api/workspace";
+import { handleApiError } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import {
   editWorkspaceSchema,
@@ -88,20 +89,8 @@ export const EditWorkspaceModal = ({
     } catch (err: any) {
       console.error("[EditWorkspaceModal] Error updating workspace:", err);
 
-      // Extract error message properly
-      let errorMessage = "Failed to update workspace";
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((e: any) => e.msg || e.message || String(e)).join(', ');
-        } else if (typeof detail === 'object') {
-          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
-        }
-      }
+      const errorMessage = handleApiError(err);
 
-      // Set form-level error
       setFormError("root", {
         type: "manual",
         message: errorMessage,
@@ -145,7 +134,7 @@ export const EditWorkspaceModal = ({
           {/* Root Error Message */}
           {errors.root && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-md p-3">
-              <p className="text-sm text-red-800 dark:text-red-300 font-medium">{errors.root.message}</p>
+              <p className="text-sm text-red-800 dark:text-red-300 font-medium break-words">{errors.root.message}</p>
             </div>
           )}
 

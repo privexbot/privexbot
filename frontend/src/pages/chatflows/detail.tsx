@@ -134,6 +134,20 @@ function ChannelCard({
   const needsInstall = rawStatus === "needs_install";
   const installInstructions = (cfg.instructions as string | undefined) ?? "";
   const errorMessage = (cfg.error as string | undefined) ?? "";
+  // Distinguish "user picked the channel but never finished setup"
+  // (credential_missing) from real broken deployments — otherwise a card
+  // the user simply never configured shows up as a scary red error.
+  const errorInfo = isError
+    ? classifyChannelError(entry.type, {
+        status: rawStatus,
+        error: errorMessage,
+        error_code: cfg.error_code as string | undefined,
+        conflict: cfg.conflict as
+          | { entity_type?: "chatbot" | "chatflow"; entity_id?: string; entity_name?: string }
+          | undefined,
+      })
+    : null;
+  const isCredentialMissing = errorInfo?.bucket === "credential_missing";
 
   // Slack and shared-bot Discord use install URL semantics; the rest are
   // webhook URLs.
@@ -150,16 +164,22 @@ function ChannelCard({
     ? "disabled"
     : needsInstall
       ? "install required"
-      : isError
-        ? "error"
-        : isRegistered
-          ? "success"
-          : "not registered";
-  const badgeVariant = !entry.enabled || isError
+      : isCredentialMissing
+        ? "needs setup"
+        : isError
+          ? "error"
+          : isRegistered
+            ? "success"
+            : "not registered";
+  const badgeVariant = !entry.enabled
     ? "destructive"
-    : isRegistered
-      ? "secondary"
-      : "outline";
+    : isCredentialMissing
+      ? "outline"
+      : isError
+        ? "destructive"
+        : isRegistered
+          ? "secondary"
+          : "outline";
 
   return (
     <Card>
@@ -204,16 +224,9 @@ function ChannelCard({
           </div>
         )}
         {entry.type !== "website" && !webhookUrl && isError && (() => {
-          // Use the shared classifier so errors render with the same
-          // bucket-specific CTAs as the deploy modal in ChatflowBuilder.
-          const errorInfo = classifyChannelError(entry.type, {
-            status: rawStatus,
-            error: errorMessage,
-            error_code: cfg.error_code as string | undefined,
-            conflict: cfg.conflict as
-              | { entity_type?: "chatbot" | "chatflow"; entity_id?: string; entity_name?: string }
-              | undefined,
-          });
+          // `errorInfo` is hoisted above (computed once for the badge) so we
+          // reuse it here. Buckets give the deploy modal in ChatflowBuilder
+          // the same CTA pattern.
           if (!errorInfo) {
             return (
               <p className="text-xs text-red-600 dark:text-red-400">
@@ -1174,17 +1187,53 @@ export default function ChatflowDetailPage() {
                   integrations.
                 </AlertDescription>
               </Alert>
-            ) : (
-              channels
-                .filter((c) => c.enabled)
-                .map((entry) => (
-                  <ChannelCard
-                    key={entry.type}
-                    chatflowId={chatflow.id}
-                    entry={entry}
-                  />
-                ))
-            )}
+            ) : (() => {
+              // Hide channels whose error bucket is `operator_config` — the
+              // user can't fix env-var-level config (it's the operator's job).
+              // Surface a single banner so they know the channel exists; the
+              // bottom Channel-setup panel still lists every channel for
+              // visibility.
+              const enabledChannels = channels.filter((c) => c.enabled);
+              const hiddenOperator: string[] = [];
+              const visibleChannels = enabledChannels.filter((c) => {
+                const ccfg = c.config as
+                  | { status?: string; error?: string; error_code?: string }
+                  | undefined;
+                if (ccfg?.status !== "error") return true;
+                const info = classifyChannelError(c.type, {
+                  status: ccfg.status,
+                  error: ccfg.error,
+                  error_code: ccfg.error_code,
+                });
+                if (info?.bucket === "operator_config") {
+                  hiddenOperator.push(c.type);
+                  return false;
+                }
+                return true;
+              });
+              return (
+                <>
+                  {hiddenOperator.length > 0 && (
+                    <Alert>
+                      <AlertDescription>
+                        {hiddenOperator.length} channel
+                        {hiddenOperator.length !== 1 ? "s" : ""} (
+                        {hiddenOperator.join(", ")}) need platform configuration
+                        from your operator before they can be deployed. See{" "}
+                        <strong>Channel setup</strong> below.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {visibleChannels.map((entry) => (
+                    <ChannelCard
+                      key={entry.type}
+                      chatflowId={chatflow.id}
+                      entry={entry}
+                    />
+                  ))}
+                </>
+              );
+            })()}
           </div>
 
           <div className="space-y-4">

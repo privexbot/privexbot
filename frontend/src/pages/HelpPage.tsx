@@ -265,6 +265,44 @@ export function HelpPage() {
             {renderFAQSection("Billing & Plans", billingFAQs, 3)}
           </div>
 
+          {/* Contact section — single canonical contact channel.
+              All "contact sales / contact support / talk to us" CTAs across
+              the marketing site funnel here. Keep email in one place
+              (`SUPPORT_EMAIL` in Footer.tsx) so changes only need to happen
+              there for the public-facing footer; this section duplicates
+              the value intentionally for quick scanning on /help. */}
+          <div id="contact" className="mt-20">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 md:p-10 text-center">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-3 font-manrope">
+                Still need help?
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-6 font-manrope max-w-xl mx-auto">
+                Sales questions, plan upgrades, custom limits, or anything
+                we didn't cover above — we read every email.
+              </p>
+              <a
+                href="mailto:privexbot@gmail.com"
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium font-manrope px-6 py-3 rounded-xl transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="1.5"
+                  stroke="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+                  />
+                </svg>
+                privexbot@gmail.com
+              </a>
+            </div>
+          </div>
+
         </div>
       </main>
 

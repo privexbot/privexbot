@@ -387,7 +387,8 @@ async def get_kb_draft(
 async def add_web_source_to_draft(
     draft_id: str,
     request: AddWebSourceRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Add web URL(s) to KB draft - Unified endpoint supporting both single and bulk operations.
@@ -434,13 +435,18 @@ async def add_web_source_to_draft(
             detail="Access denied"
         )
 
+    # Quota enforcement now lives in `kb_draft_service` (so background
+    # re-scrape jobs and any other future caller automatically get the
+    # protection). The route just passes its `db` session through.
+
     try:
         # Handle single URL operation
         if request.url:
             source_id = kb_draft_service.add_web_source_to_draft(
                 draft_id=draft_id,
                 url=request.url,
-                config=request.config
+                config=request.config,
+                db=db,
             )
 
             return {
@@ -466,7 +472,8 @@ async def add_web_source_to_draft(
             results = kb_draft_service.add_bulk_web_sources_to_draft(
                 draft_id=draft_id,
                 sources=sources,
-                shared_config=request.config
+                shared_config=request.config,
+                db=db,
             )
 
             return {

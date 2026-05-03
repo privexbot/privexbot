@@ -10,23 +10,30 @@ import type { BillingLimits, BillingTier, PlanCard } from "@/api/billing";
 export const RESOURCE_LABELS: Record<keyof BillingLimits, string> = {
   chatbots: "Chatbots",
   chatflows: "Chatflows",
+  knowledge_bases: "Knowledge bases",
   kb_documents: "Knowledge base documents",
+  web_pages_per_month: "Web pages scraped / month",
   messages_per_month: "Messages / month",
   api_calls_per_month: "API calls / month",
   team_members: "Team members",
+  workspaces: "Workspaces",
 };
 
 export const RESOURCE_ORDER: (keyof BillingLimits)[] = [
   "chatbots",
   "chatflows",
+  "knowledge_bases",
   "kb_documents",
+  "web_pages_per_month",
   "messages_per_month",
   "api_calls_per_month",
   "team_members",
+  "workspaces",
 ];
 
 export function formatLimit(value: number): string {
   if (value < 0) return "Unlimited";
+  if (value === 0) return "—";
   if (value >= 1000) return value.toLocaleString();
   return String(value);
 }
@@ -35,6 +42,52 @@ export function planFeatureBullets(limits: BillingLimits): string[] {
   return RESOURCE_ORDER.map(
     (key) => `${formatLimit(limits[key])} ${RESOURCE_LABELS[key]}`,
   );
+}
+
+/**
+ * Feature comparison labels. Kept short — only the gates that have a
+ * real enforcement point in code (api access, custom domain, branding
+ * removal, SSO). Channels and KB sources are intentionally omitted
+ * because they're available to every tier.
+ *
+ * `tee_confidential_inference` is included as a positive callout — it's
+ * always-on but it's our headline differentiator and worth showing on
+ * every column as a green check.
+ */
+export const FEATURE_LABELS: Record<string, string> = {
+  tee_confidential_inference: "TEE confidential inference",
+  public_api_access: "Public REST API access",
+  custom_domain: "Custom domain",
+  remove_branding: "Remove PrivexBot branding",
+  sso_saml: "SSO / SAML",
+};
+
+export const FEATURE_ORDER: string[] = [
+  "tee_confidential_inference",
+  "public_api_access",
+  "custom_domain",
+  "remove_branding",
+  "sso_saml",
+];
+
+export function formatSupportTier(value: string): string {
+  switch (value) {
+    case "community":
+      return "Community";
+    case "email":
+      return "Email";
+    case "email_chat":
+      return "Email + chat";
+    case "dedicated_csm_sla":
+      return "Dedicated CSM + SLA";
+    default:
+      return value;
+  }
+}
+
+export function formatRetentionDays(value: number): string {
+  if (value < 0) return "Unlimited";
+  return `${value} days`;
 }
 
 export function priceLabel(plan: PlanCard, annual: boolean): {
@@ -67,7 +120,7 @@ export function planCtaCopy(tier: BillingTier): {
     case "free":
       return { label: "Start free", to: "/signup" };
     case "enterprise":
-      return { label: "Contact us", to: "/help" };
+      return { label: "Contact us", to: "/help#contact" };
     default:
       return { label: "Start free, upgrade later", to: "/signup" };
   }

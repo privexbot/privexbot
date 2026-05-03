@@ -553,6 +553,12 @@ class UnifiedDraftService:
 
         draft = self.get_draft(draft_type, draft_id)
 
+        # Quota check — only on FRESH deploys, not edits. Editing a deployed
+        # entity doesn't grow the count, so no upgrade should be required.
+        is_edit = draft.get("source_entity_id") is not None
+        if not is_edit:
+            self._enforce_create_quota(draft_type, draft, db)
+
         # Deploy based on type
         if draft_type == DraftType.CHATBOT:
             result = self._deploy_chatbot(draft, db)
@@ -569,6 +575,60 @@ class UnifiedDraftService:
         self.delete_draft(draft_type, draft_id)
 
         return result
+
+    def _enforce_create_quota(
+        self,
+        draft_type: "DraftType",
+        draft: dict,
+        db: Session,
+    ) -> None:
+        """Hard-block deploy when the org is at its tier's cap for the
+        resource being created. Maps DraftType -> billing resource key
+        and delegates to `billing_service.require_quota` which raises 402.
+
+        Edit drafts are skipped by the caller (no count change).
+
+        Concurrency: takes a Postgres advisory lock keyed on the org id
+        so two simultaneous deploys on the same org can't both pass a
+        check that's only safe for one. Without this, a Free org with
+        chatbots=0 hitting two parallel deploy requests would create two
+        chatbots — both reads return 0, both writes succeed. The lock is
+        transaction-scoped (`pg_advisory_xact_lock`) so it releases on
+        commit/rollback automatically.
+        """
+        from sqlalchemy import text
+        from app.models.workspace import Workspace
+        from app.services.billing_service import require_quota
+
+        workspace_id = UUID(draft["workspace_id"])
+        workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+        if not workspace:
+            return  # Validation already would have caught this
+
+        # Serialize quota checks per-org. Advisory locks take a 64-bit int;
+        # we hash the org UUID's int form to fit. Collisions are harmless
+        # — they just queue more orgs together than strictly necessary.
+        try:
+            org_lock_key = workspace.organization_id.int & 0x7FFFFFFFFFFFFFFF
+            db.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": org_lock_key},
+            )
+        except Exception:
+            # Lock failure is non-fatal — fall back to optimistic check.
+            pass
+
+        # Resource key per draft type
+        if draft_type == DraftType.CHATBOT:
+            resource = "chatbots"
+        elif draft_type == DraftType.CHATFLOW:
+            resource = "chatflows"
+        elif draft_type == DraftType.KB:
+            resource = "knowledge_bases"
+        else:
+            return
+
+        require_quota(db, workspace.organization_id, resource)
 
     def _generate_unique_slug(self, name: str, workspace_id: UUID, db: Session) -> str:
         """

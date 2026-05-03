@@ -6,6 +6,7 @@ See implementation guide in /backend/docs/auth/ for full documentation.
 
 # ACTUAL IMPLEMENTATION
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 from eth_account.messages import encode_defunct
 from eth_account import Account
@@ -291,10 +292,30 @@ async def verify_signature(
             }
         )
         db.add(auth_identity)
-        db.commit()
-        db.refresh(user)
-
-        return user
+        try:
+            db.commit()
+            db.refresh(user)
+            return user
+        except IntegrityError:
+            # Concurrent first-time signin from the same wallet — another
+            # request created the AuthIdentity between our existence check
+            # and our insert. Roll back, re-fetch the now-existing record,
+            # and treat this as a sign-in instead of a sign-up.
+            db.rollback()
+            auth_identity = db.query(AuthIdentity).filter(
+                AuthIdentity.provider == "evm",
+                AuthIdentity.provider_id == address.lower(),
+            ).first()
+            if not auth_identity:
+                # Real integrity error (not the race we expected) — surface it
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to create account; please try again",
+                )
+            user = db.query(User).filter(User.id == auth_identity.user_id).first()
+            if not user or not user.is_active:
+                raise HTTPException(status_code=401, detail="Account is inactive")
+            return user
 
 
 async def link_evm_to_user(

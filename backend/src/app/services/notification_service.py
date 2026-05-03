@@ -276,3 +276,120 @@ def notify_lead_captured(
         resource_type="lead",
         workspace_id=workspace_id,
     )
+
+
+def notify_org_inactivity_warning(
+    org_id: UUID,
+    org_name: str,
+    days_idle: int,
+    days_until_suspend: int,
+) -> None:
+    """In-app + email warning that an inactive Free-tier org is about
+    to be paused.
+
+    Emits one in-app notification per org owner AND best-effort sends an
+    email through the existing SMTP path (`email_service_enhanced`).
+    SMTP failure does NOT block the in-app notification, which is the
+    canonical record. The Celery task dedupes via
+    `org.settings.last_inactivity_warning_at` so this function is safe
+    to call without further dedupe.
+
+    Self-managed session so this is safe to call from the Celery task.
+    """
+    import logging
+    from app.db.session import SessionLocal as _SessionLocal
+    from app.models.organization_member import OrganizationMember
+    from app.models.user import User as _User
+
+    logger = logging.getLogger(__name__)
+
+    _db = _SessionLocal()
+    try:
+        owners = (
+            _db.query(OrganizationMember)
+            .filter(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.role == "owner",
+            )
+            .all()
+        )
+        for member in owners:
+            # 1. In-app notification (canonical record).
+            create_notification(
+                db=_db,
+                user_id=member.user_id,
+                event="org.inactivity_warning",
+                title=f"\"{org_name}\" will be paused in {days_until_suspend} days",
+                body=(
+                    f"Your free workspace has been idle for {days_idle} days. "
+                    "Sign in or upgrade to keep your bots running."
+                ),
+                link="/billings",
+                resource_type="organization",
+                resource_id=org_id,
+            )
+
+            # 2. Email — best-effort. Wrapped in try/except so an SMTP
+            #    blip doesn't take down the inactivity sweep. We only
+            #    send if the owner has a known email address.
+            try:
+                user = _db.query(_User).filter(_User.id == member.user_id).first()
+                owner_email = user.email if user else None
+                if not owner_email:
+                    continue
+
+                from app.core.config import settings as _settings
+                from app.services.email_service_enhanced import (
+                    _create_html_template,
+                    send_email_with_retry,
+                )
+
+                billing_url = (
+                    (_settings.FRONTEND_URL or "https://privexbot.com").rstrip("/")
+                    + "/billings"
+                )
+                subject = (
+                    f"\"{org_name}\" will be paused in {days_until_suspend} days"
+                )
+                body_html = (
+                    f"<p style=\"margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;\">"
+                    f"Your PrivexBot workspace <strong>{org_name}</strong> has been "
+                    f"idle for {days_idle} days. Free workspaces auto-pause after "
+                    f"30 days of inactivity to keep resources tidy."
+                    f"</p>"
+                    f"<p style=\"margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.5;\">"
+                    f"<strong>What happens in {days_until_suspend} days if nothing "
+                    f"changes:</strong> your bots stop responding to incoming "
+                    f"messages until you reactivate. No data is deleted; "
+                    f"reactivation is instant."
+                    f"</p>"
+                    f"<table role=\"presentation\" style=\"margin: 0 0 24px 0;\"><tr><td>"
+                    f"<a href=\"{billing_url}\" style=\"display: inline-block; padding: 12px 24px; "
+                    f"background-color: #3b82f6; color: #ffffff; text-decoration: none; "
+                    f"border-radius: 6px; font-weight: 600; font-size: 16px;\">Open billing</a>"
+                    f"</td></tr></table>"
+                    f"<p style=\"margin: 0; color: #6b7280; font-size: 14px; line-height: 1.5;\">"
+                    f"To keep your workspace active: sign in to your dashboard, "
+                    f"send a message to one of your bots, or upgrade to Starter "
+                    f"($19/mo). Paid plans never auto-pause."
+                    f"</p>"
+                )
+                html_content = _create_html_template(
+                    subject=subject,
+                    heading=subject,
+                    body_html=body_html,
+                )
+
+                send_email_with_retry(
+                    to_email=owner_email,
+                    subject=subject,
+                    html_content=html_content,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Inactivity warning email failed for org %s: %s",
+                    org_id,
+                    exc,
+                )
+    finally:
+        _db.close()

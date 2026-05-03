@@ -37,12 +37,37 @@ async def get_plan(
     db: Session = Depends(get_db),
     user_context: UserContext = Depends(get_current_user_with_org),
 ):
-    """Plan + live usage for the active org."""
-    _user, org_id, _ = user_context
+    """Plan + live usage for the active org. Also returns the user's
+    account-level cap (`owned_orgs`) which lives outside the per-org
+    breakdown — it spans every org the user owns.
+    """
+    user, org_id, _ = user_context
     try:
-        return billing_service.get_plan_status(db, UUID(org_id))
+        plan_status = billing_service.get_plan_status(db, UUID(org_id))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    # Account-level metrics — per USER, not per ORG. The frontend renders
+    # these alongside the per-org Usage card on /billings.
+    from app.core.plans import get_limits, is_unlimited
+
+    user_tier = billing_service.get_user_effective_tier(db, user.id)
+    owned_orgs_count = billing_service.get_user_owned_orgs_count(db, user.id)
+    owned_orgs_limit = get_limits(user_tier).get("owned_orgs", 1)
+    plan_status["account"] = {
+        "tier": user_tier,
+        "owned_orgs": {
+            "usage": owned_orgs_count,
+            "limit": owned_orgs_limit,
+            "unlimited": is_unlimited(owned_orgs_limit),
+            "percent_used": (
+                None
+                if is_unlimited(owned_orgs_limit) or owned_orgs_limit == 0
+                else round(min(owned_orgs_count / owned_orgs_limit, 1.0) * 100, 1)
+            ),
+        },
+    }
+    return plan_status
 
 
 @router.get("/plans")

@@ -3,7 +3,7 @@ import { Header } from "@/components/landing/Header";
 import { Footer } from "@/components/landing/Footer";
 import { FinalCTA } from "@/components/landing/FinalCTA";
 import { motion } from "framer-motion";
-import { Check, Star } from "lucide-react";
+import { Check, Star, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -16,6 +16,10 @@ import {
   planCtaCopy,
   planFeatureBullets,
   priceLabel,
+  FEATURE_LABELS,
+  FEATURE_ORDER,
+  formatRetentionDays,
+  formatSupportTier,
 } from "@/lib/plans";
 
 const HIGHLIGHT_TIER = "pro";
@@ -217,6 +221,7 @@ function PlanColumn({
       </CardHeader>
 
       <CardContent>
+        {/* Numeric quotas */}
         <ul className="space-y-3">
           {features.map((feature) => (
             <li key={feature} className="flex items-start gap-3">
@@ -227,6 +232,65 @@ function PlanColumn({
             </li>
           ))}
         </ul>
+
+        {/* Boolean feature gates — render ✓ for true, ✗ for false. */}
+        {tier.features && (
+          <>
+            <hr className="my-4 border-gray-200 dark:border-gray-700" />
+            <ul className="space-y-2.5">
+              {FEATURE_ORDER.map((key) => {
+                const enabled = Boolean(
+                  (tier.features as unknown as Record<string, unknown>)[key],
+                );
+                return (
+                  <li
+                    key={key}
+                    className="flex items-start gap-3"
+                  >
+                    {enabled ? (
+                      <Check className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <X className="h-4 w-4 text-gray-300 dark:text-gray-600 shrink-0 mt-0.5" />
+                    )}
+                    <span
+                      className={
+                        "text-sm font-manrope " +
+                        (enabled
+                          ? "text-gray-700 dark:text-gray-300"
+                          : "text-gray-400 dark:text-gray-500 line-through")
+                      }
+                    >
+                      {FEATURE_LABELS[key] ?? key}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Categorical features */}
+            <hr className="my-4 border-gray-200 dark:border-gray-700" />
+            <ul className="space-y-1.5 text-xs text-gray-600 dark:text-gray-400 font-manrope">
+              <li>
+                <span className="text-gray-500 dark:text-gray-500">Audit logs:</span>{" "}
+                <span className="text-gray-800 dark:text-gray-200">
+                  {formatRetentionDays(
+                    (tier.features as unknown as { audit_log_retention_days: number })
+                      .audit_log_retention_days,
+                  )}
+                </span>
+              </li>
+              <li>
+                <span className="text-gray-500 dark:text-gray-500">Support:</span>{" "}
+                <span className="text-gray-800 dark:text-gray-200">
+                  {formatSupportTier(
+                    (tier.features as unknown as { priority_support: string })
+                      .priority_support,
+                  )}
+                </span>
+              </li>
+            </ul>
+          </>
+        )}
       </CardContent>
     </Card>
   );

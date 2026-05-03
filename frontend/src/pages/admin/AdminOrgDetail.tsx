@@ -650,7 +650,9 @@ function usageKeyFor(
       return "messages_this_month";
     case "api_calls_per_month":
       return "api_calls_this_month";
+    case "web_pages_per_month":
+      return "web_pages_this_month";
     default:
-      return key;
+      return key as keyof PlanStatus["usage"];
   }
 }

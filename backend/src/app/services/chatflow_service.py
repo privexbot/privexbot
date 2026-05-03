@@ -101,6 +101,83 @@ class ChatflowService:
             content=user_message
         )
 
+        # 2.5 Quota gates — same shape as chatbot_service. Suspended-org
+        # check first (Free tier paused after 30d idle), then soft-degrade
+        # at 120% of the monthly cap.
+        try:
+            from app.services.billing_service import is_over_soft_degrade
+            from app.models.workspace import Workspace as _WS
+            from app.models.organization import Organization as _Org
+
+            _ws = db.query(_WS).filter(_WS.id == chatflow.workspace_id).first()
+            _org = (
+                db.query(_Org).filter(_Org.id == _ws.organization_id).first()
+                if _ws
+                else None
+            )
+
+            if _org and _org.subscription_status == "suspended":
+                paused_reply = (
+                    "This assistant is currently paused. "
+                    "The bot owner needs to sign in to PrivexBot to reactivate it."
+                )
+                assistant_msg = self.session_service.save_message(
+                    db=db,
+                    session_id=session.id,
+                    role="assistant",
+                    content=paused_reply,
+                    response_metadata={
+                        "type": "org_suspended",
+                        "reason": "free_tier_inactivity",
+                        "execution_time_ms": 0,
+                        "latency_ms": 0,
+                        "nodes_executed": [],
+                        "tokens_used": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    },
+                )
+                return {
+                    "response": paused_reply,
+                    "session_id": str(session.id),
+                    "message_id": str(assistant_msg.id),
+                    "nodes_executed": [],
+                    "execution_time_ms": 0,
+                    "tokens_used": 0,
+                    "metadata": {"org_suspended": True},
+                }
+
+            if _ws and is_over_soft_degrade(
+                db, _ws.organization_id, "messages_per_month"
+            ):
+                fixed_reply = (
+                    "This assistant has reached its monthly message limit. "
+                    "Please contact the bot owner to upgrade their plan."
+                )
+                assistant_msg = self.session_service.save_message(
+                    db=db,
+                    session_id=session.id,
+                    role="assistant",
+                    content=fixed_reply,
+                    response_metadata={
+                        "type": "quota_degraded",
+                        "reason": "messages_per_month_over_120pct",
+                        "execution_time_ms": 0,
+                        "latency_ms": 0,
+                        "nodes_executed": [],
+                        "tokens_used": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    },
+                )
+                return {
+                    "response": fixed_reply,
+                    "session_id": str(session.id),
+                    "message_id": str(assistant_msg.id),
+                    "nodes_executed": [],
+                    "execution_time_ms": 0,
+                    "tokens_used": 0,
+                    "metadata": {"quota_degraded": True},
+                }
+        except Exception as exc:
+            print(f"[ChatflowService] soft-degrade check failed (non-blocking): {exc}")
+
         # 3. Initialize execution context
         context = {
             "user_message": user_message,

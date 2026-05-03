@@ -79,6 +79,32 @@ apiClient.interceptors.response.use(
       }
     }
 
+    // Handle 402 - Quota exceeded / feature locked.
+    // Backend wraps both quota exhaustion and feature gates in HTTP 402
+    // with a structured detail. The dashboard listens to
+    // `quota-exceeded` events and shows the upgrade modal.
+    if (error.response?.status === 402) {
+      const errorDetail = (error.response?.data as { detail?: unknown })?.detail;
+      if (errorDetail && typeof errorDetail === "object") {
+        const payload = errorDetail as {
+          error?: string;
+          resource?: string;
+          feature?: string;
+          tier?: string;
+          limit?: number;
+          usage?: number;
+          upgrade_url?: string;
+        };
+        if (payload.error === "quota_exceeded" || payload.error === "feature_locked") {
+          window.dispatchEvent(
+            new CustomEvent("quota-exceeded", {
+              detail: payload,
+            }),
+          );
+        }
+      }
+    }
+
     // Handle 400 - NO_ORGANIZATION error (user deleted all orgs)
     if (error.response?.status === 400) {
       const errorDetail = (error.response?.data as any)?.detail;
@@ -109,6 +135,29 @@ apiClient.interceptors.response.use(
   }
 );
 
+// Human-friendly labels for the 402 quota/feature payloads. Kept here
+// (duplicated with `lib/plans.ts`) so api-client stays standalone — any
+// caller of handleApiError gets readable text instead of raw JSON.
+const QUOTA_RESOURCE_LABEL: Record<string, string> = {
+  chatbots: "chatbots",
+  chatflows: "chatflows",
+  knowledge_bases: "knowledge bases",
+  kb_documents: "knowledge base documents",
+  web_pages_per_month: "web pages scraped this month",
+  messages_per_month: "messages this month",
+  api_calls_per_month: "API calls this month",
+  team_members: "team members",
+  workspaces: "workspaces",
+  owned_orgs: "organizations you own",
+};
+
+const FEATURE_LABEL: Record<string, string> = {
+  public_api_access: "Public REST API access",
+  custom_domain: "Custom domain",
+  remove_branding: "Branding removal",
+  sso_saml: "SSO / SAML",
+};
+
 // API error handler - Enhanced to handle structured errors
 export const handleApiError = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
@@ -117,6 +166,26 @@ export const handleApiError = (error: unknown): string => {
     // Handle structured error responses (from backend)
     if (detail && typeof detail === 'object') {
       const structuredError = detail as any;
+
+      // 402 quota / feature payloads — render human copy instead of
+      // the raw JSON so forms don't surface "{error:'quota_exceeded',
+      // resource:'owned_orgs',...}" to end users. Mirrors the
+      // UpgradeModal copy.
+      if (structuredError.error === 'quota_exceeded') {
+        const tier = structuredError.tier ?? 'free';
+        const resourceKey = String(structuredError.resource ?? '');
+        const resourceLabel = QUOTA_RESOURCE_LABEL[resourceKey] ?? resourceKey;
+        const limit = typeof structuredError.limit === 'number'
+          ? structuredError.limit.toLocaleString()
+          : 'your';
+        return `You've reached the ${tier} plan's cap of ${limit} ${resourceLabel}. Upgrade for more headroom.`;
+      }
+      if (structuredError.error === 'feature_locked') {
+        const tier = structuredError.tier ?? 'free';
+        const featureKey = String(structuredError.feature ?? '');
+        const featureLabel = FEATURE_LABEL[featureKey] ?? featureKey;
+        return `${featureLabel} isn't included in the ${tier} plan. Upgrade to unlock it.`;
+      }
 
       // Return the message from structured error
       if (structuredError.message) {

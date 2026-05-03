@@ -218,6 +218,25 @@ export function BillingsPage() {
                     entry={entry as PlanBreakdownEntry}
                   />
                 ))}
+                {/* Account-level cap (counted across every org the user
+                    owns, not just this one). Visually separated so it
+                    doesn't look like a per-org metric. */}
+                {plan.account?.owned_orgs && (
+                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-manrope">
+                      Account-level
+                    </p>
+                    <UsageRow
+                      label="Organizations you own"
+                      entry={plan.account.owned_orgs}
+                    />
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 font-manrope leading-snug">
+                      Counted across every organization where you're
+                      the owner. The limit follows your highest-tier
+                      owned org.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
