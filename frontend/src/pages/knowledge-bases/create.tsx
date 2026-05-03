@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { savePendingOAuth, consumePendingOAuth } from "@/lib/kb-wizard-oauth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   ArrowLeft,
@@ -57,6 +58,7 @@ import { motion } from "framer-motion";
 
 export default function CreateKnowledgeBasePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentWorkspace } = useApp();
   const [activeSourceType, setActiveSourceType] = useState<
     SourceType | "integrations" | null
@@ -146,7 +148,69 @@ export default function CreateKnowledgeBasePage() {
     clearDraft,
     validateDraft,
     previewDraft,
+    saveDraftToLocalStorage,
+    restoreDraftFromLocalStorage,
   } = useKBStore();
+
+  // Restore wizard + draft state after a Notion / Google OAuth round-trip.
+  // The connect button does a full-window redirect (window.location.href),
+  // so when the browser returns to /knowledge-bases/create?notion_connected=true
+  // (or google_connected) the React tree has remounted and every in-memory
+  // store is gone. We persist before the redirect (see lib/kb-wizard-oauth.ts
+  // + saveDraftToLocalStorage in kb-store.ts) and rehydrate here. Runs once
+  // on mount; the snapshot is consumed (cleared) regardless so a refresh
+  // doesn't re-trigger.
+  useEffect(() => {
+    const notionOk = searchParams.get("notion_connected") === "true";
+    const googleOk = searchParams.get("google_connected") === "true";
+    const googleErr = searchParams.get("google_error");
+
+    if (!notionOk && !googleOk && !googleErr) return;
+
+    if (googleErr) {
+      toast({
+        title: "Google connection failed",
+        description:
+          googleErr === "token_exchange_failed"
+            ? "Google did not accept the authorization code. Verify the OAuth client and try again."
+            : googleErr === "no_access_token"
+              ? "Google returned no access token. Verify the OAuth client and try again."
+              : `Google connection failed (${googleErr}). Verify the OAuth client and try again.`,
+        variant: "destructive",
+      });
+    } else {
+      // Pull formData / draft / sources / configs back into the Zustand store.
+      restoreDraftFromLocalStorage();
+
+      // Pull the local stepper React state back from localStorage.
+      const snapshot = consumePendingOAuth();
+      if (snapshot) {
+        setStepperState((prev) => ({
+          ...prev,
+          currentStep: snapshot.step as KBCreationStep,
+          completedSteps: new Set<KBCreationStep>(
+            snapshot.completedSteps as KBCreationStep[],
+          ),
+        }));
+        if (snapshot.activeSourceType) {
+          setActiveSourceType(
+            snapshot.activeSourceType as SourceType | "integrations" | null,
+          );
+        }
+      }
+
+      toast({
+        title: notionOk ? "Notion connected" : "Google connected",
+        description:
+          "Your previous wizard progress has been restored. Continue where you left off.",
+      });
+    }
+
+    // Drop the query param so a refresh doesn't re-trigger the restore /
+    // toast. Replace, don't push, to avoid polluting browser history.
+    window.history.replaceState({}, "", "/knowledge-bases/create");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Ensure draft exists with proper validation
   const ensureDraftExists = async () => {
@@ -770,6 +834,15 @@ export default function CreateKnowledgeBasePage() {
                         <NotionIntegration
                           draftId={currentDraft.draft_id}
                           workspaceId={currentWorkspace!.id}
+                          onBeforeOAuthRedirect={() => {
+                            saveDraftToLocalStorage();
+                            savePendingOAuth({
+                              provider: "notion",
+                              step: stepperState.currentStep,
+                              completedSteps: Array.from(stepperState.completedSteps),
+                              activeSourceType: activeSourceType as string | null,
+                            });
+                          }}
                           onSourcesAdded={() => {
                             setActiveSourceType(null);
                             toast({
@@ -786,6 +859,15 @@ export default function CreateKnowledgeBasePage() {
                         <GoogleIntegration
                           draftId={currentDraft.draft_id}
                           workspaceId={currentWorkspace!.id}
+                          onBeforeOAuthRedirect={() => {
+                            saveDraftToLocalStorage();
+                            savePendingOAuth({
+                              provider: "google",
+                              step: stepperState.currentStep,
+                              completedSteps: Array.from(stepperState.completedSteps),
+                              activeSourceType: activeSourceType as string | null,
+                            });
+                          }}
                           onSourcesAdded={() => {
                             setActiveSourceType(null);
                             toast({

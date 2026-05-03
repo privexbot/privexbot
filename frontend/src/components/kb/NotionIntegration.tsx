@@ -35,9 +35,16 @@ interface NotionIntegrationProps {
   workspaceId: string;
   onPagesSelected?: (pages: NotionPage[]) => void;
   onSourcesAdded?: () => void;
+  /**
+   * Fires immediately before the full-window OAuth redirect. The KB
+   * wizard uses this to persist its local React state (current step,
+   * activeSourceType) plus the Zustand draft to localStorage so the
+   * post-callback remount can restore both. See lib/kb-wizard-oauth.ts.
+   */
+  onBeforeOAuthRedirect?: () => void;
 }
 
-export default function NotionIntegration({ draftId, workspaceId, onPagesSelected, onSourcesAdded }: NotionIntegrationProps) {
+export default function NotionIntegration({ draftId, workspaceId, onPagesSelected, onSourcesAdded, onBeforeOAuthRedirect }: NotionIntegrationProps) {
   const { toast } = useToast();
 
   const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set());
@@ -106,6 +113,10 @@ export default function NotionIntegration({ draftId, workspaceId, onPagesSelecte
       const response = await apiClient.post(
         `/credentials/oauth/authorize?provider=notion&workspace_id=${workspaceId}`
       );
+      // Persist wizard + draft state BEFORE the redirect — `window.location.href`
+      // unmounts React and wipes every in-memory store, so the post-callback
+      // remount needs localStorage to rehydrate. See lib/kb-wizard-oauth.ts.
+      onBeforeOAuthRedirect?.();
       window.location.href = response.data.redirect_url;
     } catch (error) {
       toast({

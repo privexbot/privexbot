@@ -33,9 +33,16 @@ interface GoogleIntegrationProps {
   draftId: string;
   workspaceId: string;
   onSourcesAdded?: () => void;
+  /**
+   * Fires immediately before the full-window OAuth redirect. The KB
+   * wizard uses this to persist its local React state (current step,
+   * activeSourceType) plus the Zustand draft to localStorage so the
+   * post-callback remount can restore both. See lib/kb-wizard-oauth.ts.
+   */
+  onBeforeOAuthRedirect?: () => void;
 }
 
-export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded }: GoogleIntegrationProps) {
+export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded, onBeforeOAuthRedirect }: GoogleIntegrationProps) {
   const { toast } = useToast();
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -100,6 +107,10 @@ export default function GoogleIntegration({ draftId, workspaceId, onSourcesAdded
       const response = await apiClient.post(
         `/credentials/oauth/authorize?provider=google&workspace_id=${workspaceId}`
       );
+      // Persist wizard + draft state BEFORE the redirect — `window.location.href`
+      // unmounts React and wipes every in-memory store, so the post-callback
+      // remount needs localStorage to rehydrate. See lib/kb-wizard-oauth.ts.
+      onBeforeOAuthRedirect?.();
       window.location.href = response.data.redirect_url;
     } catch (error) {
       toast({
