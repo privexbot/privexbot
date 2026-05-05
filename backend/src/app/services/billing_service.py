@@ -10,7 +10,7 @@ The org-wide `subscription_tier` lives on `Organization` (already there at
 service joins them with live counts.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -503,15 +503,53 @@ def require_owned_orgs_quota(db: Session, user_id: UUID) -> None:
 
 
 def upgrade_org_to_tier(db: Session, org_id: UUID, tier: str) -> Organization:
-    """Move the org to a new tier (admin / staff path; no Stripe yet)."""
+    """Move the org to a new tier (admin / staff path; no Stripe yet).
+
+    Sets the appropriate billing-cycle fields per tier:
+
+    * **free** — downgrade. Clear paid-period stamps. Don't re-grant a
+      trial window (the org has already used the platform; re-granting
+      would be a "downgrade-to-trial" loophole). `trial_ends_at` stays
+      whatever it was (None for never-trialed; old date for an org that
+      finished trial long ago).
+    * **starter / pro** — paid 30-day cycle. Clear `trial_ends_at` (no
+      longer a trial), set `subscription_starts_at` to now and
+      `subscription_ends_at` to now + 30 days. The frontend reads these
+      to render "Subscription ends on …".
+    * **enterprise** — open-ended paid. Same as starter/pro for
+      starts_at + clear trial_ends_at, but `subscription_ends_at = None`
+      (we don't show a "subscription ends" date — Enterprise is custom
+      term and managed off-platform).
+
+    Auto-renewal / auto-downgrade after the period ends is intentionally
+    NOT in scope here — that requires Stripe wiring + a Celery beat task.
+    Today this is a manual operator path; the dates are for visibility.
+    """
     if tier not in PLAN_LIMITS:
         raise ValueError(f"Unknown tier: {tier}")
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise ValueError(f"Organization not found: {org_id}")
+
+    now = datetime.utcnow()
     org.subscription_tier = tier
     org.subscription_status = "active"
-    org.subscription_starts_at = datetime.utcnow()
+
+    if tier == "free":
+        # Downgrade — clear paid-period stamps. Keep trial_ends_at as-is.
+        org.subscription_starts_at = None
+        org.subscription_ends_at = None
+    elif tier == "enterprise":
+        # Open-ended; no displayed end date.
+        org.trial_ends_at = None
+        org.subscription_starts_at = now
+        org.subscription_ends_at = None
+    else:
+        # Starter / Pro — 30-day paid cycle starting now.
+        org.trial_ends_at = None
+        org.subscription_starts_at = now
+        org.subscription_ends_at = now + timedelta(days=30)
+
     db.commit()
     db.refresh(org)
     return org

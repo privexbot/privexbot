@@ -17,6 +17,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import logging
 import re
 import time
 from uuid import UUID, uuid4
@@ -28,6 +29,8 @@ from sqlalchemy.orm import Session
 from app.models.chatbot import Chatbot
 from app.services.inference_service import inference_service
 from app.services.session_service import session_service
+
+logger = logging.getLogger(__name__)
 from app.services.retrieval_service import retrieval_service
 from app.services.draft_service import DraftType
 
@@ -300,9 +303,11 @@ class ChatbotService:
             collected_variables=collected_variables
         )
 
-        # 6. Call AI with structured messages
-        # This automatically routes to the correct provider based on model prefix
-        # e.g., "gemini-2.0-flash" -> Gemini, "gpt-4o" -> OpenAI, etc.
+        # 6. Call AI with structured messages.
+        # Routes to Secret AI (the only supported provider — see
+        # inference_service.py module docstring). The native SDK transport
+        # is used when available, with REST as transport-level fallback;
+        # both terminate at Secret AI's TEE nodes.
         try:
             start_time = time.time()
             ai_response = await self.inference_service.generate_chat(
@@ -438,6 +443,15 @@ class ChatbotService:
             }
 
         except Exception as e:
+            # logger.exception captures the current traceback into journalctl
+            # so prod operators can triage. The user-facing fallback string
+            # stays generic; raw errors are never returned to public chat.
+            logger.exception(
+                "Chatbot message processing failed | chatbot_id=%s session_id=%s",
+                getattr(chatbot, "id", None),
+                getattr(session, "id", None),
+            )
+
             # Rollback any uncommitted changes to ensure clean state
             db.rollback()
 
@@ -452,9 +466,13 @@ class ChatbotService:
                     error_code="generation_error"
                 )
                 db.commit()
-            except Exception as save_error:
-                # If we can't save the error message, just log it
-                print(f"[ChatbotService] Failed to save error message: {save_error}")
+            except Exception:
+                # logger.exception again so the secondary failure (e.g. DB
+                # write fault) is also captured with traceback.
+                logger.exception(
+                    "Chatbot error-message save failed | session_id=%s",
+                    getattr(session, "id", None),
+                )
 
             raise
 
@@ -890,7 +908,8 @@ class ChatbotService:
         """
         Build structured messages for AI model.
 
-        WHY: Modern LLMs (OpenAI, Gemini, etc.) work better with structured messages
+        WHY: The OpenAI-shaped role/content message format is the standard
+             Secret AI's API expects (and what most modern LLMs share)
         HOW: Build list of role/content dicts with system, history, and user messages
 
         APPLIES ALL CONFIGURATIONS:

@@ -1,11 +1,14 @@
 """
-Secret AI SDK Provider
+Secret AI SDK Provider — native gRPC + LangChain transport for Secret AI.
 
-Wraps the native secret-ai-sdk for use with existing chatbot architecture.
-Handles message format conversion and maintains API consistency with OpenAI provider.
+This is one of two transports to the SAME Secret AI TEE-protected nodes (the
+other is the REST transport in inference_service.py — `SecretAIRestProvider`).
+Both terminate inside Secret AI infrastructure; switching between them never
+routes data through OpenAI / Akash / any non-TEE provider.
 
-WHY: Provides an alternative to the OpenAI-compatible API using the native SDK
-HOW: Converts OpenAI message format to LangChain tuple format, uses native async ainvoke
+WHY: The native SDK gives us the most direct access to Secret AI's confidential
+inference (dynamic node discovery, gRPC streaming, LangChain ergonomics).
+HOW: Convert OpenAI-shaped messages to LangChain tuples; call `ainvoke` async.
 """
 
 from typing import List, Dict, Optional
@@ -31,10 +34,11 @@ def _strip_thinking(text: str) -> str:
 
 class SecretAISDKProvider:
     """
-    Native Secret AI SDK provider.
+    Native Secret AI SDK provider (gRPC + LangChain transport).
 
-    Provides the same interface as the OpenAI-compatible provider but uses
-    the native secret-ai-sdk under the hood.
+    Same `generate_chat` interface as `SecretAIRestProvider` (REST transport)
+    so callers can swap between them without code changes. Both call the same
+    Secret AI TEE nodes — this is purely a transport-level distinction.
     """
 
     def __init__(self, temperature: float = 0.7):
@@ -76,11 +80,32 @@ class SecretAISDKProvider:
             logger.info(f"[SecretAISDKProvider] Initialized with model: {self._model}")
 
         except ImportError as e:
+            # Surface the underlying import failure so operators can see WHICH
+            # sub-module is missing (the SDK has several optional dependencies
+            # that can fail independently — betterproto, grpcio, langchain).
+            logger.error(
+                "[SecretAISDKProvider] Native SDK import failed — wheel missing or broken. "
+                "Underlying error: %r. The Dockerfile should have caught this at build "
+                "time (it now runs `python -c 'import secret_ai_sdk.secret_ai'`); if you "
+                "see this in production the running image was built before that check "
+                "was added. Rebuild the image to fix. The REST transport will pick up "
+                "this request — see inference_service.generate_chat fallback.",
+                e,
+            )
             raise ImportError(
-                "secret-ai-sdk is not installed. Install it with: uv add secret-ai-sdk"
+                f"secret-ai-sdk import failed: {e}. The REST transport will be used as "
+                f"fallback (still TEE-protected, still inside Secret AI)."
             ) from e
         except Exception as e:
-            logger.error(f"[SecretAISDKProvider] Failed to initialize: {e}")
+            # Network / SSL / no-models / Secret() init failure. Log the full
+            # traceback so operators can triage from prod logs.
+            logger.exception(
+                "[SecretAISDKProvider] Native SDK init failed at runtime — "
+                "common causes: Secret AI node URL unreachable, SSL cert mismatch, "
+                "no models returned by Secret().get_models(). The REST transport "
+                "will pick up this request. Underlying error: %s",
+                e,
+            )
             raise
 
     def _convert_messages(self, messages: List[Dict[str, str]]) -> List[tuple]:

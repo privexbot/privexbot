@@ -1,21 +1,24 @@
 """
-Inference Service - Decentralized AI inference for PrivexBot.
+Inference Service - Confidential TEE inference via Secret AI.
 
-WHY:
-- Centralized AI API calls using decentralized providers
-- Used by both chatbots and chatflows
-- Backend-only (never expose API keys to frontend)
-- Error handling and retry logic
-- Provider abstraction for flexibility
+ARCHITECTURAL CONSTRAINT (do not relax):
+Secret AI is the ONLY supported inference provider for PrivexBot. TEE-protected
+confidential inference is the headline differentiator and must not be
+circumvented by silent fallbacks to other providers (OpenAI, Akash, Gemini,
+etc.). The architecture supports two TRANSPORTS to the same Secret AI TEE
+nodes — that is the only "fallback" allowed:
+
+    1. Native SDK transport (gRPC + LangChain via secret_ai_sdk package)
+    2. REST transport (HTTPS to Secret AI's OpenAI-compatible API endpoint)
+
+Both terminate at `https://secretai-api-url.scrtlabs.com:443/v1` (TEE-protected).
+The `openai` Python package is used as a generic HTTP client for the REST
+transport — `base_url` always points to Secret AI; never to OpenAI.
 
 HOW:
-- Abstract provider interface with concrete implementations
-- OpenAI-compatible provider (Secret AI uses this)
-- Automatic provider detection based on model prefix or config
-- Structured message format internally, converted per-provider
-
-SUPPORTED PROVIDERS:
-- Secret AI (OpenAI-compatible) - PRIMARY, privacy-preserving via TEE
+- Abstract provider interface with one concrete implementation
+- Native SDK is preferred when available; REST is the recovery path if the
+  SDK fails to import or initialize. Both stay inside Secret AI infrastructure.
 
 MESSAGE FORMAT:
 All methods accept structured messages:
@@ -30,15 +33,25 @@ For backward compatibility, generate() accepts a single prompt string
 and converts it to a user message internally.
 
 NETWORK NOTES:
-- Secret AI is the PRIMARY provider for PrivexBot (runs on SecretVM)
-- In production (SecretVM), Secret AI should work without network issues
+- In production (SecretVM), Secret AI should work without network issues.
+- If the prod build is missing the `secret-ai-sdk` wheel, the SDK transport
+  will surface the underlying ImportError with full context (see
+  `secret_ai_sdk_provider.py:_ensure_client`). The REST transport fallback
+  in `generate_chat` keeps chat working until the SDK is reinstalled.
 """
 
+import logging
 import os
 import re
 import asyncio
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Optional, List, Dict, Any, Union
+
+logger = logging.getLogger(__name__)
+
+# One-shot flag so the SDK→REST fallback warning is logged at most once per
+# process. Repeating it on every chat would spam logs without adding signal.
+_sdk_fallback_logged = False
 
 
 # Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
@@ -60,9 +73,8 @@ from app.core.config import settings
 
 
 class InferenceProvider(str, Enum):
-    """Supported inference providers - focused on decentralized AI."""
-    SECRET_AI = "secret_ai"  # Primary - privacy-preserving via TEE
-    CUSTOM = "custom"        # For custom OpenAI-compatible endpoints
+    """The single supported inference provider — Secret AI (TEE-protected)."""
+    SECRET_AI = "secret_ai"
 
 
 class InferenceError(Exception):
@@ -194,11 +206,16 @@ class BaseProvider(ABC):
         pass
 
 
-class OpenAICompatibleProvider(BaseProvider):
+class SecretAIRestProvider(BaseProvider):
     """
-    Provider for OpenAI-compatible APIs.
+    REST transport for Secret AI's TEE-protected API endpoint.
 
-    Works with: OpenAI, Ollama, DeepSeek, Secret AI, Azure OpenAI, etc.
+    Secret AI exposes an OpenAI-compatible HTTP protocol at
+    `https://secretai-api-url.scrtlabs.com:443/v1`. We use the `openai`
+    Python package purely as a generic HTTP client for that protocol —
+    `base_url` is set from PROVIDER_CONFIGS, never to OpenAI's servers,
+    and no other providers are wired up. All inference stays inside Secret
+    AI's TEE.
     """
 
     def __init__(
@@ -504,14 +521,17 @@ class InferenceService:
         if provider in self._providers:
             return self._providers[provider]
 
-        # Create OpenAI-compatible provider
+        # Create the Secret AI REST transport instance. `base_url` resolves
+        # from PROVIDER_CONFIGS (Secret AI only); the localhost default is
+        # legacy and never reached because PROVIDER_CONFIGS always supplies
+        # the Secret AI URL via SECRET_AI_BASE_URL.
         config = PROVIDER_CONFIGS.get(provider, {})
         api_key_env = config.get("api_key_env")
         api_key = os.getenv(api_key_env, "") if api_key_env else "placeholder"
-        base_url = config.get("base_url", "http://localhost:11434/v1")
+        base_url = config.get("base_url")
         timeout = config.get("timeout", 60.0)
 
-        instance = OpenAICompatibleProvider(
+        instance = SecretAIRestProvider(
             base_url=base_url,
             api_key=api_key,
             default_model=config.get("default_model", "DeepSeek-R1-Distill-Llama-70B"),
@@ -666,20 +686,53 @@ class InferenceService:
                 "provider": "secret_ai"
             }
         """
-        # Check if native Secret AI SDK should be used
+        # Try the native Secret AI SDK transport first (gRPC + LangChain),
+        # falling back to the Secret AI REST transport if the SDK is missing
+        # or fails to initialize.
+        #
+        # CRITICAL: BOTH transports terminate at Secret AI's TEE-protected
+        # nodes (https://secretai-api-url.scrtlabs.com:443/v1). This is NOT
+        # a cross-provider fallback — no data ever leaves Secret AI
+        # infrastructure. See module docstring + memory/feedback_secret_ai_only.
         if settings.USE_SECRET_AI_SDK:
-            print("[InferenceService] Using native secret-ai-sdk")
-            from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
-            sdk_provider = get_secret_ai_sdk_provider(
-                temperature=temperature or 0.7
-            )
-            return await sdk_provider.generate_chat(
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
+            try:
+                from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
+                sdk_provider = get_secret_ai_sdk_provider(
+                    temperature=temperature or 0.7
+                )
+                return await sdk_provider.generate_chat(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+            except ImportError as exc:
+                global _sdk_fallback_logged
+                if not _sdk_fallback_logged:
+                    logger.warning(
+                        "Secret AI native SDK transport unavailable (ImportError: %s). "
+                        "Switching to Secret AI REST transport — still TEE-protected, "
+                        "still inside Secret AI infrastructure. Reinstall the wheel "
+                        "to restore the native transport: rebuild the image (the "
+                        "Dockerfile now verifies the import at build time).",
+                        exc,
+                    )
+                    _sdk_fallback_logged = True
+            except Exception as exc:
+                # gRPC handshake / SSL / no-models / Secret() init failure.
+                # The REST transport tolerates many of these because it uses
+                # plain HTTPS to a fixed endpoint. Log full traceback once so
+                # operators can triage; then fall through.
+                if not _sdk_fallback_logged:
+                    logger.exception(
+                        "Secret AI native SDK transport init failed: %s. "
+                        "Switching to Secret AI REST transport — still TEE-protected, "
+                        "still inside Secret AI infrastructure.",
+                        exc,
+                    )
+                    _sdk_fallback_logged = True
 
-        # Use OpenAI-compatible provider (default)
+        # REST transport — Secret AI's OpenAI-compatible HTTPS endpoint.
+        # Also the path used when USE_SECRET_AI_SDK=false (operator-set env).
         use_provider, use_model = self._resolve_provider_and_model(model, provider)
 
         async def _generate(provider_instance: BaseProvider, model_to_use: str, **kw) -> InferenceResponse:
@@ -837,9 +890,6 @@ class InferenceService:
         """List all providers with their availability status."""
         results = []
         for provider in InferenceProvider:
-            if provider == InferenceProvider.CUSTOM:
-                continue
-
             config = PROVIDER_CONFIGS.get(provider, {})
             api_key_env = config.get("api_key_env")
 

@@ -35,6 +35,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { handleApiError } from "@/lib/api-client";
+import axios from "axios";
 
 export function AdminUserDetail() {
   const { userId } = useParams<{ userId: string }>();
@@ -92,7 +94,25 @@ export function AdminUserDetail() {
         setResources(resourcesData);
       } catch (err) {
         console.error("Failed to fetch user:", err);
-        setError("Failed to load user. They may not exist.");
+        // Surface the actual HTTP status so operators can triage. The old
+        // generic "may not exist" string masked 401/403/500 the same as 404,
+        // hiding real server problems behind a "data missing" message.
+        if (axios.isAxiosError(err)) {
+          const status = err.response?.status;
+          if (status === 404) {
+            setError(
+              `User does not exist in the database (UUID: ${userId}). The link may be stale or the user was hard-deleted.`,
+            );
+          } else if (status === 401 || status === 403) {
+            setError("You don't have permission to view this user. Staff access required.");
+          } else if (status && status >= 500) {
+            setError(`Backend error loading user (${status}): ${handleApiError(err)}`);
+          } else {
+            setError(`Failed to load user: ${handleApiError(err)}`);
+          }
+        } else {
+          setError("Could not reach the backend. Check your network connection and try again.");
+        }
       } finally {
         setIsLoading(false);
       }

@@ -507,11 +507,27 @@ function PlanSummary({ status }: { status: PlanStatus }) {
             {status.status}
           </span>
         </span>
-        {status.trial_ends_at && (
+        {/* Trial ends — only show while the org is genuinely in a trial.
+            Pre-fix this rendered alongside `Status: active` after a Pro
+            upgrade because `trial_ends_at` lingered from creation time;
+            see billing_service.upgrade_org_to_tier docstring for the
+            companion backend fix that clears it on upgrade. */}
+        {status.trial_ends_at && status.status === "trial" && (
           <span className="text-gray-600 dark:text-gray-400">
             Trial ends:{" "}
             <span className="font-medium text-gray-900 dark:text-gray-100">
               {new Date(status.trial_ends_at).toLocaleDateString()}
+            </span>
+          </span>
+        )}
+        {/* Active paid plan: show the cycle end date. Enterprise leaves
+            this null on the backend (open-ended term), so the line is
+            naturally hidden for them. */}
+        {status.subscription_ends_at && status.status === "active" && status.tier !== "free" && (
+          <span className="text-gray-600 dark:text-gray-400">
+            Subscription ends:{" "}
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {new Date(status.subscription_ends_at).toLocaleDateString()}
             </span>
           </span>
         )}

@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { config } from '@/config/env';
+import { generateEmbedCode } from '@/lib/embed-code';
 import ReactMarkdown from 'react-markdown';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
@@ -310,33 +311,23 @@ export default function ChatbotDetailPage() {
 
   const getEmbedCode = () => {
     if (!chatbot) return '';
-
-    const apiUrl = config.API_BASE_URL;
-    const widgetUrl = config.WIDGET_CDN_URL;
-    const color = chatbot.branding_config.primary_color ?? '#6366f1';
-    const position = chatbot.branding_config.position ?? 'bottom-right';
-    const greeting = chatbot.prompt_config.messages?.greeting ?? 'Hello! How can I help you?';
-    const botName = chatbot.branding_config.chat_title ?? chatbot.name;
-
-    return `<!-- PrivexBot Chatbot Widget -->
-<script>
-  (function(w,d,s,o,f,js,fjs){
-    w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
-    js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
-    js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${widgetUrl}/widget.js'));
-  pb('init', {
-    id: '${chatbot.id}',
-    apiKey: 'YOUR_API_KEY', // Replace with your API key
-    options: {
-      baseURL: '${apiUrl}',
-      position: '${position}',
-      color: '${color}',
-      greeting: '${greeting}',
-      botName: '${botName}'
-    }
-  });
-</script>`;
+    // Use the shared lib generator so this matches what the EmbedCode
+    // component renders elsewhere. The detail page only has the truncated
+    // `key_prefix` (the full API key is shown once at creation), so the
+    // snippet renders the `'YOUR_API_KEY'` placeholder and the customer
+    // swaps it in. Real-key embedding happens in the post-deploy success
+    // modal where the backend hands back the full key.
+    return generateEmbedCode({
+      botId: chatbot.id,
+      type: 'chatbot',
+      includeApiKey: false,
+      options: {
+        position: chatbot.branding_config.position ?? 'bottom-right',
+        color: chatbot.branding_config.primary_color ?? '#6366f1',
+        greeting: chatbot.prompt_config.messages?.greeting ?? 'Hello! How can I help you?',
+        botName: chatbot.branding_config.chat_title ?? chatbot.name,
+      },
+    });
   };
 
   const copyEmbedCode = () => {
@@ -1778,20 +1769,6 @@ export default function ChatbotDetailPage() {
                       )}
                     </div>
 
-                    {/* WhatsApp */}
-                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Phone className="h-5 w-5 text-green-500 dark:text-green-400" />
-                        <div>
-                          <p className="font-semibold text-gray-900 dark:text-gray-100 font-manrope">WhatsApp</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Business API</p>
-                        </div>
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope mb-3">Connect via WhatsApp Business API for customer support.</p>
-                      <Button variant="outline" size="sm" className="w-full font-manrope" disabled>
-                        Coming Soon
-                      </Button>
-                    </div>
                   </div>
                 </CardContent>
               </Card>

@@ -14,29 +14,28 @@
 
 import { useState } from 'react';
 import { Copy, Check, Download, Code } from 'lucide-react';
-import { config } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
+import { generateEmbedCode, type EmbedCodeOptions } from '@/lib/embed-code';
 
 type EmbedType = 'chatbot' | 'chatflow';
-
-interface EmbedOptions {
-  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
-  color?: string;
-  greeting?: string;
-  width?: number;
-  height?: number;
-  showBranding?: boolean;
-}
 
 interface EmbedCodeProps {
   type: EmbedType;
   id: string;
-  options?: EmbedOptions;
-  onOptionsChange?: (options: EmbedOptions) => void;
+  options?: EmbedCodeOptions;
+  /**
+   * Real API key for the embed snippet, if the caller has it. The chatbot /
+   * chatflow detail pages typically only have the truncated `key_prefix`, so
+   * they leave this undefined and the snippet renders with `'YOUR_API_KEY'`
+   * as a placeholder for the customer to swap. Right after deploy, the
+   * success modal does have the real key — pass it through here.
+   */
+  apiKey?: string;
+  onOptionsChange?: (options: EmbedCodeOptions) => void;
   showOptions?: boolean;
 }
 
@@ -44,13 +43,14 @@ export default function EmbedCode({
   type,
   id,
   options = {},
+  apiKey,
   onOptionsChange,
   showOptions = true,
 }: EmbedCodeProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
 
-  const defaultOptions: EmbedOptions = {
+  const defaultOptions: EmbedCodeOptions = {
     position: 'bottom-right',
     color: '#6366f1',
     width: 400,
@@ -59,46 +59,16 @@ export default function EmbedCode({
     ...options,
   };
 
-  const generateEmbedCode = () => {
-    const widgetUrl = config.WIDGET_CDN_URL;
-    const apiUrl = config.API_BASE_URL;
-    const widgetType = type === 'chatbot' ? 'chatbot' : 'chatflow';
-
-    // Generate options object for the script
-    const scriptOptions: Record<string, any> = {
-      baseURL: apiUrl,
-      position: defaultOptions.position,
-      color: defaultOptions.color,
-      width: defaultOptions.width,
-      height: defaultOptions.height,
-      showBranding: defaultOptions.showBranding,
-    };
-
-    if (defaultOptions.greeting) {
-      scriptOptions.greeting = defaultOptions.greeting;
-    }
-
-    const optionsString = JSON.stringify(scriptOptions, null, 2)
-      .split('\n')
-      .map((line, idx) => (idx === 0 ? line : `    ${line}`))
-      .join('\n');
-
-    return `<!-- PrivexBot ${type === 'chatbot' ? 'Chatbot' : 'Chatflow'} Widget -->
-<script>
-  (function(w,d,s,o,f,js,fjs){
-    w['PrivexBot']=o;w[o] = w[o] || function () { (w[o].q = w[o].q || []).push(arguments) };
-    js = d.createElement(s), fjs = d.getElementsByTagName(s)[0];
-    js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'pb', '${widgetUrl}/widget.js'));
-  pb('init', {
-    type: '${widgetType}',
-    id: '${id}',
-    options: ${optionsString}
+  // Single source of truth — `lib/embed-code.ts:generateEmbedCode`. Removed
+  // the inline generator that previously lived here; it had drifted from
+  // the lib version (different field set, no apiKey support).
+  const embedCode = generateEmbedCode({
+    botId: id,
+    apiKey,
+    includeApiKey: !!apiKey,
+    type,
+    options: defaultOptions,
   });
-</script>`;
-  };
-
-  const embedCode = generateEmbedCode();
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(embedCode);
@@ -120,7 +90,7 @@ export default function EmbedCode({
     toast({ title: 'Embed code downloaded' });
   };
 
-  const updateOptions = (updates: Partial<EmbedOptions>) => {
+  const updateOptions = (updates: Partial<EmbedCodeOptions>) => {
     const newOptions = { ...defaultOptions, ...updates };
     onOptionsChange?.(newOptions);
   };

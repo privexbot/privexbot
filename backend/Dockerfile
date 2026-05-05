@@ -18,9 +18,16 @@ ENV UV_SYSTEM_PYTHON=1
 # Copy source for editable install
 COPY src/ ./src/
 
-# Install dependencies using uv sync (--prerelease for secret-ai-sdk's betterproto)
-RUN uv sync --system --prerelease allow || \
-    uv pip install --system --prerelease=allow -e .
+# Lock-file-pinned install (reproducible across builds). `--frozen` skips
+# re-validating uv.lock against pyproject.toml (irrelevant in a multi-stage
+# build where not every workspace file is present yet); `--no-dev` excludes
+# dev-only deps; `--prerelease=allow` covers secret-ai-sdk's betterproto pin.
+# The trailing import-verify is the safety net: if the SDK didn't actually
+# install (e.g. transient PyPI wheel-tag mismatch), the build fails LOUD
+# right here instead of shipping a broken image where chat is dead.
+# See docs.astral.sh/uv/guides/integration/docker for the full pattern.
+RUN uv sync --frozen --no-dev --prerelease=allow \
+    && python -c "import secret_ai_sdk.secret_ai; import secret_ai_sdk.secret; print('[Dockerfile] secret-ai-sdk import OK')"
 
 # Install Playwright browsers (required for web scraping)
 RUN python -m playwright install chromium

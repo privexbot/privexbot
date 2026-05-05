@@ -166,29 +166,13 @@ class Settings(BaseSettings):
         description="Set to 'true' when running on SecretVM"
     )
 
-    # Ollama (local inference for development)
-    OLLAMA_BASE_URL: str = Field(
-        default="http://localhost:11434/v1",
-        description="Ollama API base URL (local LLM inference)"
-    )
-
-    # OpenAI (alternative provider)
-    OPENAI_API_KEY: str = Field(
-        default="",
-        description="OpenAI API key"
-    )
-
-    # DeepSeek (alternative provider)
-    DEEPSEEK_API_KEY: str = Field(
-        default="",
-        description="DeepSeek API key"
-    )
-
-    # Gemini (Google AI)
-    GEMINI_API_KEY: str = Field(
-        default="",
-        description="Google Gemini API key"
-    )
+    # NOTE: OPENAI_API_KEY / DEEPSEEK_API_KEY / GEMINI_API_KEY / OLLAMA_BASE_URL
+    # were removed deliberately. Secret AI is the ONLY supported inference
+    # provider for PrivexBot — TEE-protected confidential inference is the
+    # headline differentiator. Adding a non-Secret-AI provider key field here
+    # would suggest a fallback path that does not (and must not) exist. See
+    # services/inference_service.py module docstring + memory note
+    # `feedback_secret_ai_only`.
 
     # Default inference model
     DEFAULT_INFERENCE_MODEL: str = Field(
