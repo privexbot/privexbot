@@ -18,15 +18,16 @@ ENV UV_SYSTEM_PYTHON=1
 # Copy source for editable install
 COPY src/ ./src/
 
-# Lock-file-pinned install (reproducible across builds). `--frozen` skips
-# re-validating uv.lock against pyproject.toml (irrelevant in a multi-stage
-# build where not every workspace file is present yet); `--no-dev` excludes
-# dev-only deps; `--prerelease=allow` covers secret-ai-sdk's betterproto pin.
-# The trailing import-verify is the safety net: if the SDK didn't actually
-# install (e.g. transient PyPI wheel-tag mismatch), the build fails LOUD
-# right here instead of shipping a broken image where chat is dead.
-# See docs.astral.sh/uv/guides/integration/docker for the full pattern.
-RUN uv sync --frozen --no-dev --prerelease=allow \
+# Install into SYSTEM Python (NOT a venv) — the second stage copies
+# /usr/local/lib/python3.12/site-packages from this builder, so a venv
+# install would result in an empty production image. `uv sync` always
+# creates `.venv/` regardless of UV_SYSTEM_PYTHON in the pinned uv
+# version, so we use `uv pip install --system` instead.
+# `--prerelease=allow` covers secret-ai-sdk's betterproto-2.0.0b5 pin.
+# Trailing import-verify makes the build fail LOUD if the SDK didn't
+# actually install — chat is broken in prod without it.
+RUN uv pip install --system --prerelease=allow -e . \
+    && pip install --no-cache-dir 'setuptools<81' \
     && python -c "import secret_ai_sdk.secret_ai; import secret_ai_sdk.secret; print('[Dockerfile] secret-ai-sdk import OK')"
 
 # Install Playwright browsers (required for web scraping)

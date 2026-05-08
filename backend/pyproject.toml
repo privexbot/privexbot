@@ -42,7 +42,25 @@ dependencies = [
     # LLM Inference providers
     "openai>=1.0.0",  # OpenAI-compatible APIs (OpenAI, Ollama, DeepSeek, Secret AI)
     "google-genai>=0.1.0",  # Google Gemini API
-    "secret-ai-sdk>=0.1.0",  # Native Secret AI SDK (optional, enabled via USE_SECRET_AI_SDK=true)
+    # Native Secret AI SDK. Pinned to >=0.1.7 because earlier 0.1.x
+    # versions had a different transitive set — when uv's resolver picked
+    # 0.1.0 in some builds it dropped `secret-sdk` and `betterproto`,
+    # producing images where `import secret_ai_sdk.secret_ai` raised
+    # ModuleNotFoundError at chat time. 0.1.7 is the version exercised
+    # in dev and locked in uv.lock.
+    "secret-ai-sdk>=0.1.7",
+    # Transitive deps of secret-ai-sdk that we MUST pin explicitly.
+    # The uv resolver drops them between builds depending on which
+    # secret-ai-sdk minor it picks; making them direct deps stops the
+    # whack-a-mole.
+    "secret-sdk>=1.8.3",          # secret_ai_sdk.secret imports `from secret_sdk.client.lcd import LCDClient`
+    "langchain-ollama>=1.0.0",     # secret_ai_sdk.secret_ai imports `langchain_ollama.chat_models.ChatOllama`
+    "betterproto>=2.0.0b5",        # secret_sdk.protobuf.* imports betterproto. Prerelease — needs --prerelease=allow at install
+    # setuptools<81 keeps pkg_resources available. betterproto 2.0.0b5
+    # calls `from pkg_resources import get_distribution` at module load;
+    # setuptools 81 removed pkg_resources. Remove this pin once
+    # secret-ai-sdk upgrades betterproto past 2.0.0b5.
+    "setuptools<81",
     # Object storage
     "minio>=7.2.0",  # S3-compatible object storage client
 ]

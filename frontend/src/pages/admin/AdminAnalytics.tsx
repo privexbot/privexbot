@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { adminApi } from "@/api/admin";
+import type { BusinessAnalytics } from "@/api/admin";
 import { TrendDisplay } from "@/components/analytics/TrendDisplay";
 import { ChatbotPerformanceTable } from "@/components/analytics/ChatbotPerformanceTable";
 import { FeedbackSummary } from "@/components/analytics/FeedbackSummary";
@@ -254,6 +255,248 @@ function EmptyState({ message }: { message: string }) {
 // MAIN COMPONENT
 // ========================================
 
+// ========================================
+// BUSINESS METRICS SECTION
+// ========================================
+//
+// Sibling to the existing performance/cost dashboard. Surfaces revenue
+// and unit-economics: MRR, ARR, active orgs by tier, weekly conversion
+// cohorts, soft-degrade hits, top-N orgs by usage, and a churn
+// placeholder. Read-only; data from `/admin/analytics/business`.
+
+function BusinessSection() {
+  const { data, isLoading, error, refetch } = useQuery<BusinessAnalytics>({
+    queryKey: ["admin-analytics-business"],
+    queryFn: () => adminApi.getBusinessAnalytics(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  if (error) {
+    return (
+      <Card className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+        <CardContent className="p-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-800 dark:text-red-200 font-manrope">
+              Failed to load business analytics
+            </p>
+            <p className="text-xs text-red-600 dark:text-red-400 font-manrope">
+              {error instanceof Error ? error.message : "Please try again"}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading || !data) {
+    return (
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-28 rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  const tierColor: Record<string, string> = {
+    starter: "bg-blue-500 dark:bg-blue-400",
+    pro: "bg-purple-500 dark:bg-purple-400",
+    enterprise: "bg-amber-500 dark:bg-amber-400",
+    free: "bg-gray-400 dark:bg-gray-500",
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 font-manrope">
+        Business
+      </h2>
+
+      {/* MRR / ARR top-line */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+        <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-manrope">
+              MRR
+            </p>
+            <p className="text-3xl font-semibold text-gray-900 dark:text-gray-50 font-manrope mt-1">
+              ${data.mrr.mrr_usd.toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+              {data.mrr.total_active_paid_orgs} active paid org
+              {data.mrr.total_active_paid_orgs === 1 ? "" : "s"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-manrope">
+              ARR (projected)
+            </p>
+            <p className="text-3xl font-semibold text-gray-900 dark:text-gray-50 font-manrope mt-1">
+              ${data.mrr.arr_usd.toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+              MRR × 12
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-manrope">
+              Soft-degrade ≥120%
+            </p>
+            <p className="text-3xl font-semibold text-gray-900 dark:text-gray-50 font-manrope mt-1">
+              {data.soft_degrade.orgs_at_or_over_120_percent}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope mt-1">
+              Orgs about to lose service
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Active orgs by tier */}
+      <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 font-manrope">
+              Active orgs by tier
+            </h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+              Last {data.active_by_tier.days} days
+            </span>
+          </div>
+          <div className="space-y-2">
+            {Object.entries(data.active_by_tier.by_tier).map(([tier, count]) => (
+              <div key={tier} className="flex items-center gap-3">
+                <span className="w-20 text-xs uppercase tracking-wide text-gray-600 dark:text-gray-300 font-manrope">
+                  {tier}
+                </span>
+                <div className="flex-1 h-2 rounded bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                  <div
+                    className={cn("h-full", tierColor[tier] ?? tierColor.free)}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (count / Math.max(1, data.active_by_tier.total_active_orgs)) * 100,
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <span className="w-16 text-right text-sm font-medium text-gray-900 dark:text-gray-50 font-manrope">
+                  {count}
+                </span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Conversion-rate cohorts */}
+      <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 font-manrope mb-3">
+            Free → paid conversion (weekly cohorts, last {data.conversion.weeks} weeks)
+          </h3>
+          {data.conversion.series.length === 0 ? (
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+              No signups in the last {data.conversion.weeks} weeks.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {data.conversion.series.map((row) => (
+                <div key={row.week} className="flex items-center gap-3 text-xs font-manrope">
+                  <span className="w-20 text-gray-500 dark:text-gray-400">{row.week}</span>
+                  <span className="w-24 text-gray-700 dark:text-gray-300">
+                    {row.signups} signup{row.signups === 1 ? "" : "s"}
+                  </span>
+                  <span className="w-24 text-gray-700 dark:text-gray-300">
+                    {row.converted} converted
+                  </span>
+                  <span
+                    className={cn(
+                      "font-semibold",
+                      row.rate >= 0.1
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-gray-700 dark:text-gray-300",
+                    )}
+                  >
+                    {(row.rate * 100).toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Top N orgs by usage */}
+      <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 font-manrope mb-3">
+            Top {data.top_orgs.n} orgs by usage (under-priced power users live here)
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm font-manrope">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                  <th className="pb-2 pr-3">Org</th>
+                  <th className="pb-2 pr-3">Tier</th>
+                  <th className="pb-2 pr-3">Status</th>
+                  <th className="pb-2 text-right">Messages this month</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.top_orgs.top.map((row) => (
+                  <tr
+                    key={row.org_id}
+                    className="border-b border-gray-100 dark:border-gray-700/50 last:border-b-0"
+                  >
+                    <td className="py-2 pr-3 text-gray-900 dark:text-gray-50">{row.name}</td>
+                    <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 capitalize">
+                      {row.tier}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 capitalize">
+                      {row.status}
+                    </td>
+                    <td className="py-2 text-right text-gray-900 dark:text-gray-50 tabular-nums">
+                      {row.messages_this_month.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Churn placeholder */}
+      <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 font-manrope mb-1">
+            Churn (last {data.churn.days} days)
+          </h3>
+          {data.churn.available ? (
+            <p className="text-2xl font-semibold text-gray-900 dark:text-gray-50 font-manrope">
+              {data.churn.downgrades} downgrade{data.churn.downgrades === 1 ? "" : "s"}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+              {data.churn.message ?? "Not yet available"}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
 export function AdminAnalytics() {
   const [days, setDays] = useState<AnalyticsTimeRange>(7);
 
@@ -383,6 +626,11 @@ export function AdminAnalytics() {
       {!isLoading && !error && !hasData && (
         <EmptyState message="No chatbot activity recorded yet. Analytics will appear once users start interacting with deployed chatbots." />
       )}
+
+      {/* Business metrics — MRR, conversion, churn, etc. Independent
+          query so it loads even when the bot-performance dashboard is
+          empty (useful pre-launch when there's no traffic yet). */}
+      <BusinessSection />
 
       {/* Performance Stats Cards */}
       <UnifiedStatsCard items={performanceStats} isLoading={isLoading} />

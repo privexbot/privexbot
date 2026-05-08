@@ -3,10 +3,10 @@
   "docker_username": "privexbot",
   "image": "privexbot/privexbot-frontend",
   "version": "0.0.5",
-  "digest": "privexbot/privexbot-frontend@sha256:c6d14c1e68f69b021ae9eb105d497d686367d20b941e73179d386bb56f290fff",
+  "digest": "privexbot/privexbot-frontend@sha256:9a2464e074ef238e084204090f34e2fe11e40344b4cd8455481b2ed24d1fcd64",
   "secretvm_tag": "0.0.5-secretvm",
-  "build_date": "2026-05-04T17:43:25Z",
-  "git_sha": "bc0b303ef37c8cf97ca1b3b7a28838b3e4bfc714",
+  "build_date": "2026-05-06T10:37:57Z",
+  "git_sha": "b4a31183d85e62af6883d2930835aa3a7c8ecfb6",
   "domain": "privexbot.com",
   "endpoints": {
     "frontend": "https://privexbot.com",

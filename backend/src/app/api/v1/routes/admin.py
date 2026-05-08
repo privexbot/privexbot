@@ -369,6 +369,24 @@ async def get_platform_analytics(
     return await service.get_platform_analytics(days)
 
 
+@router.get("/analytics/business")
+async def get_business_analytics(
+    staff: User = Depends(get_staff_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Revenue / unit-economics metrics for the staff backoffice.
+
+    Sibling to `/admin/analytics` (bot-performance). Returns MRR, ARR,
+    active orgs by tier, weekly conversion-rate cohorts, soft-degrade
+    threshold count, top-N orgs by usage, and a churn placeholder.
+
+    See `services/business_analytics_service.py` for query details.
+    """
+    from app.services import business_analytics_service
+
+    return business_analytics_service.get_business_overview(db)
+
+
 # ─── Plan management ────────────────────────────────────────────────────────
 # Staff-only path to upgrade ANY org's plan tier without going through Stripe.
 # `POST /billing/upgrade` only operates on the caller's active org; this

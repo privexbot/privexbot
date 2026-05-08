@@ -552,4 +552,25 @@ def upgrade_org_to_tier(db: Session, org_id: UUID, tier: str) -> Organization:
 
     db.commit()
     db.refresh(org)
+
+    # Referral reward — fires only on paid upgrades, only once per Referral
+    # row (idempotent via status check inside apply_conversion_reward), and
+    # never blocks the upgrade itself. Lazy import keeps billing_service
+    # free of a referral-service runtime dependency for the common no-ref
+    # case. See `services/referral_service.py`.
+    if tier != "free" and org.created_by is not None:
+        try:
+            from app.services.referral_service import apply_conversion_reward
+
+            if apply_conversion_reward(db, org.created_by):
+                db.commit()
+                db.refresh(org)
+        except Exception:  # pragma: no cover — defensive
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "Referral reward dispatch failed for org %s — upgrade still applied",
+                org.id,
+            )
+
     return org
