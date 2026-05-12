@@ -33,17 +33,20 @@ from typing import Final
 # ─────────────────────────────────────────────────────────────────────────
 PLAN_LIMITS: Final[dict[str, dict[str, int]]] = {
     "free": {
+        # Free is now sized for "evaluate the product, decide" — not "run a
+        # real bot indefinitely." Real infra cost (~$102/mo SecretVM compute
+        # alone, before per-token Secret AI inference) makes generous free
+        # economically untenable at scale. After 90-day grandfather email
+        # sent to legacy free orgs, these limits clip them to the new ceiling.
         "chatbots": 1,
         "chatflows": 1,
         "knowledge_bases": 1,
-        "kb_documents": 25,
+        "kb_documents": 5,
         # Matched to `kb_documents` because each scraped page becomes one
-        # Document row. Setting a separate higher number (e.g. 50) would
-        # be unreachable: a Free user hits the 25-doc cap after 25 scraped
-        # pages. Keep the two limits aligned so the constraint is honest.
-        "web_pages_per_month": 25,
-        "messages_per_month": 500,
-        "api_calls_per_month": 500,
+        # Document row. Two-limit alignment keeps the constraint honest.
+        "web_pages_per_month": 5,
+        "messages_per_month": 50,
+        "api_calls_per_month": 50,
         "team_members": 1,
         "workspaces": 1,
         # Per-USER cap (not per-org). Counts orgs where the user is OWNER.
@@ -53,25 +56,45 @@ PLAN_LIMITS: Final[dict[str, dict[str, int]]] = {
         "owned_orgs": 1,
     },
     "starter": {
+        # Messages cap right-sized to the per-token economics of
+        # DeepSeek-R1 (the default Secret AI model). At ~$0.002 per output
+        # token and a realistic mix averaging ~3,650 output tokens/msg,
+        # each message costs ~$0.0073 in Secret AI inference. 1,500 msgs
+        # × $0.0073 + $5 amortized compute = $16/mo cost vs $29 revenue
+        # → 45% gross margin (within SaaS benchmark of 50-65%, acceptable
+        # for early stage). 5,000 was unprofitable on heavy users.
         "chatbots": 5,
         "chatflows": 5,
         "knowledge_bases": 5,
         "kb_documents": 250,
         "web_pages_per_month": 500,
-        "messages_per_month": 5_000,
-        "api_calls_per_month": 25_000,
+        "messages_per_month": 1_500,
+        # api_calls counts ChatSession opens (not raw messages) — keep
+        # generously above messages so a chatty session-per-user bot
+        # doesn't run out of "calls" while still under the message cap.
+        "api_calls_per_month": 5_000,
         "team_members": 5,
         "workspaces": 3,
         "owned_orgs": 2,
     },
     "pro": {
+        # 5,000 msg/mo (was 50k). DeepSeek-R1 outputs 15k+ tokens on
+        # reasoning-heavy queries (per Artificial Analysis benchmarks).
+        # With a 30/50/20 mix of simple/medium/heavy: avg ~$0.0093/msg.
+        # 5,000 × $0.0093 + $5 compute = $51.5/mo vs $99 → 48% margin.
+        # 50k cap was unsustainable: a single power user generating max
+        # messages with reasoning would cost $465+/mo in inference vs
+        # $99 revenue. Right-sizing to economics, not aspiration.
+        # Heavier-volume customers go to Enterprise (custom contracts).
         "chatbots": 25,
         "chatflows": 25,
         "knowledge_bases": 25,
         "kb_documents": 2_500,
         "web_pages_per_month": 5_000,
-        "messages_per_month": 50_000,
-        "api_calls_per_month": 250_000,
+        "messages_per_month": 5_000,
+        # Sessions cap. Same rationale as Starter — sessions are cheap
+        # (one row per session) so generous above messages.
+        "api_calls_per_month": 15_000,
         "team_members": 25,
         "workspaces": 10,
         "owned_orgs": 5,
@@ -159,16 +182,24 @@ PLAN_METADATA: Final[dict[str, dict]] = {
     },
     "starter": {
         "label": "Starter",
-        "price_monthly_usd": 19,
-        "price_annual_usd": int(19 * 12 * (1 - ANNUAL_DISCOUNT)),
+        # $29/mo (was $19). Still cheaper than Chatbase Hobby ($40) and
+        # Voiceflow Pro ($60); covers operator support time per active
+        # customer. Existing $19 customers are grandfathered for 6 months
+        # via a manual email — no code path change needed since we have no
+        # Stripe wiring (every upgrade is a manual operator action).
+        "price_monthly_usd": 29,
+        "price_annual_usd": int(29 * 12 * (1 - ANNUAL_DISCOUNT)),
         "tagline": "Solo founders shipping their first real bot.",
         "best_for": "Indie devs, side projects, small businesses",
         "cta_label": "Start free, upgrade later",
     },
     "pro": {
         "label": "Pro",
-        "price_monthly_usd": 89,
-        "price_annual_usd": int(89 * 12 * (1 - ANNUAL_DISCOUNT)),
+        # $99/mo (was $89). Round number signals premium; still 34%
+        # cheaper than Chatbase Standard ($150) while we offer TEE
+        # confidential inference as a unique differentiator.
+        "price_monthly_usd": 99,
+        "price_annual_usd": int(99 * 12 * (1 - ANNUAL_DISCOUNT)),
         "tagline": "Scaling teams running multiple agents in production.",
         "best_for": "Small teams, growing SaaS, agency clients",
         "cta_label": "Start free, upgrade later",

@@ -193,6 +193,14 @@ export function BillingsPage() {
                     Trial ends {new Date(plan.trial_ends_at).toLocaleDateString()}
                   </p>
                 )}
+                {/* Active paid plan: show when the current 30-day cycle ends.
+                    Enterprise has subscription_ends_at = null (open-ended), so
+                    this line is naturally hidden for them. */}
+                {plan.subscription_ends_at && plan.status === "active" && plan.tier !== "free" && (
+                  <p className="text-xs text-gray-500">
+                    Subscription ends {new Date(plan.subscription_ends_at).toLocaleDateString()}
+                  </p>
+                )}
                 <Button
                   className="w-full"
                   onClick={() => setUpgradeOpen(true)}

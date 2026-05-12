@@ -16,6 +16,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import logging
 from uuid import UUID, uuid4
 from datetime import datetime
 from typing import Optional
@@ -24,6 +25,8 @@ from sqlalchemy.orm import Session
 
 from app.models.chatflow import Chatflow
 from app.services.session_service import session_service
+
+logger = logging.getLogger(__name__)
 
 
 class ChatflowService:
@@ -309,7 +312,19 @@ class ChatflowService:
             # Check for node failure
             if not node_result.get("success", True):
                 error_msg = node_result.get("error", "Unknown node error")
-                print(f"[ChatflowService] Node {current_node['id']} ({current_node['type']}) failed: {error_msg}")
+                # logger.error (with full structured payload) so the failure
+                # lands in journalctl and operators can grep it. The
+                # client-facing fallback string stays generic — exposing the
+                # raw error to a public chat client would leak internal state.
+                # If chat is broken on prod and you don't see this line in
+                # logs, journald or the docker driver may be filtering print()
+                # output — that's the bug this replacement fixes.
+                logger.error(
+                    "Chatflow node failed | node_id=%s type=%s error=%s",
+                    current_node.get("id"),
+                    current_node.get("type"),
+                    error_msg,
+                )
                 # Stop execution on failure - return error as response
                 return {
                     "output": "I encountered an error processing your request. Please try again.",

@@ -274,6 +274,11 @@ export default function Credentials() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [credentialToDelete, setCredentialToDelete] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  // Per-row test pending. testMutation.isPending is a single boolean
+  // shared across all rows (a single useMutation instance), so without
+  // this scoped state every row's spinner would activate when ANY row's
+  // Test button was clicked. Track the credential id being tested.
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   // Form state - provider is the service (notion, telegram, etc.)
   // credential_type is the auth mechanism (api_key, oauth2, database, smtp)
@@ -375,19 +380,28 @@ export default function Credentials() {
     },
   });
 
-  // Test credential mutation
+  // Test credential mutation. Sets testingId before the network call and
+  // clears it in `onSettled` so a spinner shows only on the row being
+  // tested. Backend response is `CredentialTestResponse(is_valid,
+  // message, metadata)` per app/schemas/credential.py — we read
+  // `data.message` (was reading `data.error` which was always
+  // undefined, falling back to the generic 'Connection failed' string).
   const testMutation = useMutation({
     mutationFn: async (credentialId: string) => {
+      setTestingId(credentialId);
       const response = await apiClient.post(`/credentials/${credentialId}/test`);
       return response.data;
     },
     onSuccess: (data) => {
       if (data.is_valid) {
-        toast({ title: 'Credential is valid', description: 'Connection successful' });
+        toast({
+          title: 'Credential is valid',
+          description: data.message || 'Connection successful',
+        });
       } else {
         toast({
           title: 'Credential is invalid',
-          description: data.error || 'Connection failed',
+          description: data.message || 'Connection failed',
           variant: 'destructive',
         });
       }
@@ -399,6 +413,9 @@ export default function Credentials() {
         description: handleApiError(error),
         variant: 'destructive',
       });
+    },
+    onSettled: () => {
+      setTestingId(null);
     },
   });
 
@@ -767,7 +784,7 @@ export default function Credentials() {
                   onToggleShow={toggleShowSecret}
                   onDelete={handleDelete}
                   showSecret={showSecrets[credential.id] || false}
-                  isTesting={testMutation.isPending}
+                  isTesting={testingId === credential.id}
                   index={index}
                 />
               ))}

@@ -287,32 +287,26 @@ async def submit_feedback(
     AUTH: Public bots allow feedback without API key.
           Private bots require valid API key.
     """
-    from app.models.chatbot import Chatbot
     from app.models.chat_message import ChatMessage
 
-    # Get the chatbot first to check if it's public
-    bot = db.query(Chatbot).filter(Chatbot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(404, "Chatbot not found")
-
-    # For private bots, require API key validation
-    if not bot.is_public:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(401, "API key required for private bots")
-
+    # Resolve as chatbot OR chatflow — ChatSession.bot_id is polymorphic, so
+    # feedback must accept both entity types (otherwise chatflow chats 404).
+    if authorization and authorization.startswith("Bearer "):
         api_key = authorization.replace("Bearer ", "")
         await _validate_api_key_and_get_bot(db, bot_id, api_key)
+    else:
+        await _get_public_bot(db, bot_id)
 
     # Get the message
     message = db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
     if not message:
         raise HTTPException(404, "Message not found")
 
-    # Verify message belongs to a session of this chatbot
+    # Verify message belongs to a session of this bot (chatbot or chatflow)
     from app.models.chat_session import ChatSession
     session = db.query(ChatSession).filter(ChatSession.id == message.session_id).first()
     if not session or session.bot_id != bot_id:
-        raise HTTPException(403, "Message does not belong to this chatbot")
+        raise HTTPException(403, "Message does not belong to this bot")
 
     # Update feedback
     message.feedback = {

@@ -7,7 +7,7 @@
 # Examples:
 #   ./scripts/docker/build-push-secretvm.sh 0.1.0                    # Build and push v0.1.0 for Secret VM
 #   ./scripts/docker/build-push-secretvm.sh 0.2.0-rc.1               # Build and push release candidate
-#   ./scripts/docker/build-push-secretvm.sh 1.0.0 --force            # Force push Secret VM build
+#   ./scripts/docker/build-push-secretvm.sh 0.0.7 --force            # Force push Secret VM build
 #   ./scripts/docker/build-push-secretvm.sh 0.1.0 --push-only        # Push existing image only
 #
 # Options:

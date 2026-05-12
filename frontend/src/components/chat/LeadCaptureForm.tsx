@@ -139,7 +139,7 @@ export function LeadCaptureForm({
 }: LeadCaptureFormProps) {
   const [formData, setFormData] = useState<Record<string, string>>({});
   // Default to true - checkbox is pre-checked or implicit consent when no checkbox shown
-  const [consentGiven, setConsentGiven] = useState(true);
+  const [consentGiven, setConsentGiven] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -244,38 +244,39 @@ export function LeadCaptureForm({
   };
 
   const getFieldIcon = (type: string) => {
+    const iconClass = "h-5 w-5 text-gray-400 dark:text-gray-500";
     switch (type) {
       case 'email':
-        return <Mail className="h-5 w-5 text-gray-400" />;
+        return <Mail className={iconClass} />;
       case 'phone':
-        return <Phone className="h-5 w-5 text-gray-400" />;
+        return <Phone className={iconClass} />;
       default:
-        return <User className="h-5 w-5 text-gray-400" />;
+        return <User className={iconClass} />;
     }
   };
 
   // Success state
   if (submitted) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md mx-auto text-center">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md mx-auto text-center">
         <div
           className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
           style={{ backgroundColor: `${primaryColor}20` }}
         >
           <CheckCircle className="h-8 w-8" style={{ color: primaryColor }} />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">Thank you!</h2>
-        <p className="text-gray-600">Your information has been saved. Let's start chatting!</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50 mb-2">Thank you!</h2>
+        <p className="text-gray-600 dark:text-gray-300">Your information has been saved. Let's start chatting!</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8 max-w-md mx-auto">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 md:p-8 max-w-md mx-auto">
       {/* Header */}
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-1">{title}</h2>
-        <p className="text-gray-600 text-sm">{subtitle}</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50 mb-1">{title}</h2>
+        <p className="text-gray-600 dark:text-gray-300 text-sm">{subtitle}</p>
       </div>
 
       {/* Form */}
@@ -285,10 +286,10 @@ export function LeadCaptureForm({
           <div key={field.name}>
             <label
               htmlFor={field.name}
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1"
             >
               {field.label}
-              {field.required && <span className="text-red-500 ml-1">*</span>}
+              {field.required && <span className="text-red-600 dark:text-red-400 ml-1">*</span>}
             </label>
 
             {field.type === 'select' && field.options ? (
@@ -297,8 +298,8 @@ export function LeadCaptureForm({
                 value={formData[field.name] || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
                 className={cn(
-                  "w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent",
-                  errors[field.name] ? "border-red-300" : "border-gray-300"
+                  "w-full px-4 py-3 border rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-2 focus:border-transparent",
+                  errors[field.name] ? "border-red-300 dark:border-red-500" : "border-gray-300 dark:border-gray-600"
                 )}
                 style={{ '--tw-ring-color': primaryColor } as React.CSSProperties}
               >
@@ -319,8 +320,8 @@ export function LeadCaptureForm({
                   onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
                   placeholder={field.placeholder || `Enter your ${field.label.toLowerCase()}`}
                   className={cn(
-                    "w-full pl-10 pr-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent",
-                    errors[field.name] ? "border-red-300" : "border-gray-300"
+                    "w-full pl-10 pr-4 py-3 border rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:border-transparent",
+                    errors[field.name] ? "border-red-300 dark:border-red-500" : "border-gray-300 dark:border-gray-600"
                   )}
                   style={{ '--tw-ring-color': primaryColor } as React.CSSProperties}
                 />
@@ -328,7 +329,7 @@ export function LeadCaptureForm({
             )}
 
             {errors[field.name] && (
-              <p className="mt-1 text-sm text-red-600">{errors[field.name]}</p>
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors[field.name]}</p>
             )}
           </div>
         ))}
@@ -341,22 +342,28 @@ export function LeadCaptureForm({
                 type="checkbox"
                 checked={consentGiven}
                 onChange={(e) => setConsentGiven(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-gray-300 focus:ring-2"
+                className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-offset-0"
+                // Native input — `accentColor` is the standards-based way to
+                // theme the check fill; works in all evergreen browsers and
+                // does not require porting to a Radix/shadcn primitive
+                // (which uses an SVG indicator that ignores accentColor).
                 style={{ accentColor: primaryColor }}
               />
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-gray-600 dark:text-gray-300 leading-snug">
                 {consentMessage}
               </span>
             </label>
             {errors.consent && (
-              <p className="mt-1 text-sm text-red-600">{errors.consent}</p>
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                {errors.consent}
+              </p>
             )}
           </div>
         )}
 
         {/* Form Error */}
         {errors.form && (
-          <p className="text-sm text-red-600 text-center">{errors.form}</p>
+          <p className="text-sm text-red-600 dark:text-red-400 text-center">{errors.form}</p>
         )}
 
         {/* Buttons */}
@@ -381,7 +388,7 @@ export function LeadCaptureForm({
             <button
               type="button"
               onClick={handleSkip}
-              className="w-full py-3 px-4 rounded-xl text-gray-600 font-medium hover:bg-gray-100 transition-colors"
+              className="w-full py-3 px-4 rounded-xl text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
               Skip for now
             </button>

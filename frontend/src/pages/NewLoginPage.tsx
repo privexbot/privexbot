@@ -202,7 +202,7 @@ export function NewLoginPage() {
       } else if (err.message.includes("not found") || err.message.includes("not registered")) {
         setLocalError(`This wallet is not registered. Please sign up first with your ${wallet.name} wallet.`);
       } else if (err.code === 'ERR_NETWORK') {
-        setLocalError("Cannot connect to server. Please check your internet connection and try again.");
+        setLocalError("We couldn't reach the server. Please check your connection and try again.");
       } else {
         setLocalError(err.message || "Wallet connection failed. Please try again.");
       }

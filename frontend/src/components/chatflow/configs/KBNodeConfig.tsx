@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { Node, Edge } from "reactflow";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,10 +24,17 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/contexts/AppContext";
 import kbClient from "@/lib/kb-client";
+import { AvailableVariablesPanel } from "@/components/chatflow/AvailableVariablesPanel";
 
 interface KBNodeConfigProps {
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
+  /** Optional graph context — KB query is typically `{{input}}` but
+   *  power users compose multi-hop queries (e.g. preceded by a Variable
+   *  node that refines the query). */
+  nodeId?: string;
+  nodes?: Node[];
+  edges?: Edge[];
 }
 
 const SEARCH_METHODS = [
@@ -35,7 +43,7 @@ const SEARCH_METHODS = [
   { value: "keyword_search", label: "Keyword Search (BM25)" },
 ];
 
-export function KBNodeConfig({ config, onChange }: KBNodeConfigProps) {
+export function KBNodeConfig({ config, onChange, nodeId, nodes, edges }: KBNodeConfigProps) {
   const { currentWorkspace } = useApp();
 
   const [kbId, setKbId] = useState((config.kb_id as string) || "");
@@ -110,8 +118,22 @@ export function KBNodeConfig({ config, onChange }: KBNodeConfigProps) {
           className="mt-1.5 h-20 font-mono text-sm"
         />
         <p className="text-xs text-gray-500 mt-1">
-          Use {"{{input}}"} for user message
+          Use {"{{input}}"} for the user message — that's the typical setup.
+          To compose a refined query, wire a Variable node upstream and
+          insert it here from the panel below.
         </p>
+
+        {/* Upstream-aware variable picker for the query field. */}
+        {nodeId && nodes && edges && (
+          <div className="mt-2">
+            <AvailableVariablesPanel
+              nodeId={nodeId}
+              nodes={nodes}
+              edges={edges}
+              onInsert={(v) => setQuery((prev) => prev + v)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Search Method */}

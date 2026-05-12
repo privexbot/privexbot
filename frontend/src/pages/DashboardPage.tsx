@@ -23,6 +23,7 @@ import { StatsCards } from "@/components/dashboard/StatsCards";
 import { RecentActivities } from "@/components/dashboard/RecentActivities";
 import { RecentResources } from "@/components/dashboard/RecentResources";
 import { ActionCards } from "@/components/dashboard/ActionCards";
+import { UsageMeter } from "@/components/dashboard/UsageMeter";
 import { dashboardApi } from "@/api/dashboard";
 import type { DashboardData, Activity } from "@/types/dashboard";
 
@@ -189,6 +190,11 @@ export function DashboardPage() {
 
       {/* Main Content Area */}
       <div className="px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 py-6">
+        {/* Plan-usage meter — surfaces messages/KB-docs/web-pages usage so
+            users see soft-degrade approaching before they hit it. Renders
+            null for unlimited tiers. See components/dashboard/UsageMeter. */}
+        <UsageMeter />
+
         {/* Error State */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">

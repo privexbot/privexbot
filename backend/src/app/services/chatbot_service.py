@@ -17,6 +17,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import logging
 import re
 import time
 from uuid import UUID, uuid4
@@ -28,8 +29,16 @@ from sqlalchemy.orm import Session
 from app.models.chatbot import Chatbot
 from app.services.inference_service import inference_service
 from app.services.session_service import session_service
+
+logger = logging.getLogger(__name__)
 from app.services.retrieval_service import retrieval_service
 from app.services.draft_service import DraftType
+
+
+_TRAILING_SOURCES_RE = re.compile(
+    r"\n+\s*(?:📚\s*)?\**\s*sources\s*:?\s*\**.*$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 class ChatbotService:
@@ -300,9 +309,11 @@ class ChatbotService:
             collected_variables=collected_variables
         )
 
-        # 6. Call AI with structured messages
-        # This automatically routes to the correct provider based on model prefix
-        # e.g., "gemini-2.0-flash" -> Gemini, "gpt-4o" -> OpenAI, etc.
+        # 6. Call AI with structured messages.
+        # Routes to Secret AI (the only supported provider — see
+        # inference_service.py module docstring). The native SDK transport
+        # is used when available, with REST as transport-level fallback;
+        # both terminate at Secret AI's TEE nodes.
         try:
             start_time = time.time()
             ai_response = await self.inference_service.generate_chat(
@@ -403,6 +414,17 @@ class ChatbotService:
 
                 sources = validated_sources
 
+            # Strip trailing "Sources:" footer the LLM may have hallucinated
+            # despite the prompt forbidding it, but only when the structured
+            # `sources` array ended up empty (so we don't accidentally drop a
+            # real citation block). Benefits every surface (public chat,
+            # widget, Telegram, Discord, Slack) since they all render
+            # `response["response"]` as-is. `re.DOTALL` also consumes any
+            # bullet-list items the LLM may have written under the orphan
+            # header.
+            if not sources and response_text:
+                response_text = _TRAILING_SOURCES_RE.sub("", response_text).rstrip()
+
             # 7. Save assistant message
             assistant_msg = self.session_service.save_message(
                 db=db,
@@ -438,6 +460,15 @@ class ChatbotService:
             }
 
         except Exception as e:
+            # logger.exception captures the current traceback into journalctl
+            # so prod operators can triage. The user-facing fallback string
+            # stays generic; raw errors are never returned to public chat.
+            logger.exception(
+                "Chatbot message processing failed | chatbot_id=%s session_id=%s",
+                getattr(chatbot, "id", None),
+                getattr(session, "id", None),
+            )
+
             # Rollback any uncommitted changes to ensure clean state
             db.rollback()
 
@@ -452,9 +483,13 @@ class ChatbotService:
                     error_code="generation_error"
                 )
                 db.commit()
-            except Exception as save_error:
-                # If we can't save the error message, just log it
-                print(f"[ChatbotService] Failed to save error message: {save_error}")
+            except Exception:
+                # logger.exception again so the secondary failure (e.g. DB
+                # write fault) is also captured with traceback.
+                logger.exception(
+                    "Chatbot error-message save failed | session_id=%s",
+                    getattr(session, "id", None),
+                )
 
             raise
 
@@ -890,7 +925,8 @@ class ChatbotService:
         """
         Build structured messages for AI model.
 
-        WHY: Modern LLMs (OpenAI, Gemini, etc.) work better with structured messages
+        WHY: The OpenAI-shaped role/content message format is the standard
+             Secret AI's API expects (and what most modern LLMs share)
         HOW: Build list of role/content dicts with system, history, and user messages
 
         APPLIES ALL CONFIGURATIONS:
@@ -993,7 +1029,13 @@ INSTRUCTIONS (DO NOT repeat actions already completed above):
         behavior_parts = []
 
         if behavior.get("show_citations", False):
-            behavior_parts.append("When using information from the knowledge base, cite your sources by mentioning where the information came from.")
+            behavior_parts.append(
+                "Ground your answer in the provided context. Do NOT add a "
+                "'Sources:' footer or list of references — the platform "
+                "attaches citation metadata automatically. Mention sources "
+                "inline only when it improves clarity (e.g., \"according to "
+                "the user manual\")."
+            )
 
         if behavior.get("show_followups", False):
             behavior_parts.append("At the end of your response, suggest 1-2 follow-up questions ONLY about topics that are actually in your knowledge base context. Never suggest topics from your general training data.")

@@ -111,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Provide user-friendly error messages
         if (err.code === 'ERR_NETWORK') {
-          setError("Cannot connect to server. Please ensure the backend is running.");
+          setError("We couldn't reach the server. Please check your connection and try again.");
         } else if (err.response?.data?.detail) {
           // Handle FastAPI validation errors
           const detail = err.response.data.detail;
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Provide user-friendly error messages
         if (err.code === 'ERR_NETWORK') {
-          setError("Cannot connect to server. Please ensure the backend is running.");
+          setError("We couldn't reach the server. Please check your connection and try again.");
         } else if (err.response?.data?.detail) {
           // Handle FastAPI validation errors
           const detail = err.response.data.detail;
@@ -188,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Provide user-friendly error messages
         if (err.code === 'ERR_NETWORK') {
-          setError("Cannot connect to server. Please ensure the backend is running.");
+          setError("We couldn't reach the server. Please check your connection and try again.");
         } else if (err.response?.data?.detail) {
           const detail = err.response.data.detail;
           if (Array.isArray(detail)) {

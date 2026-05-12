@@ -110,6 +110,14 @@ celery_app.conf.update(
             "task": "suspend_inactive_free_orgs",
             "schedule": crontab(hour=2, minute=0),
         },
+
+        # Paid-cycle renewal sweep daily at 3:30 AM (after the inactivity
+        # sweep). Warns once when subscription_ends_at passes, downgrades
+        # to Free after a 7-day grace. See `tasks/billing_renewal_tasks.py`.
+        "downgrade-expired-paid-orgs": {
+            "task": "downgrade_expired_paid_orgs",
+            "schedule": crontab(hour=3, minute=30),
+        },
     },
 )
 

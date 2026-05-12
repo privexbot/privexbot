@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import type { Node, Edge } from "reactflow";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,25 +22,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { AvailableVariablesPanel } from "@/components/chatflow/AvailableVariablesPanel";
 
 interface LLMNodeConfigProps {
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
+  /** Optional graph context for the variables panel. When provided, the
+   *  panel walks upstream from `nodeId` to surface the actual reachable
+   *  variables (e.g. `{{kb_1}}`). Without it, only built-ins render. */
+  nodeId?: string;
+  nodes?: Node[];
+  edges?: Edge[];
 }
-
-const AVAILABLE_VARIABLES = [
-  { name: "input", description: "User message" },
-  { name: "context", description: "KB retrieval" },
-  { name: "history", description: "Chat history" },
-];
 
 const AVAILABLE_MODELS = [
   { value: "secret-ai-v1", label: "Secret AI (Privacy-Preserving)" },
 ];
 
-export function LLMNodeConfig({ config, onChange }: LLMNodeConfigProps) {
+export function LLMNodeConfig({ config, onChange, nodeId, nodes, edges }: LLMNodeConfigProps) {
   const [prompt, setPrompt] = useState((config.prompt as string) || "");
   const [model, setModel] = useState((config.model as string) || "secret-ai-v1");
   const [temperature, setTemperature] = useState((config.temperature as number) || 0.7);
@@ -63,8 +63,11 @@ export function LLMNodeConfig({ config, onChange }: LLMNodeConfigProps) {
     return () => clearTimeout(timeoutId);
   }, [emitChange]);
 
-  const insertVariable = (varName: string) => {
-    setPrompt((prev) => prev + `{{${varName}}}`);
+  // Append the already-braced variable string at the end of the prompt.
+  // The AvailableVariablesPanel passes the full `{{<id>}}` form so we
+  // don't double-brace.
+  const insertVariable = (variable: string) => {
+    setPrompt((prev) => prev + variable);
   };
 
   return (
@@ -94,23 +97,19 @@ export function LLMNodeConfig({ config, onChange }: LLMNodeConfigProps) {
           placeholder={"Based on: {{context}}\n\nUser: {{input}}\n\nAssistant:"}
           className="mt-1.5 h-32 font-mono text-sm"
         />
-        <div className="flex gap-1 mt-2 flex-wrap">
-          {AVAILABLE_VARIABLES.map((v) => (
-            <Button
-              key={v.name}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => insertVariable(v.name)}
-            >
-              <Badge variant="secondary" className="mr-1 text-xs">
-                {`{{${v.name}}}`}
-              </Badge>
-              {v.description}
-            </Button>
-          ))}
-        </div>
+        {/* Upstream-aware variables panel — replaces the old static
+            three-button row that included a misleading {{context}}
+            entry (which never resolves at runtime). */}
+        {nodeId && nodes && edges && (
+          <div className="mt-2">
+            <AvailableVariablesPanel
+              nodeId={nodeId}
+              nodes={nodes}
+              edges={edges}
+              onInsert={insertVariable}
+            />
+          </div>
+        )}
       </div>
 
       {/* Model Selection */}

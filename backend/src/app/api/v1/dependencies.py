@@ -79,13 +79,13 @@ async def get_current_user(
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token"
+                detail="Your session has expired. Please sign in again."
             )
 
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
+            detail="Your session has expired. Please sign in again."
         )
 
     # Lookup user in database
@@ -94,13 +94,13 @@ async def get_current_user(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
+            detail="We couldn't find your account. Please sign in again."
         )
 
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is inactive"
+            detail="This account has been disabled. Contact support if you think this is a mistake."
         )
 
     return user
@@ -121,7 +121,7 @@ async def get_current_active_user(
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user"
+            detail="This account has been disabled. Contact support if you think this is a mistake."
         )
     return current_user
 
@@ -182,13 +182,13 @@ async def get_current_user_with_org(
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token"
+                detail="Your session has expired. Please sign in again."
             )
 
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
+            detail="Your session has expired. Please sign in again."
         )
 
     # Lookup user in database
@@ -197,13 +197,13 @@ async def get_current_user_with_org(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
+            detail="We couldn't find your account. Please sign in again."
         )
 
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is inactive"
+            detail="This account has been disabled. Contact support if you think this is a mistake."
         )
 
     # CRITICAL: Validate organization context

@@ -168,7 +168,6 @@ class LeadForm {
             name="consent"
             class="privexbot-consent-checkbox"
             required
-            checked
           />
           <span>${consentMessage}</span>
         </label>

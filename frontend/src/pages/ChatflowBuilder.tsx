@@ -1004,13 +1004,22 @@ export default function ChatflowBuilder() {
     if (!selectedNode) return null;
     const config = (selectedNode.data?.config || {}) as Record<string, unknown>;
 
+    // Pass graph context to panels that surface the upstream-aware
+    // AvailableVariablesPanel. Other node types (http/code/loop/etc.)
+    // don't yet show the panel and ignore these props.
+    const graphProps = {
+      nodeId: selectedNode.id,
+      nodes,
+      edges,
+    };
+
     switch (selectedNode.type) {
       case "llm":
-        return <LLMNodeConfig config={config} onChange={handleNodeConfigChange} />;
+        return <LLMNodeConfig config={config} onChange={handleNodeConfigChange} {...graphProps} />;
       case "kb":
-        return <KBNodeConfig config={config} onChange={handleNodeConfigChange} />;
+        return <KBNodeConfig config={config} onChange={handleNodeConfigChange} {...graphProps} />;
       case "condition":
-        return <ConditionNodeConfig config={config} onChange={handleNodeConfigChange} />;
+        return <ConditionNodeConfig config={config} onChange={handleNodeConfigChange} {...graphProps} />;
       case "http":
         return <HTTPNodeConfig config={config} onChange={handleNodeConfigChange} />;
       case "variable":
@@ -1043,7 +1052,7 @@ export default function ChatflowBuilder() {
           </div>
         );
       case "response":
-        return <ResponseNodeConfig config={config} onChange={handleNodeConfigChange} />;
+        return <ResponseNodeConfig config={config} onChange={handleNodeConfigChange} {...graphProps} />;
       case "loop":
         return <LoopNodeConfig config={config} onChange={handleNodeConfigChange} />;
       case "webhook":
@@ -1065,7 +1074,7 @@ export default function ChatflowBuilder() {
           </p>
         );
     }
-  }, [selectedNode, handleNodeConfigChange]);
+  }, [selectedNode, handleNodeConfigChange, nodes, edges]);
 
   // Deploy mutation
   const deployMutation = useMutation({

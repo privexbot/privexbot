@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import type { Node, Edge } from "reactflow";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,10 +19,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { AvailableVariablesPanel } from "@/components/chatflow/AvailableVariablesPanel";
 
 interface ConditionNodeConfigProps {
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
+  /** Optional graph context — same pattern as LLMNodeConfig. */
+  nodeId?: string;
+  nodes?: Node[];
+  edges?: Edge[];
 }
 
 const OPERATORS = [
@@ -40,12 +46,7 @@ const OPERATORS = [
   { value: "regex", label: "Regex Match", description: "Pattern matching", category: "Pattern" },
 ];
 
-const VARIABLE_SUGGESTIONS = [
-  { name: "input", description: "User message" },
-  { name: "context", description: "KB retrieval" },
-];
-
-export function ConditionNodeConfig({ config, onChange }: ConditionNodeConfigProps) {
+export function ConditionNodeConfig({ config, onChange, nodeId, nodes, edges }: ConditionNodeConfigProps) {
   const [operator, setOperator] = useState((config.operator as string) || "contains");
   const [variable, setVariable] = useState((config.variable as string) || "{{input}}");
   const [value, setValue] = useState((config.value as string) || "");
@@ -110,18 +111,20 @@ export function ConditionNodeConfig({ config, onChange }: ConditionNodeConfigPro
           placeholder="{{input}}"
           className="mt-1.5 font-mono text-sm"
         />
-        <div className="flex gap-1 mt-2 flex-wrap">
-          {VARIABLE_SUGGESTIONS.map((v) => (
-            <button
-              key={v.name}
-              type="button"
-              onClick={() => setVariable(`{{${v.name}}}`)}
-              className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
-            >
-              {`{{${v.name}}}`}
-            </button>
-          ))}
-        </div>
+        {/* Upstream-aware variable picker. Replaces the old static
+            {{input}} / {{context}} suggestions ({{context}} doesn't
+            resolve at runtime). Setting (not appending) the variable
+            field — Condition usually compares ONE value, not a template. */}
+        {nodeId && nodes && edges && (
+          <div className="mt-2">
+            <AvailableVariablesPanel
+              nodeId={nodeId}
+              nodes={nodes}
+              edges={edges}
+              onInsert={(v) => setVariable(v)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Comparison Value */}

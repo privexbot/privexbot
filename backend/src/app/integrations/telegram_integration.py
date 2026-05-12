@@ -77,7 +77,18 @@ class TelegramIntegration:
             raise ValueError("Telegram bot token credential not found")
 
         cred_data = credential_service.get_decrypted_data(db, credential)
-        bot_token = cred_data["bot_token"]
+        # Frontend stores Telegram credential under the generic `api_key` key
+        # (Credentials.tsx:328-337); older code paths used the provider-
+        # specific `bot_token`. Accept either at READ time so both legacy
+        # and freshly-created credentials work — no Fernet decrypt-reencrypt
+        # data migration needed (which would carry production-data risk).
+        bot_token = cred_data.get("bot_token") or cred_data.get("api_key")
+        if not bot_token:
+            raise ValueError(
+                "Telegram credential is missing both `bot_token` and "
+                "`api_key`. Re-create the credential at "
+                "/settings/credentials and try again."
+            )
 
         # Webhook URL
         webhook_url = f"{settings.API_BASE_URL}/webhooks/telegram/{entity_id}"
@@ -438,8 +449,15 @@ class TelegramIntegration:
             raise ValueError("Telegram credential not found")
 
         cred_data = credential_service.get_decrypted_data(db, credential)
-
-        return cred_data["bot_token"]
+        # Same dual-key compat as register_webhook above — credentials may
+        # be stored under either `bot_token` (legacy) or `api_key` (current).
+        token = cred_data.get("bot_token") or cred_data.get("api_key")
+        if not token:
+            raise ValueError(
+                "Telegram credential is missing both `bot_token` and "
+                "`api_key`. Re-create the credential and re-deploy the bot."
+            )
+        return token
 
     @staticmethod
     def find_existing_telegram_users(

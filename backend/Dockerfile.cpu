@@ -36,9 +36,35 @@ RUN pip install --no-cache-dir \
     torchvision==0.20.1+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install all other dependencies using uv sync (--prerelease for secret-ai-sdk's betterproto)
-RUN uv sync --system --prerelease allow || \
-    uv pip install --system --prerelease=allow -e .
+# Install into SYSTEM Python (NOT a venv).
+#
+# Earlier we tried `uv export --frozen` to install from `uv.lock` directly,
+# but the lockfile pins `hf-xet==1.2.1rc0` which is no longer on PyPI —
+# uv refuses to install with that constraint. We fall back to `uv pip
+# install -e .` which does fresh PyPI resolution from pyproject.toml.
+#
+# To prevent the resolver from picking the WRONG secret-ai-sdk minor
+# (we observed it dropping to 0.1.0 in some builds, which has a
+# different transitive set than 0.1.7), pyproject.toml now pins:
+#   - secret-ai-sdk>=0.1.7
+#   - secret-sdk>=1.8.3
+#   - langchain-ollama>=1.0.0
+#   - betterproto>=2.0.0b5
+#   - setuptools<81  (keeps pkg_resources available for betterproto)
+#
+# Without those pins, fresh resolution would non-deterministically drop
+# transitive deps and produce images where `import secret_ai_sdk` raises
+# ModuleNotFoundError at chat time. With them, the install is reliable.
+#
+# `--prerelease=allow` is mandatory for betterproto-2.0.0b5.
+# `setuptools<81` is force-installed AFTER uv to defend against a
+# resolver that ignored the pyproject pin.
+#
+# Trailing import-verify makes the build fail LOUD if the SDK didn't
+# actually become importable — better than shipping a broken image.
+RUN uv pip install --system --prerelease=allow -e . \
+    && pip install --no-cache-dir 'setuptools<81' \
+    && python -c "import secret_ai_sdk.secret_ai; import secret_ai_sdk.secret; print('[Dockerfile.cpu] secret-ai-sdk import OK')"
 
 # Production stage
 FROM python:3.12-slim

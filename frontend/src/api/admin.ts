@@ -175,6 +175,69 @@ export interface InviteCodeInfo {
   redeemed_at?: string;
 }
 
+// Business Analytics Types — mirror the payload from
+// `services/business_analytics_service.get_business_overview`.
+export interface BusinessMrr {
+  mrr_usd: number;
+  arr_usd: number;
+  by_tier: Record<string, { count: number; mrr_usd: number }>;
+  total_active_paid_orgs: number;
+}
+
+export interface BusinessActiveByTier {
+  days: number;
+  by_tier: Record<string, number>;
+  total_active_orgs: number;
+}
+
+export interface BusinessConversionEntry {
+  week: string;
+  signups: number;
+  converted: number;
+  rate: number;
+}
+
+export interface BusinessConversion {
+  weeks: number;
+  series: BusinessConversionEntry[];
+}
+
+export interface BusinessSoftDegrade {
+  days: number;
+  orgs_at_or_over_120_percent: number;
+  threshold: number;
+}
+
+export interface BusinessTopOrg {
+  org_id: string;
+  name: string;
+  tier: string;
+  status: string;
+  messages_this_month: number;
+}
+
+export interface BusinessTopOrgs {
+  top: BusinessTopOrg[];
+  n: number;
+}
+
+export interface BusinessChurn {
+  available: boolean;
+  message?: string;
+  days: number;
+  downgrades: number;
+}
+
+export interface BusinessAnalytics {
+  mrr: BusinessMrr;
+  active_by_tier: BusinessActiveByTier;
+  conversion: BusinessConversion;
+  soft_degrade: BusinessSoftDegrade;
+  top_orgs: BusinessTopOrgs;
+  churn: BusinessChurn;
+  generated_at: string;
+}
+
 // ============== API Functions ==============
 
 export const adminApi = {
@@ -291,6 +354,19 @@ export const adminApi = {
     const response = await apiClient.get<AggregatedAnalytics>("/admin/analytics", {
       params: { days },
     });
+    return response.data;
+  },
+
+  /**
+   * Get business / revenue analytics: MRR, ARR, active orgs by tier,
+   * weekly conversion-rate cohorts, soft-degrade hits, top-N orgs,
+   * churn placeholder. Sibling to `/admin/analytics` which covers
+   * bot-performance metrics. Staff-only.
+   */
+  getBusinessAnalytics: async (): Promise<BusinessAnalytics> => {
+    const response = await apiClient.get<BusinessAnalytics>(
+      "/admin/analytics/business",
+    );
     return response.data;
   },
 
