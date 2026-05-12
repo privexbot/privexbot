@@ -139,7 +139,7 @@ export function LeadCaptureForm({
 }: LeadCaptureFormProps) {
   const [formData, setFormData] = useState<Record<string, string>>({});
   // Default to true - checkbox is pre-checked or implicit consent when no checkbox shown
-  const [consentGiven, setConsentGiven] = useState(true);
+  const [consentGiven, setConsentGiven] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -265,8 +265,8 @@ export function LeadCaptureForm({
         >
           <CheckCircle className="h-8 w-8" style={{ color: primaryColor }} />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50 mb-2 font-manrope">Thank you!</h2>
-        <p className="text-gray-600 dark:text-gray-300 font-manrope">Your information has been saved. Let's start chatting!</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50 mb-2">Thank you!</h2>
+        <p className="text-gray-600 dark:text-gray-300">Your information has been saved. Let's start chatting!</p>
       </div>
     );
   }
@@ -275,8 +275,8 @@ export function LeadCaptureForm({
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 md:p-8 max-w-md mx-auto">
       {/* Header */}
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50 mb-1 font-manrope">{title}</h2>
-        <p className="text-gray-600 dark:text-gray-300 text-sm font-manrope">{subtitle}</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50 mb-1">{title}</h2>
+        <p className="text-gray-600 dark:text-gray-300 text-sm">{subtitle}</p>
       </div>
 
       {/* Form */}
@@ -286,7 +286,7 @@ export function LeadCaptureForm({
           <div key={field.name}>
             <label
               htmlFor={field.name}
-              className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1 font-manrope"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1"
             >
               {field.label}
               {field.required && <span className="text-red-600 dark:text-red-400 ml-1">*</span>}
@@ -298,7 +298,7 @@ export function LeadCaptureForm({
                 value={formData[field.name] || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
                 className={cn(
-                  "w-full px-4 py-3 border rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50 font-manrope focus:outline-none focus:ring-2 focus:border-transparent",
+                  "w-full px-4 py-3 border rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50 focus:outline-none focus:ring-2 focus:border-transparent",
                   errors[field.name] ? "border-red-300 dark:border-red-500" : "border-gray-300 dark:border-gray-600"
                 )}
                 style={{ '--tw-ring-color': primaryColor } as React.CSSProperties}
@@ -320,7 +320,7 @@ export function LeadCaptureForm({
                   onChange={(e) => setFormData(prev => ({ ...prev, [field.name]: e.target.value }))}
                   placeholder={field.placeholder || `Enter your ${field.label.toLowerCase()}`}
                   className={cn(
-                    "w-full pl-10 pr-4 py-3 border rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50 placeholder-gray-400 dark:placeholder-gray-500 font-manrope focus:outline-none focus:ring-2 focus:border-transparent",
+                    "w-full pl-10 pr-4 py-3 border rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-50 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:border-transparent",
                     errors[field.name] ? "border-red-300 dark:border-red-500" : "border-gray-300 dark:border-gray-600"
                   )}
                   style={{ '--tw-ring-color': primaryColor } as React.CSSProperties}
@@ -329,7 +329,7 @@ export function LeadCaptureForm({
             )}
 
             {errors[field.name] && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400 font-manrope">{errors[field.name]}</p>
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors[field.name]}</p>
             )}
           </div>
         ))}
@@ -349,12 +349,12 @@ export function LeadCaptureForm({
                 // (which uses an SVG indicator that ignores accentColor).
                 style={{ accentColor: primaryColor }}
               />
-              <span className="text-sm text-gray-600 dark:text-gray-300 font-manrope leading-snug">
+              <span className="text-sm text-gray-600 dark:text-gray-300 leading-snug">
                 {consentMessage}
               </span>
             </label>
             {errors.consent && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400 font-manrope">
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
                 {errors.consent}
               </p>
             )}
@@ -363,7 +363,7 @@ export function LeadCaptureForm({
 
         {/* Form Error */}
         {errors.form && (
-          <p className="text-sm text-red-600 dark:text-red-400 text-center font-manrope">{errors.form}</p>
+          <p className="text-sm text-red-600 dark:text-red-400 text-center">{errors.form}</p>
         )}
 
         {/* Buttons */}
@@ -371,7 +371,7 @@ export function LeadCaptureForm({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 px-4 rounded-xl text-white font-medium font-manrope disabled:opacity-50 transition-colors"
+            className="w-full py-3 px-4 rounded-xl text-white font-medium disabled:opacity-50 transition-colors"
             style={{ backgroundColor: primaryColor }}
           >
             {submitting ? (
@@ -388,7 +388,7 @@ export function LeadCaptureForm({
             <button
               type="button"
               onClick={handleSkip}
-              className="w-full py-3 px-4 rounded-xl text-gray-600 dark:text-gray-300 font-medium font-manrope hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="w-full py-3 px-4 rounded-xl text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
               Skip for now
             </button>

@@ -243,7 +243,7 @@ export function NewSignupPage() {
       } else if (err.message.includes("rejected")) {
         setLocalError("Connection was cancelled. Please try again.");
       } else if (err.code === 'ERR_NETWORK') {
-        setLocalError("Cannot connect to server. Please check your internet connection and try again.");
+        setLocalError("We couldn't reach the server. Please check your connection and try again.");
       } else {
         setLocalError(err.message || "Wallet connection failed. Please try again.");
       }
