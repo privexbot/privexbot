@@ -291,67 +291,71 @@ class PrivexBotWidget {
   // Create singleton instance
   const widget = new PrivexBotWidget();
 
-  // Create global pb() function
-  window.pb =
-    window.pb ||
-    function () {
-      const args = Array.prototype.slice.call(arguments);
-      const command = args[0];
+  // Capture any args queued by a pre-installed stub before overwriting it.
+  // The async loader snippet installs `window.pb = window.pb || function(){
+  // (window.pb.q = window.pb.q || []).push(arguments) }` so consumers can
+  // call `pb('init', ...)` before this bundle finishes loading. We must
+  // overwrite that stub with the real handler unconditionally — a `||`
+  // assignment would short-circuit because the stub is truthy.
+  const queuedCalls =
+    window.pb && Array.isArray(window.pb.q) ? window.pb.q : [];
 
-      switch (command) {
-        case 'init':
-          const initConfig = args[1];
-          const options = args[2];
+  // Install the real pb() handler
+  window.pb = function () {
+    const args = Array.prototype.slice.call(arguments);
+    const command = args[0];
 
-          // Handle both formats:
-          // pb('init', 'chatbot-id', { apiKey: '...', options })
-          // pb('init', { id, apiKey, options })
-          if (typeof initConfig === 'string') {
-            widget.init({
-              id: initConfig,
-              apiKey: options?.apiKey,
-              options: options || {},
-            });
-          } else {
-            widget.init(initConfig);
-          }
-          break;
+    switch (command) {
+      case 'init':
+        const initConfig = args[1];
+        const options = args[2];
 
-        case 'open':
-          widget.open();
-          break;
+        // Handle both formats:
+        // pb('init', 'chatbot-id', { apiKey: '...', options })
+        // pb('init', { id, apiKey, options })
+        if (typeof initConfig === 'string') {
+          widget.init({
+            id: initConfig,
+            apiKey: options?.apiKey,
+            options: options || {},
+          });
+        } else {
+          widget.init(initConfig);
+        }
+        break;
 
-        case 'close':
-          widget.close();
-          break;
+      case 'open':
+        widget.open();
+        break;
 
-        case 'toggle':
-          widget.toggle();
-          break;
+      case 'close':
+        widget.close();
+        break;
 
-        case 'destroy':
-          widget.destroy();
-          break;
+      case 'toggle':
+        widget.toggle();
+        break;
 
-        case 'reset':
-          widget.resetConversation();
-          break;
+      case 'destroy':
+        widget.destroy();
+        break;
 
-        case 'status':
-          return widget.getStatus();
+      case 'reset':
+        widget.resetConversation();
+        break;
 
-        default:
-          console.warn(`PrivexBot: Unknown command "${command}"`);
-      }
-    };
+      case 'status':
+        return widget.getStatus();
 
-  // Process queued commands (from async loader)
-  if (window.pb.q && Array.isArray(window.pb.q)) {
-    window.pb.q.forEach((args) => {
-      window.pb.apply(null, args);
-    });
-    delete window.pb.q;
-  }
+      default:
+        console.warn(`PrivexBot: Unknown command "${command}"`);
+    }
+  };
+
+  // Drain queued args through the real handler
+  queuedCalls.forEach((args) => {
+    window.pb.apply(null, args);
+  });
 
   // Auto-init from window.privexbotConfig (for simpler embed code)
   if (window.privexbotConfig && !widget.isInitialized) {
