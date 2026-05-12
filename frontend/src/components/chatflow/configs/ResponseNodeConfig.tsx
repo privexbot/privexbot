@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import type { Node, Edge } from "reactflow";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -18,10 +19,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AvailableVariablesPanel } from "@/components/chatflow/AvailableVariablesPanel";
 
 interface ResponseNodeConfigProps {
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
+  /** Optional graph context — same pattern as LLMNodeConfig. */
+  nodeId?: string;
+  nodes?: Node[];
+  edges?: Edge[];
 }
 
 const FORMATS = [
@@ -30,12 +36,7 @@ const FORMATS = [
   { value: "json", label: "JSON", description: "Structured JSON output" },
 ];
 
-const VARIABLE_BUTTONS = [
-  { label: "{{_last_output}}", description: "Previous node output" },
-  { label: "{{input}}", description: "User message" },
-];
-
-export function ResponseNodeConfig({ config, onChange }: ResponseNodeConfigProps) {
+export function ResponseNodeConfig({ config, onChange, nodeId, nodes, edges }: ResponseNodeConfigProps) {
   const [message, setMessage] = useState((config.message as string) || "");
   const [format, setFormat] = useState((config.format as string) || "text");
   const [includeSources, setIncludeSources] = useState(
@@ -77,20 +78,19 @@ export function ResponseNodeConfig({ config, onChange }: ResponseNodeConfigProps
           Leave empty to use the previous node's output. Use {"{{variable}}"} syntax to reference variables.
         </p>
 
-        {/* Variable helper buttons */}
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {VARIABLE_BUTTONS.map((v) => (
-            <button
-              key={v.label}
-              type="button"
-              onClick={() => setMessage((prev) => prev + v.label)}
-              className="px-2 py-0.5 text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              title={v.description}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+        {/* Upstream-aware variable picker. Replaces the old static
+            two-button helper which didn't surface upstream node ids
+            (e.g. {{kb_1}}, {{llm_1}}) the user had actually wired in. */}
+        {nodeId && nodes && edges && (
+          <div className="mt-2">
+            <AvailableVariablesPanel
+              nodeId={nodeId}
+              nodes={nodes}
+              edges={edges}
+              onInsert={(v) => setMessage((prev) => prev + v)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Format */}

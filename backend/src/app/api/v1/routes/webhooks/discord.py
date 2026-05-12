@@ -15,7 +15,7 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request, Header
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import Optional
@@ -24,6 +24,8 @@ import hashlib
 import json
 import logging
 import traceback
+
+import httpx
 
 from app.db.session import get_db, SessionLocal
 from app.integrations.discord_integration import discord_integration
@@ -136,6 +138,7 @@ def _resolve_bot(db: Session, bot_id: UUID):
 @router.post("/shared")
 async def discord_shared_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_signature_ed25519: Optional[str] = Header(None),
     x_signature_timestamp: Optional[str] = Header(None),
 ):
@@ -217,7 +220,9 @@ async def discord_shared_webhook(
         # ═══════════════════════════════════════════════════════════
         db = SessionLocal()
         try:
-            return await _handle_shared_interaction(db, interaction, interaction_type)
+            return await _handle_shared_interaction(
+                db, interaction, interaction_type, background_tasks
+            )
         finally:
             db.close()
 
@@ -231,8 +236,29 @@ async def discord_shared_webhook(
         )
 
 
-async def _handle_shared_interaction(db: Session, interaction: dict, interaction_type: int):
-    """Handle non-PING Discord interactions (slash commands, buttons, etc.)."""
+async def _handle_shared_interaction(
+    db: Session,
+    interaction: dict,
+    interaction_type: int,
+    background_tasks: BackgroundTasks,
+):
+    """Handle non-PING Discord interactions (slash commands, buttons, etc.).
+
+    Critical: Discord enforces a HARD 3-second timeout on the initial
+    interaction response. Secret AI inference (especially on cold start)
+    routinely takes 5-30 seconds. Returning a synchronous `type: 4`
+    after awaiting inference produces "The application did not respond"
+    in the user's Discord client.
+
+    Solution (per Discord's docs, "Receiving and Responding to
+    Interactions"): respond IMMEDIATELY with `type: 5`
+    (DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE) — that ACK reaches Discord
+    well within the 3-second budget — and then send the actual content
+    as a follow-up message via
+    `PATCH /webhooks/{application_id}/{interaction_token}/messages/@original`.
+
+    The follow-up window is up to 15 minutes per Discord docs.
+    """
 
     # Extract guild_id
     guild_id = interaction.get("guild_id")
@@ -330,33 +356,129 @@ async def _handle_shared_interaction(db: Session, interaction: dict, interaction
         "guild_name": deployment.guild_name
     }
 
-    if bot_type == "chatbot":
-        response = await chatbot_service.process_message(
-            db=db,
-            chatbot=bot,
-            user_message=message_content,
-            session_id=session_id,
-            channel_context=channel_context
+    # Schedule the slow inference as a FastAPI BackgroundTask. Mirrors
+    # the Slack pattern at routes/webhooks/slack.py:33-71. The handler
+    # function opens its own SessionLocal because the request-scoped
+    # `db` here will be closed by the route's `finally` block as soon
+    # as we return — long before the inference finishes.
+    interaction_token = interaction.get("token")
+    application_id = interaction.get("application_id")
+    if not interaction_token or not application_id:
+        logger.error(
+            "Discord interaction missing token / application_id — cannot "
+            "send deferred follow-up. Returning synchronous fallback."
         )
-    else:  # chatflow
-        result = await chatflow_service.execute(
-            db=db,
-            chatflow=bot,
-            user_message=message_content,
-            session_id=session_id,
-            channel_context=channel_context
-        )
-        response = {"response": result["response"], "session_id": result["session_id"]}
-
-    # Truncate response to Discord's 2000 char limit
-    response_text = response.get("response", "")[:2000]
-
-    return {
-        "type": 4,
-        "data": {
-            "content": response_text
+        return {
+            "type": 4,
+            "data": {
+                "content": "Sorry, I couldn't process that — please try again.",
+                "flags": 64,
+            },
         }
-    }
+
+    background_tasks.add_task(
+        _send_discord_followup,
+        bot_type=bot_type,
+        bot_id=str(bot.id),
+        application_id=application_id,
+        interaction_token=interaction_token,
+        message_content=message_content,
+        session_id=session_id,
+        channel_context=channel_context,
+    )
+
+    # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE — public visibility (not
+    # ephemeral). Discord shows "<bot> is thinking..." until the
+    # follow-up PATCH replaces it.
+    return {"type": 5}
+
+
+async def _send_discord_followup(
+    bot_type: str,
+    bot_id: str,
+    application_id: str,
+    interaction_token: str,
+    message_content: str,
+    session_id: str,
+    channel_context: dict,
+):
+    """Run the slow inference + send the deferred follow-up to Discord.
+
+    Runs as a FastAPI BackgroundTask AFTER the deferred ACK has been
+    returned to Discord. Opens its own DB session because the route's
+    request-scoped session is already closed by the time we get here.
+
+    Failure modes (all best-effort logged; the user sees the deferred
+    "<bot> is thinking..." message replaced with an error string):
+    - Inference raises (Secret AI down, KB error, etc.) → generic
+      "couldn't process that" reply.
+    - Discord PATCH returns non-2xx → log status; nothing else we can
+      do (the deferred message stays as "thinking..." until the user
+      refreshes the channel; Discord has no auto-clear).
+    """
+    from app.models.chatbot import Chatbot
+    from app.models.chatflow import Chatflow
+
+    db = SessionLocal()
+    try:
+        # Re-fetch the bot in this session; we only have the id.
+        if bot_type == "chatbot":
+            bot = db.query(Chatbot).filter(Chatbot.id == UUID(bot_id)).first()
+        else:
+            bot = db.query(Chatflow).filter(Chatflow.id == UUID(bot_id)).first()
+
+        if not bot:
+            response_text = "Sorry, this bot is no longer available."
+        else:
+            try:
+                if bot_type == "chatbot":
+                    response = await chatbot_service.process_message(
+                        db=db,
+                        chatbot=bot,
+                        user_message=message_content,
+                        session_id=session_id,
+                        channel_context=channel_context,
+                    )
+                else:
+                    result = await chatflow_service.execute(
+                        db=db,
+                        chatflow=bot,
+                        user_message=message_content,
+                        session_id=session_id,
+                        channel_context=channel_context,
+                    )
+                    response = {"response": result["response"]}
+                response_text = (response.get("response") or "")[:2000]
+                if not response_text:
+                    response_text = "(empty response)"
+            except Exception:
+                logger.exception(
+                    "Discord deferred inference failed for %s %s",
+                    bot_type,
+                    bot_id,
+                )
+                response_text = (
+                    "Sorry, I couldn't process that — please try again."
+                )
+    finally:
+        db.close()
+
+    # Edit the original deferred message via Discord's webhook API.
+    url = (
+        f"https://discord.com/api/v10/webhooks/"
+        f"{application_id}/{interaction_token}/messages/@original"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.patch(url, json={"content": response_text})
+        if resp.status_code not in (200, 204):
+            logger.error(
+                "Discord follow-up PATCH failed: status=%s body=%s",
+                resp.status_code,
+                resp.text[:300],
+            )
+    except Exception:
+        logger.exception("Discord follow-up PATCH raised — message stays deferred")
 
 
 @router.get("/shared/invite-url")

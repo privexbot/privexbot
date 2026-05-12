@@ -35,6 +35,12 @@ from app.services.retrieval_service import retrieval_service
 from app.services.draft_service import DraftType
 
 
+_TRAILING_SOURCES_RE = re.compile(
+    r"\n+\s*(?:📚\s*)?\**\s*sources\s*:?\s*\**.*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 class ChatbotService:
     """
     Core chatbot processing logic.
@@ -407,6 +413,17 @@ class ChatbotService:
                     print(f"[ChatbotService] Source validation: {len(sources)} → {len(validated_sources)} (removed irrelevant)")
 
                 sources = validated_sources
+
+            # Strip trailing "Sources:" footer the LLM may have hallucinated
+            # despite the prompt forbidding it, but only when the structured
+            # `sources` array ended up empty (so we don't accidentally drop a
+            # real citation block). Benefits every surface (public chat,
+            # widget, Telegram, Discord, Slack) since they all render
+            # `response["response"]` as-is. `re.DOTALL` also consumes any
+            # bullet-list items the LLM may have written under the orphan
+            # header.
+            if not sources and response_text:
+                response_text = _TRAILING_SOURCES_RE.sub("", response_text).rstrip()
 
             # 7. Save assistant message
             assistant_msg = self.session_service.save_message(
@@ -1012,7 +1029,13 @@ INSTRUCTIONS (DO NOT repeat actions already completed above):
         behavior_parts = []
 
         if behavior.get("show_citations", False):
-            behavior_parts.append("When using information from the knowledge base, cite your sources by mentioning where the information came from.")
+            behavior_parts.append(
+                "Ground your answer in the provided context. Do NOT add a "
+                "'Sources:' footer or list of references — the platform "
+                "attaches citation metadata automatically. Mention sources "
+                "inline only when it improves clarity (e.g., \"according to "
+                "the user manual\")."
+            )
 
         if behavior.get("show_followups", False):
             behavior_parts.append("At the end of your response, suggest 1-2 follow-up questions ONLY about topics that are actually in your knowledge base context. Never suggest topics from your general training data.")
