@@ -55,7 +55,10 @@ interface Message {
   timestamp: string;
   messageId?: string; // Backend message ID for feedback
   sources?: Array<{
-    title: string;
+    // Either title or url is guaranteed (entries lacking both are filtered
+    // out when the chat response is consumed — see the mapper in
+    // handleSend). Keeping both optional matches that invariant.
+    title?: string;
     url?: string;
     snippet?: string;
   }>;
@@ -417,12 +420,17 @@ export function PublicChatPage() {
         content: response.response,
         timestamp: new Date().toISOString(),
         messageId: response.message_id, // Store for feedback
-        // Map backend source properties to frontend format
-        sources: response.sources?.map(s => ({
-          title: s.document_title ?? s.title ?? 'Source',
-          url: s.document_url ?? s.url,
-          snippet: s.snippet,
-        })),
+        // Map backend source properties to frontend format. Drop entries that
+        // have neither a title nor a URL — the backend returns `null` for
+        // both when chunk metadata is genuinely missing, and rendering them
+        // surfaces as a useless "Unknown" / placeholder row.
+        sources: response.sources
+          ?.map(s => ({
+            title: s.document_title ?? s.title,
+            url: s.document_url ?? s.url,
+            snippet: s.snippet,
+          }))
+          .filter(s => s.title || s.url),
       };
 
       setMessages((prev) => [...prev, botMessage]);

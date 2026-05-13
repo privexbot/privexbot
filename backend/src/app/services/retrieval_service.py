@@ -550,7 +550,7 @@ class RetrievalService:
                 results.append({
                     "chunk_id": result.id,
                     "document_id": result.metadata.get("document_id", ""),
-                    "document_title": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                    "document_title": result.metadata.get("document_name") or result.metadata.get("original_filename"),
                     "document_url": result.metadata.get("source_url"),  # Source URL for web sources
                     "content": result_content,
                     "score": result.score,
@@ -566,7 +566,7 @@ class RetrievalService:
                     results.append({
                         "chunk_id": result.id,
                         "document_id": str(chunk.document_id) if chunk.document_id else "",
-                        "document_title": chunk.document.name if chunk.document else "Unknown",
+                        "document_title": chunk.document.name if chunk.document else None,
                         "document_url": chunk.document.source_url if chunk.document else None,  # Source URL for web sources
                         "content": chunk.content,
                         "score": result.score,
@@ -582,7 +582,7 @@ class RetrievalService:
                     results.append({
                         "chunk_id": result.id,
                         "document_id": result.metadata.get("document_id", ""),
-                        "document_title": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                        "document_title": result.metadata.get("document_name") or result.metadata.get("original_filename"),
                         "document_url": result.metadata.get("source_url"),  # Source URL for web sources
                         "content": f"[Content unavailable for chunk {result.id}]",
                         "score": result.score,
@@ -595,6 +595,7 @@ class RetrievalService:
         # Debug logging
         print(f"[RetrievalService] Vector search: Qdrant returned {len(vector_results)}, after content filter: {len(results)}")
 
+        results = self._enrich_with_document_metadata(db, results)
         return results
 
 
@@ -642,7 +643,7 @@ class RetrievalService:
                 results.append({
                     "chunk_id": str(chunk.id),
                     "document_id": str(chunk.document_id),
-                    "document_title": chunk.document.name if chunk.document else "Unknown",
+                    "document_title": chunk.document.name if chunk.document else None,
                     "document_url": chunk.document.source_url if chunk.document else None,  # Source URL for web sources
                     "content": chunk.content,
                     "score": 0.85,  # Must be > 0.833 to pass 0.25 threshold after 0.3 weight
@@ -681,7 +682,7 @@ class RetrievalService:
                         results.append({
                             "chunk_id": result.id,
                             "document_id": result.metadata.get("document_id", ""),
-                            "document_title": result.metadata.get("document_name", result.metadata.get("original_filename", "Unknown")),
+                            "document_title": result.metadata.get("document_name") or result.metadata.get("original_filename"),
                             "document_url": result.metadata.get("source_url"),  # Source URL for web sources
                             "content": result.content,
                             "score": result.score,
@@ -699,6 +700,7 @@ class RetrievalService:
                 if not kb:
                     print(f"  → Pass KB object to enable Qdrant text search fallback")
 
+        results = self._enrich_with_document_metadata(db, results)
         return results
 
 
@@ -998,6 +1000,58 @@ class RetrievalService:
 
         chunk = db.query(Chunk).filter(Chunk.id == UUID(chunk_id)).first()
         return chunk
+
+
+    def _enrich_with_document_metadata(self, db: Session, results: List[dict]) -> List[dict]:
+        """
+        Backfill document_title / document_url from the Document row when
+        the Qdrant payload didn't carry them. The indexer at
+        indexing_service.py:94 only writes
+        {chunk_id, document_id, kb_id, content_preview} into the Qdrant
+        payload — so when retrieval reads back via Option A storage (Qdrant
+        has content), document_name / source_url are always missing even
+        though Document.name is NOT NULL and Document.source_url is
+        populated for every web-scraped KB.
+
+        One batch query per search, not per chunk. Mutates results in place.
+        Postgres-fallback paths already populated these fields from
+        chunk.document.*; the `if not r.get(...)` guard makes this a no-op
+        for them.
+        """
+        from app.models.document import Document
+
+        needs = {
+            r["document_id"] for r in results
+            if (not r.get("document_title") or not r.get("document_url"))
+            and r.get("document_id")
+        }
+        if not needs:
+            return results
+
+        # Tolerate non-UUID document_id strings (legacy / corrupt rows) by
+        # skipping them rather than blowing up the whole search.
+        doc_uuids = []
+        for d in needs:
+            try:
+                doc_uuids.append(UUID(d))
+            except (ValueError, AttributeError):
+                continue
+        if not doc_uuids:
+            return results
+
+        docs = db.query(Document.id, Document.name, Document.source_url).filter(
+            Document.id.in_(doc_uuids)
+        ).all()
+        doc_map = {str(d.id): (d.name, d.source_url) for d in docs}
+
+        for r in results:
+            title, url = doc_map.get(r.get("document_id"), (None, None))
+            if not r.get("document_title") and title:
+                r["document_title"] = title
+            if not r.get("document_url") and url:
+                r["document_url"] = url
+
+        return results
 
 
     async def search_multiple_kbs(
