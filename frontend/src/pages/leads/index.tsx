@@ -61,6 +61,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useApp } from '@/contexts/AppContext';
 import apiClient from '@/lib/api-client';
+import { lookupCountryCentroid } from '@/lib/countryCentroids';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -797,16 +798,28 @@ export default function LeadsDashboard() {
     );
   }, [leads, searchQuery]);
 
-  // Get leads with location for map. Read flat lat/lng first (canonical
-  // backend shape), fall through to nested `location.*` for older API
-  // responses.
-  const leadsWithLocation = useMemo(() => {
-    return filteredLeads.filter(
-      (lead) =>
-        (lead.latitude && lead.longitude) ||
-        (lead.location?.latitude && lead.location?.longitude),
-    );
-  }, [filteredLeads]);
+  // Resolve plottable coordinates for a lead. Precise lat/lng wins; falls
+  // back to the ISO 3166-1 country centroid when GeoIP returned a country
+  // but no coordinates (common for VPN / mobile / datacenter IPs). The
+  // `approximate` flag is used to dim the marker and label the popup so
+  // users don't mistake centroid pins for precise locations.
+  const getLeadCoords = (
+    lead: Lead,
+  ): { lat: number; lng: number; approximate: boolean } | null => {
+    const lat = lead.latitude ?? lead.location?.latitude;
+    const lng = lead.longitude ?? lead.location?.longitude;
+    if (lat != null && lng != null) return { lat, lng, approximate: false };
+
+    const centroid = lookupCountryCentroid(lead.country_code);
+    if (centroid) return { lat: centroid[0], lng: centroid[1], approximate: true };
+
+    return null;
+  };
+
+  const leadsWithLocation = useMemo(
+    () => filteredLeads.filter((lead) => getLeadCoords(lead) !== null),
+    [filteredLeads],
+  );
 
   // Initialize Leaflet map with proper StrictMode cleanup
   useEffect(() => {
@@ -847,21 +860,23 @@ export default function LeadsDashboard() {
       }
     });
 
-    // Add markers for leads with location. Resolve coords from either
-    // shape (flat or legacy nested).
+    // Add markers for leads with location. Precise pins render at full
+    // opacity; country-centroid fallback pins render at 0.6 with an
+    // "Approximate" note in their popup so users see the difference.
     leadsWithLocation.forEach((lead) => {
-      const lat = lead.latitude ?? lead.location?.latitude;
-      const lng = lead.longitude ?? lead.location?.longitude;
-      if (lat && lng) {
-        const popupContent = `
-          <div class="p-2">
-            <h4 class="font-semibold mb-1">${lead.name || 'Anonymous'}</h4>
-            ${lead.email ? `<p class="text-xs mb-1">${lead.email}</p>` : ''}
-            ${lead.city ? `<p class="text-xs text-gray-500">${lead.city}${lead.country ? `, ${lead.country}` : ''}</p>` : ''}
-          </div>
-        `;
-        L.marker([lat, lng]).bindPopup(popupContent).addTo(map);
-      }
+      const coords = getLeadCoords(lead);
+      if (!coords) return;
+      const popupContent = `
+        <div class="p-2">
+          <h4 class="font-semibold mb-1">${lead.name || 'Anonymous'}</h4>
+          ${lead.email ? `<p class="text-xs mb-1">${lead.email}</p>` : ''}
+          ${lead.city ? `<p class="text-xs text-gray-500">${lead.city}${lead.country ? `, ${lead.country}` : ''}</p>` : ''}
+          ${coords.approximate ? `<p class="text-[10px] text-gray-400 italic mt-1">Approximate (country centroid — precise IP coordinates unavailable)</p>` : ''}
+        </div>
+      `;
+      L.marker([coords.lat, coords.lng], { opacity: coords.approximate ? 0.6 : 1.0 })
+        .bindPopup(popupContent)
+        .addTo(map);
     });
   }, [leadsWithLocation, viewMode]);
 
@@ -1229,7 +1244,7 @@ export default function LeadsDashboard() {
 
                     {leadsWithLocation.length === 0 && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
-                        <div className="text-center">
+                        <div className="text-center max-w-md px-6">
                           <div className="mx-auto w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
                             <MapPin className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                           </div>
@@ -1237,7 +1252,9 @@ export default function LeadsDashboard() {
                             No leads with location data
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-500 font-manrope mt-1">
-                            Location is captured from IP geolocation when available
+                            {filteredLeads.length > 0
+                              ? "These leads were captured without GeoIP data — usually private/local IPs or networks GeoIP can't resolve. Country/city are recorded only when the IP can be resolved."
+                              : 'Location is captured from IP geolocation when a visitor sends their first message. Empty until your first lead comes in.'}
                           </p>
                         </div>
                       </div>
