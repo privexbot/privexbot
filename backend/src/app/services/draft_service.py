@@ -746,7 +746,10 @@ class UnifiedDraftService:
             # AI configuration
             ai_config=data.get("ai_config", {
                 "provider": "secret_ai",
-                "model": data.get("model", "secret-ai-v1"),
+                # No literal default — inference_service resolves None at
+                # runtime via the Secret AI SDK. Frontend <ModelSelector>
+                # writes a concrete value when the user picks one.
+                "model": data.get("model"),
                 "temperature": data.get("temperature", 0.7),
                 "max_tokens": data.get("max_tokens", 2000)
             }),

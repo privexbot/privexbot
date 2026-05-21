@@ -154,7 +154,7 @@ class Workspace(Base):
     # settings structure:
     # {
     #     "theme": {"color": "#3B82F6", "icon": "briefcase"},
-    #     "defaults": {"chatbot_model": "secret-ai-v1", "enable_analytics": true},
+    #     "defaults": {"chatbot_model": "<Secret AI model id from /inference/models>", "enable_analytics": true},
     #     "integrations": {"slack_channel": "#support", "webhook_url": "https://..."}
     # }
 

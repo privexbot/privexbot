@@ -38,7 +38,8 @@ import { useKBStore } from '@/store/kb-store';
 import { Switch } from '@/components/ui/switch';
 import type { Chatbot, UpdateChatbotDraftRequest, LeadCaptureCustomField, KBAttachment } from '@/types/chatbot';
 import type { KBSummary } from '@/types/knowledge-base';
-import { AIModel, getModelLabel, LeadCaptureTiming, FieldVisibility, CustomFieldType, DEFAULT_LEAD_CAPTURE_CONFIG } from '@/types/chatbot';
+import { LeadCaptureTiming, FieldVisibility, CustomFieldType, DEFAULT_LEAD_CAPTURE_CONFIG } from '@/types/chatbot';
+import { ModelSelector } from '@/components/shared/ModelSelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -68,7 +69,9 @@ export default function ChatbotEditPage() {
     name: '',
     description: '',
     system_prompt: '',
-    model: AIModel.SECRET_AI as string,
+    // `model` may be empty until the user picks one from <ModelSelector>;
+    // backend resolves an empty model at runtime via Secret().get_models()[0].
+    model: '' as string,
     temperature: 0.7,
     max_tokens: 2000,
     greeting: '',
@@ -195,7 +198,7 @@ export default function ChatbotEditPage() {
           name: data.name ?? '',
           description: data.description ?? '',
           system_prompt: data.prompt_config?.system_prompt ?? '',
-          model: (data.ai_config?.model as typeof AIModel[keyof typeof AIModel]) ?? AIModel.SECRET_AI,
+          model: (data.ai_config?.model as string | undefined) ?? '',
           temperature: data.ai_config?.temperature ?? 0.7,
           max_tokens: data.ai_config?.max_tokens ?? 2000,
           greeting: data.prompt_config?.messages?.greeting ?? '',
@@ -685,24 +688,11 @@ export default function ChatbotEditPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="model" className="font-manrope">AI Model</Label>
-                  <Select
-                    value={formData.model}
-                    onValueChange={(value) => { setFormData({ ...formData, model: value as typeof AIModel[keyof typeof AIModel] }); }}
-                  >
-                    <SelectTrigger className="font-manrope">
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(AIModel).map(([_key, value]) => (
-                        <SelectItem key={value} value={value} className="font-manrope">
-                          {getModelLabel(value)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <ModelSelector
+                  value={formData.model || undefined}
+                  onChange={(model) => { setFormData({ ...formData, model }); }}
+                  label="AI Model"
+                />
 
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

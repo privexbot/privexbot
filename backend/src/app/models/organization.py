@@ -110,7 +110,7 @@ class Organization(Base):
     # settings structure:
     # {
     #     "branding": {"logo_url": "...", "primary_color": "#..."},
-    #     "defaults": {"default_model": "secret-ai-v1", "default_temperature": 0.7},
+    #     "defaults": {"default_model": "<Secret AI model id from /inference/models>", "default_temperature": 0.7},
     #     "features": {"analytics_enabled": true}
     # }
 

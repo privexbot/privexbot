@@ -43,41 +43,44 @@ class SecretAISDKProvider:
 
     def __init__(self, temperature: float = 0.7):
         self.temperature = temperature
-        self._client = None
-        self._model = None
+        self._secret = None  # secret_ai_sdk.secret.Secret instance (worker registry)
+        # Per-model ChatSecret client cache. Building one ChatSecret per
+        # requested model is necessary because each model's worker URL is
+        # resolved via `Secret().get_urls(model=...)` — routing a request
+        # for model B through a client pinned to model A's URL would
+        # silently hit the wrong worker.
+        self._clients: Dict[str, object] = {}
+        self._default_model: Optional[str] = None
         self._initialized = False
 
-    def _ensure_client(self):
-        """Lazy initialization of SDK client."""
+    def _ensure_secret_initialized(self):
+        """Initialize the Secret() worker-registry client and resolve the
+        default model. Safe to call repeatedly; only the first call does work.
+        """
         if self._initialized:
             return
 
         try:
-            from secret_ai_sdk.secret_ai import ChatSecret
+            # Validate the ChatSecret import here too so callers get a single
+            # consolidated error path; the actual ChatSecret instances are
+            # built lazily in `_get_client_for_model`.
+            from secret_ai_sdk.secret_ai import ChatSecret  # noqa: F401
             from secret_ai_sdk.secret import Secret
 
-            logger.info("[SecretAISDKProvider] Initializing native SDK client...")
+            logger.info("[SecretAISDKProvider] Initializing native SDK worker registry...")
 
-            secret_client = Secret()
-            models = secret_client.get_models()
+            self._secret = Secret()
+            models = self._secret.get_models()
 
             if not models:
                 raise RuntimeError("No models available from Secret AI SDK")
 
-            urls = secret_client.get_urls(model=models[0])
-
-            if not urls:
-                raise RuntimeError(f"No URLs available for model {models[0]}")
-
-            self._model = models[0]
-            self._client = ChatSecret(
-                base_url=urls[0],
-                model=self._model,
-                temperature=self.temperature
-            )
+            self._default_model = models[0]
             self._initialized = True
 
-            logger.info(f"[SecretAISDKProvider] Initialized with model: {self._model}")
+            logger.info(
+                f"[SecretAISDKProvider] Worker registry ready; default model: {self._default_model}"
+            )
 
         except ImportError as e:
             # Surface the underlying import failure so operators can see WHICH
@@ -107,6 +110,44 @@ class SecretAISDKProvider:
                 e,
             )
             raise
+
+    def list_models(self) -> List[str]:
+        """Return the live list of model IDs available on Secret AI.
+
+        Thin wrapper around `Secret().get_models()` that reuses the cached
+        worker-registry client. Callers (e.g. `inference_service.list_available_models`)
+        are responsible for any further caching layer.
+        """
+        self._ensure_secret_initialized()
+        return self._secret.get_models()
+
+    def _get_client_for_model(self, model: str):
+        """Lazily build (and memoize) a ChatSecret client bound to a specific
+        model + its worker URL. This is the routing primitive — pinning a
+        client to the right base_url is what makes user model selection
+        actually reach the right worker.
+        """
+        cached = self._clients.get(model)
+        if cached is not None:
+            return cached
+
+        self._ensure_secret_initialized()
+        from secret_ai_sdk.secret_ai import ChatSecret
+
+        urls = self._secret.get_urls(model=model)
+        if not urls:
+            raise RuntimeError(f"No URLs available for model {model}")
+
+        client = ChatSecret(
+            base_url=urls[0],
+            model=model,
+            temperature=self.temperature,
+        )
+        self._clients[model] = client
+        logger.info(
+            f"[SecretAISDKProvider] Built ChatSecret for model={model} base_url={urls[0]}"
+        )
+        return client
 
     def _convert_messages(self, messages: List[Dict[str, str]]) -> List[tuple]:
         """
@@ -147,6 +188,7 @@ class SecretAISDKProvider:
         messages: List[Dict[str, str]],
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
         **kwargs
     ) -> Dict:
         """
@@ -156,6 +198,9 @@ class SecretAISDKProvider:
             messages: List of messages in OpenAI format
             temperature: Optional temperature override
             max_tokens: Optional max tokens (may not be supported by SDK)
+            model: Specific model ID to use. When omitted, falls back to
+                Secret AI's first available model (typically the default
+                listed by `Secret().get_models()`).
 
         Returns:
             Dict with same structure as OpenAI provider:
@@ -166,37 +211,51 @@ class SecretAISDKProvider:
                 "provider": "secret_ai_sdk"
             }
         """
-        self._ensure_client()
+        self._ensure_secret_initialized()
+
+        # Resolve which model to route to. Explicit > registry default.
+        selected_model = model or self._default_model
+        if not selected_model:
+            raise RuntimeError("No model available from Secret AI SDK and none specified")
+
+        client = self._get_client_for_model(selected_model)
 
         # Update temperature if specified
         if temperature is not None:
-            self._client.temperature = temperature
+            client.temperature = temperature
 
         # Convert message format
         sdk_messages = self._convert_messages(messages)
 
-        logger.debug(f"[SecretAISDKProvider] Invoking with {len(sdk_messages)} messages")
+        logger.debug(
+            f"[SecretAISDKProvider] Invoking model={selected_model} "
+            f"with {len(sdk_messages)} messages"
+        )
 
         # Call SDK using native async method (ainvoke)
         # WHY: Using ainvoke directly instead of wrapping invoke in run_in_executor
         # HOW: LangChain's ainvoke is the proper async interface, avoiding event loop conflicts
-        # Retry once on transient failures (SDK sometimes returns empty errors)
-        last_error = None
+        # Retry once on transient failures (SDK sometimes returns empty errors).
+        # On the retry, evict this model's cached client so a fresh `get_urls`
+        # lookup happens — covers the case where a worker URL has rotated.
         for attempt in range(2):
             try:
-                response = await self._client.ainvoke(sdk_messages)
+                response = await client.ainvoke(sdk_messages)
                 break
             except Exception as e:
-                last_error = e
                 logger.error(
-                    f"[SecretAISDKProvider] SDK ainvoke failed (attempt {attempt + 1}/2): "
-                    f"{type(e).__name__}: {e}",
+                    f"[SecretAISDKProvider] SDK ainvoke failed for model={selected_model} "
+                    f"(attempt {attempt + 1}/2): {type(e).__name__}: {e}",
                     exc_info=True
                 )
                 if attempt == 0:
-                    # Reset client on first failure — URL may have gone stale
-                    self._initialized = False
-                    self._ensure_client()
+                    # Drop the cached client for this model so the next call
+                    # re-resolves its URL. The Secret() worker-registry
+                    # client itself stays alive.
+                    self._clients.pop(selected_model, None)
+                    client = self._get_client_for_model(selected_model)
+                    if temperature is not None:
+                        client.temperature = temperature
                     continue
                 raise
 
@@ -251,7 +310,7 @@ class SecretAISDKProvider:
                 "completion_tokens": completion_tokens,
                 "total_tokens": total_tokens
             },
-            "model": self._model,
+            "model": selected_model,
             "provider": "secret_ai_sdk"
         }
 

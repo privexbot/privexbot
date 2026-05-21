@@ -43,6 +43,7 @@ import {
 import { useChatbotStore } from "@/store/chatbot-store";
 import { useApp } from "@/contexts/AppContext";
 import { config } from "@/config/env";
+import { ModelSelector } from "@/components/shared/ModelSelector";
 import {
   ChatbotCreationStep,
   DeploymentChannel,
@@ -516,18 +517,11 @@ function Step2PromptAI({ formData, formErrors, onUpdate }: Step1Props) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label className="text-gray-900 dark:text-gray-100 font-manrope">
-            AI Model
-          </Label>
-          <div className="flex items-center gap-3 h-11 px-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
-            <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
-            <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Secret AI</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">Privacy-preserving via TEE</p>
-            </div>
-          </div>
-        </div>
+        <ModelSelector
+          value={formData.model || undefined}
+          onChange={(model) => { onUpdate({ model }); }}
+          label="AI Model"
+        />
 
         <div className="space-y-2">
           <Label className="text-gray-900 dark:text-gray-100 font-manrope">

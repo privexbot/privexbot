@@ -40,18 +40,38 @@ NETWORK NOTES:
   in `generate_chat` keeps chat working until the SDK is reinstalled.
 """
 
+import json
 import logging
 import os
 import re
 import asyncio
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, List, Dict, Any, Union
+
+import redis
 
 logger = logging.getLogger(__name__)
 
 # One-shot flag so the SDK→REST fallback warning is logged at most once per
 # process. Repeating it on every chat would spam logs without adding signal.
 _sdk_fallback_logged = False
+
+# Redis cache for the live Secret AI model list. The SDK call is synchronous
+# and walks a smart-contract query path; one hour is the right cadence —
+# models on Secret Network rotate rarely, and frontend `<ModelSelector>` is
+# rendered many times across builder / edit / create surfaces.
+MODELS_CACHE_KEY = "inference:secret_ai:models"
+MODELS_CACHE_TTL = 60 * 60  # 1 hour
+
+# Final fallback model name used ONLY when:
+# (a) The user did not specify a model in their chatbot / chatflow config, AND
+# (b) `Secret().get_models()` is unreachable (SDK import failure or network).
+# Otherwise the SDK's first available model is used. This constant exists so
+# that REST-transport requests (when the SDK is unavailable) still have *some*
+# string to send; the underlying Secret AI REST endpoint will reject it if
+# the model isn't currently served, which is the right failure mode.
+LAST_RESORT_MODEL = "DeepSeek-R1-Distill-Llama-70B"
 
 
 # Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
@@ -142,7 +162,7 @@ PROVIDER_CONFIGS = {
     InferenceProvider.SECRET_AI: {
         "base_url": os.getenv("SECRET_AI_BASE_URL", "https://secretai-api-url.scrtlabs.com:443/v1"),
         "api_key_env": "SECRET_AI_API_KEY",
-        "default_model": "DeepSeek-R1-Distill-Llama-70B",
+        "default_model": LAST_RESORT_MODEL,
         "model_prefixes": ["secret-", "secretai-", "secret_ai-"],
         "timeout": 120.0,  # Longer timeout for TEE processing
         "description": "Secret AI - Privacy-preserving inference via Trusted Execution Environment",
@@ -483,7 +503,7 @@ class InferenceService:
     def _get_default_model(self, provider: InferenceProvider) -> str:
         """Get default model for a provider."""
         config = PROVIDER_CONFIGS.get(provider, {})
-        return config.get("default_model", "DeepSeek-R1-Distill-Llama-70B")
+        return config.get("default_model", LAST_RESORT_MODEL)
 
     def _detect_provider_from_model(self, model: str) -> Optional[InferenceProvider]:
         """Detect provider from model name prefix."""
@@ -534,7 +554,7 @@ class InferenceService:
         instance = SecretAIRestProvider(
             base_url=base_url,
             api_key=api_key,
-            default_model=config.get("default_model", "DeepSeek-R1-Distill-Llama-70B"),
+            default_model=config.get("default_model", LAST_RESORT_MODEL),
             provider_name=provider.value,
             timeout=timeout
         )
@@ -703,7 +723,8 @@ class InferenceService:
                 return await sdk_provider.generate_chat(
                     messages=messages,
                     temperature=temperature,
-                    max_tokens=max_tokens
+                    max_tokens=max_tokens,
+                    model=model,
                 )
             except ImportError as exc:
                 global _sdk_fallback_logged
@@ -879,6 +900,134 @@ class InferenceService:
         use_provider = provider or self.default_provider
         provider_instance = self._get_provider(use_provider)
         return provider_instance.list_models()
+
+    async def list_available_models(self) -> Dict[str, Any]:
+        """
+        Return the live list of Secret AI models for the frontend `<ModelSelector>`.
+
+        Surface (dict, not Pydantic — kept loose so the route layer owns the
+        response schema):
+            {"models": [...], "cached": bool, "as_of": datetime}
+
+        Fallback ladder:
+        1. Redis cache (`MODELS_CACHE_KEY`, 1-hour TTL).
+        2. Live SDK call via `SecretAISDKProvider.list_models()` (already
+           retry-wrapped at the SDK layer).
+        3. If both fail, return whatever stale value is in Redis (even past
+           TTL is better than nothing). The route layer will surface an
+           empty list to the frontend rather than a 500.
+
+        Logs every cache hit/miss/error so operators can triage model
+        rotation issues without re-deploying.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Step 1: try Redis (warm path)
+        client = self._get_redis_client()
+        if client is not None:
+            try:
+                cached = client.get(MODELS_CACHE_KEY)
+            except Exception as exc:
+                logger.warning(
+                    "[InferenceService] Redis GET failed for models cache: %s", exc
+                )
+                cached = None
+
+            if cached:
+                try:
+                    payload = json.loads(cached)
+                    logger.info(
+                        "[InferenceService] models cache HIT (n=%d, as_of=%s)",
+                        len(payload.get("models", [])),
+                        payload.get("as_of"),
+                    )
+                    return {
+                        "models": payload.get("models", []),
+                        "cached": True,
+                        "as_of": datetime.fromisoformat(payload["as_of"]),
+                    }
+                except (json.JSONDecodeError, KeyError, ValueError) as exc:
+                    logger.warning(
+                        "[InferenceService] models cache payload malformed (%s) — refreshing",
+                        exc,
+                    )
+
+        # Step 2: cold path — call the SDK
+        try:
+            from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
+
+            sdk_provider = get_secret_ai_sdk_provider()
+            # SDK call is synchronous; run in default executor so we don't
+            # block the event loop. The call typically completes in <1s.
+            models = await asyncio.get_event_loop().run_in_executor(
+                None, sdk_provider.list_models
+            )
+            if not isinstance(models, list):
+                models = []
+            logger.info(
+                "[InferenceService] models cache MISS — fetched %d from SDK",
+                len(models),
+            )
+        except Exception as exc:
+            logger.error(
+                "[InferenceService] SDK list_models failed: %s — returning empty list",
+                exc,
+            )
+            # Step 3 (deep fallback): return stale cached value if available
+            if client is not None:
+                try:
+                    stale = client.get(MODELS_CACHE_KEY)
+                    if stale:
+                        payload = json.loads(stale)
+                        return {
+                            "models": payload.get("models", []),
+                            "cached": True,
+                            "as_of": datetime.fromisoformat(payload["as_of"]),
+                        }
+                except Exception:
+                    pass
+            return {"models": [], "cached": False, "as_of": now}
+
+        # Write through to Redis for the next caller
+        if client is not None:
+            try:
+                client.setex(
+                    MODELS_CACHE_KEY,
+                    MODELS_CACHE_TTL,
+                    json.dumps({"models": models, "as_of": now.isoformat()}),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[InferenceService] Redis SETEX failed for models cache: %s", exc
+                )
+
+        return {"models": models, "cached": False, "as_of": now}
+
+    def _get_redis_client(self):
+        """Lazy Redis client for the models cache.
+
+        Cached on the service instance after first successful build. Returns
+        None when Redis is unconfigured / unreachable — callers must handle
+        the None case (we don't crash inference for a cache miss).
+        """
+        cached = getattr(self, "_redis", None)
+        if cached is not None:
+            return cached
+        try:
+            cached = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            # Cheap connectivity check; avoids surfacing a confusing error
+            # on the actual GET/SETEX call later.
+            cached.ping()
+            self._redis = cached
+            return cached
+        except Exception as exc:
+            logger.warning(
+                "[InferenceService] Redis unavailable for models cache: %s. "
+                "Falling back to direct SDK calls per request.",
+                exc,
+            )
+            self._redis = None
+            return None
 
     def health_check(self, provider: Optional[InferenceProvider] = None) -> dict:
         """Check provider health."""

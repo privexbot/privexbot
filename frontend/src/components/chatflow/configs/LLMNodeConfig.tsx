@@ -14,15 +14,9 @@ import type { Node, Edge } from "reactflow";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { AvailableVariablesPanel } from "@/components/chatflow/AvailableVariablesPanel";
+import { ModelSelector } from "@/components/shared/ModelSelector";
 
 interface LLMNodeConfigProps {
   config: Record<string, unknown>;
@@ -35,13 +29,14 @@ interface LLMNodeConfigProps {
   edges?: Edge[];
 }
 
-const AVAILABLE_MODELS = [
-  { value: "secret-ai-v1", label: "Secret AI (Privacy-Preserving)" },
-];
-
 export function LLMNodeConfig({ config, onChange, nodeId, nodes, edges }: LLMNodeConfigProps) {
   const [prompt, setPrompt] = useState((config.prompt as string) || "");
-  const [model, setModel] = useState((config.model as string) || "secret-ai-v1");
+  // `model` is undefined when the user hasn't picked one yet. The backend
+  // resolves a None model to Secret AI's first available model at runtime,
+  // so empty here is a valid state — the inference call still works.
+  const [model, setModel] = useState<string | undefined>(
+    (config.model as string | undefined) || undefined,
+  );
   const [temperature, setTemperature] = useState((config.temperature as number) || 0.7);
   const [maxTokens, setMaxTokens] = useState((config.max_tokens as number) || 2000);
   const [systemPrompt, setSystemPrompt] = useState((config.system_prompt as string) || "");
@@ -112,22 +107,8 @@ export function LLMNodeConfig({ config, onChange, nodeId, nodes, edges }: LLMNod
         )}
       </div>
 
-      {/* Model Selection */}
-      <div>
-        <Label className="text-sm font-medium">Model</Label>
-        <Select value={model} onValueChange={setModel}>
-          <SelectTrigger className="mt-1.5">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {AVAILABLE_MODELS.map((m) => (
-              <SelectItem key={m.value} value={m.value}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Model Selection — populated dynamically from /inference/models. */}
+      <ModelSelector value={model} onChange={setModel} />
 
       {/* Temperature */}
       <div>

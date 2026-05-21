@@ -49,14 +49,16 @@ export const ChatbotCreationStep = {
 export type ChatbotCreationStep = (typeof ChatbotCreationStep)[keyof typeof ChatbotCreationStep];
 
 /**
- * AI Model Options
- * Backend uses Secret AI (DeepSeek-R1-Distill-Llama-70B)
+ * AI model selection is now dynamic — the list of available models comes
+ * from `GET /api/v1/inference/models` (which reads `Secret().get_models()`
+ * server-side). The frontend uses the shared <ModelSelector> component
+ * (`src/components/shared/ModelSelector.tsx`) for every model dropdown.
+ *
+ * Model IDs are bare strings (e.g. "DeepSeek-R1-Distill-Llama-70B") and
+ * persist as `string | undefined` on chatbot / chatflow configs. The
+ * previous one-entry AIModel enum was removed because it pretended to
+ * gate a choice that wasn't actually a choice.
  */
-export const AIModel = {
-  SECRET_AI: "secret-ai-v1",
-} as const;
-
-export type AIModel = (typeof AIModel)[keyof typeof AIModel];
 
 /**
  * Persona Tone Options
@@ -899,7 +901,10 @@ export const DEFAULT_MEMORY: MemoryConfig = {
 };
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  model: AIModel.SECRET_AI,
+  // Empty string means "no model picked yet"; backend resolves at runtime
+  // via `Secret().get_models()[0]`. The <ModelSelector> dropdown writes
+  // a concrete model id here as soon as the user picks one.
+  model: "",
   temperature: 0.7,
   max_tokens: 2000,
 };
@@ -932,7 +937,10 @@ When users ask "tell me something" or similar vague questions at the start of a 
 - You can mention general categories of information you have
 
 Be concise, helpful, and honest about what you know and don't know.`,
-  model: AIModel.SECRET_AI,
+  // Empty string means "no model picked yet"; backend resolves at runtime
+  // via `Secret().get_models()[0]`. The <ModelSelector> dropdown writes
+  // a concrete model id here as soon as the user picks one.
+  model: "",
   temperature: 0.7,
   max_tokens: 2000,
   instructions: [],
@@ -992,15 +1000,14 @@ export function getChannelLabel(channel: DeploymentChannel): string {
 }
 
 /**
- * Get model display label
+ * Identity helper kept for compatibility — model IDs are now displayed
+ * verbatim everywhere (e.g. "DeepSeek-R1-Distill-Llama-70B") because the
+ * Secret AI SDK only returns IDs (no friendly labels) and we don't
+ * second-guess them. Existing call sites can keep using this; new ones
+ * should just render the string directly.
  */
 export function getModelLabel(model: string): string {
-  switch (model) {
-    case AIModel.SECRET_AI:
-      return "Secret AI (Privacy-Preserving)";
-    default:
-      return model;
-  }
+  return model;
 }
 
 /**

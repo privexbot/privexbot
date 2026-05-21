@@ -57,7 +57,7 @@ class ChatMessage(Base):
 
         STRUCTURE (for RAG responses):
         {
-            "model": "secret-ai-v1",
+            "model": "<live Secret AI model id, e.g. DeepSeek-R1-Distill-Llama-70B>",
             "temperature": 0.7,
             "tokens_used": 450,
 
