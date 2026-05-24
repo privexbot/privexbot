@@ -73,6 +73,16 @@ MODELS_CACHE_TTL = 60 * 60  # 1 hour
 # the model isn't currently served, which is the right failure mode.
 LAST_RESORT_MODEL = "DeepSeek-R1-Distill-Llama-70B"
 
+# Chat-family allow-list and the SDK ping helper live in
+# `app/core/secret_ai_models` so both this service and
+# `secret_ai_sdk_provider.py` can share them without a circular import
+# (this service lazy-imports the SDK provider; reversing that direction
+# at module top-level deadlocks Python's import machinery).
+from app.core.secret_ai_models import (
+    CHAT_MODEL_FAMILY_PATTERN,  # noqa: F401 — re-exported for back-compat
+    is_chat_capable as _is_chat_capable,
+)
+
 
 # Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
 # chain-of-thought wrapped in <think>...</think> before the answer. That is
@@ -957,15 +967,26 @@ class InferenceService:
             from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
 
             sdk_provider = get_secret_ai_sdk_provider()
-            # SDK call is synchronous; run in default executor so we don't
-            # block the event loop. The call typically completes in <1s.
-            models = await asyncio.get_event_loop().run_in_executor(
-                None, sdk_provider.list_models
-            )
-            if not isinstance(models, list):
-                models = []
+            # Synchronous call inside the async function. We don't push this
+            # onto run_in_executor because the SDK's underlying LCDClient
+            # calls `nest_asyncio.apply(get_event_loop())` during
+            # `Secret().__init__`, and worker threads have no event loop —
+            # which raises `RuntimeError: There is no current event loop`
+            # before the contract query ever fires. The running loop in this
+            # async context satisfies the SDK; the ~200–500ms cost is paid
+            # once per Redis cache miss (1h TTL).
+            raw_models = sdk_provider.list_models()
+            if not isinstance(raw_models, list):
+                raw_models = []
+            # Filter to known chat-base families. The smart contract
+            # advertises every Secret AI worker, including STT/TTS workers
+            # that don't speak the chat protocol — picking one would break
+            # the user's chat at inference time. See CHAT_MODEL_FAMILY_PATTERN.
+            models = [m for m in raw_models if _is_chat_capable(m)]
             logger.info(
-                "[InferenceService] models cache MISS — fetched %d from SDK",
+                "[InferenceService] models cache MISS — fetched %d from SDK, "
+                "%d after chat-family filter",
+                len(raw_models),
                 len(models),
             )
         except Exception as exc:

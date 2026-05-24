@@ -15,12 +15,14 @@
  * Behavior:
  * - Loading: dropdown disabled, "Loading models…" placeholder.
  * - Live list available: shows each model id, preselects `value` when present.
- * - Saved value not in live list (legacy / between-deploy-and-migrate edge):
- *   shows it anyway at the top of the list with a small "legacy" badge so
- *   editing existing chatbots never silently drops the selection.
+ * - Saved value not in live list: the trigger renders the placeholder
+ *   ("Select a model") and the dropdown lists only live entries. Out-of-
+ *   list values are not surfaced; the boot-time migration script
+ *   (`backend/scripts/migrate_legacy_model_field.py`) rewrites them, and
+ *   the runtime coercion in `secret_ai_sdk_provider._get_client_for_model`
+ *   keeps any unmigrated request from breaking the chat.
  * - SDK unreachable AND no Redis cache: empty list → disabled with
- *   "Models unavailable" placeholder. Caller's form should likely allow
- *   submitting with whatever was previously saved.
+ *   "Models unavailable" placeholder.
  */
 
 import { useMemo } from "react";
@@ -48,11 +50,6 @@ export interface ModelSelectorProps {
   className?: string;
 }
 
-interface ModelOption {
-  id: string;
-  legacy: boolean;
-}
-
 export function ModelSelector({
   value,
   onChange,
@@ -72,23 +69,16 @@ export function ModelSelector({
     refetchOnWindowFocus: false,
   });
 
-  const liveModels = data?.models ?? [];
+  const liveModels = useMemo(() => data?.models ?? [], [data]);
 
-  const options = useMemo<ModelOption[]>(() => {
-    // Defensive: surface the saved value even when the live list doesn't
-    // contain it. The migration script handles the long tail, but a
-    // chatbot saved between deploy and migration would otherwise show
-    // no preselection.
-    if (value && !liveModels.includes(value)) {
-      return [
-        { id: value, legacy: true },
-        ...liveModels.map((id) => ({ id, legacy: false })),
-      ];
-    }
-    return liveModels.map((id) => ({ id, legacy: false }));
-  }, [liveModels, value]);
-
-  const noModelsAvailable = !isLoading && options.length === 0;
+  // The dropdown lists only what the Secret AI smart contract currently
+  // advertises. Out-of-list values (e.g. a chatbot config carrying a
+  // string the contract no longer hosts) are NOT prepended here — the
+  // boot-time migration rewrites them, and the runtime coercion in
+  // `secret_ai_sdk_provider._get_client_for_model` keeps any unmigrated
+  // request from breaking. The trigger falls back to the placeholder
+  // when `value` isn't in the list.
+  const noModelsAvailable = !isLoading && liveModels.length === 0;
   const triggerDisabled = disabled || isLoading || noModelsAvailable;
 
   const placeholder = isLoading
@@ -111,16 +101,9 @@ export function ModelSelector({
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((opt) => (
-            <SelectItem key={opt.id} value={opt.id}>
-              <span className="flex items-center gap-2">
-                <span className="font-mono text-xs">{opt.id}</span>
-                {opt.legacy && (
-                  <span className="text-[10px] uppercase tracking-wide rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1 py-0.5">
-                    legacy
-                  </span>
-                )}
-              </span>
+          {liveModels.map((id) => (
+            <SelectItem key={id} value={id}>
+              <span className="font-mono text-xs">{id}</span>
             </SelectItem>
           ))}
         </SelectContent>
