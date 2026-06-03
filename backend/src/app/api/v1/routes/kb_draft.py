@@ -21,6 +21,7 @@ PHASE 3 is implemented in Celery tasks.
 """
 
 import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
@@ -35,6 +36,8 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.services.draft_service import draft_service, DraftType
 from app.services.kb_draft_service import kb_draft_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/kb-drafts", tags=["kb_drafts"])
 
@@ -848,6 +851,10 @@ async def add_notion_source_to_draft(
 
             if not page_content.get("content"):
                 error_msg = page_content.get("metadata", {}).get("error", "No content returned")
+                logger.warning(
+                    "[kb_draft] dropping Notion page_id=%s from draft %s: %s",
+                    page_id, draft_id, error_msg,
+                )
                 failed_pages.append({"page_id": page_id, "error": error_msg})
                 continue
 
@@ -895,9 +902,17 @@ async def add_notion_source_to_draft(
         updates={"data": data}
     )
 
+    # Return the newly-created source objects so the frontend store can
+    # mirror them directly into `draftSources` (preserving metadata.previewPages
+    # for the wizard's source list + preview dialog). Without this, the
+    # frontend has to either refetch the draft or reconstruct sources from
+    # local picker data — the latter is what produced the "Unknown Source"
+    # bug for Notion / Google source types.
+    new_id_set = set(source_ids)
     return {
         "sources_added": len(source_ids),
         "source_ids": source_ids,
+        "sources": [s for s in sources if s["id"] in new_id_set],
         "failed_pages": failed_pages,
     }
 
@@ -1001,6 +1016,10 @@ async def add_google_source_to_draft(
             content = result.get("content")
             if not content:
                 error_msg = result.get("metadata", {}).get("error", "No content returned")
+                logger.warning(
+                    "[kb_draft] dropping Google file_id=%s (type=%s) from draft %s: %s",
+                    file.id, file.type, draft_id, error_msg,
+                )
                 failed_files.append({"file_id": file.id, "error": error_msg})
                 continue
 
@@ -1048,9 +1067,13 @@ async def add_google_source_to_draft(
         updates={"data": data}
     )
 
+    # See add-notion above — return the newly-created source objects so
+    # the frontend store can mirror them directly into `draftSources`.
+    new_id_set = set(source_ids)
     return {
         "sources_added": len(source_ids),
         "source_ids": source_ids,
+        "sources": [s for s in sources if s["id"] in new_id_set],
         "failed_files": failed_files,
     }
 

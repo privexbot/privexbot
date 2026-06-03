@@ -52,7 +52,14 @@ class CreateChatbotDraftRequest(BaseModel):
     workspace_id: UUID = Field(..., description="Workspace ID")
 
     # AI Configuration (optional, has defaults)
-    model: str = Field(default="secret-ai-v1", description="AI model to use")
+    model: Optional[str] = Field(
+        default=None,
+        description=(
+            "AI model to use. When None, the inference service resolves it "
+            "at runtime from `Secret().get_models()[0]`. Frontend "
+            "<ModelSelector> populates this from /inference/models."
+        ),
+    )
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Response randomness")
     max_tokens: int = Field(default=2000, ge=1, le=8000, description="Max response length")
 

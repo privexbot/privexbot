@@ -174,10 +174,19 @@ class Settings(BaseSettings):
     # services/inference_service.py module docstring + memory note
     # `feedback_secret_ai_only`.
 
-    # Default inference model
+    # Default inference model. The application prefers the LIVE list from
+    # `Secret().get_models()` for both new chatbots/chatflows and the
+    # frontend <ModelSelector> dropdown. This env var is a final fallback
+    # only — used if the SDK is unreachable AND no model was specified.
+    # Most deployments should leave it unset; the LAST_RESORT_MODEL constant
+    # in inference_service.py is the in-code fallback.
     DEFAULT_INFERENCE_MODEL: str = Field(
-        default="llama3.1",
-        description="Default model to use for inference"
+        default="DeepSeek-R1-Distill-Llama-70B",
+        description=(
+            "Last-resort inference model. Used only when the Secret AI SDK "
+            "is unreachable and no model is configured. Live model selection "
+            "comes from `Secret().get_models()` via /inference/models."
+        ),
     )
 
     # Deployment URLs

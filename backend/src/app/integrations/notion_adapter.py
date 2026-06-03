@@ -16,7 +16,11 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import logging
 from typing import Optional, List
+
+
+logger = logging.getLogger(__name__)
 
 
 class NotionAdapter:
@@ -123,6 +127,10 @@ class NotionAdapter:
             }
 
         except Exception as e:
+            logger.warning(
+                "[NotionAdapter] get_page_content failed for page_id=%s: %s: %s",
+                page_id, type(e).__name__, e,
+            )
             return {
                 "page_id": page_id,
                 "title": None,
@@ -295,7 +303,10 @@ class NotionAdapter:
             return pages
 
         except Exception as e:
-            print(f"Error listing Notion pages: {e}")
+            logger.warning(
+                "[NotionAdapter] list_workspace_pages failed: %s: %s",
+                type(e).__name__, e,
+            )
             return []
 
 

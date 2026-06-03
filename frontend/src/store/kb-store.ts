@@ -930,34 +930,81 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             state.draftError = null;
           });
 
-          // Backend POST hands back source_ids in the same order as page_ids.
-          // We zip them with the page metadata the user already had on the
-          // client (title, url) so the wizard's source-list shows real names
-          // immediately — no second round-trip to refetch the draft.
           const result = await kbClient.draft.addNotionSources(
             currentDraft.draft_id,
             pages.map((p) => p.id),
           );
 
-          const failedIds = new Set(result.failed_pages.map((f) => f.page_id));
-          const successPages = pages.filter((p) => !failedIds.has(p.id));
-
-          const newSources: DraftSource[] = successPages.map((page, index) => ({
-            source_id: result.source_ids[index] ?? `notion_${page.id}`,
-            type: SourceType.NOTION,
-            url: page.url,
-            // Notion sources are auto-approved server-side at add time
-            // (kb_draft.py:873), so we surface them as completed/approved here
-            // — the wizard's "Continue to Approval" lets the user advance.
-            status: "completed",
-            created_at: new Date().toISOString(),
-            metadata: {
-              title: page.title,
-              notion_page_id: page.id,
-              notion_type: page.type,
-              is_approved: true,
-            },
-          }));
+          // Preferred path: mirror the backend-returned source objects so
+          // the wizard's source list, preview dialog, and Stage 3 approval
+          // all see the extracted Notion content via metadata.previewPages.
+          //
+          // The backend at `kb_draft.py:861-882` builds each source with
+          // `id`, `type='notion'`, `url`, `name`, `parsed_content`,
+          // `added_at`, and `metadata.previewPages[i].is_approved=true`.
+          // We translate `id -> source_id` and `name -> metadata.title`
+          // to match the frontend `DraftSource` shape, and derive
+          // `approvedPageIndices` from previewPages so Stage 3
+          // (KBContentApproval.tsx:112 overrides backend is_approved with
+          // frontend-computed state) sees the auto-approval intent.
+          let newSources: DraftSource[];
+          if (result.sources && result.sources.length > 0) {
+            newSources = result.sources.map((backendSrc) => {
+              type RawBackendSrc = {
+                id?: string;
+                source_id?: string;
+                type?: string;
+                url?: string;
+                name?: string;
+                added_at?: string;
+                metadata?: Record<string, unknown>;
+              };
+              const src = backendSrc as unknown as RawBackendSrc;
+              const sourceId = src.source_id ?? src.id ?? `notion_${pages[0]?.id ?? "fallback"}`;
+              const metadata: Record<string, unknown> = { ...(src.metadata ?? {}) };
+              if (src.name && !metadata.title) {
+                metadata.title = src.name;
+              }
+              // Derive approvedPageIndices from previewPages whose
+              // is_approved is true — required so Stage 3 reflects the
+              // auto-approval set at backend (kb_draft.py:873).
+              const previewPages = metadata.previewPages as
+                | Array<{ is_approved?: boolean }>
+                | undefined;
+              if (Array.isArray(previewPages)) {
+                metadata.approvedPageIndices = previewPages
+                  .map((_, i) => i)
+                  .filter((i) => previewPages[i]?.is_approved === true);
+              }
+              return {
+                source_id: sourceId,
+                type: SourceType.NOTION,
+                url: src.url ?? pages.find((p) => p.id === src.metadata?.notion_page_id)?.url,
+                status: "completed" as const,
+                created_at: src.added_at ?? new Date().toISOString(),
+                metadata,
+              };
+            });
+          } else {
+            // Back-compat fallback for older backends that only returned IDs:
+            // reconstruct from the local picker data. Preview won't render
+            // until the user re-opens the draft (which fetches from Redis).
+            const failedIds = new Set(result.failed_pages.map((f) => f.page_id));
+            const successPages = pages.filter((p) => !failedIds.has(p.id));
+            newSources = successPages.map((page, index) => ({
+              source_id: result.source_ids[index] ?? `notion_${page.id}`,
+              type: SourceType.NOTION,
+              url: page.url,
+              status: "completed",
+              created_at: new Date().toISOString(),
+              metadata: {
+                title: page.title,
+                notion_page_id: page.id,
+                notion_type: page.type,
+                is_approved: true,
+              },
+            }));
+          }
 
           set((state) => {
             state.draftSources = [...state.draftSources, ...newSources];
@@ -982,30 +1029,71 @@ export const useKBStore = create<KBStoreState & KBStoreActions>()(
             files.map((f) => ({ id: f.id, type: f.type, name: f.name })),
           );
 
-          const failedIds = new Set(result.failed_files.map((f) => f.file_id));
-          const successFiles = files.filter((f) => !failedIds.has(f.id));
-
-          const newSources: DraftSource[] = successFiles.map((file, index) => {
-            // Backend tags Google Docs as "google_docs" and Sheets as
-            // "google_sheets" — preserve that distinction here so the source
-            // list, chunking preview, and finalize pipeline can reason about
-            // type-specific behaviour later.
-            const sourceType =
-              file.type === "spreadsheet" ? SourceType.GOOGLE_SHEETS : SourceType.GOOGLE_DOCS;
-            return {
-              source_id: result.source_ids[index] ?? `google_${file.id}`,
-              type: sourceType,
-              url: `https://docs.google.com/${file.type === "spreadsheet" ? "spreadsheets" : "document"}/d/${file.id}`,
-              status: "completed",
-              created_at: new Date().toISOString(),
-              metadata: {
-                title: file.name,
-                google_file_id: file.id,
-                google_file_type: file.type,
-                is_approved: true,
-              },
-            };
-          });
+          // See addNotionSources above for the rationale. Same shape, but
+          // Google backend tags sources as "google_docs" or "google_sheets"
+          // — we preserve that distinction by reading src.type from the
+          // backend payload directly.
+          let newSources: DraftSource[];
+          if (result.sources && result.sources.length > 0) {
+            newSources = result.sources.map((backendSrc) => {
+              type RawBackendSrc = {
+                id?: string;
+                source_id?: string;
+                type?: string;
+                url?: string;
+                name?: string;
+                added_at?: string;
+                metadata?: Record<string, unknown>;
+              };
+              const src = backendSrc as unknown as RawBackendSrc;
+              const sourceId = src.source_id ?? src.id ?? `google_${files[0]?.id ?? "fallback"}`;
+              const sourceType =
+                src.type === "google_sheets"
+                  ? SourceType.GOOGLE_SHEETS
+                  : SourceType.GOOGLE_DOCS;
+              const metadata: Record<string, unknown> = { ...(src.metadata ?? {}) };
+              if (src.name && !metadata.title) {
+                metadata.title = src.name;
+              }
+              const previewPages = metadata.previewPages as
+                | Array<{ is_approved?: boolean }>
+                | undefined;
+              if (Array.isArray(previewPages)) {
+                metadata.approvedPageIndices = previewPages
+                  .map((_, i) => i)
+                  .filter((i) => previewPages[i]?.is_approved === true);
+              }
+              return {
+                source_id: sourceId,
+                type: sourceType,
+                url: src.url,
+                status: "completed" as const,
+                created_at: src.added_at ?? new Date().toISOString(),
+                metadata,
+              };
+            });
+          } else {
+            // Back-compat fallback
+            const failedIds = new Set(result.failed_files.map((f) => f.file_id));
+            const successFiles = files.filter((f) => !failedIds.has(f.id));
+            newSources = successFiles.map((file, index) => {
+              const sourceType =
+                file.type === "spreadsheet" ? SourceType.GOOGLE_SHEETS : SourceType.GOOGLE_DOCS;
+              return {
+                source_id: result.source_ids[index] ?? `google_${file.id}`,
+                type: sourceType,
+                url: `https://docs.google.com/${file.type === "spreadsheet" ? "spreadsheets" : "document"}/d/${file.id}`,
+                status: "completed",
+                created_at: new Date().toISOString(),
+                metadata: {
+                  title: file.name,
+                  google_file_id: file.id,
+                  google_file_type: file.type,
+                  is_approved: true,
+                },
+              };
+            });
+          }
 
           set((state) => {
             state.draftSources = [...state.draftSources, ...newSources];

@@ -36,6 +36,7 @@ import type {
   // Draft Phase Types
   CreateDraftRequest,
   KBDraft,
+  DraftSource,
   AddWebSourceRequest,
   UpdateChunkingRequest,
   UpdateEmbeddingRequest,
@@ -428,12 +429,16 @@ export const kbDraftApi = {
   async addNotionSources(draftId: string, pageIds: string[]): Promise<{
     sources_added: number;
     source_ids: string[];
+    /** Full source objects backed by the Redis draft. Optional for
+     * back-compat with older backend builds that only returned IDs. */
+    sources?: DraftSource[];
     failed_pages: Array<{ page_id: string; error: string }>;
   }> {
     try {
       const response = await apiClient.post<{
         sources_added: number;
         source_ids: string[];
+        sources?: DraftSource[];
         failed_pages: Array<{ page_id: string; error: string }>;
       }>(`/kb-drafts/${draftId}/sources/notion`, {
         page_ids: pageIds,
@@ -454,12 +459,16 @@ export const kbDraftApi = {
   ): Promise<{
     sources_added: number;
     source_ids: string[];
+    /** Full source objects backed by the Redis draft. Optional for
+     * back-compat with older backend builds that only returned IDs. */
+    sources?: DraftSource[];
     failed_files: Array<{ file_id: string; error: string }>;
   }> {
     try {
       const response = await apiClient.post<{
         sources_added: number;
         source_ids: string[];
+        sources?: DraftSource[];
         failed_files: Array<{ file_id: string; error: string }>;
       }>(`/kb-drafts/${draftId}/sources/google`, {
         files,

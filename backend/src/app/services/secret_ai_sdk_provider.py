@@ -43,41 +43,44 @@ class SecretAISDKProvider:
 
     def __init__(self, temperature: float = 0.7):
         self.temperature = temperature
-        self._client = None
-        self._model = None
+        self._secret = None  # secret_ai_sdk.secret.Secret instance (worker registry)
+        # Per-model ChatSecret client cache. Building one ChatSecret per
+        # requested model is necessary because each model's worker URL is
+        # resolved via `Secret().get_urls(model=...)` — routing a request
+        # for model B through a client pinned to model A's URL would
+        # silently hit the wrong worker.
+        self._clients: Dict[str, object] = {}
+        self._default_model: Optional[str] = None
         self._initialized = False
 
-    def _ensure_client(self):
-        """Lazy initialization of SDK client."""
+    def _ensure_secret_initialized(self):
+        """Initialize the Secret() worker-registry client and resolve the
+        default model. Safe to call repeatedly; only the first call does work.
+        """
         if self._initialized:
             return
 
         try:
-            from secret_ai_sdk.secret_ai import ChatSecret
+            # Validate the ChatSecret import here too so callers get a single
+            # consolidated error path; the actual ChatSecret instances are
+            # built lazily in `_invoke_with_url_fallback` / `_build_client`.
+            from secret_ai_sdk.secret_ai import ChatSecret  # noqa: F401
             from secret_ai_sdk.secret import Secret
 
-            logger.info("[SecretAISDKProvider] Initializing native SDK client...")
+            logger.info("[SecretAISDKProvider] Initializing native SDK worker registry...")
 
-            secret_client = Secret()
-            models = secret_client.get_models()
+            self._secret = Secret()
+            models = self._secret.get_models()
 
             if not models:
                 raise RuntimeError("No models available from Secret AI SDK")
 
-            urls = secret_client.get_urls(model=models[0])
-
-            if not urls:
-                raise RuntimeError(f"No URLs available for model {models[0]}")
-
-            self._model = models[0]
-            self._client = ChatSecret(
-                base_url=urls[0],
-                model=self._model,
-                temperature=self.temperature
-            )
+            self._default_model = models[0]
             self._initialized = True
 
-            logger.info(f"[SecretAISDKProvider] Initialized with model: {self._model}")
+            logger.info(
+                f"[SecretAISDKProvider] Worker registry ready; default model: {self._default_model}"
+            )
 
         except ImportError as e:
             # Surface the underlying import failure so operators can see WHICH
@@ -107,6 +110,192 @@ class SecretAISDKProvider:
                 e,
             )
             raise
+
+    def list_models(self) -> List[str]:
+        """Return the live list of model IDs available on Secret AI.
+
+        Thin wrapper around `Secret().get_models()` that reuses the cached
+        worker-registry client. Callers (e.g. `inference_service.list_available_models`)
+        are responsible for any further caching layer.
+        """
+        self._ensure_secret_initialized()
+        return self._secret.get_models()
+
+    def _build_client(self, model: str, base_url: str):
+        """Build a fresh ChatSecret instance pinned to a specific worker URL.
+        Pinning is what makes user model selection actually reach the right
+        worker — a single `ChatSecret` carries both `model` and `base_url`,
+        and the underlying Ollama protocol won't route off either.
+        """
+        from secret_ai_sdk.secret_ai import ChatSecret
+
+        return ChatSecret(
+            base_url=base_url,
+            model=model,
+            temperature=self.temperature,
+        )
+
+    async def _invoke_with_url_fallback(
+        self,
+        model: str,
+        sdk_messages: List[tuple],
+        temperature: Optional[float],
+        _depth: int = 0,
+    ) -> tuple:
+        """Try to invoke `model` against any worker URL the contract
+        advertises. Returns ``(response, actual_model)`` — `actual_model`
+        reflects the model that actually served the response (may differ
+        from `model` after a fallback hop), so the caller can record the
+        truthful value in its response payload.
+
+        Handles three real-world failure modes:
+
+        1. **Stale contract entry.** Secret Labs occasionally migrates a
+           model between workers (e.g. `secretai-rytn` → `secretai-jedi`)
+           before the smart-contract entry is updated. The old URL still
+           appears in `get_urls(model)`, but the Ollama backend behind it
+           returns 404 because the model is no longer loaded there.
+        2. **Legacy / deprecated model id.** A chatbot config may carry a
+           model id the contract no longer advertises any URL for at all
+           (e.g. the legacy `"secret-ai-v1"` placeholder).
+        3. **`models[0]` is broken.** The contract's enumeration order is
+           not a health signal — `Secret().get_models()[0]` may be the
+           one model whose worker is currently down. The old code coerced
+           to that, hit the equality guard, and raised.
+
+        For (1), (2), and (3) the recovery path is the same: iterate every
+        chat-base model in the contract, try each one, return the first
+        that serves successfully. Bounded by `_depth=1` to keep the
+        recursion at most one hop deep.
+
+        Caches the working ChatSecret on the first success so subsequent
+        requests for the same model hit the fast path. Eviction happens
+        on any invocation failure — the next call re-iterates URLs.
+        """
+        # Fast path: cached working client
+        cached = self._clients.get(model)
+        if cached is not None:
+            if temperature is not None:
+                cached.temperature = temperature
+            try:
+                response = await cached.ainvoke(sdk_messages)
+                return response, model
+            except Exception as e:
+                logger.warning(
+                    "[SecretAISDKProvider] Cached client failed for model=%r "
+                    "(%s: %s); evicting and trying alternate workers.",
+                    model, type(e).__name__, e,
+                )
+                self._clients.pop(model, None)
+
+        # Slow path: iterate every worker URL the contract advertises
+        self._ensure_secret_initialized()
+        urls = self._secret.get_urls(model=model)
+        if not urls:
+            # No workers at all → try other chat-base models from the contract.
+            logger.warning(
+                "[SecretAISDKProvider] No workers advertised for model=%r — "
+                "trying alternate chat-base models.",
+                model,
+            )
+            return await self._iterate_candidates(
+                model, sdk_messages, temperature, _depth,
+            )
+
+        last_error: Optional[Exception] = None
+        for idx, base_url in enumerate(urls):
+            client = self._build_client(model, base_url)
+            if temperature is not None:
+                client.temperature = temperature
+            try:
+                logger.info(
+                    "[SecretAISDKProvider] Trying worker %d/%d for model=%s: %s",
+                    idx + 1, len(urls), model, base_url,
+                )
+                response = await client.ainvoke(sdk_messages)
+                # Latch the working URL for future requests on this model
+                self._clients[model] = client
+                return response, model
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "[SecretAISDKProvider] Worker %d/%d (%s) failed for model=%s: "
+                    "%s: %s",
+                    idx + 1, len(urls), base_url, model, type(e).__name__, e,
+                )
+                continue
+
+        # Every URL for this model failed. Try other chat-base models.
+        return await self._iterate_candidates(
+            model, sdk_messages, temperature, _depth, last_error=last_error,
+        )
+
+    async def _iterate_candidates(
+        self,
+        failed_model: str,
+        sdk_messages: List[tuple],
+        temperature: Optional[float],
+        _depth: int,
+        last_error: Optional[Exception] = None,
+    ) -> tuple:
+        """Iterate `Secret().get_models()` (chat-base only) skipping the
+        model that just failed, recursing into `_invoke_with_url_fallback`
+        with `_depth=1` so the fallback hop cannot recurse further.
+
+        Returns the same ``(response, actual_model)`` tuple shape.
+        Raises `last_error` (preserving the original failure signal) or
+        a generic `RuntimeError` when every candidate has been tried.
+        """
+        # Recursion guard: at depth >= 1 we are already a fallback attempt;
+        # don't try yet another model. Let the parent loop pick the next
+        # candidate or raise.
+        if _depth >= 1:
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError(
+                f"No workers available for model {failed_model!r}."
+            )
+
+        # Import here (not at module top) — `app.core.secret_ai_models` is
+        # leaf-level and free of cycles, but keeping this import inside the
+        # method matches the rest of the file's lazy-import pattern for
+        # anything not used at module load.
+        from app.core.secret_ai_models import is_chat_capable
+
+        last_inner_error: Optional[Exception] = last_error
+        candidates = self._secret.get_models() or []
+        attempted = 0
+        for candidate in candidates:
+            if candidate == failed_model or not is_chat_capable(candidate):
+                continue
+            attempted += 1
+            try:
+                logger.warning(
+                    "[SecretAISDKProvider] %r failed; routing to fallback %r "
+                    "(candidate %d).",
+                    failed_model, candidate, attempted,
+                )
+                return await self._invoke_with_url_fallback(
+                    candidate, sdk_messages, temperature, _depth=1,
+                )
+            except Exception as e:
+                last_inner_error = e
+                logger.warning(
+                    "[SecretAISDKProvider] Fallback candidate %r also failed: "
+                    "%s: %s",
+                    candidate, type(e).__name__, e,
+                )
+                continue
+
+        # Every chat-base candidate failed — surface the underlying error
+        # so the caller can decide how to respond (REST transport fallback,
+        # user-visible error, etc.).
+        if last_inner_error is not None:
+            raise last_inner_error
+        raise RuntimeError(
+            f"All {attempted} chat-base candidates exhausted for failed "
+            f"model {failed_model!r}."
+        )
 
     def _convert_messages(self, messages: List[Dict[str, str]]) -> List[tuple]:
         """
@@ -147,6 +336,7 @@ class SecretAISDKProvider:
         messages: List[Dict[str, str]],
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
         **kwargs
     ) -> Dict:
         """
@@ -156,6 +346,9 @@ class SecretAISDKProvider:
             messages: List of messages in OpenAI format
             temperature: Optional temperature override
             max_tokens: Optional max tokens (may not be supported by SDK)
+            model: Specific model ID to use. When omitted, falls back to
+                Secret AI's first available model (typically the default
+                listed by `Secret().get_models()`).
 
         Returns:
             Dict with same structure as OpenAI provider:
@@ -166,39 +359,37 @@ class SecretAISDKProvider:
                 "provider": "secret_ai_sdk"
             }
         """
-        self._ensure_client()
+        self._ensure_secret_initialized()
 
-        # Update temperature if specified
-        if temperature is not None:
-            self._client.temperature = temperature
+        # Resolve which model to route to. Explicit > registry default.
+        selected_model = model or self._default_model
+        if not selected_model:
+            raise RuntimeError("No model available from Secret AI SDK and none specified")
 
         # Convert message format
         sdk_messages = self._convert_messages(messages)
 
-        logger.debug(f"[SecretAISDKProvider] Invoking with {len(sdk_messages)} messages")
+        logger.debug(
+            f"[SecretAISDKProvider] Invoking model={selected_model} "
+            f"with {len(sdk_messages)} messages"
+        )
 
-        # Call SDK using native async method (ainvoke)
-        # WHY: Using ainvoke directly instead of wrapping invoke in run_in_executor
-        # HOW: LangChain's ainvoke is the proper async interface, avoiding event loop conflicts
-        # Retry once on transient failures (SDK sometimes returns empty errors)
-        last_error = None
-        for attempt in range(2):
-            try:
-                response = await self._client.ainvoke(sdk_messages)
-                break
-            except Exception as e:
-                last_error = e
-                logger.error(
-                    f"[SecretAISDKProvider] SDK ainvoke failed (attempt {attempt + 1}/2): "
-                    f"{type(e).__name__}: {e}",
-                    exc_info=True
-                )
-                if attempt == 0:
-                    # Reset client on first failure — URL may have gone stale
-                    self._initialized = False
-                    self._ensure_client()
-                    continue
-                raise
+        # Invoke via the URL-fallback helper. Tries the cached working
+        # client first, then iterates every worker URL the smart contract
+        # advertises for this model, then iterates other chat-base models
+        # if no URL works. Returns (response, actual_model) — `actual_model`
+        # may differ from `selected_model` when a fallback hop fired, and
+        # is what we record in the response dict so the caller sees the
+        # truthful model id. See `_invoke_with_url_fallback` for the full
+        # failure-handling contract.
+        response, actual_model = await self._invoke_with_url_fallback(
+            selected_model, sdk_messages, temperature
+        )
+        if actual_model != selected_model:
+            logger.warning(
+                "[SecretAISDKProvider] Requested model=%r served by fallback=%r.",
+                selected_model, actual_model,
+            )
 
         # Extract text from response
         # SDK returns AIMessage with .content attribute
@@ -251,7 +442,7 @@ class SecretAISDKProvider:
                 "completion_tokens": completion_tokens,
                 "total_tokens": total_tokens
             },
-            "model": self._model,
+            "model": actual_model,
             "provider": "secret_ai_sdk"
         }
 

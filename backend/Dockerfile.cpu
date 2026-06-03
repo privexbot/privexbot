@@ -116,6 +116,10 @@ RUN chmod +x /app/scripts/entrypoint-prod.sh
 
 # Copy initial staff setup script (runs after migrations to set admin users)
 COPY scripts/set_initial_staff.py /app/scripts/
+# Rewrites legacy "secret-ai-v1" placeholders to whatever the Secret AI
+# smart contract advertises as models[0]. Run idempotently on every boot
+# via entrypoint-prod.sh — see that script for the non-blocking wrapper.
+COPY scripts/migrate_legacy_model_field.py /app/scripts/
 
 # Copy chatflow template seeder so the marketplace populates on cold start.
 # Idempotent upsert by slug (see scripts/seed_chatflow_templates.py).

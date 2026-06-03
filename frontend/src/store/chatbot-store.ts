@@ -174,7 +174,10 @@ When users ask "tell me something" or similar vague questions at the start of a 
 - You can mention general categories of information you have
 
 Be concise, helpful, and honest about what you know and don't know.`,
-  model: "secret-ai-v1",
+  // Empty model means "no choice yet" — the backend resolves at runtime
+  // via Secret().get_models()[0]. The <ModelSelector> dropdown writes a
+  // concrete id here as soon as the user picks one.
+  model: "",
   temperature: 0.7,
   max_tokens: 2000,
   instructions: [],

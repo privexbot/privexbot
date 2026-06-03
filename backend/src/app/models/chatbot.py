@@ -378,8 +378,9 @@ class Chatbot(Base):
             "instructions": self.prompt_config.get("instructions", []),
             "restrictions": self.prompt_config.get("restrictions", []),
 
-            # From ai_config
-            "model": self.ai_config.get("model", "secret-ai-v1"),
+            # From ai_config — None when no model is configured yet; the
+            # inference service resolves None at runtime via the SDK.
+            "model": self.ai_config.get("model"),
             "temperature": self.ai_config.get("temperature", 0.7),
             "max_tokens": self.ai_config.get("max_tokens", 2000),
 

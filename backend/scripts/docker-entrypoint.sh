@@ -60,6 +60,26 @@ else
     echo "✅ Migration completed successfully"
 fi
 
+# Migrate any chatbot / chatflow configs that still carry the legacy
+# `"secret-ai-v1"` placeholder to whatever `Secret().get_models()[0]`
+# is now. Idempotent (re-runs after the first report zero rows). Non-
+# blocking so a transient Secret AI outage at boot does not keep the
+# API down — the runtime coercion in
+# secret_ai_sdk_provider._get_client_for_model already handles any
+# unmigrated rows on the next chat request.
+echo ""
+echo "🤖 Migrating legacy Secret AI model field..."
+cd /app
+if python scripts/migrate_legacy_model_field.py 2>&1; then
+    echo "✅ Legacy model migration completed"
+else
+    MIGRATION_RC=$?
+    echo "⚠️  Legacy model migration skipped (rc=$MIGRATION_RC) — non-blocking, continuing."
+    echo "   Usually means Secret AI SDK unreachable at boot. Re-run when SDK is up:"
+    echo "   docker exec \$CONTAINER python scripts/migrate_legacy_model_field.py"
+fi
+cd /app/src
+
 echo "🎭 Checking Playwright browsers..."
 # Ensure Playwright browsers are installed (handles volume mount issues)
 if [ ! -d "/root/.cache/ms-playwright/chromium-"* ] 2>/dev/null; then
