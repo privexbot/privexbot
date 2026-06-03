@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { FileText, Globe, Type, Settings, Trash2, Eye, AlertCircle, CheckCircle, Edit2, Copy, Undo2, Download } from 'lucide-react';
+import { FileText, Globe, Type, Settings, Trash2, Eye, AlertCircle, CheckCircle, Edit2, Copy, Undo2, Download, BookText, FileSpreadsheet } from 'lucide-react';
 import { SourceType, DraftSource } from '@/types/knowledge-base';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,12 @@ export function KBSourceList({ sources }: KBSourceListProps) {
         return <FileText className="h-4 w-4" />;
       case SourceType.TEXT:
         return <Type className="h-4 w-4" />;
+      case SourceType.NOTION:
+        return <BookText className="h-4 w-4" />;
+      case SourceType.GOOGLE_DOCS:
+        return <FileText className="h-4 w-4" />;
+      case SourceType.GOOGLE_SHEETS:
+        return <FileSpreadsheet className="h-4 w-4" />;
       default:
         return <FileText className="h-4 w-4" />;
     }
@@ -72,6 +78,12 @@ export function KBSourceList({ sources }: KBSourceListProps) {
         return (source.metadata?.filename as string) || 'File Source';
       case SourceType.TEXT:
         return (source.metadata?.title as string) || 'Text Source';
+      case SourceType.NOTION:
+        return (source.metadata?.title as string) || 'Notion Page';
+      case SourceType.GOOGLE_DOCS:
+        return (source.metadata?.title as string) || 'Google Doc';
+      case SourceType.GOOGLE_SHEETS:
+        return (source.metadata?.title as string) || 'Google Sheet';
       default:
         return 'Unknown Source';
     }
@@ -89,6 +101,19 @@ export function KBSourceList({ sources }: KBSourceListProps) {
         return `${fileSize.toFixed(2)} MB • ${pageCount} pages • ${wordCount.toLocaleString()} words`;
       case SourceType.TEXT:
         return `${((source.metadata?.content as string)?.length || 0).toLocaleString()} characters`;
+      case SourceType.NOTION:
+      case SourceType.GOOGLE_DOCS:
+      case SourceType.GOOGLE_SHEETS: {
+        // previewPages[0] carries word_count + char_count for integration
+        // sources (single page per source for Notion/Google Docs/Sheets).
+        const pp = (source.metadata?.previewPages as Array<{
+          word_count?: number;
+          char_count?: number;
+        }> | undefined)?.[0];
+        const words = (pp?.word_count ?? 0).toLocaleString();
+        const chars = (pp?.char_count ?? 0).toLocaleString();
+        return `${words} words • ${chars} characters`;
+      }
       default:
         return '';
     }
@@ -955,6 +980,106 @@ ${pages.map((page, index) => {
     );
   };
 
+  // Render the preview for an integration source (Notion, Google Docs, Google
+  // Sheets). All three share the same `metadata.previewPages` shape built by
+  // the backend at `kb_draft.py:869-878` (notion) and `:1021-1030` (google):
+  //   [{ url, title, content, is_approved, word_count, char_count,
+  //      source_id, page_index }]
+  // Each source is typically one page (notion page / google doc / sheet),
+  // so the renderer is simpler than the web/file variants — no per-page
+  // edit/copy/revert toolbar, no crawl-config summary. Just the header,
+  // word/char counts, and the extracted content.
+  const renderIntegrationPreviewContent = (source: DraftSource): React.ReactElement => {
+    const previewPages = (source.metadata?.previewPages as Array<{
+      url?: string;
+      title?: string;
+      content?: string;
+      word_count?: number;
+      char_count?: number;
+    }> | undefined) ?? [];
+
+    const integrationLabel =
+      source.type === SourceType.NOTION
+        ? 'Notion Page'
+        : source.type === SourceType.GOOGLE_SHEETS
+          ? 'Google Sheet'
+          : 'Google Doc';
+    const integrationIcon =
+      source.type === SourceType.NOTION
+        ? <BookText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+        : source.type === SourceType.GOOGLE_SHEETS
+          ? <FileSpreadsheet className="h-5 w-5 text-green-600 dark:text-green-400" />
+          : <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />;
+
+    if (previewPages.length === 0) {
+      return (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 sm:p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-amber-800 dark:text-amber-300 mb-2 font-manrope">
+                Preview unavailable
+              </h4>
+              <p className="text-sm text-amber-700 dark:text-amber-400 font-manrope leading-relaxed">
+                The {integrationLabel.toLowerCase()} was added but no preview
+                content was returned. Remove and re-add the source to retry.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {previewPages.map((page, index) => {
+          const title = page.title || `${integrationLabel} ${index + 1}`;
+          const content = page.content || '';
+          const words = (page.word_count ?? content.split(/\s+/).filter(Boolean).length).toLocaleString();
+          const chars = (page.char_count ?? content.length).toLocaleString();
+          return (
+            <Card key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+              <CardHeader className="py-4 px-4 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white font-manrope flex items-center gap-2">
+                    {integrationIcon}
+                    <span className="break-words">{title}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-manrope bg-gray-100 dark:bg-gray-700/50 px-2 py-1 rounded-md">
+                      {words} words • {chars} chars
+                    </span>
+                    {page.url && (
+                      <a
+                        href={page.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-manrope break-all"
+                      >
+                        Open in {integrationLabel.includes('Google') ? 'Google' : 'Notion'}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 pt-4">
+                <div className="max-h-96 overflow-auto bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 p-4 rounded-lg text-sm">
+                  <pre className="whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-300 leading-relaxed break-words">
+                    {content || (
+                      <span className="text-gray-500 dark:text-gray-400 italic">
+                        No content extracted
+                      </span>
+                    )}
+                  </pre>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1102,6 +1227,9 @@ ${pages.map((page, index) => {
 
               {previewSource?.type === SourceType.WEB && renderWebPreviewContent(previewSource)}
               {previewSource?.type === SourceType.FILE && renderFilePreviewContent(previewSource)}
+              {previewSource?.type === SourceType.NOTION && renderIntegrationPreviewContent(previewSource)}
+              {previewSource?.type === SourceType.GOOGLE_DOCS && renderIntegrationPreviewContent(previewSource)}
+              {previewSource?.type === SourceType.GOOGLE_SHEETS && renderIntegrationPreviewContent(previewSource)}
             </div>
           </div>
 
@@ -1112,6 +1240,9 @@ ${pages.map((page, index) => {
                   {previewSource.type === SourceType.WEB && 'Website Source'}
                   {previewSource.type === SourceType.FILE && 'File Source'}
                   {previewSource.type === SourceType.TEXT && 'Text Source'}
+                  {previewSource.type === SourceType.NOTION && 'Notion Source'}
+                  {previewSource.type === SourceType.GOOGLE_DOCS && 'Google Doc Source'}
+                  {previewSource.type === SourceType.GOOGLE_SHEETS && 'Google Sheets Source'}
                 </span>
               )}
             </div>

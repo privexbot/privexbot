@@ -16,8 +16,12 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import logging
 from typing import Optional, List
 from uuid import UUID
+
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleAdapter:
@@ -122,6 +126,10 @@ class GoogleAdapter:
             }
 
         except Exception as e:
+            logger.warning(
+                "[GoogleAdapter] export_google_doc failed for document_id=%s: %s: %s",
+                document_id, type(e).__name__, e,
+            )
             return {
                 "document_id": document_id,
                 "title": None,
@@ -273,6 +281,10 @@ class GoogleAdapter:
             }
 
         except Exception as e:
+            logger.warning(
+                "[GoogleAdapter] export_google_sheet failed for spreadsheet_id=%s: %s: %s",
+                spreadsheet_id, type(e).__name__, e,
+            )
             return {
                 "spreadsheet_id": spreadsheet_id,
                 "title": None,
