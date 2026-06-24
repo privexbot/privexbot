@@ -91,7 +91,11 @@ class SecretAISDKProvider:
             from secret_ai_sdk.secret import Secret
 
             logger.info("[SecretAIProvider] Initializing Secret() worker discovery...")
-            self._secret = Secret()
+            # Pass the configured LCD node explicitly: Pydantic reads `.env`
+            # without exporting to os.environ, so the SDK's own os.getenv may not
+            # see SECRET_NODE_URL. Blank → the SDK default (rpc12.scrtlabs.com).
+            node_url = settings.SECRET_NODE_URL or None
+            self._secret = Secret(node_url=node_url) if node_url else Secret()
             self._initialized = True
         except ImportError as e:
             logger.error(
@@ -129,18 +133,49 @@ class SecretAISDKProvider:
         )
 
     async def _ensure_registry(self):
-        """Refresh the registry if stale, serializing concurrent rebuilds."""
+        """Refresh the registry if stale, serializing concurrent rebuilds.
+
+        A failed refresh must NOT discard a registry we already discovered — a
+        transient RPC/DNS blip to the on-chain node would otherwise take down
+        every LLM node. Inference runs against `{worker}/v1` and doesn't need
+        the node once the workers are known, so we serve the stale registry and
+        back off (bump the timestamp) until the next TTL.
+        """
         if self._registry_fresh():
             return
         async with self._registry_lock:
             if self._registry_fresh():
                 return
-            self._build_registry()
+            try:
+                self._build_registry()
+            except Exception as exc:
+                if self._registry:
+                    logger.warning(
+                        "[SecretAIProvider] Registry refresh failed (%s); serving stale "
+                        "registry (%d model(s)).",
+                        exc, len(self._registry),
+                    )
+                    # Back off one TTL so we don't re-hit the failing node on
+                    # every request; the next refresh retries normally.
+                    self._registry_ts = time.monotonic()
+                    return
+                raise  # cold start, nothing discovered yet — surface the failure
 
     def list_models(self) -> List[str]:
         """Live list of served chat model ids (used by /inference/models)."""
         if not self._registry_fresh():
-            self._build_registry()
+            try:
+                self._build_registry()
+            except Exception as exc:
+                if self._registry:
+                    logger.warning(
+                        "[SecretAIProvider] Registry refresh failed (%s); listing stale "
+                        "model(s).",
+                        exc,
+                    )
+                    self._registry_ts = time.monotonic()
+                else:
+                    raise
         return list(self._registry.keys())
 
     # ------------------------------------------------------------------ #
