@@ -1,34 +1,38 @@
 #!/usr/bin/env python3
 """
-Migrate legacy "secret-ai-v1" model field to a live Secret AI model.
+Rewrite stored chatbot / chatflow model ids that no Secret AI worker serves.
 
 WHY:
-- The frontend used to show a one-option dropdown with the placeholder
-  string "secret-ai-v1" while the backend silently called whatever
-  Secret AI's first model was. Going dynamic (Secret().get_models()) means
-  the frontend now shows real model IDs (e.g. "DeepSeek-R1-Distill-Llama-70B").
-  Any chatbot or chatflow LLM node still carrying `model = "secret-ai-v1"`
-  in its config needs to be migrated to a real model id so the
-  <ModelSelector> dropdown shows the correct preselected value.
+- Secret AI's workers migrated to a vLLM/OpenAI backend, and the on-chain
+  contract's model names went stale. A stored model id is only usable if a
+  worker actually serves it right now (probed via each worker's
+  `GET /v1/models` — see `app.core.secret_ai_models.discover_served_chat_models`).
+- Any chatbot or chatflow LLM node carrying a model id that is NOT currently
+  served (the old `"secret-ai-v1"` placeholder, or a since-removed id like
+  `deepseek-r1:70b`) needs to be rewritten to a served model so:
+    * analytics/logs show the real model that will run, and
+    * the edit-page `<ModelSelector>` preselects a valid value.
+  The runtime provider already coerces un-migrated rows at request time; this
+  script makes the stored data match reality.
 
 HOW:
-- Resolve `target = Secret().get_models()[0]` once at script start. Abort
-  if the SDK can't reach Secret AI — don't guess.
-- Update `chatbots.ai_config -> model` via `jsonb_set` for every row where
-  the current value is exactly "secret-ai-v1". The chatbot schema has
-  separate JSONB columns per concern (ai_config, kb_config, prompt_config,
-  ...) — there is no aggregated `config` column.
-- Walk every chatflow's `config["nodes"]` array (chatflow has a single
-  `config` JSONB column, with `nodes` and `edges` as keys inside it).
-  For any LLM node where `data.config.model == "secret-ai-v1"`, rewrite to
-  `target`. Reassign the entire `config` dict on the SQLAlchemy instance
-  (JSONB columns are not `MutableDict` here per backend/CLAUDE.md —
-  in-place mutation does NOT persist).
-- Chatflow Redis drafts (24h TTL) are NOT touched — they re-save with
-  whatever value the UI picks on next edit.
+- Build the live registry of served chat models; `target` = first `gpt-oss*`
+  else first served; `served` = the full set of served ids. Abort if NOTHING
+  is served (full outage) — don't guess.
+- `chatbots`: for every row whose `ai_config->>'model'` is a non-empty string
+  NOT in `served` (and not already `target`), rewrite `ai_config.model` to
+  `target` via `jsonb_set`. The chatbot schema has separate JSONB columns
+  (ai_config, kb_config, ...) — no aggregated `config` column.
+- `chatflows`: walk each `config["nodes"]` array; for any node whose
+  `data.config.model` is a non-empty string NOT in `served`, rewrite to
+  `target`. Reassign the whole `config` dict (JSONB is not `MutableDict` here
+  per backend/CLAUDE.md — in-place mutation does NOT persist).
+- **Empty/unset models are left alone** — `model == ""` / missing means "use
+  the default"; rewriting it would force a selection the user never made.
+- Chatflow Redis drafts (24h TTL) are NOT touched — they re-save on next edit.
 
 This script is:
-- Idempotent: re-running reports 0/0 once the migration has completed.
+- Idempotent: once every stored id is served, re-running reports 0/0.
 - Dry-runnable: pass `--dry-run` to count without writing.
 
 Usage:
@@ -66,146 +70,118 @@ except ImportError as e:
 # raw SQL via `text()` for both tables — no ORM, no mapper init.
 
 
-LEGACY_VALUE = "secret-ai-v1"
+def resolve_registry() -> dict:
+    """Return the live `{served_model_id: worker_url}` registry.
 
+    The on-chain contract (`Secret().get_models()`) is stale — its names no
+    longer match what the vLLM/OpenAI workers serve. The authoritative source
+    is each worker's `GET /v1/models`, probed by `discover_served_chat_models`.
 
-def resolve_working_chat_model() -> str:
-    """Pick the first chat-base model whose worker is actually serving
-    right now.
-
-    `Secret().get_models()` returns the contract's enumeration in some
-    order — not a health signal. Earlier behavior of writing `models[0]`
-    bit us when the Secret Labs team migrated `deepseek-r1:70b` (which
-    happens to be `models[0]`) off `secretai-rytn` while the contract
-    still advertised that URL; the migration wrote a broken model to
-    every chatbot.
-
-    Probe each chat-base model's URLs with a minimal `/api/chat` POST
-    (via `app.core.secret_ai_models.ping_chat_model`). Return the first
-    that responds 200. Falls back to `models[0]` only if every probe
-    fails — preserves prior behavior on a full Secret AI outage so the
-    migration doesn't silently abort. The runtime path
-    (`secret_ai_sdk_provider._iterate_candidates`) provides its own
-    fallback regardless of what we write here.
+    Aborts if NOTHING is served (full outage) — we will not rewrite stored ids
+    to a model that no worker serves.
     """
     try:
         from secret_ai_sdk.secret import Secret
-        from app.core.secret_ai_models import is_chat_capable, ping_chat_model
+        from app.core.secret_ai_models import discover_served_chat_models
     except ImportError as exc:
         print(f"❌ Import failed: {exc}")
-        print("   Cannot resolve target model without the SDK. Aborting.")
+        print("   Cannot resolve served models without the SDK. Aborting.")
         sys.exit(2)
 
     try:
         secret = Secret()
-        all_models = secret.get_models() or []
+        registry = discover_served_chat_models(secret)
     except Exception as exc:
-        print(f"❌ Secret().get_models() failed: {exc}")
-        print("   Aborting — we will not guess a target model.")
+        print(f"❌ Worker discovery failed: {exc}")
+        print("   Aborting — we will not guess.")
         sys.exit(3)
 
-    if not all_models:
-        print("❌ Secret().get_models() returned an empty list.")
-        print("   Aborting — no models to migrate to.")
+    if not registry:
+        print("❌ No Secret AI worker is serving a chat model right now.")
+        print("   Aborting — nothing to migrate to.")
         sys.exit(4)
 
-    candidates = [m for m in all_models if is_chat_capable(m)]
-    print(f"→ Probing {len(candidates)} chat-base models for liveness "
-          f"(2s timeout each)...")
-    for m in candidates:
-        try:
-            urls = secret.get_urls(model=m) or []
-        except Exception as exc:
-            print(f"  ✗ {m}: get_urls failed ({type(exc).__name__}: {exc})")
-            continue
-        if not urls:
-            print(f"  ✗ {m}: no URLs advertised")
-            continue
-        for u in urls:
-            if ping_chat_model(u, m, timeout=2.0):
-                print(f"  ✓ {m} @ {u}")
-                return m
-            print(f"  ✗ {m} @ {u}")
-
-    # All probes failed — fall back to models[0] rather than abort. The
-    # runtime SDK provider has its own per-request iteration that will
-    # recover when (if) workers come back up.
-    fallback = all_models[0]
-    print(f"⚠ All probes failed; falling back to models[0]={fallback!r}.")
-    print(f"   The runtime path will continue attempting other models on each request.")
-    return fallback
+    print(f"→ Discovered {len(registry)} served chat model(s):")
+    for m, url in registry.items():
+        print(f"  ✓ {m} @ {url}")
+    return registry
 
 
-def migrate_chatbots(db, target: str, dry_run: bool) -> int:
-    """Update chatbots whose ai_config.model is exactly 'secret-ai-v1'.
+def pick_target(registry: dict) -> str:
+    """Prefer a `gpt-oss*` model, else the first served chat model."""
+    for m in registry:
+        if m.lower().startswith("gpt-oss"):
+            return m
+    return next(iter(registry))
 
-    The `chatbots` table has SEPARATE JSONB columns (`ai_config`,
-    `kb_config`, `prompt_config`, ...) per models/chatbot.py — there is
-    no aggregated `config` column. The Python `chatbot.config` attribute
-    is a SQLAlchemy property at models/chatbot.py:382 that merges the
-    per-config columns at read time; it cannot be queried by SQL.
+
+def migrate_chatbots(db, target: str, served: set, dry_run: bool) -> int:
+    """Rewrite chatbots whose stored ai_config.model is a non-empty id that no
+    worker serves → `target`.
+
+    The `chatbots` table has SEPARATE JSONB columns (`ai_config`, `kb_config`,
+    ...) per models/chatbot.py — there is no aggregated `config` column.
+
+    Select candidates (model set + non-empty) and filter the served check in
+    Python rather than binding a NOT-IN array in SQL — mirrors the chatflow
+    select→filter→update pattern below and sidesteps array-binding quirks.
     """
     select_sql = text(
         """
-        SELECT COUNT(*)
+        SELECT id, ai_config->>'model' AS model
         FROM chatbots
-        WHERE ai_config->>'model' = :legacy
+        WHERE ai_config->>'model' IS NOT NULL
+          AND ai_config->>'model' <> ''
         """
     )
-    count = db.execute(select_sql, {"legacy": LEGACY_VALUE}).scalar() or 0
+    rows = db.execute(select_sql).fetchall()
+    stale_ids = [r.id for r in rows if r.model not in served and r.model != target]
 
-    if dry_run or count == 0:
-        return count
+    if dry_run or not stale_ids:
+        return len(stale_ids)
 
-    # `CAST(:target AS text)` rather than `:target::text`: SQLAlchemy's
-    # `text()` parser interprets the colon as the start of a bind-param
-    # name, so `:target::text` ends up being passed to PostgreSQL with
-    # `:target` unbound — psycopg2 then errors with `syntax error at or
-    # near ":"`. Standard-SQL `CAST(... AS text)` sidesteps the ambiguity.
+    # `CAST(:target AS text)` not `:target::text`: SQLAlchemy's `text()` parser
+    # reads `::` as a malformed bind-param. Standard `CAST(... AS text)` is safe.
     update_sql = text(
         """
         UPDATE chatbots
         SET ai_config = jsonb_set(ai_config, '{model}', to_jsonb(CAST(:target AS text)), false)
-        WHERE ai_config->>'model' = :legacy
+        WHERE id = :cb_id
         """
     )
-    db.execute(update_sql, {"target": target, "legacy": LEGACY_VALUE})
-    return count
+    for cb_id in stale_ids:
+        db.execute(update_sql, {"target": target, "cb_id": cb_id})
+    return len(stale_ids)
 
 
-def migrate_chatflows(db, target: str, dry_run: bool) -> int:
-    """Walk each chatflow's nodes JSONB; rewrite LLM node model strings.
+def migrate_chatflows(db, target: str, served: set, dry_run: bool) -> int:
+    """Walk each chatflow's nodes JSONB; rewrite any node whose
+    `data.config.model` is a non-empty id that no worker serves → `target`.
 
-    Returns the number of chatflow ROWS updated (not nodes). One chatflow
-    can have multiple LLM nodes; if any are touched, the row is rewritten.
+    Returns the number of chatflow ROWS updated (not nodes). One chatflow can
+    have multiple LLM nodes; if any are touched, the row is rewritten.
 
-    Schema note (models/chatflow.py:56, 87-96): `chatflow.config` is the
-    single JSONB column and `nodes` lives inside it as `config["nodes"]`.
-    There is no `Chatflow.nodes` column attribute.
+    Schema note (models/chatflow.py:56, 87-96): `chatflow.config` is the single
+    JSONB column and `nodes` lives inside it as `config["nodes"]`.
 
-    Implementation note: uses raw `text()` SQL (no ORM) for the same
-    reason `migrate_chatbots` does — importing the `Chatflow` SQLAlchemy
-    model would trigger global mapper configuration, which fails to
-    resolve string-referenced relationships from other models that
-    aren't imported in this script's context.
+    Implementation note: uses raw `text()` SQL (no ORM) — importing the
+    `Chatflow` model would trigger global mapper configuration that fails to
+    resolve string-referenced relationships in this lightweight script context.
     """
-    # Find candidate rows: chatflows that contain at least one node whose
-    # data.config.model equals the legacy value. `jsonb_path_exists` is
-    # PostgreSQL 12+ (we run pgvector on PG 16, verified).
+    # Candidate rows: any chatflow with at least one node carrying a model
+    # field. The served check happens in Python (jsonpath NOT-IN is awkward).
+    # `jsonb_path_exists` is PostgreSQL 12+ (we run pgvector on PG 16).
     select_sql = text(
         """
         SELECT id, config
         FROM chatflows
         WHERE jsonb_path_exists(
             config,
-            CAST('$.nodes[*].data.config.model ? (@ == "secret-ai-v1")' AS jsonpath)
+            CAST('$.nodes[*].data.config.model' AS jsonpath)
         )
         """
     )
     rows = db.execute(select_sql).fetchall()
-
-    if dry_run or not rows:
-        return len(rows)
 
     update_sql = text(
         """
@@ -217,10 +193,8 @@ def migrate_chatflows(db, target: str, dry_run: bool) -> int:
 
     updated = 0
     for row in rows:
-        # JSONB columns from raw text() queries can come back as either
-        # `dict` (psycopg2 auto-decodes by default) or `str` (if a custom
-        # adapter is installed). Handle both so the script works
-        # regardless of which adapter is registered.
+        # JSONB from raw text() can come back as `dict` (psycopg2 default) or
+        # `str` (custom adapter). Handle both.
         config = row.config
         if isinstance(config, str):
             try:
@@ -239,10 +213,10 @@ def migrate_chatflows(db, target: str, dry_run: bool) -> int:
             node_copy = dict(node) if isinstance(node, dict) else node
             data = node_copy.get("data") if isinstance(node_copy, dict) else None
             cfg = data.get("config") if isinstance(data, dict) else None
-            if (
-                isinstance(cfg, dict)
-                and cfg.get("model") == LEGACY_VALUE
-            ):
+            model = cfg.get("model") if isinstance(cfg, dict) else None
+            # Rewrite only non-empty stored ids that no worker serves. Leave
+            # empty/unset ("use default") and already-served ids untouched.
+            if isinstance(model, str) and model and model not in served and model != target:
                 new_cfg = dict(cfg)
                 new_cfg["model"] = target
                 new_data = dict(data)
@@ -252,13 +226,14 @@ def migrate_chatflows(db, target: str, dry_run: bool) -> int:
             new_nodes.append(node_copy)
 
         if cf_changed:
-            new_config = dict(config)
-            new_config["nodes"] = new_nodes
-            db.execute(
-                update_sql,
-                {"new_config": json.dumps(new_config), "cf_id": row.id},
-            )
             updated += 1
+            if not dry_run:
+                new_config = dict(config)
+                new_config["nodes"] = new_nodes
+                db.execute(
+                    update_sql,
+                    {"new_config": json.dumps(new_config), "cf_id": row.id},
+                )
 
     return updated
 
@@ -272,9 +247,11 @@ def main():
     )
     args = parser.parse_args()
 
-    print(f"→ Resolving target model from Secret AI SDK...")
-    target = resolve_working_chat_model()
-    print(f"  target = {target!r}")
+    print(f"→ Discovering served Secret AI chat models...")
+    registry = resolve_registry()
+    served = set(registry.keys())
+    target = pick_target(registry)
+    print(f"  target = {target!r}  (served: {sorted(served)})")
 
     print(f"→ Connecting to database...")
     engine = create_engine(settings.DATABASE_URL)
@@ -282,8 +259,8 @@ def main():
     db = SessionLocal()
 
     try:
-        chatbots_updated = migrate_chatbots(db, target, args.dry_run)
-        chatflows_updated = migrate_chatflows(db, target, args.dry_run)
+        chatbots_updated = migrate_chatbots(db, target, served, args.dry_run)
+        chatflows_updated = migrate_chatflows(db, target, served, args.dry_run)
 
         if args.dry_run:
             print(
