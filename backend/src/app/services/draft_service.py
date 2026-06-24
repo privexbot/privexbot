@@ -961,10 +961,29 @@ class UnifiedDraftService:
                         db=db,
                         workspace_id=chatflow.workspace_id,
                     )
-                    # Reassign rather than mutate (see _deploy_chatflow above).
+                    # MERGE the re-deployed channels into the existing
+                    # deployment dict rather than replacing it wholesale. The
+                    # deploy dialog is additive (it does not pre-select already
+                    # deployed channels), so a "discord only" edit must NOT wipe
+                    # a previously deployed website embed / telegram webhook.
+                    # Channel removal is handled by the dedicated
+                    # /channels/{type} disable + /channels/redeploy endpoints,
+                    # not by omission here.
+                    existing_deployment = (
+                        chatflow.config.get("deployment", {})
+                        if isinstance(chatflow.config, dict)
+                        else {}
+                    )
+                    merged_deployment = {
+                        **existing_deployment,
+                        **deployment_results["channels"],
+                    }
+                    # Reassign the root (config is JSONB, not MutableDict — a
+                    # nested assignment would not be detected). See
+                    # _deploy_chatflow above.
                     chatflow.config = {
                         **(chatflow.config or {}),
-                        "deployment": deployment_results["channels"],
+                        "deployment": merged_deployment,
                     }
             except Exception:
                 # Channel re-initialization is non-critical for updates, but

@@ -106,6 +106,7 @@ import { config as envConfig } from "@/config/env";
 import ChannelSelector, { type DeploymentChannel } from "@/components/deployment/ChannelSelector";
 import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
 import { classifyChannelError } from "@/lib/channelErrors";
+import { NodeConfigErrorBoundary } from "@/components/chatflow/NodeConfigErrorBoundary";
 
 // Node configuration panel for type-specific settings
 import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
@@ -1618,7 +1619,9 @@ export default function ChatflowBuilder() {
                   {/* Node-specific Configuration */}
                   <div className="space-y-4">
                     <h4 className="text-sm font-medium">Configuration</h4>
-                    {renderNodeConfig()}
+                    <NodeConfigErrorBoundary key={selectedNode?.id}>
+                      {renderNodeConfig()}
+                    </NodeConfigErrorBoundary>
                   </div>
 
                   <Separator />

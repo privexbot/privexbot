@@ -201,7 +201,10 @@ LEAD_CAPTURE = {
                 y=120,
                 label="Save lead",
                 config={
-                    "fields": {"email": "required", "name": "optional"},
+                    "fields": [
+                        {"name": "name", "source": "{{user_name}}", "required": True},
+                        {"name": "email", "source": "{{user_email}}", "required": True, "validate": "email"},
+                    ],
                     "store_internally": True,
                     "duplicate_handling": "update",
                 },

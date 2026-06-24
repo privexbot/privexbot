@@ -57,8 +57,13 @@ export function LeadCaptureNodeConfig({
   config,
   onChange,
 }: LeadCaptureNodeConfigProps) {
+  // Guard the shape: some saved configs (e.g. older marketplace template
+  // clones) stored `fields` as an object map instead of an array. A truthy
+  // object would skip a `|| DEFAULT_FIELDS` fallback and then crash at
+  // `fields.map(...)` ("map is not a function"), blanking the whole builder.
+  // Only accept a real array; otherwise fall back to valid defaults.
   const [fields, setFields] = useState<LeadField[]>(
-    (config.fields as LeadField[]) || DEFAULT_FIELDS
+    Array.isArray(config.fields) ? (config.fields as LeadField[]) : DEFAULT_FIELDS
   );
   const [storeInternally, setStoreInternally] = useState(
     config.store_internally !== false
