@@ -293,6 +293,13 @@ export default function Credentials() {
     db_username: '',
     db_password: '',
     db_type: 'postgresql',
+    // SMTP-specific fields (email + handoff nodes read these)
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_username: '',
+    smtp_password: '',
+    // Webhook-URL field (notification node reads this)
+    webhook_url: '',
   });
 
   // Fetch credentials
@@ -329,6 +336,34 @@ export default function Credentials() {
             type: data.db_type,
           },
         };
+      } else if (selectedType?.requiresSmtp) {
+        // SMTP email server: host/port/username/password (consumed by the
+        // email + handoff nodes; backend validates these 4 fields).
+        payload = {
+          workspace_id: currentWorkspace?.id,
+          name: data.name,
+          credential_type: 'smtp',
+          provider: 'smtp',
+          data: {
+            host: data.smtp_host,
+            port: parseInt(data.smtp_port) || 587,
+            username: data.smtp_username,
+            password: data.smtp_password,
+          },
+        };
+      } else if (selectedType?.requiresWebhookUrl) {
+        // Reusable outbound webhook URL (notification node). Stored as a
+        // "custom" credential holding a single webhook_url field — no new
+        // backend CredentialType enum / migration needed.
+        payload = {
+          workspace_id: currentWorkspace?.id,
+          name: data.name,
+          credential_type: 'custom',
+          provider: 'webhook',
+          data: {
+            webhook_url: data.webhook_url,
+          },
+        };
       } else {
         // API key credentials (Telegram, Discord, custom, etc.)
         payload = {
@@ -349,7 +384,7 @@ export default function Credentials() {
       toast({ title: 'Credential added successfully' });
       queryClient.invalidateQueries({ queryKey: ['credentials'] });
       setDialogOpen(false);
-      setFormData({ name: '', provider: 'notion', api_key: '', db_host: '', db_port: '5432', db_name: '', db_username: '', db_password: '', db_type: 'postgresql' });
+      setFormData({ name: '', provider: 'notion', api_key: '', db_host: '', db_port: '5432', db_name: '', db_username: '', db_password: '', db_type: 'postgresql', smtp_host: '', smtp_port: '587', smtp_username: '', smtp_password: '', webhook_url: '' });
     },
     onError: (error) => {
       toast({
@@ -703,6 +738,111 @@ export default function Credentials() {
                               </>
                             ) : (
                               'Add Database Credential'
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </>
+                    ) : selectedType?.requiresSmtp ? (
+                      <>
+                        {/* Host & Port */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2 space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">SMTP Host</Label>
+                            <Input
+                              value={formData.smtp_host}
+                              onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })}
+                              placeholder="smtp.gmail.com"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Port</Label>
+                            <Input
+                              value={formData.smtp_port}
+                              onChange={(e) => setFormData({ ...formData, smtp_port: e.target.value })}
+                              placeholder="587"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                          Port 465 uses SSL; any other port (e.g. 587) uses STARTTLS.
+                        </p>
+
+                        {/* Username & Password */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Username</Label>
+                            <Input
+                              value={formData.smtp_username}
+                              onChange={(e) => setFormData({ ...formData, smtp_username: e.target.value })}
+                              placeholder="you@example.com"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">Password</Label>
+                            <Input
+                              type="password"
+                              value={formData.smtp_password}
+                              onChange={(e) => setFormData({ ...formData, smtp_password: e.target.value })}
+                              placeholder="app password / SMTP password"
+                              className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                          The username is also used as the “From” address. For Gmail, use an{' '}
+                          <span className="font-medium">App Password</span>, not your account password.
+                        </p>
+
+                        <DialogFooter>
+                          <Button
+                            onClick={() => createMutation.mutate(formData)}
+                            disabled={!formData.name || !formData.smtp_host || !formData.smtp_username || !formData.smtp_password || createMutation.isPending}
+                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-manrope"
+                          >
+                            {createMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Testing & Adding...
+                              </>
+                            ) : (
+                              'Add SMTP Credential'
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </>
+                    ) : selectedType?.requiresWebhookUrl ? (
+                      <>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-900 dark:text-gray-100 font-manrope">
+                            Webhook URL
+                          </Label>
+                          <Input
+                            value={formData.webhook_url}
+                            onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
+                            placeholder="https://hooks.slack.com/services/..."
+                            className="h-10 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-gray-600 rounded-lg font-mono placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+                            A Slack, Discord, Teams, or custom incoming-webhook URL. Save it once and reuse it across notification nodes.
+                          </p>
+                        </div>
+
+                        <DialogFooter>
+                          <Button
+                            onClick={() => createMutation.mutate(formData)}
+                            disabled={!formData.name || !formData.webhook_url || createMutation.isPending}
+                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-manrope"
+                          >
+                            {createMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Adding...
+                              </>
+                            ) : (
+                              'Add Webhook Credential'
                             )}
                           </Button>
                         </DialogFooter>

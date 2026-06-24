@@ -205,76 +205,62 @@ class HandoffNode(BaseNode):
             return False, str(e)
 
     async def _handoff_via_email(self, db: Session, handoff_data: dict, vars_ctx: dict) -> tuple[bool, Optional[str]]:
-        """Send handoff transcript via email."""
-        import smtplib
-        import ssl
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
+        """Send handoff transcript via email (SMTP or Gmail, via the shared helper)."""
+        import html
 
         credential_id = self.config.get("credential_id")
         if not credential_id:
-            return False, "SMTP credential is required for email handoff"
+            return False, "Email credential is required for email handoff"
 
         from app.services.credential_service import credential_service
+        from app.services.email_sender import send_email
         from app.models.credential import Credential
 
         credential = db.query(Credential).get(UUID(credential_id))
         if not credential:
-            return False, "SMTP credential not found"
+            return False, "Email credential not found"
 
         cred_data = credential_service.get_decrypted_data(db, credential)
         to_addr = self.resolve_variable(self.config.get("email_to", ""), vars_ctx)
         if not to_addr:
             return False, "Recipient email not configured"
 
-        # Build email
-        msg = MIMEMultipart("alternative")
-        msg["From"] = cred_data.get("username")
-        msg["To"] = to_addr
-        msg["Subject"] = f"[{handoff_data.get('priority', 'normal').upper()}] Human Handoff - Session {handoff_data.get('session_id', 'unknown')[:8]}"
+        # Escape EVERY interpolated value — the transcript/current_message are
+        # end-user input and must never inject markup into the agent's inbox.
+        def esc(value) -> str:
+            return html.escape(str(value if value is not None else ""), quote=True)
 
-        # Format transcript
+        priority = handoff_data.get("priority", "normal")
+        session_id = handoff_data.get("session_id", "N/A")
+        current_message = handoff_data.get("current_message", "N/A")
+
         transcript = handoff_data.get("transcript", [])
         if isinstance(transcript, list):
-            lines = []
-            for m in transcript:
-                role = m.get("role", "unknown").title()
-                content = m.get("content", "")
-                lines.append(f"<b>{role}:</b> {content}")
-            transcript_html = "<br>".join(lines)
+            transcript_html = "<br>".join(
+                f"<b>{esc(m.get('role', 'unknown').title())}:</b> {esc(m.get('content', ''))}"
+                for m in transcript
+            )
         else:
-            transcript_html = json.dumps(transcript, indent=2)
+            transcript_html = f"<pre>{esc(json.dumps(transcript, indent=2))}</pre>"
 
+        subject = f"[{esc(str(priority).upper())}] Human Handoff - Session {esc(str(session_id)[:8])}"
         body = f"""
         <h2>Human Handoff Request</h2>
-        <p><b>Priority:</b> {handoff_data.get('priority', 'normal')}</p>
-        <p><b>Session:</b> {handoff_data.get('session_id', 'N/A')}</p>
-        <p><b>Current message:</b> {handoff_data.get('current_message', 'N/A')}</p>
+        <p><b>Priority:</b> {esc(priority)}</p>
+        <p><b>Session:</b> {esc(session_id)}</p>
+        <p><b>Current message:</b> {esc(current_message)}</p>
         <hr>
         <h3>Conversation Transcript</h3>
         {transcript_html}
         """
 
-        msg.attach(MIMEText(body, "html"))
-
-        try:
-            smtp_host = cred_data.get("host")
-            smtp_port = int(cred_data.get("port", 587))
-            context_ssl = ssl.create_default_context()
-
-            if smtp_port == 465:
-                with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context_ssl) as server:
-                    server.login(cred_data["username"], cred_data["password"])
-                    server.sendmail(cred_data["username"], [to_addr], msg.as_string())
-            else:
-                with smtplib.SMTP(smtp_host, smtp_port) as server:
-                    server.starttls(context=context_ssl)
-                    server.login(cred_data["username"], cred_data["password"])
-                    server.sendmail(cred_data["username"], [to_addr], msg.as_string())
-
+        result = await send_email(
+            db, credential, cred_data,
+            to=to_addr, subject=subject, body=body, body_type="html",
+        )
+        if result["success"]:
             return True, None
-        except Exception as e:
-            return False, f"Email send failed: {str(e)}"
+        return False, result.get("error", "Email send failed")
 
     async def _handoff_via_slack(self, db: Session, handoff_data: dict, vars_ctx: dict) -> tuple[bool, Optional[str]]:
         """Send handoff notification to Slack channel."""

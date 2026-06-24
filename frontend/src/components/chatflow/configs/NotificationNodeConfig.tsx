@@ -134,9 +134,9 @@ export function NotificationNodeConfig({
         </p>
       </div>
 
-      {/* Credential (alternative to URL) */}
+      {/* Credential (alternative to URL) — a saved "Webhook URL" credential */}
       <CredentialSelector
-        provider="custom"
+        provider="webhook"
         selectedId={credentialId}
         onSelect={setCredentialId}
         label="Webhook Credential (alternative)"

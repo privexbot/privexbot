@@ -15,12 +15,15 @@ HOW:
 
 import re
 import time
+import logging
 from typing import Any, Dict, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
 import requests
 
 from app.chatflow.nodes.base_node import BaseNode
+
+logger = logging.getLogger(__name__)
 
 
 class LeadCaptureNode(BaseNode):
@@ -146,6 +149,7 @@ class LeadCaptureNode(BaseNode):
                     "lead_id": str(lead_id) if lead_id else None,
                     "fields_captured": len(lead_data),
                     "stored_internally": store_internally and lead_id is not None,
+                    "lead_stored": bool(store_internally and lead_id is not None),
                     "crm_synced": crm_synced,
                     "duplicate_handling": duplicate_handling
                 }
@@ -229,7 +233,10 @@ class LeadCaptureNode(BaseNode):
             return str(lead.id) if lead else None
 
         except Exception:
-            # Don't fail the node if internal storage fails
+            # Don't fail the node if internal storage fails, but log the
+            # traceback so a swallowed DB error is diagnosable (the node
+            # surfaces lead_stored=False in metadata).
+            logger.exception("Lead internal storage failed")
             return None
 
     async def _push_to_crm(
@@ -260,6 +267,7 @@ class LeadCaptureNode(BaseNode):
             return response.status_code < 400
 
         except Exception:
+            logger.exception("CRM webhook push failed")
             return False
 
     def validate_config(self) -> tuple[bool, Optional[str]]:

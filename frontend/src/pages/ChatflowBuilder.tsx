@@ -214,9 +214,25 @@ function validateNodeConfig(node: Node): ValidationIssue[] {
     case "notification":
       if (!config.channel) err("Channel is required");
       if (!str(config.message)) err("Message is required");
+      if (!str(config.webhook_url) && !config.credential_id)
+        err("A webhook URL or credential is required to deliver the notification");
       break;
     case "handoff":
-      if (!config.method) err("Handoff method is required");
+      if (!config.method) {
+        err("Handoff method is required");
+      } else if (config.method === "email") {
+        if (!config.credential_id)
+          err("Email credential is required for email handoff");
+        if (!str(config.email_to))
+          err("Recipient email is required for email handoff");
+      } else if (config.method === "webhook" || config.method === "slack") {
+        if (!str(config.webhook_url))
+          err(
+            config.method === "slack"
+              ? "Slack webhook URL is required"
+              : "Webhook URL is required"
+          );
+      }
       break;
     case "calendly":
       if (!config.credential_id) err("Calendly credential is required");

@@ -101,6 +101,22 @@ export default function CredentialSelector({
     enabled: !!workspaceId,
   });
 
+  // Guard: a node may hold a `credential_id` whose provider no longer matches
+  // this picker's `provider` filter (e.g. the notification node moved from
+  // provider="custom" to provider="webhook"). The credential still resolves at
+  // runtime (the executor looks it up by id, unfiltered), but it would vanish
+  // from this dropdown — and re-saving the node would silently clear it. Fetch
+  // the already-selected credential by id so the existing choice stays visible.
+  const selectedInList = !!selectedId && !!credentials?.some((c) => c.id === selectedId);
+  const { data: orphanCredential } = useQuery({
+    queryKey: ['credential', selectedId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/credentials/${selectedId}`);
+      return response.data as Credential;
+    },
+    enabled: !!selectedId && !!workspaceId && !isLoading && !error && !selectedInList,
+  });
+
   // Delete credential mutation
   const deleteMutation = useMutation({
     mutationFn: async (credentialId: string) => {
@@ -198,9 +214,17 @@ export default function CredentialSelector({
     return ['google', 'google_gmail', 'notion', 'calendly'].includes(providerName);
   };
 
-  // Filter active credentials
+  // Filter active credentials, then append the already-selected credential if
+  // it fell outside the provider filter (see orphan query above) so the user
+  // can still see and keep their existing selection.
   const activeCredentials = credentials?.filter((c) => c.is_active) || [];
-  const hasCredentials = activeCredentials.length > 0;
+  const orphanItems =
+    orphanCredential && !activeCredentials.some((c) => c.id === orphanCredential.id)
+      ? [orphanCredential]
+      : [];
+  const displayCredentials = [...activeCredentials, ...orphanItems];
+  const orphanIds = new Set(orphanItems.map((c) => c.id));
+  const hasCredentials = displayCredentials.length > 0;
 
   // Open the full credentials page in a new tab so the user does not lose
   // unsaved chatflow state. Pre-filter by provider when one is set.
@@ -244,7 +268,7 @@ export default function CredentialSelector({
               <SelectValue placeholder="Select a credential" />
             </SelectTrigger>
             <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              {activeCredentials.map((credential) => (
+              {displayCredentials.map((credential) => (
                 <SelectItem
                   key={credential.id}
                   value={credential.id}
@@ -255,6 +279,7 @@ export default function CredentialSelector({
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         {getProviderName(credential.provider)}
+                        {orphanIds.has(credential.id) && ' • current'}
                       </span>
                     </div>
                   </div>
@@ -267,7 +292,7 @@ export default function CredentialSelector({
           {selectedId && (
             <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
               {(() => {
-                const selected = credentials?.find((c) => c.id === selectedId);
+                const selected = displayCredentials.find((c) => c.id === selectedId);
                 if (!selected) return null;
 
                 return (
