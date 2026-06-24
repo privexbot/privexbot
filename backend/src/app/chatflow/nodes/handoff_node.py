@@ -197,6 +197,8 @@ class HandoffNode(BaseNode):
                     headers["Authorization"] = f"Bearer {cred_data['api_key']}"
 
         try:
+            from app.chatflow.utils.ssrf_guard import assert_safe_url
+            assert_safe_url(webhook_url)
             response = requests.post(webhook_url, json=handoff_data, headers=headers, timeout=10)
             if response.status_code < 400:
                 return True, None
@@ -328,6 +330,8 @@ class HandoffNode(BaseNode):
             })
 
         try:
+            from app.chatflow.utils.ssrf_guard import assert_safe_url
+            assert_safe_url(webhook_url)
             response = requests.post(webhook_url, json=payload, timeout=10)
             if response.status_code < 400:
                 return True, None

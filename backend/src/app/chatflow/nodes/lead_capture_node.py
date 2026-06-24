@@ -249,6 +249,11 @@ class LeadCaptureNode(BaseNode):
         """Push lead data to external CRM via webhook."""
         try:
             crm_url = self.resolve_variable(crm_url, vars_ctx)
+
+            # SSRF guard: block loopback / link-local / private / metadata targets.
+            from app.chatflow.utils.ssrf_guard import assert_safe_url
+            assert_safe_url(crm_url)
+
             headers = {"Content-Type": "application/json"}
 
             # Apply credential if specified

@@ -20,7 +20,7 @@
  * - @/config/env
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -268,7 +268,7 @@ export default function Credentials() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentWorkspace } = useApp();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -301,6 +301,19 @@ export default function Credentials() {
     // Webhook-URL field (notification node reads this)
     webhook_url: '',
   });
+
+  // Deep link: `/settings/credentials?provider=<p>` (e.g. from a node's
+  // "Add New Credential" button) preselects the provider and opens the Add
+  // dialog, then strips the param so a refresh doesn't re-open it.
+  useEffect(() => {
+    const provider = searchParams.get('provider');
+    if (!provider) return;
+    if (CREDENTIAL_TYPES.some((t) => t.value === provider)) {
+      setFormData((prev) => ({ ...prev, provider }));
+      setDialogOpen(true);
+    }
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Fetch credentials
   const { data: credentials, isLoading, error } = useQuery({
@@ -662,9 +675,8 @@ export default function Credentials() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              {/* PostgreSQL is the only driver installed (psycopg2). */}
                               <SelectItem value="postgresql">PostgreSQL</SelectItem>
-                              <SelectItem value="mysql+pymysql">MySQL</SelectItem>
-                              <SelectItem value="mssql+pyodbc">SQL Server</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>

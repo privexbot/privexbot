@@ -48,6 +48,7 @@ import {
   Settings,
   CreditCard,
   Shield,
+  Key,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -125,6 +126,11 @@ const mainMenuItems: MenuItem[] = [
 ];
 
 const otherMenuItems: MenuItem[] = [
+  {
+    name: "Credentials",
+    href: "/settings/credentials",
+    icon: Key,
+  },
   {
     name: "Documentation",
     href: "/documentation",

@@ -81,6 +81,10 @@ class NotificationNode(BaseNode):
 
             webhook_url = self.resolve_variable(webhook_url, vars_ctx)
 
+            # SSRF guard: block loopback / link-local / private / metadata targets.
+            from app.chatflow.utils.ssrf_guard import assert_safe_url
+            assert_safe_url(webhook_url)
+
             # Build platform-specific payload
             payload = self._build_payload(channel, message, title, urgency, mention)
 

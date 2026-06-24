@@ -63,6 +63,8 @@ interface CredentialSelectorProps {
   allowMultiple?: boolean;
   providers?: CredentialProvider[];
   workspaceId?: string; // Explicitly pass workspace ID to avoid context mismatch
+  hideDelete?: boolean; // Suppress the inline delete (e.g. inside node config panels,
+                        // where deleting mid-config would leave a stale credential_id)
 }
 
 export default function CredentialSelector({
@@ -73,6 +75,7 @@ export default function CredentialSelector({
   required = false,
   allowMultiple = false,
   workspaceId: propWorkspaceId,
+  hideDelete = false,
 }: CredentialSelectorProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -182,6 +185,7 @@ export default function CredentialSelector({
       telegram: 'Telegram',
       discord: 'Discord',
       whatsapp: 'WhatsApp',
+      database: 'Database',
       custom: 'Custom',
     };
     return names[providerName] || providerName;
@@ -312,15 +316,17 @@ export default function CredentialSelector({
                         )}
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => deleteMutation.mutate(selected.id)}
-                      disabled={deleteMutation.isPending}
-                      className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {!hideDelete && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteMutation.mutate(selected.id)}
+                        disabled={deleteMutation.isPending}
+                        className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 );
               })()}

@@ -82,6 +82,10 @@ class WebhookNode(BaseNode):
             # Resolve variables in URL
             url = self.resolve_variable(url, vars_ctx)
 
+            # SSRF guard: block loopback / link-local / private / metadata targets.
+            from app.chatflow.utils.ssrf_guard import assert_safe_url
+            assert_safe_url(url)
+
             # Resolve variables in headers
             resolved_headers = {"Content-Type": "application/json"}
             for key, value in headers.items():
