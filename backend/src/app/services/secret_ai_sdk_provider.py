@@ -35,6 +35,14 @@ _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 # How long a discovered worker registry stays fresh before we re-probe.
 _REGISTRY_TTL_SECONDS = 60 * 60  # 1 hour
 
+# Default Secret Network LCD node for worker discovery. We pass this to Secret()
+# explicitly (rather than relying on the SDK's internal default) so behaviour is
+# identical across secret-ai-sdk versions and is never broken by a present-but-
+# empty SECRET_NODE_URL env var — `os.getenv(key, default)` returns "" (not the
+# default) when the key exists but is blank, which makes the SDK raise
+# "Missing environment variable SECRET_NODE_URL must be set".
+_DEFAULT_NODE_URL = "https://rpc12.scrtlabs.com/"
+
 
 def _strip_thinking(text: str) -> str:
     if not text:
@@ -91,11 +99,13 @@ class SecretAISDKProvider:
             from secret_ai_sdk.secret import Secret
 
             logger.info("[SecretAIProvider] Initializing Secret() worker discovery...")
-            # Pass the configured LCD node explicitly: Pydantic reads `.env`
-            # without exporting to os.environ, so the SDK's own os.getenv may not
-            # see SECRET_NODE_URL. Blank → the SDK default (rpc12.scrtlabs.com).
-            node_url = settings.SECRET_NODE_URL or None
-            self._secret = Secret(node_url=node_url) if node_url else Secret()
+            # Always pass a concrete node_url so the SDK takes its
+            # `self.node_url = node_url` branch and never touches os.getenv
+            # (which raises "Missing environment variable SECRET_NODE_URL" when
+            # the var is present-but-empty). Blank config → our known-good
+            # default; operators can override via SECRET_NODE_URL.
+            node_url = (settings.SECRET_NODE_URL or "").strip() or _DEFAULT_NODE_URL
+            self._secret = Secret(node_url=node_url)
             self._initialized = True
         except ImportError as e:
             logger.error(

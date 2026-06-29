@@ -153,8 +153,8 @@ class Settings(BaseSettings):
         description="Use native secret-ai-sdk instead of OpenAI-compatible API (requires secret-ai-sdk package)"
     )
     SECRET_NODE_URL: str = Field(
-        default="",
-        description="Override the Secret Network LCD node for worker discovery; blank = SDK default (rpc12.scrtlabs.com)."
+        default="https://rpc12.scrtlabs.com/",
+        description="Secret Network LCD node for worker discovery. Override to a healthy node if the default is flaky (e.g. https://lcd.secret.tactus.starshell.net/)."
     )
 
     # Inference Fallback Settings
