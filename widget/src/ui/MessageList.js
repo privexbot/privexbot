@@ -258,9 +258,30 @@ class MessageList {
     }
   }
 
+  /**
+   * Coerce any value to readable text. The backend reply/error is normally a
+   * string, but a transient failure (inference outage), a FastAPI 422 (whose
+   * `detail` is a list), or any object error body could send an object — which
+   * `textContent` would otherwise stringify to the literal "[object Object]".
+   * Pull a human-readable subfield, else compact JSON, so we never show that.
+   */
+  coerceText(value) {
+    if (typeof value === 'string') return value;
+    if (value == null) return '';
+    if (typeof value !== 'object') return String(value);
+    const cand =
+      value.response || value.text || value.message || value.detail || value.content;
+    if (typeof cand === 'string') return cand;
+    try {
+      return JSON.stringify(value);
+    } catch (e) {
+      return String(value);
+    }
+  }
+
   escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = this.coerceText(text);
     return div.innerHTML.replace(/\n/g, '<br>');
   }
 
