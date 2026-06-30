@@ -470,6 +470,8 @@ class DiscordGuildService:
             workspace_id: Workspace id (carried in state for auth).
         """
         import base64
+        import hashlib as _hashlib
+        import hmac as _hmac
         import json
         import secrets as _secrets
         from urllib.parse import quote, urlencode
@@ -508,9 +510,15 @@ class DiscordGuildService:
                 "workspace_id": str(workspace_id),
                 "csrf": _secrets.token_urlsafe(16),
             }
-            params["state"] = base64.urlsafe_b64encode(
+            # HMAC-sign the state so the callback can't be tricked into binding
+            # a guild to an attacker-chosen workspace/entity. Format: "<b64>.<sig>".
+            b64_state = base64.urlsafe_b64encode(
                 json.dumps(state_payload).encode()
             ).decode().rstrip("=")
+            sig = _hmac.new(
+                settings.SECRET_KEY.encode(), b64_state.encode(), _hashlib.sha256
+            ).hexdigest()
+            params["state"] = f"{b64_state}.{sig}"
 
         # Use `+` between scopes for Discord's parser (urllib quote replaces
         # spaces with %20 which Discord also accepts but the existing tests

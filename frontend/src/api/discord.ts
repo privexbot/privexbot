@@ -11,13 +11,6 @@ import { apiClient, handleApiError } from "@/lib/api-client";
 // TYPES
 // ========================================
 
-export interface DeployToGuildRequest {
-  chatbot_id: string;
-  guild_id: string;
-  guild_name?: string;
-  allowed_channel_ids?: string[];
-}
-
 export interface UpdateGuildDeploymentRequest {
   allowed_channel_ids?: string[];
   is_active?: boolean;
@@ -60,61 +53,24 @@ export interface InviteUrlResponse {
   instructions: string;
 }
 
-export interface AvailableGuild {
-  guild_id: string;
-  guild_name: string;
-  guild_icon: string | null;
-}
-
-export interface AvailableGuildsResponse {
-  guilds: AvailableGuild[];
-  message: string;
-  error: string | null; // Error details for troubleshooting
-}
-
 // ========================================
 // API CLIENT
 // ========================================
 
 export const discordApi = {
   /**
-   * Get the invite URL for the shared Discord bot.
-   * Users must add the bot to their server before deploying.
+   * Get the signed-OAuth invite URL for the shared Discord bot. Adding the bot
+   * via this URL auto-connects it to `chatbotId` for the caller's workspace
+   * (the OAuth callback verifies the signed state). No manual server-ID step.
    */
-  async getInviteUrl(): Promise<InviteUrlResponse> {
+  async getInviteUrl(
+    chatbotId: string,
+    entityType: "chatbot" | "chatflow" = "chatbot"
+  ): Promise<InviteUrlResponse> {
     try {
       const response = await apiClient.get<InviteUrlResponse>(
-        "/discord/guilds/invite-url"
-      );
-      return response.data;
-    } catch (error) {
-      throw new Error(handleApiError(error));
-    }
-  },
-
-  /**
-   * Get list of Discord servers where bot is present but not yet deployed.
-   * Used for auto-detect servers dropdown.
-   */
-  async getAvailableGuilds(): Promise<AvailableGuildsResponse> {
-    try {
-      const response = await apiClient.get<AvailableGuildsResponse>(
-        "/discord/guilds/available"
-      );
-      return response.data;
-    } catch (error) {
-      throw new Error(handleApiError(error));
-    }
-  },
-
-  /**
-   * Deploy chatbot to a Discord guild (server).
-   */
-  async deployToGuild(request: DeployToGuildRequest): Promise<GuildDeployment> {
-    try {
-      const response = await apiClient.post<GuildDeployment>(
-        "/discord/guilds/deploy",
-        request
+        "/discord/guilds/invite-url",
+        { params: { chatbot_id: chatbotId, entity_type: entityType } }
       );
       return response.data;
     } catch (error) {

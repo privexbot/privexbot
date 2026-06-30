@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
 import {
   ArrowLeft,
   Code as CodeIcon,
@@ -59,6 +60,7 @@ import EmbedCode from "@/components/shared/EmbedCode";
 import CredentialSelector from "@/components/shared/CredentialSelector";
 import { Switch } from "@/components/ui/switch";
 import { chatflowApi } from "@/api/chatflow";
+import { discordApi, type GuildDeployment } from "@/api/discord";
 import { apiClient, handleApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
@@ -377,7 +379,13 @@ function TestChatPanel({ chatflowId }: { chatflowId: string }) {
                       : "bg-white dark:bg-gray-800 border"
                   )}
                 >
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  ) : (
+                    <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 break-words">
+                      <ReactMarkdown>{msg.content.replace(/^[ \t]+/gm, "")}</ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -606,7 +614,8 @@ const CHANNEL_META: Record<
     label: "Discord",
     provider: "discord",
     credentialRequired: true,
-    description: "Connect a Discord application using its bot token credential.",
+    description:
+      "Add the PrivexBot app in one click, or connect your own Discord bot token.",
   },
   slack: {
     label: "Slack",
@@ -635,6 +644,87 @@ const CHANNEL_ORDER: ChannelTypeKey[] = [
   "whatsapp",
   "zapier",
 ];
+
+// Shared PrivexBot Discord app: one-click "Add to Discord" (OAuth auto-connects
+// the guild to THIS chatflow) + the chatflow's connected servers. Mirrors the
+// chatbot flow; works alongside the bring-your-own-bot credential option below.
+function DiscordSharedConnect({ chatflowId }: { chatflowId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: invite } = useQuery({
+    queryKey: ["discord-invite", chatflowId],
+    queryFn: () => discordApi.getInviteUrl(chatflowId, "chatflow"),
+    retry: false,
+  });
+
+  const { data: guilds = [] } = useQuery<GuildDeployment[]>({
+    queryKey: ["discord-guilds", chatflowId],
+    queryFn: () => discordApi.listDeployments(chatflowId),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (guildId: string) => discordApi.removeDeployment(guildId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discord-guilds", chatflowId] });
+      toast({ title: "Server disconnected" });
+    },
+    onError: (err) =>
+      toast({
+        title: "Failed to disconnect",
+        description: err instanceof Error ? err.message : handleApiError(err),
+        variant: "destructive",
+      }),
+  });
+
+  const inviteUrl = invite?.invite_url;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10 p-3">
+      <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+        Recommended — add the PrivexBot app (one click)
+      </p>
+      {inviteUrl ? (
+        <Button
+          size="sm"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+          onClick={() => window.open(inviteUrl, "_blank", "noopener,noreferrer")}
+        >
+          <MessageCircle className="h-4 w-4 mr-2" />
+          Add to Discord
+        </Button>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Discord integration isn't configured. Contact your administrator.
+        </p>
+      )}
+
+      {guilds.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <p className="text-[11px] text-gray-500">Connected servers</p>
+          {guilds.map((g) => (
+            <div
+              key={g.guild_id}
+              className="flex items-center justify-between gap-2 rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5"
+            >
+              <span className="text-xs truncate">{g.guild_name || g.guild_id}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-red-600"
+                disabled={removeMutation.isPending}
+                onClick={() => removeMutation.mutate(g.guild_id)}
+                title="Disconnect server"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ChannelSetupCard({
   chatflowId,
@@ -726,14 +816,26 @@ function ChannelSetupCard({
         <CardDescription className="text-xs">{meta.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Discord: the one-click shared PrivexBot app (recommended) + the
+            bring-your-own bot-token credential below (advanced). */}
+        {channelType === "discord" && (
+          <DiscordSharedConnect chatflowId={chatflowId} />
+        )}
         {enabled && meta.credentialRequired && meta.provider && (
-          <CredentialSelector
-            provider={meta.provider as never}
-            selectedId={credentialId || undefined}
-            onSelect={(id) => setCredentialId(id)}
-            label={`${meta.label} credential`}
-            required
-          />
+          <div className="space-y-2">
+            {channelType === "discord" && (
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Advanced — connect your own Discord bot token instead
+              </p>
+            )}
+            <CredentialSelector
+              provider={meta.provider as never}
+              selectedId={credentialId || undefined}
+              onSelect={(id) => setCredentialId(id)}
+              label={`${meta.label} credential`}
+              required
+            />
+          </div>
         )}
 
         {enabled && channelType === "whatsapp" && (

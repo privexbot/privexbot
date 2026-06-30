@@ -77,7 +77,9 @@ class MessageList {
       </div>
       <div class="privexbot-message-content">
         <div class="privexbot-message-bubble">
-          ${this.escapeHtml(message.content)}
+          ${message.role === 'bot'
+            ? this.renderMarkdown(message.content)
+            : this.escapeHtml(message.content)}
         </div>
         <div class="privexbot-message-time">${time}</div>
     `;
@@ -283,6 +285,79 @@ class MessageList {
     const div = document.createElement('div');
     div.textContent = this.coerceText(text);
     return div.innerHTML.replace(/\n/g, '<br>');
+  }
+
+  /** Entity-encode only (no newline -> <br>), so block-level markdown can match on \n. */
+  escapeOnly(text) {
+    const div = document.createElement('div');
+    div.textContent = this.coerceText(text);
+    return div.innerHTML;
+  }
+
+  /** Inline markdown on ALREADY-ESCAPED text: code, bold, italic, http(s) links. */
+  inlineMd(s) {
+    s = s.replace(/`([^`]+)`/g, '<code class="privexbot-md-code">$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    // Links [label](url) — only http(s) hrefs survive (drops javascript:/data: etc.).
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) =>
+      /^https?:\/\//i.test(url)
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`
+        : label
+    );
+    return s;
+  }
+
+  /**
+   * Zero-dependency Markdown renderer for bot messages. Renders a focused, safe
+   * subset (fenced/inline code, bold, italic, headers, ordered/unordered lists,
+   * http(s) links). Escapes FIRST so any HTML in the model output is inert, then
+   * only ADDS a fixed set of safe tags — preserving the widget's XSS guarantee.
+   */
+  renderMarkdown(text) {
+    let s = this.escapeOnly(text);
+
+    // 1) Pull fenced code blocks out first so inline rules don't touch them.
+    const codeBlocks = [];
+    s = s.replace(/```[a-zA-Z0-9_-]*\n?([\s\S]*?)```/g, (_m, code) => {
+      const i = codeBlocks.length;
+      codeBlocks.push(
+        `<pre class="privexbot-md-pre"><code>${code.replace(/\n$/, '')}</code></pre>`
+      );
+      return ` CODE${i} `;
+    });
+
+    // 2) Block-level pass, line by line.
+    const lines = s.split('\n');
+    const out = [];
+    let listType = null;
+    const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^ CODE\d+ $/.test(trimmed)) { closeList(); out.push(trimmed); continue; }
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h) { closeList(); out.push(`<h${h[1].length} class="privexbot-md-h">${this.inlineMd(h[2])}</h${h[1].length}>`); continue; }
+      const ul = line.match(/^\s*[-*]\s+(.*)$/);
+      if (ul) { if (listType !== 'ul') { closeList(); out.push('<ul class="privexbot-md-list">'); listType = 'ul'; } out.push(`<li>${this.inlineMd(ul[1])}</li>`); continue; }
+      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (ol) { if (listType !== 'ol') { closeList(); out.push('<ol class="privexbot-md-list">'); listType = 'ol'; } out.push(`<li>${this.inlineMd(ol[1])}</li>`); continue; }
+      if (trimmed === '') { closeList(); out.push(''); continue; }
+      closeList();
+      out.push(this.inlineMd(line));
+    }
+    closeList();
+    s = out.join('\n');
+
+    // 3) Restore code blocks, then newlines -> <br> as the LAST step.
+    s = s.replace(/ CODE(\d+) /g, (_m, i) => codeBlocks[Number(i)] || '');
+    s = s.replace(/\n/g, '<br>');
+    // Tidy stray <br> directly adjacent to block elements (incl. list internals).
+    s = s.replace(/(<\/(?:h[1-6]|ul|ol|pre|li)>)<br>/g, '$1');
+    s = s.replace(/<br>(<(?:h[1-6]|ul|ol|pre)[ >])/g, '$1');
+    s = s.replace(/(<(?:ul|ol)[^>]*>)<br>/g, '$1');
+    s = s.replace(/<br>(<li>)/g, '$1');
+    s = s.replace(/<br>(<\/(?:ul|ol)>)/g, '$1');
+    return s;
   }
 
   clear() {

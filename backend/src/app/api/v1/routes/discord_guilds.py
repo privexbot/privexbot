@@ -97,71 +97,12 @@ class InviteUrlResponse(BaseModel):
 # ROUTES
 # ═══════════════════════════════════════════════════════════════════════════
 
-@router.post("/deploy", response_model=GuildDeploymentResponse)
-async def deploy_to_guild(
-    request: DeployToGuildRequest,
-    db: Session = Depends(get_db),
-    user_context: UserContext = Depends(get_current_user_with_org)
-):
-    """
-    Deploy chatbot to a Discord guild (server).
-
-    WHY: Enable chatbot to receive messages from Discord server
-    HOW: Create DiscordGuildDeployment mapping guild → chatbot
-
-    FLOW:
-    1. Verify chatbot belongs to user's workspace
-    2. Check guild not already deployed
-    3. Create deployment record
-    4. Return deployment details
-
-    ARGS (body):
-        chatbot_id: Chatbot to deploy
-        guild_id: Discord server ID
-        guild_name: Optional server name for display
-        allowed_channel_ids: Optional channel restrictions
-
-    RETURNS:
-        GuildDeploymentResponse with deployment details
-
-    NOTE: User must first add the shared bot to their Discord server
-          using the invite URL from GET /discord/guilds/invite-url
-    """
-    user, org_id, ws_id = user_context
-
-    try:
-        deployment = discord_guild_service.deploy_to_guild(
-            db=db,
-            workspace_id=UUID(ws_id),
-            chatbot_id=request.chatbot_id,
-            guild_id=request.guild_id,
-            user_id=user.id,
-            guild_name=request.guild_name,
-            allowed_channel_ids=request.allowed_channel_ids or []
-        )
-
-        # Get chatbot name for response
-        chatbot = db.query(Chatbot).filter(Chatbot.id == deployment.chatbot_id).first()
-
-        return GuildDeploymentResponse(
-            id=deployment.id,
-            workspace_id=deployment.workspace_id,
-            guild_id=deployment.guild_id,
-            guild_name=deployment.guild_name,
-            guild_icon=deployment.guild_icon,
-            chatbot_id=deployment.chatbot_id,
-            chatbot_name=chatbot.name if chatbot else None,
-            allowed_channel_ids=deployment.allowed_channel_ids or [],
-            is_active=deployment.is_active,
-            created_at=deployment.created_at,
-            deployed_at=deployment.deployed_at
-        )
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+# NOTE: The manual `POST /deploy` route was removed (multi-tenancy fix).
+# A chatbot can only be bound to a Discord guild via the signed-OAuth callback
+# (`webhooks/discord.py`), which proves the caller has Discord "Manage Server"
+# rights on that guild and ties the binding to the authorizing workspace. This
+# closes the cross-tenant guild-claim hole. The `deploy_to_guild` service method
+# is still used by that callback.
 
 
 @router.get("/", response_model=List[GuildDeploymentResponse])
@@ -221,36 +162,42 @@ async def list_guild_deployments(
 
 @router.get("/invite-url", response_model=InviteUrlResponse)
 async def get_invite_url(
+    chatbot_id: UUID = Query(..., description="Chatbot to auto-connect when the bot is added"),
+    entity_type: str = Query("chatbot", description="'chatbot' or 'chatflow'"),
     user_context: UserContext = Depends(get_current_user_with_org)
 ):
     """
-    Get the invite URL for the shared Discord bot.
+    Get the signed-OAuth invite URL for the shared Discord bot.
 
-    WHY: Users need to add the shared bot to their server before deploying
-    HOW: Generate OAuth2 authorize URL with required permissions
-
-    RETURNS:
-        InviteUrlResponse with invite URL and instructions
-
-    NOTE: After adding the bot, user must call POST /discord/guilds/deploy
-          with their guild_id to connect a chatbot.
+    WHY: Adding the bot now auto-connects it to `chatbot_id` for the caller's
+         workspace via the OAuth callback — no manual server-ID step, and no
+         way to bind a server you don't have Discord admin rights on.
+    HOW: Generate an OAuth2 authorize URL whose HMAC-signed `state` carries
+         entity_type + entity_id + workspace_id; the callback verifies the
+         signature and creates the (workspace-scoped) deployment.
     """
     if not settings.DISCORD_SHARED_APPLICATION_ID:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Discord integration not configured. Contact administrator."
         )
+    if entity_type not in ("chatbot", "chatflow"):
+        raise HTTPException(status_code=400, detail="Invalid entity_type")
 
+    user, org_id, ws_id = user_context
     try:
-        invite_url = discord_guild_service.generate_invite_url()
+        invite_url = discord_guild_service.generate_invite_url(
+            entity_type=entity_type,
+            entity_id=chatbot_id,
+            workspace_id=ws_id,
+        )
         return InviteUrlResponse(
             invite_url=invite_url,
             application_id=settings.DISCORD_SHARED_APPLICATION_ID,
             instructions=(
-                "1. Click the invite URL to add the bot to your Discord server\n"
-                "2. Select the server and authorize the bot\n"
-                "3. Copy your server ID (enable Developer Mode in Discord settings)\n"
-                "4. Use POST /discord/guilds/deploy with your chatbot_id and guild_id"
+                "1. Click the invite URL\n"
+                "2. Pick your Discord server and authorize the bot\n"
+                "3. Done — the bot connects to this chatbot automatically."
             )
         )
     except ValueError as e:
@@ -260,99 +207,11 @@ async def get_invite_url(
         )
 
 
-class AvailableGuildInfo(BaseModel):
-    """Response model for an available Discord guild."""
-    guild_id: str
-    guild_name: str
-    guild_icon: Optional[str] = None
-
-
-class AvailableGuildsResponse(BaseModel):
-    """Response model for list of available guilds."""
-    guilds: List[AvailableGuildInfo]
-    message: str
-    error: Optional[str] = None  # Error details for troubleshooting
-
-
-@router.get("/available", response_model=AvailableGuildsResponse)
-async def get_available_guilds(
-    refresh: bool = Query(False, description="Force refresh cache (bypass 60s cache)"),
-    db: Session = Depends(get_db),
-    user_context: UserContext = Depends(get_current_user_with_org)
-):
-    """
-    Get list of Discord servers where bot is present but not yet deployed.
-
-    WHY: Auto-detect servers for better UX (no manual guild_id entry)
-    HOW: Fetch guilds from Discord API, filter out already deployed ones
-
-    ARGS (query):
-        refresh: If true, bypass cache and fetch fresh data from Discord API
-
-    RETURNS:
-        AvailableGuildsResponse with list of available guilds
-
-    FLOW:
-    1. Fetch all guilds where shared bot is present (Discord API, cached 60s)
-    2. Get already deployed guilds for this workspace
-    3. Return guilds that are available (present but not deployed)
-
-    CACHING:
-        Results are cached for 60 seconds to prevent Discord rate limits.
-        Use ?refresh=true after adding bot to a new server.
-
-    NOTE: If a guild is already deployed to another workspace, it won't appear
-          in this list (guild_id is globally unique in deployments).
-    """
-    user, org_id, ws_id = user_context
-
-    # Fetch all guilds where bot is present (cached unless refresh=true)
-    all_guilds, fetch_error = await discord_guild_service.fetch_bot_guilds(force_refresh=refresh)
-
-    # If there was an error fetching guilds, return it for troubleshooting
-    if fetch_error:
-        return AvailableGuildsResponse(
-            guilds=[],
-            message="Failed to fetch Discord servers.",
-            error=fetch_error
-        )
-
-    if not all_guilds:
-        return AvailableGuildsResponse(
-            guilds=[],
-            message="No servers found. Add the bot to a Discord server first using the invite URL.",
-            error=None
-        )
-
-    # Get ALL deployed guilds (globally, since guild_id is unique)
-    from app.models.discord_guild_deployment import DiscordGuildDeployment
-    deployed_guild_ids = set(
-        d.guild_id for d in db.query(DiscordGuildDeployment.guild_id).all()
-    )
-
-    # Filter out already deployed guilds
-    available = [
-        AvailableGuildInfo(
-            guild_id=g["guild_id"],
-            guild_name=g["guild_name"],
-            guild_icon=g["guild_icon"]
-        )
-        for g in all_guilds
-        if g["guild_id"] not in deployed_guild_ids
-    ]
-
-    if not available:
-        return AvailableGuildsResponse(
-            guilds=[],
-            message="All servers with the bot are already connected. Add the bot to another server or remove an existing connection.",
-            error=None
-        )
-
-    return AvailableGuildsResponse(
-        guilds=available,
-        message=f"Found {len(available)} available server(s).",
-        error=None
-    )
+# NOTE: The `GET /available` route was removed (multi-tenancy fix). It listed
+# EVERY guild the shared bot is in, minus globally-deployed ones, with no
+# workspace scoping — leaking other tenants' servers. Connecting now happens via
+# the signed-OAuth invite (`/invite-url` → callback), and the workspace's own
+# connected servers are listed by `GET /` (`list_guild_deployments`, scoped).
 
 
 # ═══════════════════════════════════════════════════════════════════════════

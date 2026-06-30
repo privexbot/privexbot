@@ -551,10 +551,17 @@ async def discord_oauth_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    # Decode state — base64url, padding restored.
+    # Verify + decode the HMAC-signed state ("<b64>.<sig>"). The signature stops
+    # a forged state from binding a guild to an attacker-chosen workspace/entity.
     try:
-        padding = "=" * (-len(state) % 4)
-        decoded = base64.urlsafe_b64decode(state + padding)
+        b64_state, _, sig = state.partition(".")
+        expected_sig = hmac.new(
+            settings.SECRET_KEY.encode(), b64_state.encode(), hashlib.sha256
+        ).hexdigest()
+        if not sig or not hmac.compare_digest(sig, expected_sig):
+            raise ValueError("state signature mismatch")
+        padding = "=" * (-len(b64_state) % 4)
+        decoded = base64.urlsafe_b64decode(b64_state + padding)
         payload = json.loads(decoded.decode())
         entity_type = payload["entity_type"]
         entity_id = UUID(payload["entity_id"])
