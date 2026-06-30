@@ -15,6 +15,8 @@ HOW:
 PSEUDOCODE follows the existing codebase patterns.
 """
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -91,6 +93,47 @@ def _is_chat_allowed(deployment_config: dict, chat_id: int) -> bool:
 
     # No restrictions - allow all
     return True
+
+
+def _resolve_group_message(message: dict, telegram_config: dict) -> Optional[str]:
+    """
+    For group/supergroup chats, return the cleaned question text IF the bot was
+    addressed (@-mentioned or replied-to), else None (caller ignores the update).
+
+    WHY: In a group the bot must only answer when spoken to — never reply to every
+         message (which would spam the group if BotFather privacy mode is off).
+    HOW: Match the bot's stored @username (deployment_config) against a "mention"
+         entity on a word boundary, or detect a reply to the bot's own message,
+         then strip the mention so inference receives just the question.
+    """
+    bot_username = telegram_config.get("bot_username")  # stored as "@name"
+    text = message.get("text", "")
+    if not bot_username:
+        # Older deployment without a persisted username: cannot safely gate a
+        # group → treat as not-addressed (never risk replying to every message).
+        return None
+
+    handle = bot_username.lstrip("@")
+    # Word boundary so @foo does not fire on @foobar.
+    mention_re = re.compile(r"@" + re.escape(handle) + r"\b", re.IGNORECASE)
+
+    # (a) @-mention: a "mention" entity exists AND the handle matches in the text.
+    has_mention_entity = any(
+        e.get("type") == "mention" for e in (message.get("entities") or [])
+    )
+    addressed = has_mention_entity and bool(mention_re.search(text))
+
+    # (b) reply to one of the bot's own messages.
+    if not addressed:
+        replied = (message.get("reply_to_message") or {}).get("from") or {}
+        if replied.get("is_bot") and (replied.get("username") or "").lower() == handle.lower():
+            addressed = True
+
+    if not addressed:
+        return None
+
+    cleaned = mention_re.sub("", text).strip()
+    return cleaned or None  # ignore a bare "@bot" with no question
 
 
 def _resolve_bot(db: Session, bot_id: UUID):
@@ -208,6 +251,16 @@ async def telegram_webhook(
         # Silently ignore messages from blocked/non-allowed chats
         return {"status": "ignored", "reason": "chat_not_allowed"}
 
+    # Group/supergroup chats: only respond when the bot is addressed
+    # (@-mentioned or replied-to), using the mention-stripped question.
+    # Private chats keep the full message text unchanged.
+    chat_type = message.get("chat", {}).get("type", "private")
+    is_group = chat_type != "private"
+    if is_group:
+        text = _resolve_group_message(message, telegram_config)
+        if text is None:
+            return {"status": "ignored", "reason": "not_addressed"}
+
     # Generate session ID (includes user_id for per-user isolation in group chats)
     session_id = f"telegram_{chat_id}_{user_id}"
 
@@ -244,7 +297,9 @@ async def telegram_webhook(
         await telegram_integration.send_message(
             bot_token=telegram_bot_token,
             chat_id=chat_id,
-            message=response["response"]
+            message=response["response"],
+            # Thread the answer to the asker's message in group chats.
+            reply_to_message_id=message.get("message_id") if is_group else None
         )
 
     return {"status": "ok"}

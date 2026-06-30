@@ -222,24 +222,34 @@ class TelegramIntegration:
         self,
         chat_id: int,
         text: str,
-        bot_token: str
+        bot_token: str,
+        reply_to_message_id: Optional[int] = None
     ):
         """Send a single message to Telegram (max 4096 chars)."""
-        response = requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text[:4096],  # Enforce Telegram limit
-                "parse_mode": "Markdown"
-            }
-        )
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text[:4096],  # Enforce Telegram limit
+            "parse_mode": "Markdown"
+        }
+        if reply_to_message_id is not None:
+            payload["reply_to_message_id"] = reply_to_message_id
+            # Don't 400-drop the reply if the original message was deleted.
+            payload["allow_sending_without_reply"] = True
+        response = requests.post(url, json=payload)
+        # Markdown parse errors return 400 and silently drop the message;
+        # retry once as plain text so the reply is still delivered.
+        if response.status_code == 400:
+            payload.pop("parse_mode", None)
+            response = requests.post(url, json=payload)
         return response
 
     async def _send_message(
         self,
         chat_id: int,
         text: str,
-        bot_token: str
+        bot_token: str,
+        reply_to_message_id: Optional[int] = None
     ):
         """Send message to Telegram user with rate limiting and chunking."""
         # Rate limit check (using first 10 chars of token as identifier)
@@ -257,11 +267,15 @@ class TelegramIntegration:
 
         # Split into chunks if message exceeds 4096 chars
         if len(text) <= 4096:
-            await self._send_single_message(chat_id, text, bot_token)
+            await self._send_single_message(chat_id, text, bot_token, reply_to_message_id)
         else:
             chunks = [text[i:i+4096] for i in range(0, len(text), 4096)]
             for i, chunk in enumerate(chunks):
-                await self._send_single_message(chat_id, chunk, bot_token)
+                # Thread only the first chunk to the original message.
+                await self._send_single_message(
+                    chat_id, chunk, bot_token,
+                    reply_to_message_id if i == 0 else None
+                )
                 if i < len(chunks) - 1:
                     await asyncio.sleep(0.1)  # Small delay between chunks
 
@@ -269,7 +283,8 @@ class TelegramIntegration:
         self,
         bot_token: str,
         chat_id: int,
-        message: str
+        message: str,
+        reply_to_message_id: Optional[int] = None
     ):
         """
         Public method to send message to Telegram user.
@@ -277,7 +292,7 @@ class TelegramIntegration:
         WHY: Called by webhook handler to send responses
         HOW: Call Telegram sendMessage API with rate limiting and chunking
         """
-        await self._send_message(chat_id, message, bot_token)
+        await self._send_message(chat_id, message, bot_token, reply_to_message_id)
 
     async def get_webhook_info(self, bot_token: str) -> dict:
         """
