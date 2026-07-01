@@ -926,6 +926,21 @@ class UnifiedDraftService:
         chatflow.name = data.get("name", chatflow.name)
         chatflow.description = data.get("description", chatflow.description)
 
+        # Capture the PRIOR registered deployment BEFORE overwriting config.
+        # This is the flat, already-registered dict (e.g.
+        # {telegram: {status: "success", webhook_url, ...}}). We drop any
+        # legacy top-level "channels" array key so the merge stays a clean flat
+        # dict (a mixed {channels:[...], telegram:{...}} shape breaks the
+        # redeploy endpoint's _reconstruct_channels_input). Reading it AFTER the
+        # line-below overwrite was the bug: it returned the draft shape and
+        # silently dropped previously registered channels.
+        prior_config = chatflow.config if isinstance(chatflow.config, dict) else {}
+        prior_deployment = {
+            k: v
+            for k, v in (prior_config.get("deployment") or {}).items()
+            if k != "channels"
+        }
+
         # Update config JSONB with new nodes/edges/variables/settings
         chatflow.config = data
 
@@ -935,7 +950,8 @@ class UnifiedDraftService:
         # Update deployment timestamp
         chatflow.deployed_at = datetime.utcnow()
 
-        # Re-initialize channels if deployment config changed
+        # Re-initialize channels selected in this edit's deploy dialog.
+        newly_registered: dict = {}
         deployment_config = data.get("deployment", {})
         if deployment_config and deployment_config.get("channels"):
             try:
@@ -961,30 +977,7 @@ class UnifiedDraftService:
                         db=db,
                         workspace_id=chatflow.workspace_id,
                     )
-                    # MERGE the re-deployed channels into the existing
-                    # deployment dict rather than replacing it wholesale. The
-                    # deploy dialog is additive (it does not pre-select already
-                    # deployed channels), so a "discord only" edit must NOT wipe
-                    # a previously deployed website embed / telegram webhook.
-                    # Channel removal is handled by the dedicated
-                    # /channels/{type} disable + /channels/redeploy endpoints,
-                    # not by omission here.
-                    existing_deployment = (
-                        chatflow.config.get("deployment", {})
-                        if isinstance(chatflow.config, dict)
-                        else {}
-                    )
-                    merged_deployment = {
-                        **existing_deployment,
-                        **deployment_results["channels"],
-                    }
-                    # Reassign the root (config is JSONB, not MutableDict — a
-                    # nested assignment would not be detected). See
-                    # _deploy_chatflow above.
-                    chatflow.config = {
-                        **(chatflow.config or {}),
-                        "deployment": merged_deployment,
-                    }
+                    newly_registered = deployment_results["channels"]
             except Exception:
                 # Channel re-initialization is non-critical for updates, but
                 # log it — silent failures here have caused channel drift.
@@ -992,6 +985,20 @@ class UnifiedDraftService:
                     "Channel re-initialization failed for chatflow %s",
                     chatflow.id,
                 )
+
+        # ALWAYS preserve prior registered channels and overlay any freshly
+        # re-registered ones. The deploy dialog is additive (it doesn't
+        # pre-select already-deployed channels), so a "discord only" edit — or
+        # an edit that touches no channels at all — must NOT drop a previously
+        # registered telegram webhook / website embed. Channel removal is
+        # handled by the dedicated /channels/{type} disable + /channels/redeploy
+        # endpoints, not by omission here. Reassign the root (config is JSONB,
+        # not MutableDict — a nested assignment would not be detected).
+        merged_deployment = {**prior_deployment, **newly_registered}
+        chatflow.config = {
+            **(chatflow.config or {}),
+            "deployment": merged_deployment,
+        }
 
         db.commit()
 

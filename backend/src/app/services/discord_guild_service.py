@@ -110,12 +110,32 @@ class DiscordGuildService:
         ).first()
 
         if existing:
-            if existing.workspace_id == workspace_id:
-                raise ValueError(
-                    f"Guild {guild_id} is already deployed to {existing.entity_type} {existing.chatbot_id}"
-                )
-            else:
+            if existing.workspace_id != workspace_id:
                 raise ValueError(f"Guild {guild_id} is already deployed to another workspace")
+            same_entity = (
+                str(existing.chatbot_id) == str(chatbot_id)
+                and (existing.entity_type or "chatbot") == entity_type
+            )
+            if same_entity:
+                # Idempotent re-install to the SAME entity: refresh metadata,
+                # re-activate if needed, and return the existing row. This is
+                # NOT a conflict — the OAuth callback treats it as success.
+                if guild_name:
+                    existing.guild_name = guild_name
+                if guild_icon:
+                    existing.guild_icon = guild_icon
+                if not existing.is_active:
+                    existing.is_active = True
+                    existing.deployed_at = datetime.utcnow()
+                db.commit()
+                db.refresh(existing)
+                return existing
+            # Bound to a DIFFERENT entity in this workspace — a genuine conflict.
+            # One guild serves one entity; the caller must disconnect it there
+            # (or use reassign) first.
+            raise ValueError(
+                f"Guild {guild_id} is already connected to {existing.entity_type} {existing.chatbot_id}"
+            )
 
         # Create deployment record
         deployment = DiscordGuildDeployment(

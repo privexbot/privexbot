@@ -58,7 +58,11 @@ def _get_telegram_bot_token(db: Session, deployment_config: dict) -> Optional[st
             return None
 
         cred_data = credential_service.get_decrypted_data(db, credential)
-        return cred_data.get("bot_token")
+        # The shared credential form (Credentials.tsx) stores the token under
+        # the generic `api_key` key; the chatbot inline form uses `bot_token`.
+        # Accept either — mirrors telegram_integration.py's readers. Without
+        # this fallback the reply send is silently skipped (200, no message).
+        return cred_data.get("bot_token") or cred_data.get("api_key")
     except Exception:
         return None
 

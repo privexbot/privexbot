@@ -620,8 +620,10 @@ async def discord_oauth_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    # Create the binding. If a row for this guild already exists in this
-    # workspace, treat as success (idempotent) — re-installs shouldn't error.
+    # Create the binding. deploy_to_guild is idempotent for a re-install to the
+    # SAME entity (returns the existing row, no error). Any ValueError here is a
+    # genuine conflict (guild bound to a DIFFERENT entity/workspace) or a
+    # validation failure — surface it honestly instead of a false "success".
     try:
         deployment = discord_guild_service.deploy_to_guild(
             db=db,
@@ -633,15 +635,17 @@ async def discord_oauth_callback(
         )
     except ValueError as exc:
         msg = str(exc).lower()
-        if "already deployed" in msg:
-            # Idempotent re-install, fall through to success redirect.
-            pass
+        logger.warning("Discord deploy_to_guild failed: %s", exc)
+        err = (
+            "guild_taken"
+            if ("already deployed" in msg or "already connected" in msg)
+            else "deploy_failed"
+        )
+        if entity_type == "chatflow":
+            fail_target = f"{frontend}/studio/{entity_id}?discord_error={err}"
         else:
-            logger.warning("Discord deploy_to_guild failed: %s", exc)
-            return RedirectResponse(
-                url=f"{frontend}/studio?discord_error={exc}",
-                status_code=status.HTTP_302_FOUND,
-            )
+            fail_target = f"{frontend}/chatbots/{entity_id}?discord_error={err}"
+        return RedirectResponse(url=fail_target, status_code=status.HTTP_302_FOUND)
 
     # Per-guild slash command registration — instant availability, no 1hr
     # cache wait. Best-effort: a failure here doesn't void the binding.

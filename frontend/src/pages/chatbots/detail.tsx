@@ -74,7 +74,7 @@ import { WrongWorkspaceScreen } from '@/components/shared/WrongWorkspaceScreen';
 export default function ChatbotDetailPage() {
   const { chatbotId } = useParams<{ chatbotId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { currentWorkspace, currentOrganization, workspaces } = useApp();
   const [wrongWorkspaceFor, setWrongWorkspaceFor] = useState<string | null>(null);
 
@@ -739,6 +739,31 @@ export default function ChatbotDetailPage() {
     }
   };
 
+  // Disconnect Telegram so it can be reconnected (mirrors Discord removal).
+  const handleDisconnectTelegram = async () => {
+    if (!chatbot) return;
+    try {
+      await chatbotApi.removeTelegramChannel(chatbot.id);
+      setChatbot(prev => {
+        if (!prev) return prev;
+        const nextConfig = { ...prev.deployment_config };
+        delete nextConfig.telegram;
+        return { ...prev, deployment_config: nextConfig };
+      });
+      toast({
+        title: 'Telegram Disconnected',
+        description: 'You can reconnect a Telegram bot anytime.',
+      });
+    } catch (error) {
+      console.error('Failed to disconnect Telegram:', error);
+      toast({
+        title: 'Disconnect Failed',
+        description: error instanceof Error ? error.message : 'Failed to disconnect Telegram',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Load Discord guild deployments for this chatbot
   const loadDiscordGuilds = async () => {
     if (!chatbot) return;
@@ -863,6 +888,33 @@ export default function ChatbotDetailPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatbot?.id]);
+
+  // Surface the Discord OAuth return (success or conflict) and clean the URL so
+  // a refresh doesn't re-toast. The callback redirects with ?discord_guild=<id>
+  // on success or ?discord_error=guild_taken when the server is already bound
+  // to another bot/flow.
+  useEffect(() => {
+    const guild = searchParams.get('discord_guild');
+    const err = searchParams.get('discord_error');
+    if (!guild && !err) return;
+    if (err) {
+      toast({
+        title: 'Discord not connected',
+        description: err === 'guild_taken'
+          ? 'That Discord server is already connected to another bot or flow. Disconnect it there first.'
+          : 'Could not connect the Discord server. Please try again.',
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Discord connected', description: 'Your Discord server is now connected.' });
+      void loadDiscordGuilds();
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('discord_guild');
+    next.delete('discord_error');
+    setSearchParams(next, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   if (isLoading) {
     return (
@@ -1611,7 +1663,18 @@ export default function ChatbotDetailPage() {
                             </p>
                           </div>
                         </div>
-                        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-500 hover:text-red-500"
+                            onClick={handleDisconnectTelegram}
+                            title="Disconnect Telegram"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     )}
 

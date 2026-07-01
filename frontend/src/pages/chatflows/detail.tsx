@@ -102,9 +102,11 @@ function CopyButton({ value, label = "Copy" }: { value: string; label?: string }
 function ChannelCard({
   chatflowId,
   entry,
+  discordConnected = false,
 }: {
   chatflowId: string;
   entry: ChannelEntry;
+  discordConnected?: boolean;
 }) {
   const navigate = useNavigate();
   const channelMeta: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -129,11 +131,16 @@ function ChannelCard({
   // Only treat status === "success" as success. Anything else (including
   // missing status, which is the legacy/unregistered case) is non-success.
   const rawStatus = cfg.status as string | undefined;
-  const isError = rawStatus === "error";
-  const isRegistered = rawStatus === "success" || rawStatus === "ok";
+  // A shared Discord connection lives only as a DiscordGuildDeployment row, not
+  // in config.deployment.discord.status — so reconcile the badge against the
+  // deployment table (source of truth) for the discord row.
+  const sharedDiscordConnected = entry.type === "discord" && discordConnected;
+  const isError = rawStatus === "error" && !sharedDiscordConnected;
+  const isRegistered =
+    rawStatus === "success" || rawStatus === "ok" || sharedDiscordConnected;
   // Discord shared-bot path returns `needs_install` instead of an error —
   // operator needs to add the bot to their server via the install URL.
-  const needsInstall = rawStatus === "needs_install";
+  const needsInstall = rawStatus === "needs_install" && !sharedDiscordConnected;
   const installInstructions = (cfg.instructions as string | undefined) ?? "";
   const errorMessage = (cfg.error as string | undefined) ?? "";
   // Distinguish "user picked the channel but never finished setup"
@@ -164,15 +171,17 @@ function ChannelCard({
 
   const badgeText = !entry.enabled
     ? "disabled"
-    : needsInstall
-      ? "install required"
-      : isCredentialMissing
-        ? "needs setup"
-        : isError
-          ? "error"
-          : isRegistered
-            ? "success"
-            : "not registered";
+    : sharedDiscordConnected
+      ? "connected"
+      : needsInstall
+        ? "install required"
+        : isCredentialMissing
+          ? "needs setup"
+          : isError
+            ? "error"
+            : isRegistered
+              ? "success"
+              : "not registered";
   const badgeVariant = !entry.enabled
     ? "destructive"
     : isCredentialMissing
@@ -951,6 +960,8 @@ export default function ChatflowDetailPage() {
     const discordError = searchParams.get("discord_error");
     if (guildId) {
       queryClient.invalidateQueries({ queryKey: ["chatflow", chatflowId] });
+      // Refresh the guild list so the Discord status badge flips to connected.
+      queryClient.invalidateQueries({ queryKey: ["discord-guilds", chatflowId] });
       toast({
         title: "Discord connected",
         description: `Bot installed in guild ${guildId}. Slash commands /ask and /chat are ready.`,
@@ -960,8 +971,11 @@ export default function ChatflowDetailPage() {
       setSearchParams(next, { replace: true });
     } else if (discordError) {
       toast({
-        title: "Discord install failed",
-        description: discordError,
+        title: "Discord not connected",
+        description:
+          discordError === "guild_taken"
+            ? "That Discord server is already connected to another bot or flow. Disconnect it there first."
+            : "Could not connect the Discord server. Please try again.",
         variant: "destructive",
       });
       const next = new URLSearchParams(searchParams);
@@ -1049,6 +1063,16 @@ export default function ChatflowDetailPage() {
         variant: "destructive",
       }),
   });
+
+  // Shared Discord connections exist only as DiscordGuildDeployment rows (not in
+  // config.deployment.discord), so fetch them to drive the Discord status badge.
+  // Same query key as DiscordSharedConnect → one shared fetch.
+  const { data: discordGuilds = [] } = useQuery<GuildDeployment[]>({
+    queryKey: ["discord-guilds", chatflowId],
+    queryFn: () => discordApi.listDeployments(chatflowId as string),
+    enabled: !!chatflowId,
+  });
+  const discordConnected = discordGuilds.length > 0;
 
   const channels = useMemo<ChannelEntry[]>(() => {
     // After a successful deploy, backend writes chatflow.config.deployment as
@@ -1331,6 +1355,7 @@ export default function ChatflowDetailPage() {
                       key={entry.type}
                       chatflowId={chatflow.id}
                       entry={entry}
+                      discordConnected={discordConnected}
                     />
                   ))}
                 </>

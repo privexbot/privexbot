@@ -557,6 +557,67 @@ class TelegramIntegration:
 
         return conflicts
 
+    @staticmethod
+    def other_entities_using_telegram_credential(
+        db: Session,
+        credential_id: str,
+        workspace_id: UUID,
+        exclude_entity_id: Optional[UUID] = None,
+    ) -> int:
+        """Count OTHER entities in the workspace wired to this Telegram credential.
+
+        WHY: A Telegram bot token has exactly one active webhook. When a
+        credential is shared, disconnecting one entity must NOT `deleteWebhook`
+        (that would silently break the bot for the remaining entity). Callers
+        use this to decide whether it's safe to delete the webhook (count == 0).
+
+        HOW: Scan both storage shapes — the flat `telegram` key (written by the
+        chatbot/chatflow connect endpoints) and the nested `channels.telegram`
+        key (deploy-dialog shape) — across chatbots (`deployment_config`) and
+        chatflows (`config.deployment`).
+        """
+        from app.models.chatbot import Chatbot, ChatbotStatus
+        from app.models.chatflow import Chatflow
+
+        cred_id_str = str(credential_id)
+
+        def _matches(deployment: dict) -> bool:
+            if not isinstance(deployment, dict):
+                return False
+            candidates = [deployment.get("telegram")]
+            channels = deployment.get("channels")
+            if isinstance(channels, dict):
+                candidates.append(channels.get("telegram"))
+            return any(
+                isinstance(tg, dict)
+                and str(tg.get("bot_token_credential_id") or "") == cred_id_str
+                for tg in candidates
+            )
+
+        count = 0
+        for bot in (
+            db.query(Chatbot)
+            .filter(
+                Chatbot.workspace_id == workspace_id,
+                Chatbot.status != ChatbotStatus.ARCHIVED,
+            )
+            .all()
+        ):
+            if exclude_entity_id and bot.id == exclude_entity_id:
+                continue
+            if _matches(bot.deployment_config or {}):
+                count += 1
+
+        for flow in (
+            db.query(Chatflow).filter(Chatflow.workspace_id == workspace_id).all()
+        ):
+            if exclude_entity_id and flow.id == exclude_entity_id:
+                continue
+            if _matches((flow.config or {}).get("deployment", {}) or {}):
+                count += 1
+
+        return count
+
 
 # Global instance
 telegram_integration = TelegramIntegration()
