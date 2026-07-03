@@ -9,7 +9,6 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -24,7 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
-import apiClient from "@/lib/api-client";
+import CredentialSelector from "@/components/shared/CredentialSelector";
 
 interface DatabaseNodeConfigProps {
   config: Record<string, unknown>;
@@ -64,19 +63,6 @@ export function DatabaseNodeConfig({ config, onChange }: DatabaseNodeConfigProps
     (config.parameters as Parameter[]) || []
   );
 
-  // Fetch available database credentials from current workspace (via JWT)
-  const { data: credentials, isLoading } = useQuery({
-    queryKey: ["credentials", currentWorkspace?.id, "database"],
-    queryFn: async () => {
-      if (!currentWorkspace?.id) return [];
-      const response = await apiClient.get("/credentials", {
-        params: { credential_type: "database" },
-      });
-      return response.data?.items || [];
-    },
-    enabled: !!currentWorkspace?.id,
-  });
-
   // Debounce changes
   const emitChange = useCallback(() => {
     onChange({
@@ -113,31 +99,17 @@ export function DatabaseNodeConfig({ config, onChange }: DatabaseNodeConfigProps
 
   return (
     <div className="space-y-4">
-      {/* Database Credential */}
-      <div>
-        <Label className="text-sm font-medium">
-          Database Connection <span className="text-red-500">*</span>
-        </Label>
-        <Select value={credentialId} onValueChange={setCredentialId}>
-          <SelectTrigger className="mt-1.5">
-            <SelectValue
-              placeholder={isLoading ? "Loading..." : "Select a database"}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {credentials?.map((cred: { id: string; name: string }) => (
-              <SelectItem key={cred.id} value={cred.id}>
-                {cred.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {!credentials?.length && !isLoading && (
-          <p className="text-xs text-amber-600 mt-1">
-            No database credentials found. Add one in Settings → Credentials.
-          </p>
-        )}
-      </div>
+      {/* Database Credential (PostgreSQL). The shared selector provides the
+          "Add New Credential" path → /settings/credentials?provider=database. */}
+      <CredentialSelector
+        provider="database"
+        selectedId={credentialId}
+        onSelect={setCredentialId}
+        label="Database Connection"
+        required
+        workspaceId={currentWorkspace?.id}
+        hideDelete
+      />
 
       {/* Operation Type */}
       <div>

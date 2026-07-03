@@ -74,7 +74,7 @@ import { WrongWorkspaceScreen } from '@/components/shared/WrongWorkspaceScreen';
 export default function ChatbotDetailPage() {
   const { chatbotId } = useParams<{ chatbotId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { currentWorkspace, currentOrganization, workspaces } = useApp();
   const [wrongWorkspaceFor, setWrongWorkspaceFor] = useState<string | null>(null);
 
@@ -119,7 +119,6 @@ export default function ChatbotDetailPage() {
 
   // Discord channel state (shared bot architecture)
   const [discordModalOpen, setDiscordModalOpen] = useState(false);
-  const [discordConnecting, setDiscordConnecting] = useState(false);
   const [discordGuilds, setDiscordGuilds] = useState<GuildDeployment[]>([]);
   const [discordInviteUrl, setDiscordInviteUrl] = useState<string | null>(null);
 
@@ -740,6 +739,31 @@ export default function ChatbotDetailPage() {
     }
   };
 
+  // Disconnect Telegram so it can be reconnected (mirrors Discord removal).
+  const handleDisconnectTelegram = async () => {
+    if (!chatbot) return;
+    try {
+      await chatbotApi.removeTelegramChannel(chatbot.id);
+      setChatbot(prev => {
+        if (!prev) return prev;
+        const nextConfig = { ...prev.deployment_config };
+        delete nextConfig.telegram;
+        return { ...prev, deployment_config: nextConfig };
+      });
+      toast({
+        title: 'Telegram Disconnected',
+        description: 'You can reconnect a Telegram bot anytime.',
+      });
+    } catch (error) {
+      console.error('Failed to disconnect Telegram:', error);
+      toast({
+        title: 'Disconnect Failed',
+        description: error instanceof Error ? error.message : 'Failed to disconnect Telegram',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Load Discord guild deployments for this chatbot
   const loadDiscordGuilds = async () => {
     if (!chatbot) return;
@@ -751,38 +775,8 @@ export default function ChatbotDetailPage() {
     }
   };
 
-  // Handle Discord server connection
-  const handleConnectDiscord = async (guildId: string, guildName: string) => {
-    if (!chatbot) return;
-
-    setDiscordConnecting(true);
-    try {
-      // Deploy chatbot to the Discord guild
-      const deployment = await discordApi.deployToGuild({
-        chatbot_id: chatbot.id,
-        guild_id: guildId,
-        guild_name: guildName,
-      });
-
-      // Add to local state
-      setDiscordGuilds(prev => [...prev, deployment]);
-      setDiscordModalOpen(false);
-
-      toast({
-        title: 'Discord Server Connected',
-        description: `Server "${guildName || guildId}" is now connected to this chatbot`,
-      });
-    } catch (error) {
-      console.error('Failed to connect Discord:', error);
-      toast({
-        title: 'Connection Failed',
-        description: error instanceof Error ? error.message : 'Failed to connect Discord server',
-        variant: 'destructive'
-      });
-    } finally {
-      setDiscordConnecting(false);
-    }
-  };
+  // Connecting now happens via the signed-OAuth "Add to Discord" flow
+  // (DiscordConfigForm) — the bot auto-binds to this chatbot on authorize.
 
   // Handle Discord guild removal
   const handleRemoveDiscordGuild = async (guildId: string) => {
@@ -872,26 +866,55 @@ export default function ChatbotDetailPage() {
     }
   };
 
-  // Load Discord invite URL on mount
+  // Load the chatbot-scoped Discord invite URL + connected servers, and refetch
+  // the connected list when the user returns from the Discord authorization tab.
   useEffect(() => {
-    const loadDiscordInviteUrl = async () => {
+    if (!chatbot) return;
+    let cancelled = false;
+    (async () => {
       try {
-        const data = await discordApi.getInviteUrl();
-        setDiscordInviteUrl(data.invite_url);
+        const data = await discordApi.getInviteUrl(chatbot.id);
+        if (!cancelled) setDiscordInviteUrl(data.invite_url);
       } catch {
         // Discord integration may not be configured - that's okay
       }
+    })();
+    void loadDiscordGuilds();
+    const onFocus = () => void loadDiscordGuilds();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
     };
-    void loadDiscordInviteUrl();
-  }, []);
-
-  // Load Discord guilds when chatbot changes
-  useEffect(() => {
-    if (chatbot) {
-      void loadDiscordGuilds();
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatbot?.id]);
+
+  // Surface the Discord OAuth return (success or conflict) and clean the URL so
+  // a refresh doesn't re-toast. The callback redirects with ?discord_guild=<id>
+  // on success or ?discord_error=guild_taken when the server is already bound
+  // to another bot/flow.
+  useEffect(() => {
+    const guild = searchParams.get('discord_guild');
+    const err = searchParams.get('discord_error');
+    if (!guild && !err) return;
+    if (err) {
+      toast({
+        title: 'Discord not connected',
+        description: err === 'guild_taken'
+          ? 'That Discord server is already connected to another bot or flow. Disconnect it there first.'
+          : 'Could not connect the Discord server. Please try again.',
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Discord connected', description: 'Your Discord server is now connected.' });
+      void loadDiscordGuilds();
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('discord_guild');
+    next.delete('discord_error');
+    setSearchParams(next, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   if (isLoading) {
     return (
@@ -1640,7 +1663,18 @@ export default function ChatbotDetailPage() {
                             </p>
                           </div>
                         </div>
-                        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-300">Active</Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-500 hover:text-red-500"
+                            onClick={handleDisconnectTelegram}
+                            title="Disconnect Telegram"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     )}
 
@@ -2501,11 +2535,7 @@ export default function ChatbotDetailPage() {
                 </div>
               </div>
             </DialogHeader>
-            <DiscordConfigForm
-              inviteUrl={discordInviteUrl}
-              onConnect={handleConnectDiscord}
-              isConnecting={discordConnecting}
-            />
+            <DiscordConfigForm inviteUrl={discordInviteUrl} />
           </DialogContent>
         </Dialog>
 
@@ -2677,257 +2707,36 @@ function TelegramConfigForm({
   );
 }
 
-// Discord Configuration Form Component
-function DiscordConfigForm({
-  inviteUrl,
-  onConnect,
-  isConnecting
-}: {
-  inviteUrl: string | null;
-  onConnect: (guildId: string, guildName: string) => void;
-  isConnecting: boolean;
-}) {
-  const [selectedGuildId, setSelectedGuildId] = useState('');
-  const [manualGuildId, setManualGuildId] = useState('');
-  const [manualGuildName, setManualGuildName] = useState('');
-  const [availableGuilds, setAvailableGuilds] = useState<{ guild_id: string; guild_name: string; guild_icon: string | null }[]>([]);
-  const [isLoadingGuilds, setIsLoadingGuilds] = useState(true);
-  const [showManualEntry, setShowManualEntry] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Fetch available guilds on mount
-  useEffect(() => {
-    const fetchGuilds = async () => {
-      setIsLoadingGuilds(true);
-      setLoadError(null);
-      try {
-        const response = await discordApi.getAvailableGuilds();
-        setAvailableGuilds(response.guilds);
-        // Check for error in response (e.g., invalid token, missing config)
-        if (response.error) {
-          setLoadError(response.error);
-          setShowManualEntry(true);
-        } else if (response.guilds.length === 0) {
-          setShowManualEntry(true);
-        }
-      } catch (error) {
-        console.error('Failed to fetch available guilds:', error);
-        setLoadError('Failed to load servers. Please try again.');
-        setShowManualEntry(true);
-      } finally {
-        setIsLoadingGuilds(false);
-      }
-    };
-    fetchGuilds();
-  }, []);
-
-  const isValidManualGuildId = manualGuildId.length >= 17 && /^\d+$/.test(manualGuildId);
-  const selectedGuild = availableGuilds.find(g => g.guild_id === selectedGuildId);
-
-  const handleConnect = () => {
-    if (showManualEntry) {
-      onConnect(manualGuildId, manualGuildName);
-    } else if (selectedGuild) {
-      onConnect(selectedGuild.guild_id, selectedGuild.guild_name);
-    }
-  };
-
-  const canConnect = showManualEntry ? isValidManualGuildId : !!selectedGuildId;
-
+// Discord Configuration Form — OAuth "Add to Discord" (auto-connects to this chatbot).
+function DiscordConfigForm({ inviteUrl }: { inviteUrl: string | null }) {
   return (
     <div className="space-y-4">
-      {isLoadingGuilds ? (
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className="h-6 w-6 animate-spin text-indigo-500" />
-          <span className="ml-2 text-sm text-gray-600 dark:text-gray-400 font-manrope">
-            Looking for available servers...
-          </span>
-        </div>
-      ) : availableGuilds.length > 0 && !showManualEntry ? (
-        <>
-          {/* Auto-detected servers */}
-          <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-            <AlertDescription className="text-green-800 dark:text-green-200 text-sm font-manrope">
-              Found {availableGuilds.length} server{availableGuilds.length > 1 ? 's' : ''} with PrivexBot installed. Select one to connect.
-            </AlertDescription>
-          </Alert>
+      <Alert className="bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700">
+        <MessageSquare className="h-4 w-4 text-indigo-500" />
+        <AlertDescription className="text-indigo-800 dark:text-indigo-200 text-sm font-manrope">
+          Add the PrivexBot to your Discord server. After you authorize it, the bot
+          connects to <strong>this chatbot</strong> automatically — no server ID needed.
+        </AlertDescription>
+      </Alert>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
-              Select Server
-            </label>
-            <div className="space-y-2">
-              {availableGuilds.map((guild) => (
-                <button
-                  key={guild.guild_id}
-                  onClick={() => setSelectedGuildId(guild.guild_id)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                    selectedGuildId === guild.guild_id
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600'
-                  }`}
-                >
-                  {guild.guild_icon ? (
-                    <img
-                      src={guild.guild_icon}
-                      alt={guild.guild_name}
-                      className="w-10 h-10 rounded-full"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-800 flex items-center justify-center">
-                      <span className="text-indigo-600 dark:text-indigo-300 font-bold text-lg">
-                        {guild.guild_name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex-1 text-left">
-                    <p className="font-medium text-gray-900 dark:text-white font-manrope">
-                      {guild.guild_name}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                      {guild.guild_id}
-                    </p>
-                  </div>
-                  {selectedGuildId === guild.guild_id && (
-                    <CheckCircle2 className="h-5 w-5 text-indigo-500" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => setShowManualEntry(true)}
-              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-manrope"
-            >
-              Don't see your server? Enter ID manually
-            </button>
-          </div>
-
-          <DialogFooter>
-            <Button
-              onClick={handleConnect}
-              disabled={!canConnect || isConnecting}
-              className="w-full font-manrope"
-            >
-              {isConnecting ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                'Connect Server'
-              )}
-            </Button>
-          </DialogFooter>
-        </>
+      {inviteUrl ? (
+        <Button
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-manrope"
+          onClick={() => window.open(inviteUrl, '_blank', 'noopener,noreferrer')}
+        >
+          <MessageSquare className="h-4 w-4 mr-2" />
+          Add to Discord
+        </Button>
       ) : (
-        <>
-          {/* Manual entry or no guilds found */}
-          {loadError ? (
-            <Alert className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              <AlertDescription className="text-red-800 dark:text-red-200 text-sm font-manrope">
-                <span className="font-medium">Discord Configuration Error</span>
-                <br />
-                {loadError}
-                <br />
-                <a
-                  href="https://discord.com/developers/applications"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-red-600 dark:text-red-400 hover:underline inline-flex items-center gap-1 mt-1"
-                >
-                  Check Discord Developer Portal <ExternalLink className="h-3 w-3" />
-                </a>
-                <span className="block mt-2 text-gray-600 dark:text-gray-400">You can still connect manually below.</span>
-              </AlertDescription>
-            </Alert>
-          ) : availableGuilds.length === 0 ? (
-            <Alert className="bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700">
-              <MessageSquare className="h-4 w-4 text-indigo-500" />
-              <AlertDescription className="text-indigo-800 dark:text-indigo-200 text-sm font-manrope">
-                No available servers found. Add the bot to a Discord server first, or enter Server ID manually.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <button
-              onClick={() => setShowManualEntry(false)}
-              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-manrope flex items-center gap-1"
-            >
-              <ArrowLeft className="h-3 w-3" />
-              Back to server list
-            </button>
-          )}
-
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600 dark:text-gray-400 font-manrope">
-              Add the PrivexBot to your Discord server, then enter the Server ID below.
-            </p>
-
-            {inviteUrl && (
-              <Button
-                variant="outline"
-                className="w-full font-manrope"
-                onClick={() => window.open(inviteUrl, '_blank')}
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Add Bot to Server
-              </Button>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
-              Server ID (Guild ID)
-            </label>
-            <Input
-              type="text"
-              value={manualGuildId}
-              onChange={(e) => setManualGuildId(e.target.value.replace(/\D/g, ''))}
-              placeholder="1234567890123456789"
-              className="font-mono"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">
-              Enable Developer Mode in Discord Settings → Right-click server → Copy Server ID
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 font-manrope">
-              Server Name (Optional)
-            </label>
-            <Input
-              type="text"
-              value={manualGuildName}
-              onChange={(e) => setManualGuildName(e.target.value)}
-              placeholder="My Discord Server"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-manrope">
-              For display purposes in the dashboard
-            </p>
-          </div>
-
-          <DialogFooter>
-            <Button
-              onClick={handleConnect}
-              disabled={!canConnect || isConnecting}
-              className="w-full font-manrope"
-            >
-              {isConnecting ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                'Connect Server'
-              )}
-            </Button>
-          </DialogFooter>
-        </>
+        <p className="text-sm text-gray-500 dark:text-gray-400 font-manrope">
+          Discord integration isn't configured. Contact your administrator.
+        </p>
       )}
+
+      <p className="text-xs text-gray-500 dark:text-gray-400 font-manrope">
+        You need the “Manage Server” permission on the Discord server. Once you
+        authorize, return here — your connected servers appear above automatically.
+      </p>
     </div>
   );
 }

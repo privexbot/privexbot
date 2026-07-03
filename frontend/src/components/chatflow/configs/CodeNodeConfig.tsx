@@ -112,8 +112,9 @@ export function CodeNodeConfig({ config, onChange }: CodeNodeConfigProps) {
       {/* Security Note */}
       <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
         <p className="text-xs text-amber-800 dark:text-amber-200">
-          <strong>Security:</strong> Code runs in a sandboxed environment.
-          No file access, network access, or dangerous operations allowed.
+          <strong>Security:</strong> Code runs in an isolated subprocess with
+          CPU and memory limits and an enforced wall-clock timeout. No file or
+          network access, and no access to application secrets.
         </p>
       </div>
     </div>

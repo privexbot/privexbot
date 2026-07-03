@@ -110,6 +110,17 @@ class CalendlyNode(BaseNode):
                         "metadata": {"node_id": self.node_id, "node_type": self.node_type}
                     }
 
+            # Guard: a corrupt/partial credential (no access_token and no
+            # usable refresh_token) would otherwise call the Calendly API with
+            # access_token=None and surface an opaque 401.
+            if not access_token:
+                return {
+                    "output": None,
+                    "success": False,
+                    "error": "Calendly credential is missing an access token — reconnect your Calendly account.",
+                    "metadata": {"node_id": self.node_id, "node_type": self.node_type}
+                }
+
             from app.integrations.calendly_integration import calendly_integration
 
             action = self.config.get("action", "get_link")

@@ -606,6 +606,27 @@ export const chatbotApi = {
       throw new Error(handleApiError(error));
     }
   },
+
+  /**
+   * Disconnect the Telegram channel from a chatbot.
+   * DELETE /api/v1/chatbots/{chatbot_id}/channels/telegram
+   *
+   * Clears the deployment config; the Telegram webhook is deleted only when the
+   * bot token credential is not shared with another chatbot/chatflow.
+   */
+  async removeTelegramChannel(
+    chatbotId: string
+  ): Promise<{ status: string; webhook_deleted: boolean }> {
+    try {
+      const response = await apiClient.delete<{
+        status: string;
+        webhook_deleted: boolean;
+      }>(`/chatbots/${chatbotId}/channels/telegram`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  },
 };
 
 // ========================================

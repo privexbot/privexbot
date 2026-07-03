@@ -74,6 +74,10 @@ class HTTPNode(BaseNode):
             # Resolve variables in URL and body
             url = self.resolve_variable(url, {**context.get("variables", {}), **inputs})
 
+            # SSRF guard: block loopback / link-local / private / metadata targets.
+            from app.chatflow.utils.ssrf_guard import assert_safe_url
+            assert_safe_url(url)
+
             # Resolve body variables
             if isinstance(body, dict):
                 resolved_body = {}

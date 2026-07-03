@@ -16,6 +16,7 @@ PSEUDOCODE follows the existing codebase patterns.
 """
 
 import asyncio
+import re
 import secrets
 import requests
 from uuid import UUID
@@ -29,6 +30,20 @@ from app.utils.validation import validate_rate_limit
 
 # Telegram API limits: 30 msgs/sec per bot, 20 msgs/min to same group
 TELEGRAM_MSG_PER_SEC = 25  # Leave buffer from 30 limit
+
+# Telegram embeds the bot token in the request URL (bot<id>:<hash>/method), so
+# any HTTPError raised by requests carries the token in its message. Scrub it
+# before the error can reach persisted config, API responses, or logs.
+_TELEGRAM_TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
+
+
+def _redact_telegram_token(text: str) -> str:
+    """Remove a Telegram bot token from a string (e.g. an HTTPError message).
+
+    MUST be applied to any error raised from a Telegram `raise_for_status()`
+    call — the token rides in the URL, so the raw message leaks the secret.
+    """
+    return _TELEGRAM_TOKEN_RE.sub("bot<redacted>", text)
 
 
 class TelegramIntegration:
@@ -105,7 +120,15 @@ class TelegramIntegration:
             }
         )
 
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            # Re-raise with the token scrubbed, preserving the HTTPError type
+            # and .response so callers' status handling still works. `from None`
+            # drops the token-bearing original from the traceback chain.
+            raise requests.HTTPError(
+                _redact_telegram_token(str(e)), response=e.response
+            ) from None
 
         # Get bot info
         bot_info = requests.get(
@@ -222,24 +245,34 @@ class TelegramIntegration:
         self,
         chat_id: int,
         text: str,
-        bot_token: str
+        bot_token: str,
+        reply_to_message_id: Optional[int] = None
     ):
         """Send a single message to Telegram (max 4096 chars)."""
-        response = requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text[:4096],  # Enforce Telegram limit
-                "parse_mode": "Markdown"
-            }
-        )
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text[:4096],  # Enforce Telegram limit
+            "parse_mode": "Markdown"
+        }
+        if reply_to_message_id is not None:
+            payload["reply_to_message_id"] = reply_to_message_id
+            # Don't 400-drop the reply if the original message was deleted.
+            payload["allow_sending_without_reply"] = True
+        response = requests.post(url, json=payload)
+        # Markdown parse errors return 400 and silently drop the message;
+        # retry once as plain text so the reply is still delivered.
+        if response.status_code == 400:
+            payload.pop("parse_mode", None)
+            response = requests.post(url, json=payload)
         return response
 
     async def _send_message(
         self,
         chat_id: int,
         text: str,
-        bot_token: str
+        bot_token: str,
+        reply_to_message_id: Optional[int] = None
     ):
         """Send message to Telegram user with rate limiting and chunking."""
         # Rate limit check (using first 10 chars of token as identifier)
@@ -257,11 +290,15 @@ class TelegramIntegration:
 
         # Split into chunks if message exceeds 4096 chars
         if len(text) <= 4096:
-            await self._send_single_message(chat_id, text, bot_token)
+            await self._send_single_message(chat_id, text, bot_token, reply_to_message_id)
         else:
             chunks = [text[i:i+4096] for i in range(0, len(text), 4096)]
             for i, chunk in enumerate(chunks):
-                await self._send_single_message(chat_id, chunk, bot_token)
+                # Thread only the first chunk to the original message.
+                await self._send_single_message(
+                    chat_id, chunk, bot_token,
+                    reply_to_message_id if i == 0 else None
+                )
                 if i < len(chunks) - 1:
                     await asyncio.sleep(0.1)  # Small delay between chunks
 
@@ -269,7 +306,8 @@ class TelegramIntegration:
         self,
         bot_token: str,
         chat_id: int,
-        message: str
+        message: str,
+        reply_to_message_id: Optional[int] = None
     ):
         """
         Public method to send message to Telegram user.
@@ -277,7 +315,7 @@ class TelegramIntegration:
         WHY: Called by webhook handler to send responses
         HOW: Call Telegram sendMessage API with rate limiting and chunking
         """
-        await self._send_message(chat_id, message, bot_token)
+        await self._send_message(chat_id, message, bot_token, reply_to_message_id)
 
     async def get_webhook_info(self, bot_token: str) -> dict:
         """
@@ -541,6 +579,67 @@ class TelegramIntegration:
                 )
 
         return conflicts
+
+    @staticmethod
+    def other_entities_using_telegram_credential(
+        db: Session,
+        credential_id: str,
+        workspace_id: UUID,
+        exclude_entity_id: Optional[UUID] = None,
+    ) -> int:
+        """Count OTHER entities in the workspace wired to this Telegram credential.
+
+        WHY: A Telegram bot token has exactly one active webhook. When a
+        credential is shared, disconnecting one entity must NOT `deleteWebhook`
+        (that would silently break the bot for the remaining entity). Callers
+        use this to decide whether it's safe to delete the webhook (count == 0).
+
+        HOW: Scan both storage shapes — the flat `telegram` key (written by the
+        chatbot/chatflow connect endpoints) and the nested `channels.telegram`
+        key (deploy-dialog shape) — across chatbots (`deployment_config`) and
+        chatflows (`config.deployment`).
+        """
+        from app.models.chatbot import Chatbot, ChatbotStatus
+        from app.models.chatflow import Chatflow
+
+        cred_id_str = str(credential_id)
+
+        def _matches(deployment: dict) -> bool:
+            if not isinstance(deployment, dict):
+                return False
+            candidates = [deployment.get("telegram")]
+            channels = deployment.get("channels")
+            if isinstance(channels, dict):
+                candidates.append(channels.get("telegram"))
+            return any(
+                isinstance(tg, dict)
+                and str(tg.get("bot_token_credential_id") or "") == cred_id_str
+                for tg in candidates
+            )
+
+        count = 0
+        for bot in (
+            db.query(Chatbot)
+            .filter(
+                Chatbot.workspace_id == workspace_id,
+                Chatbot.status != ChatbotStatus.ARCHIVED,
+            )
+            .all()
+        ):
+            if exclude_entity_id and bot.id == exclude_entity_id:
+                continue
+            if _matches(bot.deployment_config or {}):
+                count += 1
+
+        for flow in (
+            db.query(Chatflow).filter(Chatflow.workspace_id == workspace_id).all()
+        ):
+            if exclude_entity_id and flow.id == exclude_entity_id:
+                continue
+            if _matches((flow.config or {}).get("deployment", {}) or {}):
+                count += 1
+
+        return count
 
 
 # Global instance

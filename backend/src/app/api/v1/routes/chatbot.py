@@ -16,6 +16,7 @@ PHASE 3: Active Usage
 - Track analytics and sessions
 """
 
+import logging
 import requests
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -37,6 +38,27 @@ from app.services.slug_service import slug_service
 # Type alias for the user context tuple
 from typing import Tuple
 UserContext = Tuple[User, str, str]  # (user, org_id, ws_id)
+
+logger = logging.getLogger(__name__)
+
+
+def _get_telegram_token_from_credential(db: Session, credential_id: str) -> Optional[str]:
+    """Decrypt a Telegram bot token from a credential id.
+
+    Accepts either storage key — `bot_token` (chatbot inline form) or `api_key`
+    (shared credential form) — mirroring the webhook + integration readers.
+    """
+    from app.models.credential import Credential
+    from app.services.credential_service import credential_service
+
+    try:
+        credential = db.query(Credential).get(UUID(str(credential_id)))
+        if not credential:
+            return None
+        cred_data = credential_service.get_decrypted_data(db, credential)
+        return cred_data.get("bot_token") or cred_data.get("api_key")
+    except Exception:
+        return None
 
 router = APIRouter(prefix="/chatbots", tags=["chatbots"])
 
@@ -1091,6 +1113,83 @@ async def add_telegram_channel(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to connect Telegram: {str(e)}"
         )
+
+
+@router.delete("/{chatbot_id}/channels/telegram", response_model=dict)
+async def remove_telegram_channel(
+    chatbot_id: UUID,
+    db: Session = Depends(get_db),
+    user_context: UserContext = Depends(get_current_user_with_org)
+):
+    """
+    Disconnect the Telegram channel from a chatbot.
+
+    WHY: Let users deactivate Telegram (e.g. to swap the bot / re-connect).
+    HOW: Clear deployment_config["telegram"]. Only delete the Telegram webhook
+         if no other chatbot/chatflow in the workspace still uses the same bot
+         token credential — a token has one webhook, so deleting it while shared
+         would silently break the remaining entity.
+    """
+    from app.integrations.telegram_integration import telegram_integration
+
+    _current_user, org_id, _ = user_context
+
+    chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
+    if not chatbot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chatbot not found"
+        )
+
+    workspace = db.query(Workspace).filter(
+        Workspace.id == chatbot.workspace_id,
+        Workspace.organization_id == org_id
+    ).first()
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+
+    telegram_cfg = (chatbot.deployment_config or {}).get("telegram")
+    if not telegram_cfg:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telegram is not connected to this chatbot"
+        )
+
+    credential_id = telegram_cfg.get("bot_token_credential_id")
+
+    # Delete the Telegram webhook only when this credential is not shared with
+    # another entity in the workspace (one token → one webhook).
+    webhook_deleted = False
+    if credential_id:
+        others = telegram_integration.other_entities_using_telegram_credential(
+            db=db,
+            credential_id=credential_id,
+            workspace_id=chatbot.workspace_id,
+            exclude_entity_id=chatbot.id,
+        )
+        if others == 0:
+            try:
+                bot_token = _get_telegram_token_from_credential(db, credential_id)
+                if bot_token:
+                    await telegram_integration.delete_webhook(bot_token=bot_token)
+                    webhook_deleted = True
+            except Exception as exc:
+                # Non-fatal: still clear the channel so the UI reflects removal.
+                logger.warning(
+                    "Failed to delete Telegram webhook for chatbot %s: %s",
+                    chatbot.id, exc
+                )
+
+    # Clear the channel (reassign the JSONB dict — not MutableDict-tracked).
+    new_config = {**(chatbot.deployment_config or {})}
+    new_config.pop("telegram", None)
+    chatbot.deployment_config = new_config
+    db.commit()
+
+    return {"status": "disconnected", "webhook_deleted": webhook_deleted}
 
 
 @router.delete("/{chatbot_id}", response_model=dict)

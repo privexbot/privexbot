@@ -73,17 +73,6 @@ MODELS_CACHE_TTL = 60 * 60  # 1 hour
 # the model isn't currently served, which is the right failure mode.
 LAST_RESORT_MODEL = "DeepSeek-R1-Distill-Llama-70B"
 
-# Chat-family allow-list and the SDK ping helper live in
-# `app/core/secret_ai_models` so both this service and
-# `secret_ai_sdk_provider.py` can share them without a circular import
-# (this service lazy-imports the SDK provider; reversing that direction
-# at module top-level deadlocks Python's import machinery).
-from app.core.secret_ai_models import (
-    CHAT_MODEL_FAMILY_PATTERN,  # noqa: F401 — re-exported for back-compat
-    is_chat_capable as _is_chat_capable,
-)
-
-
 # Reasoning models (e.g. DeepSeek-R1, the default per llm_node.py:46) emit
 # chain-of-thought wrapped in <think>...</think> before the answer. That is
 # never appropriate to surface to end users via chat / live-test responses,
@@ -716,74 +705,44 @@ class InferenceService:
                 "provider": "secret_ai"
             }
         """
-        # Try the native Secret AI SDK transport first (gRPC + LangChain),
-        # falling back to the Secret AI REST transport if the SDK is missing
-        # or fails to initialize.
-        #
-        # CRITICAL: BOTH transports terminate at Secret AI's TEE-protected
-        # nodes (https://secretai-api-url.scrtlabs.com:443/v1). This is NOT
-        # a cross-provider fallback — no data ever leaves Secret AI
-        # infrastructure. See module docstring + memory/feedback_secret_ai_only.
-        if settings.USE_SECRET_AI_SDK:
-            try:
-                from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
-                sdk_provider = get_secret_ai_sdk_provider(
-                    temperature=temperature or 0.7
-                )
-                return await sdk_provider.generate_chat(
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    model=model,
-                )
-            except ImportError as exc:
-                global _sdk_fallback_logged
-                if not _sdk_fallback_logged:
-                    logger.warning(
-                        "Secret AI native SDK transport unavailable (ImportError: %s). "
-                        "Switching to Secret AI REST transport — still TEE-protected, "
-                        "still inside Secret AI infrastructure. Reinstall the wheel "
-                        "to restore the native transport: rebuild the image (the "
-                        "Dockerfile now verifies the import at build time).",
-                        exc,
-                    )
-                    _sdk_fallback_logged = True
-            except Exception as exc:
-                # gRPC handshake / SSL / no-models / Secret() init failure.
-                # The REST transport tolerates many of these because it uses
-                # plain HTTPS to a fixed endpoint. Log full traceback once so
-                # operators can triage; then fall through.
-                if not _sdk_fallback_logged:
-                    logger.exception(
-                        "Secret AI native SDK transport init failed: %s. "
-                        "Switching to Secret AI REST transport — still TEE-protected, "
-                        "still inside Secret AI infrastructure.",
-                        exc,
-                    )
-                    _sdk_fallback_logged = True
-
-        # REST transport — Secret AI's OpenAI-compatible HTTPS endpoint.
-        # Also the path used when USE_SECRET_AI_SDK=false (operator-set env).
-        use_provider, use_model = self._resolve_provider_and_model(model, provider)
-
-        async def _generate(provider_instance: BaseProvider, model_to_use: str, **kw) -> InferenceResponse:
-            return await provider_instance.generate_chat(
-                messages=messages,
-                model=model_to_use,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stop=stop,
-                **kwargs
+        # Secret AI is the only inference provider. Its workers now speak the
+        # OpenAI API at `{worker}/v1` (they migrated off Ollama to vLLM), so all
+        # inference goes through the OpenAI-transport provider, which discovers
+        # live worker URLs via `Secret()` and the served-model registry. There
+        # is no cross-provider fallback — no data ever leaves Secret AI's
+        # TEE-protected infrastructure. See memory/feedback_secret_ai_only.
+        if not settings.USE_SECRET_AI_SDK:
+            raise ProviderUnavailableError(
+                "Secret AI inference is disabled (USE_SECRET_AI_SDK=false). The "
+                "Secret AI workers require the OpenAI transport; set "
+                "USE_SECRET_AI_SDK=true to enable inference."
             )
 
-        response = await self._try_with_fallback(
-            operation="generate_chat",
-            primary_provider=use_provider,
-            primary_model=use_model,
-            generate_fn=_generate
-        )
+        from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
 
-        return response.to_dict()
+        sdk_provider = get_secret_ai_sdk_provider(temperature=temperature or 0.7)
+        try:
+            return await sdk_provider.generate_chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                model=model,
+            )
+        except ImportError as exc:
+            logger.error(
+                "Secret AI SDK wheel missing/broken (%s) — cannot discover workers. "
+                "Rebuild the image (the Dockerfile verifies the import at build time).",
+                exc,
+            )
+            raise ProviderUnavailableError(
+                f"Secret AI SDK unavailable: {exc}"
+            ) from exc
+        except Exception as exc:
+            # Real inference failure (all served workers/models failed, network,
+            # auth). The provider already tried every served chat model, so
+            # surface the actual cause instead of masking it.
+            logger.error("Secret AI inference failed: %s", exc, exc_info=True)
+            raise InferenceError(f"Secret AI inference failed: {exc}") from exc
 
     def generate_chat_sync(
         self,
@@ -967,26 +926,16 @@ class InferenceService:
             from app.services.secret_ai_sdk_provider import get_secret_ai_sdk_provider
 
             sdk_provider = get_secret_ai_sdk_provider()
-            # Synchronous call inside the async function. We don't push this
-            # onto run_in_executor because the SDK's underlying LCDClient
-            # calls `nest_asyncio.apply(get_event_loop())` during
-            # `Secret().__init__`, and worker threads have no event loop —
-            # which raises `RuntimeError: There is no current event loop`
-            # before the contract query ever fires. The running loop in this
-            # async context satisfies the SDK; the ~200–500ms cost is paid
-            # once per Redis cache miss (1h TTL).
-            raw_models = sdk_provider.list_models()
-            if not isinstance(raw_models, list):
-                raw_models = []
-            # Filter to known chat-base families. The smart contract
-            # advertises every Secret AI worker, including STT/TTS workers
-            # that don't speak the chat protocol — picking one would break
-            # the user's chat at inference time. See CHAT_MODEL_FAMILY_PATTERN.
-            models = [m for m in raw_models if _is_chat_capable(m)]
+            # `list_models()` returns the live registry of chat models that the
+            # Secret AI workers actually serve (probed from each worker's
+            # /v1/models — already chat-filtered, already excludes the stale
+            # contract names that no worker serves). The registry build is
+            # cached in-process for 1h, so this is cheap on a Redis cache miss.
+            models = sdk_provider.list_models()
+            if not isinstance(models, list):
+                models = []
             logger.info(
-                "[InferenceService] models cache MISS — fetched %d from SDK, "
-                "%d after chat-family filter",
-                len(raw_models),
+                "[InferenceService] models cache MISS — %d served chat model(s) from registry",
                 len(models),
             )
         except Exception as exc:

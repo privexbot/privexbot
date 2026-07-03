@@ -26,7 +26,7 @@
  * - response: Final output
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -72,9 +72,13 @@ import {
   UserCheck,
   UserPlus,
   Calendar,
+  HelpCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+import { NODE_CATEGORIES } from "@/components/chatflow/nodeCatalog";
+import StudioGuide from "@/components/chatflow/onboarding/StudioGuide";
+import { hasSeenStudioGuide, markStudioGuideSeen } from "@/lib/onboarding";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +110,7 @@ import { config as envConfig } from "@/config/env";
 import ChannelSelector, { type DeploymentChannel } from "@/components/deployment/ChannelSelector";
 import { WrongWorkspaceScreen } from "@/components/shared/WrongWorkspaceScreen";
 import { classifyChannelError } from "@/lib/channelErrors";
+import { NodeConfigErrorBoundary } from "@/components/chatflow/NodeConfigErrorBoundary";
 
 // Node configuration panel for type-specific settings
 import { LLMNodeConfig } from "@/components/chatflow/configs/LLMNodeConfig";
@@ -213,9 +218,25 @@ function validateNodeConfig(node: Node): ValidationIssue[] {
     case "notification":
       if (!config.channel) err("Channel is required");
       if (!str(config.message)) err("Message is required");
+      if (!str(config.webhook_url) && !config.credential_id)
+        err("A webhook URL or credential is required to deliver the notification");
       break;
     case "handoff":
-      if (!config.method) err("Handoff method is required");
+      if (!config.method) {
+        err("Handoff method is required");
+      } else if (config.method === "email") {
+        if (!config.credential_id)
+          err("Email credential is required for email handoff");
+        if (!str(config.email_to))
+          err("Recipient email is required for email handoff");
+      } else if (config.method === "webhook" || config.method === "slack") {
+        if (!str(config.webhook_url))
+          err(
+            config.method === "slack"
+              ? "Slack webhook URL is required"
+              : "Webhook URL is required"
+          );
+      }
       break;
     case "calendly":
       if (!config.credential_id) err("Calendly credential is required");
@@ -743,49 +764,9 @@ const nodeTypes: NodeTypes = {
   calendly: CalendlyNode,
 };
 
-// ========================================
-// NODE PALETTE DEFINITION
-// ========================================
-
-const NODE_CATEGORIES = [
-  {
-    title: "Flow Control",
-    nodes: [
-      { type: "trigger", label: "Trigger", icon: Zap, color: "from-emerald-500 to-green-600", description: "Start of the workflow" },
-      { type: "condition", label: "Condition", icon: GitBranch, color: "from-amber-500 to-orange-600", description: "Branching logic" },
-      { type: "loop", label: "Loop", icon: Repeat, color: "from-rose-500 to-pink-600", description: "Iterate over arrays" },
-      { type: "response", label: "Response", icon: MessageCircle, color: "from-red-500 to-rose-600", description: "Final output" },
-    ],
-  },
-  {
-    title: "AI & Knowledge",
-    nodes: [
-      { type: "llm", label: "LLM", icon: Sparkles, color: "from-purple-500 to-pink-600", description: "AI text generation" },
-      { type: "kb", label: "Knowledge Base", icon: Database, color: "from-blue-500 to-cyan-600", description: "RAG retrieval" },
-      { type: "memory", label: "Memory", icon: History, color: "from-teal-500 to-cyan-600", description: "Chat history" },
-    ],
-  },
-  {
-    title: "Data & Integration",
-    nodes: [
-      { type: "http", label: "HTTP Request", icon: Globe, color: "from-green-500 to-emerald-600", description: "External API calls" },
-      { type: "variable", label: "Variable", icon: Settings, color: "from-indigo-500 to-violet-600", description: "Set/transform data" },
-      { type: "code", label: "Code", icon: Code, color: "from-gray-700 to-gray-900", description: "Python scripts" },
-      { type: "database", label: "Database", icon: Database, color: "from-slate-600 to-slate-800", description: "SQL queries" },
-    ],
-  },
-  {
-    title: "Actions & Automation",
-    nodes: [
-      { type: "webhook", label: "Webhook", icon: Send, color: "from-orange-500 to-amber-600", description: "Push to Zapier, Make, etc." },
-      { type: "email", label: "Email", icon: Mail, color: "from-sky-500 to-blue-600", description: "Send emails (SMTP/Gmail)" },
-      { type: "notification", label: "Notification", icon: Bell, color: "from-teal-500 to-cyan-600", description: "Alert team via Slack/Discord" },
-      { type: "handoff", label: "Handoff", icon: UserCheck, color: "from-violet-500 to-fuchsia-600", description: "Escalate to human agent" },
-      { type: "lead_capture", label: "Lead Capture", icon: UserPlus, color: "from-emerald-500 to-green-600", description: "Collect & store leads" },
-      { type: "calendly", label: "Calendly", icon: Calendar, color: "from-blue-500 to-indigo-600", description: "Schedule meetings" },
-    ],
-  },
-];
+// NODE_CATEGORIES (the palette + node-reference source of truth) now lives in
+// `@/components/chatflow/nodeCatalog` so the builder and the Studio guide stay
+// in sync. Imported at the top of this file.
 
 // ========================================
 // MAIN COMPONENT
@@ -813,6 +794,10 @@ export default function ChatflowBuilder() {
   // dialog can show the chatflow ID, per-channel details, and the one-time
   // API key. Previously these were discarded in onSuccess.
   const [deployResult, setDeployResult] = useState<FinalizeChatflowResponse | null>(null);
+
+  // Onboarding guide (first-run + re-openable from the header).
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
 
   // Load draft
   const {
@@ -875,6 +860,20 @@ export default function ChatflowBuilder() {
       }
     }
   }, [draft, setNodes, setEdges]);
+
+  // First-run: auto-open the Studio guide once, after the draft loads. Guarded
+  // by a ref so React Query's window-focus refetch (which changes `draft`'s
+  // identity) can't re-open it; the seen flag is written at open time, not on
+  // close, so a manual close stays closed.
+  useEffect(() => {
+    if (autoOpenedRef.current || isLoadingDraft || !draft) return;
+    if (!hasSeenStudioGuide()) {
+      autoOpenedRef.current = true;
+      markStudioGuideSeen();
+      setIsSidebarOpen(true);
+      setIsGuideOpen(true);
+    }
+  }, [isLoadingDraft, draft]);
 
   // Recover from a stale draftId in the URL (e.g. a deployed-chatflow UUID or
   // an expired draft). Without this, the builder renders a blank canvas and
@@ -1230,7 +1229,7 @@ export default function ChatflowBuilder() {
         <AnimatePresence>
           {isSidebarOpen && (
             <motion.div
-              initial={{ width: 0, opacity: 0 }}
+              initial={false}
               animate={{ width: 280, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               className="border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden"
@@ -1256,6 +1255,7 @@ export default function ChatflowBuilder() {
                           return (
                             <button
                               key={node.type}
+                              data-tour-node={node.type}
                               onClick={() => addNode(node.type, node.label)}
                               className="w-full p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left group"
                             >
@@ -1331,6 +1331,19 @@ export default function ChatflowBuilder() {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsSidebarOpen(true);
+                  setIsGuideOpen(true);
+                }}
+                className="text-gray-600 dark:text-gray-400"
+                title="Open the Studio guide"
+              >
+                <HelpCircle className="w-4 h-4 mr-2" />
+                Guide
+              </Button>
               {validationIssues.length > 0 && (
                 <Badge
                   variant={
@@ -1497,7 +1510,30 @@ export default function ChatflowBuilder() {
           </AnimatePresence>
 
           {/* ReactFlow Canvas */}
-          <div className="flex-1">
+          <div className="flex-1 relative">
+            {/* First-timer nudge over an effectively empty canvas. The wrapper
+                ignores pointer events so canvas pan/zoom/drop still work; only
+                the button is interactive. */}
+            {nodes.length <= 1 && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                <div className="pointer-events-auto flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 bg-white/80 dark:bg-gray-800/80 px-5 py-4 backdrop-blur-sm shadow-sm">
+                  <p className="text-sm text-gray-600 dark:text-gray-300 font-manrope">
+                    👋 New here? Add nodes from the palette to build your flow.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsSidebarOpen(true);
+                      setIsGuideOpen(true);
+                    }}
+                  >
+                    <HelpCircle className="w-4 h-4 mr-2" />
+                    Open the guide
+                  </Button>
+                </div>
+              </div>
+            )}
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -1618,7 +1654,9 @@ export default function ChatflowBuilder() {
                   {/* Node-specific Configuration */}
                   <div className="space-y-4">
                     <h4 className="text-sm font-medium">Configuration</h4>
-                    {renderNodeConfig()}
+                    <NodeConfigErrorBoundary key={selectedNode?.id}>
+                      {renderNodeConfig()}
+                    </NodeConfigErrorBoundary>
                   </div>
 
                   <Separator />
@@ -1652,6 +1690,16 @@ export default function ChatflowBuilder() {
       </div>
 
       {/* Deploy Dialog */}
+      {/* Onboarding guide — every close (X / Escape / backdrop / Skip / Done)
+          funnels through onOpenChange, where we persist the seen flag. */}
+      <StudioGuide
+        open={isGuideOpen}
+        onOpenChange={(o) => {
+          setIsGuideOpen(o);
+          if (!o) markStudioGuideSeen();
+        }}
+      />
+
       <Dialog open={isDeployDialogOpen} onOpenChange={setIsDeployDialogOpen}>
         <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
@@ -1871,10 +1919,10 @@ export default function ChatflowBuilder() {
                               <p
                                 className={
                                   errorInfo.bucket === "operator_config"
-                                    ? "text-xs text-gray-500 dark:text-gray-400"
+                                    ? "text-xs text-gray-500 dark:text-gray-400 break-words"
                                     : errorInfo.bucket === "credential_missing"
-                                      ? "text-xs text-amber-700 dark:text-amber-400"
-                                      : "text-xs text-red-600 dark:text-red-400"
+                                      ? "text-xs text-amber-700 dark:text-amber-400 break-words"
+                                      : "text-xs text-red-600 dark:text-red-400 break-words"
                                 }
                               >
                                 {errorInfo.bucket === "operator_config"

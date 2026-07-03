@@ -349,12 +349,44 @@ async def get_chatflow(
     if not workspace:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Hydrate the live Discord channel status from the deployment table.
+    # The shared-bot OAuth callback creates a DiscordGuildDeployment row binding
+    # the guild to this chatflow, but it does NOT write back to
+    # config["deployment"]["discord"].status — that snapshot stays
+    # "needs_install" forever, so the detail card never flips to "success".
+    # The DiscordGuildDeployment table is the source of truth, so we override
+    # the status at read time (response-only; we never persist derived state,
+    # which keeps it self-healing across install / edit-redeploy / unbind).
+    response_config = chatflow.config
+    if isinstance(response_config, dict):
+        deployment = response_config.get("deployment")
+        if isinstance(deployment, dict) and isinstance(deployment.get("discord"), dict):
+            from app.models.discord_guild_deployment import DiscordGuildDeployment
+            active_guilds = db.query(DiscordGuildDeployment).filter(
+                DiscordGuildDeployment.chatbot_id == chatflow.id,
+                DiscordGuildDeployment.entity_type == "chatflow",
+                DiscordGuildDeployment.is_active == True,
+            ).all()
+            if active_guilds:
+                # Build response-only copies — do NOT mutate the ORM JSONB
+                # (config is not MutableDict; and we don't want to persist this).
+                discord_entry = {
+                    **deployment["discord"],
+                    "status": "success",
+                    "guild_id": active_guilds[0].guild_id,
+                    "guild_count": len(active_guilds),
+                }
+                response_config = {
+                    **response_config,
+                    "deployment": {**deployment, "discord": discord_entry},
+                }
+
     return {
         "id": str(chatflow.id),
         "name": chatflow.name,
         "description": chatflow.description,
         "workspace_id": str(chatflow.workspace_id),
-        "config": chatflow.config,
+        "config": response_config,
         "version": chatflow.version,
         "is_active": chatflow.is_active,
         "created_at": chatflow.created_at.isoformat() if chatflow.created_at else None,

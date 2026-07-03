@@ -395,7 +395,9 @@ class AdminService:
             chatflow_data.append({
                 "id": str(flow.id),
                 "name": flow.name,
-                "status": flow.status.value if flow.status else None,
+                # Chatflow has no `status` column (only is_active); deriving a
+                # status string here avoids an AttributeError -> unhandled 500.
+                "status": "active" if flow.is_active else "inactive",
                 "workspace_id": str(flow.workspace_id),
                 "created_at": flow.created_at.isoformat() if flow.created_at else None,
             })

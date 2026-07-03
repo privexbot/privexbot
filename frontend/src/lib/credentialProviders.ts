@@ -22,6 +22,7 @@ export type CredentialProvider =
   | "calendly"
   | "database"
   | "smtp"
+  | "webhook"
   | "custom";
 
 // NOTE: "openai" and "anthropic" were intentionally REMOVED from this list.
@@ -48,6 +49,19 @@ export interface CredentialProviderInfo {
   requiresOAuth: boolean;
   /** `true` when the credential is a database connection string. */
   requiresDatabase: boolean;
+  /**
+   * `true` when the credential is an SMTP email server (host/port/username/
+   * password). Stored as `credential_type="smtp"`. The email + handoff nodes
+   * read these fields directly.
+   */
+  requiresSmtp?: boolean;
+  /**
+   * `true` when the credential is a single outbound webhook URL (e.g. a
+   * Slack/Discord/Teams incoming webhook reused across notification nodes).
+   * Stored as `credential_type="custom"` with `data={ webhook_url }` — no new
+   * DB enum needed. The notification node reads `webhook_url` directly.
+   */
+  requiresWebhookUrl?: boolean;
 }
 
 /**
@@ -69,7 +83,8 @@ export const CREDENTIAL_PROVIDERS: CredentialProviderInfo[] = [
   { value: "whatsapp",     label: "WhatsApp Business",  icon: "💬", requiresOAuth: false, requiresDatabase: false },
   { value: "calendly",     label: "Calendly",           icon: "📅", requiresOAuth: true,  requiresDatabase: false },
   { value: "database",     label: "Database",           icon: "🗄️", requiresOAuth: false, requiresDatabase: true  },
-  { value: "smtp",         label: "SMTP Email Server",  icon: "📨", requiresOAuth: false, requiresDatabase: false },
+  { value: "smtp",         label: "SMTP Email Server",  icon: "📨", requiresOAuth: false, requiresDatabase: false, requiresSmtp: true },
+  { value: "webhook",      label: "Webhook URL",        icon: "🔗", requiresOAuth: false, requiresDatabase: false, requiresWebhookUrl: true },
 ];
 
 /** Lookup helper — returns undefined for unknown providers. */

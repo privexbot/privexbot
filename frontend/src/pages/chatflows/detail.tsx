@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
 import {
   ArrowLeft,
   Code as CodeIcon,
@@ -59,6 +60,7 @@ import EmbedCode from "@/components/shared/EmbedCode";
 import CredentialSelector from "@/components/shared/CredentialSelector";
 import { Switch } from "@/components/ui/switch";
 import { chatflowApi } from "@/api/chatflow";
+import { discordApi, type GuildDeployment } from "@/api/discord";
 import { apiClient, handleApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
@@ -100,9 +102,11 @@ function CopyButton({ value, label = "Copy" }: { value: string; label?: string }
 function ChannelCard({
   chatflowId,
   entry,
+  discordConnected = false,
 }: {
   chatflowId: string;
   entry: ChannelEntry;
+  discordConnected?: boolean;
 }) {
   const navigate = useNavigate();
   const channelMeta: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -127,11 +131,16 @@ function ChannelCard({
   // Only treat status === "success" as success. Anything else (including
   // missing status, which is the legacy/unregistered case) is non-success.
   const rawStatus = cfg.status as string | undefined;
-  const isError = rawStatus === "error";
-  const isRegistered = rawStatus === "success" || rawStatus === "ok";
+  // A shared Discord connection lives only as a DiscordGuildDeployment row, not
+  // in config.deployment.discord.status — so reconcile the badge against the
+  // deployment table (source of truth) for the discord row.
+  const sharedDiscordConnected = entry.type === "discord" && discordConnected;
+  const isError = rawStatus === "error" && !sharedDiscordConnected;
+  const isRegistered =
+    rawStatus === "success" || rawStatus === "ok" || sharedDiscordConnected;
   // Discord shared-bot path returns `needs_install` instead of an error —
   // operator needs to add the bot to their server via the install URL.
-  const needsInstall = rawStatus === "needs_install";
+  const needsInstall = rawStatus === "needs_install" && !sharedDiscordConnected;
   const installInstructions = (cfg.instructions as string | undefined) ?? "";
   const errorMessage = (cfg.error as string | undefined) ?? "";
   // Distinguish "user picked the channel but never finished setup"
@@ -162,15 +171,17 @@ function ChannelCard({
 
   const badgeText = !entry.enabled
     ? "disabled"
-    : needsInstall
-      ? "install required"
-      : isCredentialMissing
-        ? "needs setup"
-        : isError
-          ? "error"
-          : isRegistered
-            ? "success"
-            : "not registered";
+    : sharedDiscordConnected
+      ? "connected"
+      : needsInstall
+        ? "install required"
+        : isCredentialMissing
+          ? "needs setup"
+          : isError
+            ? "error"
+            : isRegistered
+              ? "success"
+              : "not registered";
   const badgeVariant = !entry.enabled
     ? "destructive"
     : isCredentialMissing
@@ -229,7 +240,7 @@ function ChannelCard({
           // the same CTA pattern.
           if (!errorInfo) {
             return (
-              <p className="text-xs text-red-600 dark:text-red-400">
+              <p className="text-xs text-red-600 dark:text-red-400 break-words">
                 {errorMessage || "Channel registration failed — check the credential."}
               </p>
             );
@@ -239,10 +250,10 @@ function ChannelCard({
               <p
                 className={
                   errorInfo.bucket === "operator_config"
-                    ? "text-xs text-gray-500 dark:text-gray-400"
+                    ? "text-xs text-gray-500 dark:text-gray-400 break-words"
                     : errorInfo.bucket === "credential_missing"
-                      ? "text-xs text-amber-700 dark:text-amber-400"
-                      : "text-xs text-red-600 dark:text-red-400"
+                      ? "text-xs text-amber-700 dark:text-amber-400 break-words"
+                      : "text-xs text-red-600 dark:text-red-400 break-words"
                 }
               >
                 {errorInfo.bucket === "operator_config"
@@ -377,7 +388,13 @@ function TestChatPanel({ chatflowId }: { chatflowId: string }) {
                       : "bg-white dark:bg-gray-800 border"
                   )}
                 >
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  ) : (
+                    <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 break-words">
+                      <ReactMarkdown>{msg.content.replace(/^[ \t]+/gm, "")}</ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -606,7 +623,8 @@ const CHANNEL_META: Record<
     label: "Discord",
     provider: "discord",
     credentialRequired: true,
-    description: "Connect a Discord application using its bot token credential.",
+    description:
+      "Add the PrivexBot app in one click, or connect your own Discord bot token.",
   },
   slack: {
     label: "Slack",
@@ -635,6 +653,87 @@ const CHANNEL_ORDER: ChannelTypeKey[] = [
   "whatsapp",
   "zapier",
 ];
+
+// Shared PrivexBot Discord app: one-click "Add to Discord" (OAuth auto-connects
+// the guild to THIS chatflow) + the chatflow's connected servers. Mirrors the
+// chatbot flow; works alongside the bring-your-own-bot credential option below.
+function DiscordSharedConnect({ chatflowId }: { chatflowId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: invite } = useQuery({
+    queryKey: ["discord-invite", chatflowId],
+    queryFn: () => discordApi.getInviteUrl(chatflowId, "chatflow"),
+    retry: false,
+  });
+
+  const { data: guilds = [] } = useQuery<GuildDeployment[]>({
+    queryKey: ["discord-guilds", chatflowId],
+    queryFn: () => discordApi.listDeployments(chatflowId),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (guildId: string) => discordApi.removeDeployment(guildId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discord-guilds", chatflowId] });
+      toast({ title: "Server disconnected" });
+    },
+    onError: (err) =>
+      toast({
+        title: "Failed to disconnect",
+        description: err instanceof Error ? err.message : handleApiError(err),
+        variant: "destructive",
+      }),
+  });
+
+  const inviteUrl = invite?.invite_url;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10 p-3">
+      <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+        Recommended — add the PrivexBot app (one click)
+      </p>
+      {inviteUrl ? (
+        <Button
+          size="sm"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+          onClick={() => window.open(inviteUrl, "_blank", "noopener,noreferrer")}
+        >
+          <MessageCircle className="h-4 w-4 mr-2" />
+          Add to Discord
+        </Button>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Discord integration isn't configured. Contact your administrator.
+        </p>
+      )}
+
+      {guilds.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <p className="text-[11px] text-gray-500">Connected servers</p>
+          {guilds.map((g) => (
+            <div
+              key={g.guild_id}
+              className="flex items-center justify-between gap-2 rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5"
+            >
+              <span className="text-xs truncate">{g.guild_name || g.guild_id}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-red-600"
+                disabled={removeMutation.isPending}
+                onClick={() => removeMutation.mutate(g.guild_id)}
+                title="Disconnect server"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ChannelSetupCard({
   chatflowId,
@@ -726,14 +825,26 @@ function ChannelSetupCard({
         <CardDescription className="text-xs">{meta.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Discord: the one-click shared PrivexBot app (recommended) + the
+            bring-your-own bot-token credential below (advanced). */}
+        {channelType === "discord" && (
+          <DiscordSharedConnect chatflowId={chatflowId} />
+        )}
         {enabled && meta.credentialRequired && meta.provider && (
-          <CredentialSelector
-            provider={meta.provider as never}
-            selectedId={credentialId || undefined}
-            onSelect={(id) => setCredentialId(id)}
-            label={`${meta.label} credential`}
-            required
-          />
+          <div className="space-y-2">
+            {channelType === "discord" && (
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Advanced — connect your own Discord bot token instead
+              </p>
+            )}
+            <CredentialSelector
+              provider={meta.provider as never}
+              selectedId={credentialId || undefined}
+              onSelect={(id) => setCredentialId(id)}
+              label={`${meta.label} credential`}
+              required
+            />
+          </div>
         )}
 
         {enabled && channelType === "whatsapp" && (
@@ -849,6 +960,8 @@ export default function ChatflowDetailPage() {
     const discordError = searchParams.get("discord_error");
     if (guildId) {
       queryClient.invalidateQueries({ queryKey: ["chatflow", chatflowId] });
+      // Refresh the guild list so the Discord status badge flips to connected.
+      queryClient.invalidateQueries({ queryKey: ["discord-guilds", chatflowId] });
       toast({
         title: "Discord connected",
         description: `Bot installed in guild ${guildId}. Slash commands /ask and /chat are ready.`,
@@ -858,8 +971,11 @@ export default function ChatflowDetailPage() {
       setSearchParams(next, { replace: true });
     } else if (discordError) {
       toast({
-        title: "Discord install failed",
-        description: discordError,
+        title: "Discord not connected",
+        description:
+          discordError === "guild_taken"
+            ? "That Discord server is already connected to another bot or flow. Disconnect it there first."
+            : "Could not connect the Discord server. Please try again.",
         variant: "destructive",
       });
       const next = new URLSearchParams(searchParams);
@@ -947,6 +1063,16 @@ export default function ChatflowDetailPage() {
         variant: "destructive",
       }),
   });
+
+  // Shared Discord connections exist only as DiscordGuildDeployment rows (not in
+  // config.deployment.discord), so fetch them to drive the Discord status badge.
+  // Same query key as DiscordSharedConnect → one shared fetch.
+  const { data: discordGuilds = [] } = useQuery<GuildDeployment[]>({
+    queryKey: ["discord-guilds", chatflowId],
+    queryFn: () => discordApi.listDeployments(chatflowId as string),
+    enabled: !!chatflowId,
+  });
+  const discordConnected = discordGuilds.length > 0;
 
   const channels = useMemo<ChannelEntry[]>(() => {
     // After a successful deploy, backend writes chatflow.config.deployment as
@@ -1229,6 +1355,7 @@ export default function ChatflowDetailPage() {
                       key={entry.type}
                       chatflowId={chatflow.id}
                       entry={entry}
+                      discordConnected={discordConnected}
                     />
                   ))}
                 </>

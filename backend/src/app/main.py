@@ -2,9 +2,11 @@
 PrivexBot Backend - FastAPI Application
 Main entry point for the API server
 """
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.core.config import settings
@@ -224,6 +226,32 @@ app.add_middleware(
 
 # Add public API CORS middleware (runs BEFORE standard CORSMiddleware)
 app.add_middleware(PublicAPICORSMiddleware)
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Return 500s WITH CORS headers so cross-origin callers see a real error.
+
+    An unhandled exception is caught by Starlette's ServerErrorMiddleware, which
+    is OUTSIDE CORSMiddleware — so its 500 normally lacks Access-Control-Allow-
+    Origin and the browser reports an opaque "Network Error" (this is exactly
+    how the admin user-detail 500 was masked). Since this handler runs outside
+    CORS, it attaches the header itself by echoing an allowed Origin.
+    """
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=headers,
+    )
 
 # Include API routers
 # WHY: Mount all routes under /api/v1 prefix

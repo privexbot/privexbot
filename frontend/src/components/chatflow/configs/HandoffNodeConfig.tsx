@@ -59,6 +59,9 @@ export function HandoffNodeConfig({ config, onChange }: HandoffNodeConfigProps) 
   const [emailTo, setEmailTo] = useState(
     (config.email_to as string) || ""
   );
+  const [sendMethod, setSendMethod] = useState(
+    (config.send_method as string) || "smtp"
+  );
   const [contextDepth, setContextDepth] = useState(
     (config.context_depth as string) || "full"
   );
@@ -86,6 +89,7 @@ export function HandoffNodeConfig({ config, onChange }: HandoffNodeConfigProps) 
     }
     if (method === "email") {
       newConfig.email_to = emailTo;
+      newConfig.send_method = sendMethod;
     }
     if (credentialId) {
       newConfig.credential_id = credentialId;
@@ -95,7 +99,7 @@ export function HandoffNodeConfig({ config, onChange }: HandoffNodeConfigProps) 
     }
 
     onChange(newConfig);
-  }, [method, webhookUrl, credentialId, emailTo, contextDepth, handoffMessage, priority, department, onChange]);
+  }, [method, webhookUrl, credentialId, emailTo, sendMethod, contextDepth, handoffMessage, priority, department, onChange]);
 
   useEffect(() => {
     const timeoutId = setTimeout(emitChange, 300);
@@ -148,29 +152,63 @@ export function HandoffNodeConfig({ config, onChange }: HandoffNodeConfigProps) 
         </div>
       )}
 
-      {/* Email To (for email method) */}
+      {/* Email To + Send Method (for email method) */}
       {method === "email" && (
-        <div>
-          <Label className="text-sm font-medium">
-            Recipient Email <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            value={emailTo}
-            onChange={(e) => setEmailTo(e.target.value)}
-            placeholder="support-team@company.com"
-            className="mt-1.5 text-sm"
-          />
-        </div>
+        <>
+          <div>
+            <Label className="text-sm font-medium">
+              Recipient Email <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder="support-team@company.com"
+              className="mt-1.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Send Method</Label>
+            <Select
+              value={sendMethod}
+              onValueChange={(val) => {
+                setSendMethod(val);
+                setCredentialId("");
+              }}
+            >
+              <SelectTrigger className="mt-1.5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="smtp">SMTP</SelectItem>
+                <SelectItem value="gmail">Gmail (OAuth)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500 mt-1">
+              {sendMethod === "gmail"
+                ? "Send via your connected Gmail account (OAuth) — works on SecretVM over HTTPS"
+                : "Send via SMTP server credentials"}
+            </p>
+          </div>
+        </>
       )}
 
       {/* Credential */}
       <CredentialSelector
-        provider={method === "email" ? "smtp" : "custom"}
+        provider={
+          method === "email"
+            ? sendMethod === "gmail"
+              ? "google_gmail"
+              : "smtp"
+            : "custom"
+        }
         selectedId={credentialId}
         onSelect={setCredentialId}
         label={
           method === "email"
-            ? "SMTP Credential"
+            ? sendMethod === "gmail"
+              ? "Gmail Account"
+              : "SMTP Credential"
             : "Authentication Credential"
         }
         required={method === "email"}
