@@ -16,6 +16,7 @@ PSEUDOCODE follows the existing codebase patterns.
 """
 
 import asyncio
+import re
 import secrets
 import requests
 from uuid import UUID
@@ -29,6 +30,20 @@ from app.utils.validation import validate_rate_limit
 
 # Telegram API limits: 30 msgs/sec per bot, 20 msgs/min to same group
 TELEGRAM_MSG_PER_SEC = 25  # Leave buffer from 30 limit
+
+# Telegram embeds the bot token in the request URL (bot<id>:<hash>/method), so
+# any HTTPError raised by requests carries the token in its message. Scrub it
+# before the error can reach persisted config, API responses, or logs.
+_TELEGRAM_TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
+
+
+def _redact_telegram_token(text: str) -> str:
+    """Remove a Telegram bot token from a string (e.g. an HTTPError message).
+
+    MUST be applied to any error raised from a Telegram `raise_for_status()`
+    call — the token rides in the URL, so the raw message leaks the secret.
+    """
+    return _TELEGRAM_TOKEN_RE.sub("bot<redacted>", text)
 
 
 class TelegramIntegration:
@@ -105,7 +120,15 @@ class TelegramIntegration:
             }
         )
 
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            # Re-raise with the token scrubbed, preserving the HTTPError type
+            # and .response so callers' status handling still works. `from None`
+            # drops the token-bearing original from the traceback chain.
+            raise requests.HTTPError(
+                _redact_telegram_token(str(e)), response=e.response
+            ) from None
 
         # Get bot info
         bot_info = requests.get(

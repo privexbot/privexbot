@@ -240,7 +240,7 @@ function ChannelCard({
           // the same CTA pattern.
           if (!errorInfo) {
             return (
-              <p className="text-xs text-red-600 dark:text-red-400">
+              <p className="text-xs text-red-600 dark:text-red-400 break-words">
                 {errorMessage || "Channel registration failed — check the credential."}
               </p>
             );
@@ -250,10 +250,10 @@ function ChannelCard({
               <p
                 className={
                   errorInfo.bucket === "operator_config"
-                    ? "text-xs text-gray-500 dark:text-gray-400"
+                    ? "text-xs text-gray-500 dark:text-gray-400 break-words"
                     : errorInfo.bucket === "credential_missing"
-                      ? "text-xs text-amber-700 dark:text-amber-400"
-                      : "text-xs text-red-600 dark:text-red-400"
+                      ? "text-xs text-amber-700 dark:text-amber-400 break-words"
+                      : "text-xs text-red-600 dark:text-red-400 break-words"
                 }
               >
                 {errorInfo.bucket === "operator_config"
